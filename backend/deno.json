@@ -15,7 +15,7 @@
     "bcrypt": "npm:bcrypt@^5.1.0",
     "djwt": "https://deno.land/x/djwt@v3.0.2/mod.ts",
     "xlsx": "npm:xlsx@^0.18.5",
-    "sqlite": "https://deno.land/x/sqlite@v3.8.0/mod.ts"
+    "sqlite": "https://deno.land/x/sqlite@v3.9.1/mod.ts"
   },
   "compilerOptions": {
     "strict": true,
