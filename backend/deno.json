@@ -1,0 +1,26 @@
+{
+  "name": "snapflow-backend",
+  "version": "0.1.0",
+  "exports": "./src/main.ts",
+  "tasks": {
+    "dev": "deno run --allow-all --watch src/main.ts",
+    "start": "deno run --allow-all src/main.ts",
+    "test": "deno test --allow-all",
+    "migrate": "deno run --allow-all src/scripts/migrate.ts"
+  },
+  "imports": {
+    "hono": "npm:hono@^4.0.0",
+    "@hono/zod-validator": "npm:@hono/zod-validator@^0.2.0",
+    "zod": "npm:zod@^3.22.0",
+    "bcrypt": "npm:bcrypt@^5.1.0",
+    "djwt": "https://deno.land/x/djwt@v3.0.2/mod.ts",
+    "xlsx": "npm:xlsx@^0.18.5",
+    "sqlite": "https://deno.land/x/sqlite@v3.8.0/mod.ts"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}
