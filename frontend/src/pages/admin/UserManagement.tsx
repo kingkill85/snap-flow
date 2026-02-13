@@ -34,6 +34,7 @@ const UserManagement = () => {
   const [editFullName, setEditFullName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editRole, setEditRole] = useState<'admin' | 'user'>('user');
+  const [editPassword, setEditPassword] = useState('');
   const [editError, setEditError] = useState('');
   const [isEditing, setIsEditing] = useState(false);
 
@@ -118,17 +119,24 @@ const UserManagement = () => {
     setIsEditing(true);
 
     try {
+      const body: any = {
+        full_name: editFullName || null,
+        email: editEmail,
+        role: editRole,
+      };
+      
+      // Only include password if it's set
+      if (editPassword) {
+        body.password = editPassword;
+      }
+
       const response = await fetch(`/api/users/${userToEdit.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
-        body: JSON.stringify({
-          full_name: editFullName || null,
-          email: editEmail,
-          role: editRole,
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await response.json();
@@ -139,6 +147,7 @@ const UserManagement = () => {
 
       setShowEditModal(false);
       setUserToEdit(null);
+      setEditPassword('');
       fetchUsers();
     } catch (err: any) {
       setEditError(err.message);
@@ -377,6 +386,18 @@ const UserManagement = () => {
                 required
                 value={editEmail}
                 onChange={(e) => setEditEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="editPassword" value="New Password (leave blank to keep current)" />
+              <TextInput
+                id="editPassword"
+                type="password"
+                placeholder="••••••••"
+                minLength={6}
+                value={editPassword}
+                onChange={(e) => setEditPassword(e.target.value)}
+                helperText="Only enter if you want to change the password"
               />
             </div>
             <div>
