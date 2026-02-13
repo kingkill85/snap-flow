@@ -2,11 +2,13 @@
   "name": "snapflow-backend",
   "version": "0.1.0",
   "exports": "./src/main.ts",
+  "nodeModulesDir": "auto",
   "tasks": {
     "dev": "deno run --allow-all --watch src/main.ts",
     "start": "deno run --allow-all src/main.ts",
     "test": "deno test --allow-all",
-    "migrate": "deno run --allow-all src/scripts/migrate.ts"
+    "migrate": "deno run --allow-all src/scripts/migrate.ts",
+    "install": "deno install --allow-scripts=npm:bcrypt --entrypoint src/main.ts"
   },
   "imports": {
     "hono": "npm:hono@^4.0.0",
