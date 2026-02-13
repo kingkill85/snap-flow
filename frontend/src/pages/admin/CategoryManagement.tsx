@@ -147,7 +147,7 @@ const CategoryManagement = () => {
             Category Management
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Manage product categories and their order
+            Organize product categories and arrange their display order
           </p>
         </div>
         <Button onClick={() => setShowCreateModal(true)}>
@@ -165,7 +165,7 @@ const CategoryManagement = () => {
       <Card>
         <Table hoverable>
           <Table.Head>
-            <Table.HeadCell>Order</Table.HeadCell>
+            <Table.HeadCell>Position</Table.HeadCell>
             <Table.HeadCell>Name</Table.HeadCell>
             <Table.HeadCell>Actions</Table.HeadCell>
           </Table.Head>
