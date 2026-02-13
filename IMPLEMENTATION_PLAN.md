@@ -21,14 +21,42 @@ A web-based smart home configurator for automation companies to create proposals
 - Default admin user created via seed script
 - **Tests:** Auth endpoints, user management, frontend context, and protected routes fully tested
 
+**Phase 3: Item Management (Admin) - IN PROGRESS 🚧**
+
+**3.1 Backend - Categories - COMPLETED ✅**
+- CategoryRepository with full CRUD operations
+- REST endpoints: POST /categories, GET /categories, GET /categories/:id, PUT /categories/:id, DELETE /categories/:id, PATCH /categories/reorder
+- Full test coverage for category endpoints
+- Support for category reordering with drag-and-drop
+
+**3.2 Backend - Items - COMPLETED ✅**
+- ItemRepository with pagination, filtering, and search
+- REST endpoints: GET /items, GET /items/:id, POST /items, PUT /items/:id, DELETE /items/:id
+- File upload middleware for image uploads
+- File storage service for saving images to /uploads/items/
+- Static file serving for uploaded images at /uploads/*
+- Image file cleanup on delete/update
+- Full test coverage for item endpoints
+
+**3.3 Frontend - Category Management - COMPLETED ✅**
+- Category service with API integration
+- Category management page with list view
+- Create, edit, and delete category functionality
+- Drag-and-drop reordering with up/down arrows
+- Modal dialogs for CRUD operations
+- Integrated into admin dropdown menu
+
 **Recent Commits:**
+- Current work: Phase 3.1-3.3 - Category and Item Management backend and frontend
 - `83a516b` - Add seed script for default admin user
 - `c9539a4` - Phase 2.2: Frontend Authentication
 - `9be4e51` - Fix bcrypt dependency - add nodeModulesDir and install script
 - `1b34681` - Phase 2.1: Backend Authentication System
 - `b3ee3d7` - Add comprehensive README
 
-**Next:** Phase 3 - Item Management (Admin)
+**Next:**
+- Phase 3.4: Frontend - Item Management
+- Phase 3.5: Excel Import (Critical Feature)
 
 ## Tech Stack
 - **Frontend**: React + TypeScript + Vite + Flowbite React + Tailwind CSS

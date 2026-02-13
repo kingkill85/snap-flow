@@ -263,3 +263,272 @@ Deno.test('User management - created user can login', async () => {
   assertEquals(loginResponse.status, 200);
   assertExists(loginData.data.token);
 });
+
+Deno.test('User management - admin can update user full_name', async () => {
+  const adminToken = await getAdminToken();
+
+  // Create a user to update
+  const createResponse = await fetch(`${BASE_URL}/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      email: 'updatefullname@example.com',
+      password: 'password123',
+      role: 'user',
+    }),
+  });
+
+  const createData = await createResponse.json();
+  const userId = createData.data.id;
+
+  // Update the user's full_name
+  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      full_name: 'Updated Full Name',
+    }),
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 200);
+  assertEquals(data.data.full_name, 'Updated Full Name');
+});
+
+Deno.test('User management - admin can update user email', async () => {
+  const adminToken = await getAdminToken();
+
+  // Create a user to update
+  const createResponse = await fetch(`${BASE_URL}/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      email: 'updateuseremail@example.com',
+      password: 'password123',
+      role: 'user',
+    }),
+  });
+
+  const createData = await createResponse.json();
+  const userId = createData.data.id;
+
+  // Update the user's email
+  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      email: 'newuseremail@example.com',
+    }),
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 200);
+  assertEquals(data.data.email, 'newuseremail@example.com');
+});
+
+Deno.test('User management - admin can update user password', async () => {
+  const adminToken = await getAdminToken();
+
+  // Create a user to update
+  const createResponse = await fetch(`${BASE_URL}/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      email: 'updateuserpass@example.com',
+      password: 'oldpassword',
+      role: 'user',
+    }),
+  });
+
+  const createData = await createResponse.json();
+  const userId = createData.data.id;
+
+  // Update the user's password
+  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      password: 'newpassword123',
+    }),
+  });
+
+  assertEquals(response.status, 200);
+
+  // Verify new password works
+  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'updateuserpass@example.com',
+      password: 'newpassword123',
+    }),
+  });
+
+  assertEquals(loginResponse.status, 200);
+});
+
+Deno.test('User management - admin can update user role', async () => {
+  const adminToken = await getAdminToken();
+
+  // Create a user to update
+  const createResponse = await fetch(`${BASE_URL}/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      email: 'promoteuser@example.com',
+      password: 'password123',
+      role: 'user',
+    }),
+  });
+
+  const createData = await createResponse.json();
+  const userId = createData.data.id;
+
+  // Promote the user to admin
+  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      role: 'admin',
+    }),
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 200);
+  assertEquals(data.data.role, 'admin');
+});
+
+Deno.test('User management - admin update without changes fails', async () => {
+  const adminToken = await getAdminToken();
+
+  // Create a user to update
+  const createResponse = await fetch(`${BASE_URL}/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      email: 'noupdate@example.com',
+      password: 'password123',
+      role: 'user',
+    }),
+  });
+
+  const createData = await createResponse.json();
+  const userId = createData.data.id;
+
+  // Try to update without any changes
+  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({}),
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 400);
+  assertEquals(data.error, 'No fields to update');
+});
+
+Deno.test('User management - admin cannot update non-existent user', async () => {
+  const adminToken = await getAdminToken();
+
+  // Try to update non-existent user
+  const response = await fetch(`${BASE_URL}/users/99999`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      full_name: 'Test Name',
+    }),
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 404);
+  assertEquals(data.error, 'User not found');
+});
+
+Deno.test('User management - admin cannot use duplicate email', async () => {
+  const adminToken = await getAdminToken();
+
+  // Create two users
+  await fetch(`${BASE_URL}/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      email: 'existing@example.com',
+      password: 'password123',
+      role: 'user',
+    }),
+  });
+
+  const createResponse2 = await fetch(`${BASE_URL}/users`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      email: 'another@example.com',
+      password: 'password123',
+      role: 'user',
+    }),
+  });
+
+  const createData2 = await createResponse2.json();
+  const userId2 = createData2.data.id;
+
+  // Try to update second user with first user's email
+  const response = await fetch(`${BASE_URL}/users/${userId2}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`,
+    },
+    body: JSON.stringify({
+      email: 'existing@example.com',
+    }),
+  });
+
+  const data = await response.json();
+
+  assertEquals(response.status, 400);
+  assertEquals(data.error, 'Email already in use');
+});

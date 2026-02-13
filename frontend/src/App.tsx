@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Profile from './pages/Profile';
 import UserManagement from './pages/admin/UserManagement';
+import CategoryManagement from './pages/admin/CategoryManagement';
 import NotFound from './pages/NotFound';
 
 function App() {
@@ -27,6 +28,11 @@ function App() {
           <Route path="admin/users" element={
             <ProtectedRoute requireAdmin>
               <UserManagement />
+            </ProtectedRoute>
+          } />
+          <Route path="admin/categories" element={
+            <ProtectedRoute requireAdmin>
+              <CategoryManagement />
             </ProtectedRoute>
           } />
           <Route path="*" element={<NotFound />} />

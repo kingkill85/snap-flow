@@ -179,3 +179,175 @@ Deno.test('Auth endpoints - logout with valid token', async () => {
   assertEquals(logoutResponse.status, 200);
   assertExists(logoutData.message);
 });
+
+Deno.test('Auth endpoints - update profile with full_name', async () => {
+  clearDatabase();
+  
+  // Create and login a user
+  const passwordHash = await hashPassword('testpassword123');
+  await userRepository.create({
+    email: 'updateprofile@example.com',
+    password_hash: passwordHash,
+    role: 'user',
+  });
+
+  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'updateprofile@example.com',
+      password: 'testpassword123',
+    }),
+  });
+
+  const loginData = await loginResponse.json();
+  const token = loginData.data.token;
+
+  // Update profile
+  const updateResponse = await fetch(`${BASE_URL}/auth/me`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      full_name: 'John Updated',
+    }),
+  });
+
+  const updateData = await updateResponse.json();
+
+  assertEquals(updateResponse.status, 200);
+  assertEquals(updateData.data.full_name, 'John Updated');
+});
+
+Deno.test('Auth endpoints - update profile with email', async () => {
+  clearDatabase();
+  
+  // Create and login a user
+  const passwordHash = await hashPassword('testpassword123');
+  await userRepository.create({
+    email: 'updateemail@example.com',
+    password_hash: passwordHash,
+    role: 'user',
+  });
+
+  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'updateemail@example.com',
+      password: 'testpassword123',
+    }),
+  });
+
+  const loginData = await loginResponse.json();
+  const token = loginData.data.token;
+
+  // Update email
+  const updateResponse = await fetch(`${BASE_URL}/auth/me`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      email: 'newemail@example.com',
+    }),
+  });
+
+  const updateData = await updateResponse.json();
+
+  assertEquals(updateResponse.status, 200);
+  assertEquals(updateData.data.email, 'newemail@example.com');
+});
+
+Deno.test('Auth endpoints - update profile with password', async () => {
+  clearDatabase();
+  
+  // Create and login a user
+  const passwordHash = await hashPassword('oldpassword');
+  await userRepository.create({
+    email: 'updatepass@example.com',
+    password_hash: passwordHash,
+    role: 'user',
+  });
+
+  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'updatepass@example.com',
+      password: 'oldpassword',
+    }),
+  });
+
+  const loginData = await loginResponse.json();
+  const token = loginData.data.token;
+
+  // Update password
+  const updateResponse = await fetch(`${BASE_URL}/auth/me`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      password: 'newpassword123',
+    }),
+  });
+
+  assertEquals(updateResponse.status, 200);
+
+  // Verify new password works
+  const newLoginResponse = await fetch(`${BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'updatepass@example.com',
+      password: 'newpassword123',
+    }),
+  });
+
+  assertEquals(newLoginResponse.status, 200);
+});
+
+Deno.test('Auth endpoints - update profile without changes fails', async () => {
+  clearDatabase();
+  
+  // Create and login a user
+  const passwordHash = await hashPassword('testpassword123');
+  await userRepository.create({
+    email: 'nochanges@example.com',
+    full_name: 'Test User',
+    password_hash: passwordHash,
+    role: 'user',
+  });
+
+  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'nochanges@example.com',
+      password: 'testpassword123',
+    }),
+  });
+
+  const loginData = await loginResponse.json();
+  const token = loginData.data.token;
+
+  // Try to update without any changes
+  const updateResponse = await fetch(`${BASE_URL}/auth/me`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({}),
+  });
+
+  const updateData = await updateResponse.json();
+
+  assertEquals(updateResponse.status, 400);
+  assertEquals(updateData.error, 'No fields to update');
+});
