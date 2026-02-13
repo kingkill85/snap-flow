@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { Card, TextInput, Select } from 'flowbite-react';
 import { HiSearch } from 'react-icons/hi';
 import type { Category } from '../../services/category';
@@ -8,9 +8,8 @@ interface SearchFilterProps {
   onSearch: (search: string, categoryId: number | '') => void;
 }
 
-// COMPLETELY SEPARATE COMPONENT - manages its own state
-// Parent only gets notified via onSearch after debounce
-export default function SearchFilter({ categories, onSearch }: SearchFilterProps) {
+// Memoized to prevent re-renders when parent updates
+function SearchFilterComponent({ categories, onSearch }: SearchFilterProps) {
   const [searchValue, setSearchValue] = useState('');
   const [categoryValue, setCategoryValue] = useState<number | ''>('');
 
@@ -51,3 +50,6 @@ export default function SearchFilter({ categories, onSearch }: SearchFilterProps
     </Card>
   );
 }
+
+// Memoize to prevent re-renders when parent items change
+export default memo(SearchFilterComponent);
