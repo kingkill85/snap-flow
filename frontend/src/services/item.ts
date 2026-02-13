@@ -18,7 +18,7 @@ export interface CreateItemDTO {
   description?: string;
   model_number?: string;
   dimensions?: string;
-  price?: number;
+  price: number;
   image?: File;
 }
 
@@ -90,7 +90,9 @@ export const itemService = {
     const formData = new FormData();
     formData.append('category_id', data.category_id.toString());
     formData.append('name', data.name);
-    formData.append('price', data.price.toString());
+    if (data.price !== undefined && data.price !== null) {
+      formData.append('price', data.price.toString());
+    }
     
     if (data.description) formData.append('description', data.description);
     if (data.model_number) formData.append('model_number', data.model_number);

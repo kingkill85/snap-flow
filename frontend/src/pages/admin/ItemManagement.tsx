@@ -23,13 +23,20 @@ const ItemManagement = () => {
   const itemsPerPage = 10;
 
   // Create form state
-  const [newItem, setNewItem] = useState<Partial<CreateItemDTO>>({
+  const [newItem, setNewItem] = useState<{
+    category_id?: number;
+    name: string;
+    description: string;
+    model_number: string;
+    dimensions: string;
+    price: string;
+  }>({
     category_id: undefined,
     name: '',
     description: '',
     model_number: '',
     dimensions: '',
-    price: 0,
+    price: '',
   });
   const [newItemImage, setNewItemImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -112,14 +119,26 @@ const ItemManagement = () => {
     setIsCreating(true);
 
     try {
-      if (!newItem.category_id || !newItem.name || newItem.price === undefined || newItem.price === null) {
+      if (!newItem.category_id || !newItem.name || !newItem.price) {
         setCreateError('Please fill in all required fields (Category, Name, and Price)');
         setIsCreating(false);
         return;
       }
 
+      const priceValue = parseFloat(newItem.price);
+      if (isNaN(priceValue) || priceValue < 0) {
+        setCreateError('Please enter a valid price');
+        setIsCreating(false);
+        return;
+      }
+
       await itemService.create({
-        ...newItem as CreateItemDTO,
+        category_id: newItem.category_id,
+        name: newItem.name,
+        description: newItem.description || undefined,
+        model_number: newItem.model_number || undefined,
+        dimensions: newItem.dimensions || undefined,
+        price: priceValue,
         image: newItemImage || undefined,
       });
 
@@ -130,7 +149,7 @@ const ItemManagement = () => {
         description: '',
         model_number: '',
         dimensions: '',
-        price: undefined,
+        price: '',
       });
       setNewItemImage(null);
       setImagePreview(null);
@@ -432,8 +451,8 @@ const ItemManagement = () => {
                 required
                 min="0"
                 step="0.01"
-                value={newItem.price || ''}
-                onChange={(e) => setNewItem({ ...newItem, price: parseFloat(e.target.value) })}
+                value={newItem.price}
+                onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
                 placeholder="29.99"
               />
             </div>
