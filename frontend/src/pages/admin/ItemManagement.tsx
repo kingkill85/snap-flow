@@ -17,10 +17,20 @@ const ItemManagement = () => {
 
   // Filter and pagination state
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInputValue, setSearchInputValue] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<number | ''>('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const itemsPerPage = 10;
+
+  // Debounce search input - updates searchQuery after 300ms delay
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInputValue);
+      setCurrentPage(1); // Reset to first page on search
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInputValue]);
 
   // Create form state
   const [newItem, setNewItem] = useState<{
@@ -263,8 +273,8 @@ const ItemManagement = () => {
               <TextInput
                 type="text"
                 placeholder="Search items..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInputValue}
+                onChange={(e) => setSearchInputValue(e.target.value)}
                 icon={HiSearch}
               />
             </div>
