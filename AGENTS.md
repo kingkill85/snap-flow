@@ -104,10 +104,19 @@ app.get('/items', async (c) => {
 
 ### Frontend Example
 ```typescript
+// Component
 const ItemCard: React.FC<ItemCardProps> = ({ item }) => { }
 
+// Service
 export const itemService = {
   getAll: () => api.get('/items'),
+}
+
+// Hook
+export function useCategories() {
+  const [categories, setCategories] = useState<Category[]>([]);
+  // ... fetch logic with AbortController
+  return { categories, isLoading, error, refetch };
 }
 ```
 
