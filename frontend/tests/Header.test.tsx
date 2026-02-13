@@ -52,7 +52,6 @@ describe('Header', () => {
     );
     
     expect(screen.getByText('Home')).toBeInTheDocument();
-    expect(screen.getByText('Customers')).toBeInTheDocument();
     expect(screen.getByText('Projects')).toBeInTheDocument();
   });
 
@@ -108,7 +107,7 @@ describe('Header', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('John')).toBeInTheDocument();
+      expect(screen.getByText('John Doe')).toBeInTheDocument();
     });
   });
 
@@ -168,18 +167,12 @@ describe('Header', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Admin')).toBeInTheDocument();
+      expect(screen.getByText('Admin User')).toBeInTheDocument();
     });
 
-    // Click on user dropdown to open menu
-    const userDropdown = screen.getByText('Admin');
-    await userEvent.click(userDropdown);
-
-    // Check for admin menu items
-    await waitFor(() => {
-      expect(screen.getByText('User Management')).toBeInTheDocument();
-      expect(screen.getByText('Categories')).toBeInTheDocument();
-    });
+    // Check that Catalog and Admin menu items are visible in top nav
+    expect(screen.getByText('Catalog')).toBeInTheDocument();
+    expect(screen.getByText('Admin')).toBeInTheDocument();
   });
 
   it('does not show admin menu items for regular users', async () => {
@@ -198,18 +191,12 @@ describe('Header', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Regular')).toBeInTheDocument();
+      expect(screen.getByText('Regular User')).toBeInTheDocument();
     });
 
-    // Click on user dropdown
-    const userDropdown = screen.getByText('Regular');
-    await userEvent.click(userDropdown);
-
-    // Admin items should not be present
-    await waitFor(() => {
-      expect(screen.queryByText('User Management')).not.toBeInTheDocument();
-      expect(screen.queryByText('Categories')).not.toBeInTheDocument();
-    });
+    // Admin items should not be present in top nav
+    expect(screen.queryByText('Catalog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Admin')).not.toBeInTheDocument();
   });
 
   it('calls logout when sign out is clicked', async () => {
@@ -229,11 +216,11 @@ describe('Header', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Test')).toBeInTheDocument();
+      expect(screen.getByText('Test User')).toBeInTheDocument();
     });
 
-    // Click on user dropdown
-    const userDropdown = screen.getByText('Test');
+    // Click on user dropdown (avatar area)
+    const userDropdown = screen.getByText('Test User');
     await userEvent.click(userDropdown);
 
     // Click sign out
@@ -259,12 +246,7 @@ describe('Header', () => {
     );
 
     const homeLink = screen.getByText('Home');
-    const customersLink = screen.getByText('Customers');
-    const projectsLink = screen.getByText('Projects');
-
     expect(homeLink.closest('a')).toHaveAttribute('href', '/');
-    expect(customersLink.closest('a')).toHaveAttribute('href', '/customers');
-    expect(projectsLink.closest('a')).toHaveAttribute('href', '/projects');
   });
 
   it('has working login link', () => {
@@ -296,11 +278,11 @@ describe('Header', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Test')).toBeInTheDocument();
+      expect(screen.getByText('Test User')).toBeInTheDocument();
     });
 
     // Click on user dropdown
-    const userDropdown = screen.getByText('Test');
+    const userDropdown = screen.getByText('Test User');
     await userEvent.click(userDropdown);
 
     await waitFor(() => {

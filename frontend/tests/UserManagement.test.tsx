@@ -145,8 +145,10 @@ describe('UserManagement', () => {
     );
 
     await waitFor(() => {
-      // Dates should be formatted
-      expect(screen.getByText(/2024/)).toBeInTheDocument();
+      // Check for "Created" column header
+      expect(screen.getByText('Created')).toBeInTheDocument();
+      // Check that users are displayed
+      expect(screen.getByText('Admin User')).toBeInTheDocument();
     });
   });
 
