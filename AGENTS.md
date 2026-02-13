@@ -115,6 +115,172 @@ export const itemService = {
 - Components: `PascalCase.tsx`
 - Hooks: `camelCase.ts` with `use` prefix
 - Services: `camelCase.ts`
+- Repositories: `PascalCase.ts` (e.g., `CategoryRepository.ts`)
+- Routes: `camelCase.ts` in routes/ folder
+
+---
+
+## Backend Services
+
+### File Storage Service
+Located at `src/services/file-storage.ts`
+
+```typescript
+import { fileStorageService } from '../services/file-storage.ts';
+
+// Save uploaded file
+const filePath = await fileStorageService.saveFile(
+  buffer,           // Uint8Array
+  originalFilename, // string
+  'items'          // subdirectory
+);
+
+// Delete file
+await fileStorageService.deleteFile(filePath);
+
+// Check if file exists
+const exists = await fileStorageService.fileExists(filePath);
+```
+
+**Features:**
+- Automatic directory creation
+- Filename sanitization (removes path traversal attempts)
+- Unique filename generation with timestamp + random suffix
+- Supports: JPEG, PNG, WebP
+
+### Upload Middleware
+Located at `src/middleware/upload.ts`
+
+```typescript
+import { uploadMiddleware } from '../middleware/upload.ts';
+
+// In route definition
+itemRoutes.post(
+  '/',
+  authMiddleware,
+  adminMiddleware,
+  uploadMiddleware('items'),  // subdirectory name
+  async (c) => {
+    const uploadResult = c.get('uploadResult');
+    // uploadResult.success: boolean
+    // uploadResult.filePath: string (if success)
+    // uploadResult.error: string (if !success)
+  }
+);
+```
+
+**Features:**
+- Validates MIME types (image/jpeg, image/png, image/webp)
+- Max file size: 5MB
+- Returns result via context variables
+- Handles cleanup on validation errors
+
+---
+
+## API Endpoints
+
+### Categories
+All category endpoints (except reorder) are public:
+
+```
+GET    /api/categories              # List all (sorted by sort_order)
+GET    /api/categories/:id          # Get single category
+POST   /api/categories              # Create (admin only)
+PUT    /api/categories/:id          # Update (admin only)
+DELETE /api/categories/:id          # Delete (admin only)
+PATCH  /api/categories/reorder      # Update sort order (admin only)
+                                     # Body: { category_ids: [3, 1, 2] }
+```
+
+### Items
+Item list is public, other operations require admin:
+
+```
+GET    /api/items                   # List with pagination/filter
+                                     # Query: ?category_id=1&search=bulb&page=1&limit=20
+GET    /api/items/:id               # Get single item
+POST   /api/items                   # Create with image (admin only)
+                                     # Content-Type: multipart/form-data
+                                     # Fields: category_id, name, description, model_number, dimensions, price, image
+PUT    /api/items/:id               # Update with optional image (admin only)
+DELETE /api/items/:id               # Delete item + image (admin only)
+```
+
+### Static Files
+Uploaded images are served at `/uploads/*`:
+- Item images: `/uploads/items/{filename}`
+- Example: `http://localhost:8000/uploads/items/1234567890-abc123.jpg`
+
+---
+
+## Repository Pattern Examples
+
+### Category Repository
+```typescript
+import { categoryRepository } from '../repositories/category.ts';
+
+// Get all (sorted by sort_order)
+const categories = await categoryRepository.findAll();
+
+// Get by ID
+const category = await categoryRepository.findById(1);
+
+// Create
+const newCategory = await categoryRepository.create({
+  name: 'Lighting',
+  sort_order: 1  // optional, auto-incremented if not provided
+});
+
+// Update
+const updated = await categoryRepository.update(1, { name: 'Smart Lighting' });
+
+// Delete
+await categoryRepository.delete(1);
+
+// Reorder (updates sort_order for multiple categories)
+await categoryRepository.reorder([3, 1, 2]);  // Sets order: 3=1, 1=2, 2=3
+```
+
+### Item Repository
+```typescript
+import { itemRepository } from '../repositories/item.ts';
+
+// Get all with pagination and filtering
+const result = await itemRepository.findAll(
+  { category_id: 1, search: 'smart' },  // filter (optional)
+  { page: 1, limit: 20 }                 // pagination (optional)
+);
+// Returns: { items: Item[], total: number, page: number, totalPages: number }
+
+// Get by ID
+const item = await itemRepository.findById(1);
+
+// Get by category
+const items = await itemRepository.findByCategory(1);
+
+// Create
+const newItem = await itemRepository.create({
+  category_id: 1,
+  name: 'Smart Bulb',
+  description: 'A smart light bulb',
+  model_number: 'SB-100',
+  dimensions: '120x80mm',
+  price: 29.99,
+  image_path: 'items/1234567890-abc123.jpg'  // optional
+});
+
+// Update (partial updates supported)
+const updated = await itemRepository.update(1, {
+  name: 'Smart Bulb Pro',
+  price: 39.99
+});
+
+// Delete
+await itemRepository.delete(1);
+
+// Bulk create (for Excel import)
+const items = await itemRepository.bulkCreate([item1, item2, item3]);
+```
 
 ---
 
