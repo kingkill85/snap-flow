@@ -44,15 +44,17 @@ A web-based smart home configurator for automation companies to create proposals
 - Create, edit, and delete category functionality
 - Drag-and-drop reordering with up/down arrows
 - Modal dialogs for CRUD operations
-- Integrated into admin dropdown menu
+- Navigation reorganized: Projects ▼, Catalog ▼, Admin ▼
+- Hooks: useCategories, useItems
+
+**Next:** Phase 3.4 - Item Management UI
 
 **Recent Commits:**
-- Current work: Phase 3.1-3.3 - Category and Item Management backend and frontend
-- `83a516b` - Add seed script for default admin user
-- `c9539a4` - Phase 2.2: Frontend Authentication
-- `9be4e51` - Fix bcrypt dependency - add nodeModulesDir and install script
-- `1b34681` - Phase 2.1: Backend Authentication System
-- `b3ee3d7` - Add comprehensive README
+- `3355dcd` - Reorganize navigation into logical groups (Projects/Catalog/Admin)
+- `e794ef7` - Change 'Order' to 'Position' in Category Management
+- `6b9441c` - Add useCategories and useItems hooks
+- `0e53819` - Update AGENTS.md with Phase 3 patterns
+- `7240d21` - Phase 3.1-3.3: Category and Item Management backend
 
 **Next:**
 - Phase 3.4: Frontend - Item Management

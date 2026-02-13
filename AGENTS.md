@@ -392,6 +392,51 @@ describe('ItemCard', () => {
 });
 ```
 
+### Running Tests
+
+**Backend Tests (Deno):**
+```bash
+cd backend
+
+# Run all tests
+deno task test
+
+# Run specific test file
+deno test --allow-all tests/routes/categories_test.ts
+
+# Run with coverage (Deno built-in)
+deno test --allow-all --coverage=coverage
+deno coverage coverage
+```
+
+**Frontend Tests (Vitest):**
+```bash
+cd frontend
+
+# Run all tests
+npm test
+
+# Run in watch mode (development)
+npm run test:watch
+
+# Run with coverage
+npm run test:coverage
+
+# Run specific test file
+npm test -- tests/Header.test.tsx
+```
+
+**Test File Locations:**
+- Backend: `backend/tests/**/*.test.ts`
+- Frontend: `frontend/tests/**/*.test.tsx`
+
+**Important:** Backend tests require the server to be running on port 8000. Start the backend first:
+```bash
+cd backend && deno task dev
+# Then in another terminal:
+cd backend && deno task test
+```
+
 ### Coverage Goals
 - Backend: >80%
 - Frontend: >80%
