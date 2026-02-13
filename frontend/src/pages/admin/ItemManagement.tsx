@@ -1,8 +1,34 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import { Button, Card, Table, Modal, Label, TextInput, Textarea, Select, Alert, Spinner, Pagination } from 'flowbite-react';
 import { HiPlus, HiTrash, HiPencil, HiSearch } from 'react-icons/hi';
 import { itemService, type Item, type CreateItemDTO } from '../../services/item';
 import { categoryService, type Category } from '../../services/category';
+
+// Separate search component to prevent re-renders when items change
+interface SearchInputProps {
+  onSearch: (query: string) => void;
+}
+
+const SearchInput = memo(({ onSearch }: SearchInputProps) => {
+  const [value, setValue] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onSearch(value);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [value, onSearch]);
+
+  return (
+    <TextInput
+      type="text"
+      placeholder="Search items..."
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      icon={HiSearch}
+    />
+  );
+});
 
 const ItemManagement = () => {
   const [items, setItems] = useState<Item[]>([]);
@@ -17,20 +43,10 @@ const ItemManagement = () => {
 
   // Filter and pagination state
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchInputValue, setSearchInputValue] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<number | ''>('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const itemsPerPage = 10;
-
-  // Debounce search input - updates searchQuery after 300ms delay
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearchQuery(searchInputValue);
-      setCurrentPage(1); // Reset to first page on search
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchInputValue]);
 
   // Create form state
   const [newItem, setNewItem] = useState<{
@@ -99,6 +115,11 @@ const ItemManagement = () => {
       setIsLoading(false);
     }
   }, [selectedCategory, searchQuery, currentPage]);
+
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+    setCurrentPage(1);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -269,15 +290,7 @@ const ItemManagement = () => {
       <Card>
         <div className="flex flex-wrap gap-4">
           <div className="flex-1 min-w-[200px]">
-            <div className="relative">
-              <TextInput
-                type="text"
-                placeholder="Search items..."
-                value={searchInputValue}
-                onChange={(e) => setSearchInputValue(e.target.value)}
-                icon={HiSearch}
-              />
-            </div>
+            <SearchInput onSearch={handleSearch} />
           </div>
           <div className="w-48">
             <Select
