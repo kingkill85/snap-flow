@@ -48,7 +48,8 @@ const ItemManagement = () => {
       const data = await categoryService.getAll(signal);
       setCategories(data);
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
+      // Ignore abort/cancel errors
+      if (err.name !== 'AbortError' && err.name !== 'CanceledError' && err.message !== 'canceled') {
         console.error('Failed to fetch categories:', err);
       }
     }
@@ -72,9 +73,11 @@ const ItemManagement = () => {
       setItems(result.items);
       setTotalPages(result.totalPages);
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        setError(err.message || 'Failed to fetch items');
+      // Ignore abort/cancel errors (component unmounted or request cancelled)
+      if (err.name === 'AbortError' || err.name === 'CanceledError' || err.message === 'canceled') {
+        return;
       }
+      setError(err.response?.data?.error || err.message || 'Failed to fetch items');
     } finally {
       setIsLoading(false);
     }
