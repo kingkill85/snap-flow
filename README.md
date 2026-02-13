@@ -194,12 +194,56 @@ snap-flow/
 
 ### Running Tests
 
+**Backend Tests (Deno):**
 ```bash
-# Backend tests
-cd backend && deno task test
+cd backend
 
-# Frontend tests
-cd frontend && npm test
+# Run all tests (requires server running on port 8000)
+deno task test
+
+# Run specific test file
+deno test --allow-all tests/routes/categories_test.ts
+
+# Run with coverage
+deno test --allow-all --coverage=coverage
+deno coverage coverage
+```
+
+**Frontend Tests (Vitest):**
+```bash
+cd frontend
+
+# Run all tests
+npm test
+
+# Run in watch mode (development)
+npm run test:watch
+
+# Run with coverage
+npm run test:coverage
+
+# Run specific test file
+npm test -- tests/Header.test.tsx
+```
+
+**VSCode Test Explorer:**
+- Install extension: **"Vitest"** by vitest (for frontend tests)
+- Install extension: **"Deno"** by denoland (for backend tests)
+- Tests will appear in the Testing sidebar (beaker icon)
+- Click play buttons to run individual tests or suites
+- See test results inline in your code
+
+**Test File Locations:**
+- Backend: `backend/tests/**/*.test.ts`
+- Frontend: `frontend/tests/**/*.test.tsx`
+
+**Note:** Backend tests require the server to be running on port 8000. Start the backend first:
+```bash
+# Terminal 1
+cd backend && deno task dev
+
+# Terminal 2
+cd backend && deno task test
 ```
 
 ### Database Migrations
