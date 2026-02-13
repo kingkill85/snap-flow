@@ -8,7 +8,7 @@ import type { User, CreateUserDTO, UpdateUserDTO } from '../models/index.ts';
 export class UserRepository {
   async findAll(): Promise<User[]> {
     const result = db.queryEntries(`
-      SELECT id, email, role, created_at 
+      SELECT id, email, full_name, role, created_at 
       FROM users 
       ORDER BY created_at DESC
     `);
@@ -17,7 +17,7 @@ export class UserRepository {
 
   async findById(id: number): Promise<User | null> {
     const result = db.queryEntries(`
-      SELECT id, email, role, created_at 
+      SELECT id, email, full_name, role, created_at 
       FROM users 
       WHERE id = ?
     `, [id]);
@@ -33,21 +33,25 @@ export class UserRepository {
 
   async create(data: CreateUserDTO & { password_hash: string }): Promise<User> {
     const result = db.queryEntries(`
-      INSERT INTO users (email, password_hash, role) 
-      VALUES (?, ?, ?)
-      RETURNING id, email, role, created_at
-    `, [data.email, data.password_hash, data.role || 'user']);
+      INSERT INTO users (email, full_name, password_hash, role) 
+      VALUES (?, ?, ?, ?)
+      RETURNING id, email, full_name, role, created_at
+    `, [data.email, data.full_name || null, data.password_hash, data.role || 'user']);
     
     return result[0] as unknown as User;
   }
 
   async update(id: number, data: UpdateUserDTO): Promise<User | null> {
     const sets: string[] = [];
-    const values: (string | undefined)[] = [];
+    const values: (string | undefined | null)[] = [];
 
     if (data.email) {
       sets.push('email = ?');
       values.push(data.email);
+    }
+    if (data.full_name !== undefined) {
+      sets.push('full_name = ?');
+      values.push(data.full_name);
     }
     if (data.password_hash) {
       sets.push('password_hash = ?');
@@ -68,7 +72,7 @@ export class UserRepository {
       UPDATE users 
       SET ${sets.join(', ')} 
       WHERE id = ?
-      RETURNING id, email, role, created_at
+      RETURNING id, email, full_name, role, created_at
     `, values);
 
     return result.length > 0 ? (result[0] as unknown as User) : null;

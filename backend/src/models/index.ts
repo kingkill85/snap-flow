@@ -6,6 +6,7 @@
 export interface User {
   id: number;
   email: string;
+  full_name: string | null;
   password_hash: string;
   role: 'admin' | 'user';
   created_at: string;
@@ -13,6 +14,7 @@ export interface User {
 
 export interface CreateUserDTO {
   email: string;
+  full_name?: string | undefined;
   password?: string;
   password_hash?: string;
   role?: 'admin' | 'user';
@@ -20,6 +22,7 @@ export interface CreateUserDTO {
 
 export interface UpdateUserDTO {
   email?: string;
+  full_name?: string;
   password?: string;
   password_hash?: string;
   role?: 'admin' | 'user';

@@ -142,6 +142,12 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_placements_floorplan ON placements(floorplan_id);
         CREATE INDEX idx_placements_item ON placements(item_id);
       `
+    },
+    {
+      name: '008_add_full_name_to_users',
+      sql: `
+        ALTER TABLE users ADD COLUMN full_name TEXT;
+      `
     }
   ];
 
