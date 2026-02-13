@@ -7,7 +7,7 @@ import type { User, CreateUserDTO, UpdateUserDTO } from '../models/index.ts';
  */
 export class UserRepository {
   async findAll(): Promise<User[]> {
-    const result = db.query(`
+    const result = db.queryEntries(`
       SELECT id, email, role, created_at 
       FROM users 
       ORDER BY created_at DESC
@@ -16,7 +16,7 @@ export class UserRepository {
   }
 
   async findById(id: number): Promise<User | null> {
-    const result = db.query(`
+    const result = db.queryEntries(`
       SELECT id, email, role, created_at 
       FROM users 
       WHERE id = ?
@@ -25,14 +25,14 @@ export class UserRepository {
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    const result = db.query(`
+    const result = db.queryEntries(`
       SELECT * FROM users WHERE email = ?
     `, [email]);
     return result.length > 0 ? (result[0] as unknown as User) : null;
   }
 
   async create(data: CreateUserDTO & { password_hash: string }): Promise<User> {
-    const result = db.query(`
+    const result = db.queryEntries(`
       INSERT INTO users (email, password_hash, role) 
       VALUES (?, ?, ?)
       RETURNING id, email, role, created_at
@@ -64,7 +64,7 @@ export class UserRepository {
 
     values.push(id.toString());
 
-    const result = db.query(`
+    const result = db.queryEntries(`
       UPDATE users 
       SET ${sets.join(', ')} 
       WHERE id = ?
