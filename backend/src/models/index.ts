@@ -13,13 +13,15 @@ export interface User {
 
 export interface CreateUserDTO {
   email: string;
-  password: string;
+  password?: string;
+  password_hash?: string;
   role?: 'admin' | 'user';
 }
 
 export interface UpdateUserDTO {
   email?: string;
   password?: string;
+  password_hash?: string;
   role?: 'admin' | 'user';
 }
 

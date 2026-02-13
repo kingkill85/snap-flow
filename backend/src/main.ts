@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { env } from './config/env.ts';
+import authRoutes from './routes/auth.ts';
 
 const app = new Hono();
 
@@ -30,6 +31,10 @@ app.get('/', (c: Context) => {
     docs: '/health'
   });
 });
+
+// Auth routes
+app.route('/auth', authRoutes);
+app.route('/users', authRoutes);
 
 // Start server
 const port = env.PORT;
