@@ -17,11 +17,6 @@ export interface UpdateCategoryDTO {
   sort_order?: number;
 }
 
-interface ApiResponse<T> {
-  data: T;
-  message?: string;
-}
-
 // Helper to check if error is a cancellation error
 const isCancelError = (error: any): boolean => {
   return axios.isCancel(error) || 
@@ -67,5 +62,3 @@ export const categoryService = {
     return response.data.data;
   },
 };
-
-export type { Category, CreateCategoryDTO, UpdateCategoryDTO };

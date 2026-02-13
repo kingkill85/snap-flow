@@ -129,5 +129,3 @@ export const itemService = {
     return `/uploads/${imagePath}`;
   },
 };
-
-export type { Item, CreateItemDTO, UpdateItemDTO, ItemFilter, PaginationOptions };

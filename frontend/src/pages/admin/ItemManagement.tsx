@@ -1,97 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button, Card, Table, Modal, Label, TextInput, Textarea, Select, Alert, Spinner, Pagination } from 'flowbite-react';
-import { HiPlus, HiTrash, HiPencil, HiSearch } from 'react-icons/hi';
+import { HiPlus } from 'react-icons/hi';
 import { itemService, type Item, type CreateItemDTO } from '../../services/item';
 import { categoryService, type Category } from '../../services/category';
-
-// Items table component - re-renders when items change, but search input doesn't
-interface ItemsTableProps {
-  items: Item[];
-  categories: Category[];
-  onEdit: (item: Item) => void;
-  onDelete: (item: Item) => void;
-}
-
-const ItemsTable = ({ items, categories, onEdit, onDelete }: ItemsTableProps) => {
-  const getCategoryName = (categoryId: number) => {
-    const category = categories.find(c => c.id === categoryId);
-    return category?.name || 'Unknown';
-  };
-
-  if (items.length === 0) {
-    return (
-      <div className="text-center py-8 text-gray-500">
-        No items found. Create your first item to get started.
-      </div>
-    );
-  }
-
-  return (
-    <Table hoverable>
-      <Table.Head>
-        <Table.HeadCell>Image</Table.HeadCell>
-        <Table.HeadCell>Name</Table.HeadCell>
-        <Table.HeadCell>Category</Table.HeadCell>
-        <Table.HeadCell>Model</Table.HeadCell>
-        <Table.HeadCell>Price</Table.HeadCell>
-        <Table.HeadCell>
-          <span className="sr-only">Actions</span>
-        </Table.HeadCell>
-      </Table.Head>
-      <Table.Body>
-        {items.map((item) => (
-          <Table.Row key={item.id}>
-            <Table.Cell>
-              {item.image_path ? (
-                <img
-                  src={itemService.getImageUrl(item.image_path) || ''}
-                  alt={item.name}
-                  className="w-16 h-16 object-cover rounded"
-                />
-              ) : (
-                <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
-                  No Image
-                </div>
-              )}
-            </Table.Cell>
-            <Table.Cell className="font-medium">
-              {item.name}
-            </Table.Cell>
-            <Table.Cell>
-              {getCategoryName(item.category_id)}
-            </Table.Cell>
-            <Table.Cell className="text-gray-600">
-              {item.model_number || '-'}
-            </Table.Cell>
-            <Table.Cell>
-              ${item.price.toFixed(2)}
-            </Table.Cell>
-            <Table.Cell>
-              <div className="flex gap-2">
-                <Button
-                  color="light"
-                  size="xs"
-                  onClick={() => onEdit(item)}
-                >
-                  <HiPencil className="mr-1 h-4 w-4" />
-                  Edit
-                </Button>
-                <Button
-                  color="failure"
-                  size="xs"
-                  onClick={() => onDelete(item)}
-                >
-                  <HiTrash className="mr-1 h-4 w-4" />
-                  Delete
-                </Button>
-              </div>
-            </Table.Cell>
-          </Table.Row>
-        ))}
-      </Table.Body>
-    </Table>
-  );
-};
+import SearchFilter from './SearchFilter';
 
 const ItemManagement = () => {
   const [items, setItems] = useState<Item[]>([]);
@@ -106,20 +18,17 @@ const ItemManagement = () => {
 
   // Filter and pagination state
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchInputValue, setSearchInputValue] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<number | ''>('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const itemsPerPage = 10;
 
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearchQuery(searchInputValue);
-      setCurrentPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchInputValue]);
+  // Handle search from SearchFilter component
+  const handleSearch = useCallback((search: string, categoryId: number | '') => {
+    setSearchQuery(search);
+    setSelectedCategory(categoryId);
+    setCurrentPage(1);
+  }, []);
 
   // Create form state
   const [newItem, setNewItem] = useState<{
@@ -317,35 +226,7 @@ const ItemManagement = () => {
     setShowDeleteModal(true);
   };
 
-  // Memoize filters so they don't re-render when items change
-  const filtersSection = useMemo(() => (
-    <Card>
-      <div className="flex flex-wrap gap-4">
-        <div className="flex-1 min-w-[200px]">
-          <TextInput
-            type="text"
-            placeholder="Search items..."
-            value={searchInputValue}
-            onChange={(e) => setSearchInputValue(e.target.value)}
-            icon={HiSearch}
-          />
-        </div>
-        <div className="w-48">
-          <Select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value ? parseInt(e.target.value) : '')}
-          >
-            <option value="">All Categories</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </div>
-    </Card>
-  ), [searchInputValue, selectedCategory, categories]);
+
 
   if (isLoading) {
     return (
@@ -374,16 +255,66 @@ const ItemManagement = () => {
         </Alert>
       )}
 
-      {filtersSection}
+      <SearchFilter categories={categories} onSearch={handleSearch} />
 
-      {/* Items Table - separate component, can re-render without affecting search */}
+      {/* Items Table */}
       <Card>
-        <ItemsTable 
-          items={items} 
-          categories={categories}
-          onEdit={openEditModal}
-          onDelete={openDeleteModal}
-        />
+        <Table hoverable>
+          <Table.Head>
+            <Table.HeadCell>Image</Table.HeadCell>
+            <Table.HeadCell>Name</Table.HeadCell>
+            <Table.HeadCell>Category</Table.HeadCell>
+            <Table.HeadCell>Model</Table.HeadCell>
+            <Table.HeadCell>Price</Table.HeadCell>
+            <Table.HeadCell>
+              <span className="sr-only">Actions</span>
+            </Table.HeadCell>
+          </Table.Head>
+          <Table.Body>
+            {items.length === 0 ? (
+              <Table.Row>
+                <Table.Cell colSpan={6} className="text-center py-8 text-gray-500">
+                  No items found. Create your first item to get started.
+                </Table.Cell>
+              </Table.Row>
+            ) : (
+              items.map((item) => {
+                const category = categories.find(c => c.id === item.category_id);
+                return (
+                  <Table.Row key={item.id}>
+                    <Table.Cell>
+                      {item.image_path ? (
+                        <img
+                          src={itemService.getImageUrl(item.image_path) || ''}
+                          alt={item.name}
+                          className="w-16 h-16 object-cover rounded"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                          No Image
+                        </div>
+                      )}
+                    </Table.Cell>
+                    <Table.Cell className="font-medium">{item.name}</Table.Cell>
+                    <Table.Cell>{category?.name || 'Unknown'}</Table.Cell>
+                    <Table.Cell className="text-gray-600">{item.model_number || '-'}</Table.Cell>
+                    <Table.Cell>${item.price.toFixed(2)}</Table.Cell>
+                    <Table.Cell>
+                      <div className="flex gap-2">
+                        <Button color="light" size="xs" onClick={() => openEditModal(item)}>
+                          Edit
+                        </Button>
+                        <Button color="failure" size="xs" onClick={() => openDeleteModal(item)}>
+                          Delete
+                        </Button>
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                );
+              })
+            )}
+          </Table.Body>
+        </Table>
         
         {totalPages > 1 && (
           <div className="flex justify-center mt-4">
