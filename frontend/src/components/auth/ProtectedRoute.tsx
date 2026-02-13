@@ -13,7 +13,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 }) => {
   const { isAuthenticated, user, isLoading } = useAuth();
 
-  if (isLoading) {
+  // Only show loading spinner if we have a token and are validating it
+  const hasToken = localStorage.getItem('token');
+  
+  if (isLoading && hasToken) {
     return (
       <div className="flex justify-center items-center h-screen">
         <Spinner size="xl" />
