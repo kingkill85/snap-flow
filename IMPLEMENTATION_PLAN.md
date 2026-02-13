@@ -10,6 +10,7 @@ A web-based smart home configurator for automation companies to create proposals
 - Database with all 7 tables created and migrations working
 - Project structure established
 - Frontend React app with Vite, TypeScript, Flowbite React, and Tailwind CSS
+- **⚠️ Tests pending:** Basic component and routing tests
 
 **Phase 2: Authentication System - COMPLETED ✅**
 - Backend: JWT token generation, password hashing (bcrypt), auth middleware
@@ -18,6 +19,7 @@ A web-based smart home configurator for automation companies to create proposals
 - Frontend: Login page, ProtectedRoute component
 - Frontend: Header with user dropdown and logout
 - Default admin user created via seed script
+- **⚠️ Tests pending:** Auth endpoints, context, and hooks tests
 
 **Recent Commits:**
 - `83a516b` - Add seed script for default admin user
@@ -85,6 +87,7 @@ snap-flow/
 - [x] Create CORS middleware
 - [x] Create logging middleware
 - [x] Add health check endpoint (GET /health)
+- [ ] Write tests for basic server setup
 
 ### 1.3 Database Foundation
 - [x] Create database abstraction layer (Repository pattern)
@@ -98,6 +101,8 @@ snap-flow/
 - [x] Write migration: create floorplans table
 - [x] Write migration: create placements table
 - [x] Create database models/interfaces
+- [ ] Write tests for database operations
+- [ ] Write tests for migrations
 
 ### 1.4 Frontend Setup
 - [x] Initialize Vite + React + TypeScript project
@@ -108,6 +113,8 @@ snap-flow/
 - [x] Setup React Router with basic routes
 - [x] Create basic layout components (Header, Sidebar, Footer)
 - [x] Create 404 page
+- [ ] Write tests for basic components (Layout, Header)
+- [ ] Write tests for routing
 
 ---
 
@@ -752,18 +759,57 @@ Single currency support for MVP. Currency symbol can be configured later.
 
 ---
 
+## Testing Strategy
+
+### Continuous Testing Approach
+**Tests should be written alongside code, not at the end.**
+
+Each phase includes test todos that should be completed as part of that phase:
+- **Backend:** Write tests immediately after implementing endpoints or repositories
+- **Frontend:** Write tests immediately after creating components or hooks
+
+### Test Coverage Goals
+- **Backend:** >80% coverage (critical paths: 100%)
+- **Frontend:** >80% coverage (critical paths: 100%)
+- **Integration:** Full end-to-end workflow tests
+
+### Test Frameworks
+- **Backend:** Deno.test (built-in)
+- **Frontend:** Vitest + React Testing Library
+- **E2E:** Playwright or Cypress (Phase 7)
+
+### When to Add Tests
+1. After implementing each repository method
+2. After creating each API endpoint
+3. After creating each significant component
+4. After implementing complex logic (drag & drop, calculations)
+5. Integration tests at the end of each major feature
+
+### Running Tests
+```bash
+# Backend
+cd backend && deno task test
+
+# Frontend
+cd frontend && npm test
+```
+
+---
+
 ## Timeline Estimate
 
-**Total: ~14-16 days**
+**Total: ~16-20 days**
 
-- Phase 1: 2 days
-- Phase 2: 1-2 days
-- Phase 3: 2-3 days
-- Phase 4: 2 days
-- Phase 5: 4-5 days (most complex)
-- Phase 6: 1 day
-- Phase 7: 2 days
+- Phase 1: 2-3 days (including tests)
+- Phase 2: 2-3 days (including tests)
+- Phase 3: 3-4 days (including tests)
+- Phase 4: 2-3 days (including tests)
+- Phase 5: 5-6 days (most complex, including tests)
+- Phase 6: 1-2 days (including tests)
+- Phase 7: 2-3 days (testing & polish)
 - Phase 8: 1-2 days
+
+**Note:** Timeline includes time for writing tests alongside feature development.
 
 ---
 
