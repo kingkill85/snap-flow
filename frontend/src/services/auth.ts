@@ -17,21 +17,21 @@ interface User {
 }
 
 export const authService = {
-  async login(email: string, password: string): Promise<LoginResponse> {
-    const response = await api.post('/auth/login', { email, password });
+  async login(email: string, password: string, signal?: AbortSignal): Promise<LoginResponse> {
+    const response = await api.post('/auth/login', { email, password }, { signal });
     return response.data.data;
   },
 
-  async logout(): Promise<void> {
+  async logout(signal?: AbortSignal): Promise<void> {
     try {
-      await api.post('/auth/logout');
+      await api.post('/auth/logout', {}, { signal });
     } catch {
       // Ignore errors on logout
     }
   },
 
-  async getCurrentUser(): Promise<User> {
-    const response = await api.get('/auth/me');
+  async getCurrentUser(signal?: AbortSignal): Promise<User> {
+    const response = await api.get('/auth/me', { signal });
     return response.data.data;
   },
 };

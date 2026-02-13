@@ -22,6 +22,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const controller = new AbortController();
+    
     const checkAuth = async () => {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -30,17 +32,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       try {
-        const userData = await authService.getCurrentUser();
-        setUser(userData);
+        const userData = await authService.getCurrentUser(controller.signal);
+        if (!controller.signal.aborted) {
+          setUser(userData);
+        }
       } catch (error) {
-        localStorage.removeItem('token');
-        setUser(null);
+        if (!controller.signal.aborted) {
+          localStorage.removeItem('token');
+          setUser(null);
+        }
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     };
 
     checkAuth();
+    
+    return () => {
+      controller.abort();
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
