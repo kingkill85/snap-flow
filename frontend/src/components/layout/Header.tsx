@@ -1,13 +1,12 @@
-import { Navbar, Button, Dropdown, Avatar } from 'flowbite-react';
+import { Navbar, Button, Dropdown } from 'flowbite-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { HiLogout, HiUser, HiCog } from 'react-icons/hi';
+import { HiLogout } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 
 const Header = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Helper to get display name (full_name or email)
   const getDisplayName = () => user?.full_name || user?.email?.split('@')[0] || 'User';
   const getAvatarLetter = () => {
     const name = user?.full_name || user?.email || 'U';
@@ -71,22 +70,6 @@ const Header = () => {
               </svg>
               Your Profile
             </Dropdown.Item>
-            {user?.role === 'admin' && (
-              <>
-                <Dropdown.Item as={Link} to="/admin/users">
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                  User Management
-                </Dropdown.Item>
-                <Dropdown.Item as={Link} to="/admin/categories">
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                  </svg>
-                  Categories
-                </Dropdown.Item>
-              </>
-            )}
             <Dropdown.Divider />
             <Dropdown.Item onClick={handleLogout} className="text-red-600 hover:bg-red-50 hover:text-red-700">
               <HiLogout className="w-4 h-4 mr-2" />
@@ -110,12 +93,79 @@ const Header = () => {
         <Navbar.Link as={Link} to="/" active className="font-medium">
           Home
         </Navbar.Link>
-        <Navbar.Link as={Link} to="/customers" className="font-medium">
-          Customers
-        </Navbar.Link>
-        <Navbar.Link as={Link} to="/projects" className="font-medium">
-          Projects
-        </Navbar.Link>
+        
+        <Dropdown
+          inline
+          label={
+            <span className="flex items-center gap-1 px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
+              Projects
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </span>
+          }
+        >
+          <Dropdown.Item as={Link} to="/projects">
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            All Projects
+          </Dropdown.Item>
+          <Dropdown.Item as={Link} to="/customers">
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            Customers
+          </Dropdown.Item>
+        </Dropdown>
+
+        {user?.role === 'admin' && (
+          <Dropdown
+            inline
+            label={
+              <span className="flex items-center gap-1 px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
+                Catalog
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </span>
+            }
+          >
+            <Dropdown.Item as={Link} to="/admin/items">
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              </svg>
+              Items
+            </Dropdown.Item>
+            <Dropdown.Item as={Link} to="/admin/categories">
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+              Categories
+            </Dropdown.Item>
+          </Dropdown>
+        )}
+
+        {user?.role === 'admin' && (
+          <Dropdown
+            inline
+            label={
+              <span className="flex items-center gap-1 px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
+                Admin
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </span>
+            }
+          >
+            <Dropdown.Item as={Link} to="/admin/users">
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+              User Management
+            </Dropdown.Item>
+          </Dropdown>
+        )}
       </Navbar.Collapse>
     </Navbar>
   );
