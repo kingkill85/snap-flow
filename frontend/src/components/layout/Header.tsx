@@ -1,5 +1,6 @@
 import { Navbar, Button, Dropdown, Avatar } from 'flowbite-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { HiLogout, HiUser, HiCog } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 
 const Header = () => {
@@ -12,52 +13,76 @@ const Header = () => {
   };
 
   return (
-    <Navbar fluid className="bg-white border-b">
+    <Navbar fluid className="bg-white border-b shadow-sm">
       <Navbar.Brand as={Link} to="/">
-        <span className="self-center whitespace-nowrap text-xl font-semibold text-blue-600">
+        <span className="self-center whitespace-nowrap text-2xl font-bold text-blue-600">
           SnapFlow
         </span>
       </Navbar.Brand>
       
-      <div className="flex md:order-2 gap-2 items-center">
+      <div className="flex md:order-2 gap-3 items-center">
         {isAuthenticated ? (
           <Dropdown
             arrowIcon={false}
             inline
             label={
-              <div className="flex items-center gap-2">
-                <Avatar rounded size="sm" />
-                <span className="hidden md:block text-sm font-medium">
-                  {user?.email}
-                </span>
-              </div>
+              <button className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
+                    {user?.email.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="hidden md:flex flex-col items-start">
+                    <span className="text-sm font-medium text-gray-900 leading-tight">
+                      {user?.email.split('@')[0]}
+                    </span>
+                    <span className="text-xs text-gray-500 capitalize leading-tight">
+                      {user?.role}
+                    </span>
+                  </div>
+                </div>
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
             }
           >
-            <Dropdown.Header>
-              <span className="block text-sm">{user?.email}</span>
-              <span className="block truncate text-sm font-medium">
-                Role: {user?.role}
-              </span>
-            </Dropdown.Header>
-            <Dropdown.Item onClick={handleLogout}>
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold">
+                  {user?.email.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">{user?.email}</p>
+                  <p className="text-xs text-gray-500 capitalize">{user?.role} Account</p>
+                </div>
+              </div>
+            </div>
+            <Dropdown.Item onClick={handleLogout} className="text-red-600 hover:bg-red-50 hover:text-red-700">
+              <HiLogout className="w-4 h-4 mr-2" />
               Sign out
             </Dropdown.Item>
           </Dropdown>
         ) : (
-          <Button color="light" size="sm" as={Link} to="/login">
+          <Button 
+            color="blue" 
+            size="sm" 
+            as={Link} 
+            to="/login"
+            className="font-medium"
+          >
             Login
           </Button>
         )}
       </div>
       
       <Navbar.Collapse>
-        <Navbar.Link as={Link} to="/" active>
+        <Navbar.Link as={Link} to="/" active className="font-medium">
           Home
         </Navbar.Link>
-        <Navbar.Link as={Link} to="/customers">
+        <Navbar.Link as={Link} to="/customers" className="font-medium">
           Customers
         </Navbar.Link>
-        <Navbar.Link as={Link} to="/projects">
+        <Navbar.Link as={Link} to="/projects" className="font-medium">
           Projects
         </Navbar.Link>
       </Navbar.Collapse>
