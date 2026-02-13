@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button, Card, Table, Modal, Label, TextInput, Select, Alert, Spinner } from 'flowbite-react';
 import { HiPlus, HiTrash, HiUserAdd } from 'react-icons/hi';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 
 interface User {
   id: number;
