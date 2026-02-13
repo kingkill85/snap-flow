@@ -1,4 +1,5 @@
 import api from './api';
+import axios from 'axios';
 
 export interface Category {
   id: number;
@@ -21,10 +22,25 @@ interface ApiResponse<T> {
   message?: string;
 }
 
+// Helper to check if error is a cancellation error
+const isCancelError = (error: any): boolean => {
+  return axios.isCancel(error) || 
+         error.name === 'CanceledError' || 
+         error.name === 'AbortError' ||
+         error.message === 'canceled';
+};
+
 export const categoryService = {
   async getAll(signal?: AbortSignal): Promise<Category[]> {
-    const response = await api.get('/categories', { signal });
-    return response.data.data;
+    try {
+      const response = await api.get('/categories', { signal });
+      return response.data.data;
+    } catch (error) {
+      if (isCancelError(error)) {
+        throw error; // Re-throw cancellation errors
+      }
+      throw error;
+    }
   },
 
   async getById(id: number, signal?: AbortSignal): Promise<Category> {

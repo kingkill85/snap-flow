@@ -112,8 +112,8 @@ const ItemManagement = () => {
     setIsCreating(true);
 
     try {
-      if (!newItem.category_id || !newItem.name || !newItem.price) {
-        setCreateError('Please fill in all required fields');
+      if (!newItem.category_id || !newItem.name || newItem.price === undefined || newItem.price === null) {
+        setCreateError('Please fill in all required fields (Category, Name, and Price)');
         setIsCreating(false);
         return;
       }
@@ -130,7 +130,7 @@ const ItemManagement = () => {
         description: '',
         model_number: '',
         dimensions: '',
-        price: 0,
+        price: undefined,
       });
       setNewItemImage(null);
       setImagePreview(null);

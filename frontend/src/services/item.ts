@@ -18,7 +18,7 @@ export interface CreateItemDTO {
   description?: string;
   model_number?: string;
   dimensions?: string;
-  price: number;
+  price?: number;
   image?: File;
 }
 
