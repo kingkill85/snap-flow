@@ -26,7 +26,7 @@ const Header = () => {
             arrowIcon={false}
             inline
             label={
-              <button className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
                     {user?.email.charAt(0).toUpperCase()}
@@ -43,7 +43,7 @@ const Header = () => {
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
-              </button>
+              </div>
             }
           >
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">

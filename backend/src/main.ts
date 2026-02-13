@@ -14,7 +14,7 @@ app.use(cors({
   credentials: true,
 }));
 
-// Health check endpoint
+// Health check endpoint (public, no /api prefix)
 app.get('/health', (c: Context) => {
   return c.json({ 
     status: 'ok',
@@ -23,7 +23,7 @@ app.get('/health', (c: Context) => {
   });
 });
 
-// Root endpoint
+// Root endpoint (public)
 app.get('/', (c: Context) => {
   return c.json({ 
     message: 'SnapFlow API',
@@ -32,9 +32,15 @@ app.get('/', (c: Context) => {
   });
 });
 
+// API routes (all protected routes under /api)
+const api = new Hono();
+
 // Auth routes
-app.route('/auth', authRoutes);
-app.route('/users', authRoutes);
+api.route('/auth', authRoutes);
+api.route('/users', authRoutes);
+
+// Mount API router
+app.route('/api', api);
 
 // Start server
 const port = env.PORT;
@@ -45,5 +51,6 @@ Deno.serve({
   onListen: () => {
     console.log(`✅ Server running at http://localhost:${port}`);
     console.log(`📊 Health check: http://localhost:${port}/health`);
+    console.log(`🔒 API routes: http://localhost:${port}/api`);
   },
 }, app.fetch);
