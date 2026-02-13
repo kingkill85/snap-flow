@@ -26,12 +26,13 @@ const UserManagement = () => {
   const [createError, setCreateError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (signal?: AbortSignal) => {
     try {
       const response = await fetch('/api/users', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
+        signal,
       });
       
       if (!response.ok) throw new Error('Failed to fetch users');
@@ -39,14 +40,21 @@ const UserManagement = () => {
       const data = await response.json();
       setUsers(data.data);
     } catch (err: any) {
-      setError(err.message);
+      if (err.name !== 'AbortError') {
+        setError(err.message);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchUsers();
+    const controller = new AbortController();
+    fetchUsers(controller.signal);
+    
+    return () => {
+      controller.abort();
+    };
   }, []);
 
   const handleCreateUser = async (e: React.FormEvent) => {
