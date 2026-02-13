@@ -206,18 +206,20 @@ const CategoryManagement = () => {
                   <Table.Cell>
                     <div className="flex gap-2">
                       <Button
-                        size="xs"
                         color="light"
+                        size="xs"
                         onClick={() => openEditModal(category)}
                       >
-                        <HiPencil className="h-4 w-4" />
+                        <HiPencil className="mr-1 h-4 w-4" />
+                        Edit
                       </Button>
                       <Button
-                        size="xs"
                         color="failure"
+                        size="xs"
                         onClick={() => openDeleteModal(category)}
                       >
-                        <HiTrash className="h-4 w-4" />
+                        <HiTrash className="mr-1 h-4 w-4" />
+                        Delete
                       </Button>
                     </div>
                   </Table.Cell>
