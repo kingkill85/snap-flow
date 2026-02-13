@@ -38,13 +38,16 @@ export function uploadMiddleware(
       const contentType = c.req.header('content-type') || '';
       
       if (!contentType.includes('multipart/form-data')) {
-        // No file upload, continue without error
+        // No multipart form data, continue without setting formData
         c.set('uploadResult', { success: false, error: 'No file uploaded' });
         await next();
         return;
       }
 
+      // Always parse formData for multipart requests
       const formData = await c.req.formData();
+      c.set('formData', formData);
+      
       const file = formData.get('image');
 
       if (!file || !(file instanceof File)) {
@@ -88,9 +91,6 @@ export function uploadMiddleware(
         filePath,
         originalName: file.name,
       });
-
-      // Also attach form data for other fields
-      c.set('formData', formData);
 
       await next();
     } catch (error) {
