@@ -90,9 +90,9 @@ const Header = () => {
       </div>
       
       <Navbar.Collapse>
-        <Navbar.Link as={Link} to="/" active className="font-medium">
+        <Link to="/" className="px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
           Home
-        </Navbar.Link>
+        </Link>
         
         <Dropdown
           inline
