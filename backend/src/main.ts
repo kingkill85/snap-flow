@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { env } from './config/env.ts';
 import authRoutes from './routes/auth.ts';
+import userRoutes from './routes/users.ts';
 
 const app = new Hono();
 
@@ -35,9 +36,13 @@ app.get('/', (c: Context) => {
 // API routes (all protected routes under /api)
 const api = new Hono();
 
-// Auth routes
+// Auth routes at /api/auth/*
+// Includes: /login, /logout, /me
 api.route('/auth', authRoutes);
-api.route('/users', authRoutes);
+
+// User management routes at /api/users/*
+// Includes: / (POST, GET), /:id (DELETE)
+api.route('/users', userRoutes);
 
 // Mount API router
 app.route('/api', api);
