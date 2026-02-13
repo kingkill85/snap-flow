@@ -97,11 +97,8 @@ const Header = () => {
         <Dropdown
           inline
           label={
-            <span className="flex items-center gap-1 px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
+            <span className="px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
               Projects
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
             </span>
           }
         >
@@ -123,11 +120,8 @@ const Header = () => {
           <Dropdown
             inline
             label={
-              <span className="flex items-center gap-1 px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
+              <span className="px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
                 Catalog
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
               </span>
             }
           >
@@ -150,11 +144,8 @@ const Header = () => {
           <Dropdown
             inline
             label={
-              <span className="flex items-center gap-1 px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
+              <span className="px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
                 Admin
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
               </span>
             }
           >
