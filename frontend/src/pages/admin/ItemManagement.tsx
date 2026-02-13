@@ -1,34 +1,97 @@
-import { useState, useEffect, useCallback, memo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Card, Table, Modal, Label, TextInput, Textarea, Select, Alert, Spinner, Pagination } from 'flowbite-react';
 import { HiPlus, HiTrash, HiPencil, HiSearch } from 'react-icons/hi';
 import { itemService, type Item, type CreateItemDTO } from '../../services/item';
 import { categoryService, type Category } from '../../services/category';
 
-// Separate search component to prevent re-renders when items change
-interface SearchInputProps {
-  onSearch: (query: string) => void;
+// Items table component - re-renders when items change, but search input doesn't
+interface ItemsTableProps {
+  items: Item[];
+  categories: Category[];
+  onEdit: (item: Item) => void;
+  onDelete: (item: Item) => void;
 }
 
-const SearchInput = memo(({ onSearch }: SearchInputProps) => {
-  const [value, setValue] = useState('');
+const ItemsTable = ({ items, categories, onEdit, onDelete }: ItemsTableProps) => {
+  const getCategoryName = (categoryId: number) => {
+    const category = categories.find(c => c.id === categoryId);
+    return category?.name || 'Unknown';
+  };
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      onSearch(value);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [value, onSearch]);
+  if (items.length === 0) {
+    return (
+      <div className="text-center py-8 text-gray-500">
+        No items found. Create your first item to get started.
+      </div>
+    );
+  }
 
   return (
-    <TextInput
-      type="text"
-      placeholder="Search items..."
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      icon={HiSearch}
-    />
+    <Table hoverable>
+      <Table.Head>
+        <Table.HeadCell>Image</Table.HeadCell>
+        <Table.HeadCell>Name</Table.HeadCell>
+        <Table.HeadCell>Category</Table.HeadCell>
+        <Table.HeadCell>Model</Table.HeadCell>
+        <Table.HeadCell>Price</Table.HeadCell>
+        <Table.HeadCell>
+          <span className="sr-only">Actions</span>
+        </Table.HeadCell>
+      </Table.Head>
+      <Table.Body>
+        {items.map((item) => (
+          <Table.Row key={item.id}>
+            <Table.Cell>
+              {item.image_path ? (
+                <img
+                  src={itemService.getImageUrl(item.image_path) || ''}
+                  alt={item.name}
+                  className="w-16 h-16 object-cover rounded"
+                />
+              ) : (
+                <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                  No Image
+                </div>
+              )}
+            </Table.Cell>
+            <Table.Cell className="font-medium">
+              {item.name}
+            </Table.Cell>
+            <Table.Cell>
+              {getCategoryName(item.category_id)}
+            </Table.Cell>
+            <Table.Cell className="text-gray-600">
+              {item.model_number || '-'}
+            </Table.Cell>
+            <Table.Cell>
+              ${item.price.toFixed(2)}
+            </Table.Cell>
+            <Table.Cell>
+              <div className="flex gap-2">
+                <Button
+                  color="light"
+                  size="xs"
+                  onClick={() => onEdit(item)}
+                >
+                  <HiPencil className="mr-1 h-4 w-4" />
+                  Edit
+                </Button>
+                <Button
+                  color="failure"
+                  size="xs"
+                  onClick={() => onDelete(item)}
+                >
+                  <HiTrash className="mr-1 h-4 w-4" />
+                  Delete
+                </Button>
+              </div>
+            </Table.Cell>
+          </Table.Row>
+        ))}
+      </Table.Body>
+    </Table>
   );
-});
+};
 
 const ItemManagement = () => {
   const [items, setItems] = useState<Item[]>([]);
@@ -43,10 +106,20 @@ const ItemManagement = () => {
 
   // Filter and pagination state
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchInputValue, setSearchInputValue] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<number | ''>('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const itemsPerPage = 10;
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInputValue);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInputValue]);
 
   // Create form state
   const [newItem, setNewItem] = useState<{
@@ -81,7 +154,6 @@ const ItemManagement = () => {
       const data = await categoryService.getAll(signal);
       setCategories(data);
     } catch (err: any) {
-      // Ignore abort/cancel errors
       if (err.name !== 'AbortError' && err.name !== 'CanceledError' && err.message !== 'canceled') {
         console.error('Failed to fetch categories:', err);
       }
@@ -106,7 +178,6 @@ const ItemManagement = () => {
       setItems(result.items);
       setTotalPages(result.totalPages);
     } catch (err: any) {
-      // Ignore abort/cancel errors (component unmounted or request cancelled)
       if (err.name === 'AbortError' || err.name === 'CanceledError' || err.message === 'canceled') {
         return;
       }
@@ -115,11 +186,6 @@ const ItemManagement = () => {
       setIsLoading(false);
     }
   }, [selectedCategory, searchQuery, currentPage]);
-
-  const handleSearch = useCallback((query: string) => {
-    setSearchQuery(query);
-    setCurrentPage(1);
-  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -173,7 +239,6 @@ const ItemManagement = () => {
         image: newItemImage || undefined,
       });
 
-      // Reset form
       setNewItem({
         category_id: undefined,
         name: '',
@@ -185,8 +250,6 @@ const ItemManagement = () => {
       setNewItemImage(null);
       setImagePreview(null);
       setShowCreateModal(false);
-      
-      // Refresh items
       fetchItems();
     } catch (err: any) {
       setCreateError(err.response?.data?.error || 'Failed to create item');
@@ -254,10 +317,35 @@ const ItemManagement = () => {
     setShowDeleteModal(true);
   };
 
-  const getCategoryName = (categoryId: number) => {
-    const category = categories.find(c => c.id === categoryId);
-    return category?.name || 'Unknown';
-  };
+  // Memoize filters so they don't re-render when items change
+  const filtersSection = useMemo(() => (
+    <Card>
+      <div className="flex flex-wrap gap-4">
+        <div className="flex-1 min-w-[200px]">
+          <TextInput
+            type="text"
+            placeholder="Search items..."
+            value={searchInputValue}
+            onChange={(e) => setSearchInputValue(e.target.value)}
+            icon={HiSearch}
+          />
+        </div>
+        <div className="w-48">
+          <Select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value ? parseInt(e.target.value) : '')}
+          >
+            <option value="">All Categories</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+    </Card>
+  ), [searchInputValue, selectedCategory, categories]);
 
   if (isLoading) {
     return (
@@ -286,102 +374,17 @@ const ItemManagement = () => {
         </Alert>
       )}
 
-      {/* Filters */}
-      <Card>
-        <div className="flex flex-wrap gap-4">
-          <div className="flex-1 min-w-[200px]">
-            <SearchInput onSearch={handleSearch} />
-          </div>
-          <div className="w-48">
-            <Select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value ? parseInt(e.target.value) : '')}
-            >
-              <option value="">All Categories</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
-      </Card>
+      {filtersSection}
 
-      {/* Items Table */}
+      {/* Items Table - separate component, can re-render without affecting search */}
       <Card>
-        <Table hoverable>
-          <Table.Head>
-            <Table.HeadCell>Image</Table.HeadCell>
-            <Table.HeadCell>Name</Table.HeadCell>
-            <Table.HeadCell>Category</Table.HeadCell>
-            <Table.HeadCell>Model</Table.HeadCell>
-            <Table.HeadCell>Price</Table.HeadCell>
-            <Table.HeadCell>
-              <span className="sr-only">Actions</span>
-            </Table.HeadCell>
-          </Table.Head>
-          <Table.Body>
-            {items.length === 0 ? (
-              <Table.Row>
-                <Table.Cell colSpan={6} className="text-center py-8 text-gray-500">
-                  No items found. Create your first item to get started.
-                </Table.Cell>
-              </Table.Row>
-            ) : (
-              items.map((item) => (
-                <Table.Row key={item.id}>
-                  <Table.Cell>
-                    {item.image_path ? (
-                      <img
-                        src={itemService.getImageUrl(item.image_path) || ''}
-                        alt={item.name}
-                        className="w-16 h-16 object-cover rounded"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center text-gray-400">
-                        No Image
-                      </div>
-                    )}
-                  </Table.Cell>
-                  <Table.Cell className="font-medium">
-                    {item.name}
-                  </Table.Cell>
-                  <Table.Cell>
-                    {getCategoryName(item.category_id)}
-                  </Table.Cell>
-                  <Table.Cell className="text-gray-600">
-                    {item.model_number || '-'}
-                  </Table.Cell>
-                  <Table.Cell>
-                    ${item.price.toFixed(2)}
-                  </Table.Cell>
-                  <Table.Cell>
-                    <div className="flex gap-2">
-                      <Button
-                        color="light"
-                        size="xs"
-                        onClick={() => openEditModal(item)}
-                      >
-                        <HiPencil className="mr-1 h-4 w-4" />
-                        Edit
-                      </Button>
-                      <Button
-                        color="failure"
-                        size="xs"
-                        onClick={() => openDeleteModal(item)}
-                      >
-                        <HiTrash className="mr-1 h-4 w-4" />
-                        Delete
-                      </Button>
-                    </div>
-                  </Table.Cell>
-                </Table.Row>
-              ))
-            )}
-          </Table.Body>
-        </Table>
-
+        <ItemsTable 
+          items={items} 
+          categories={categories}
+          onEdit={openEditModal}
+          onDelete={openDeleteModal}
+        />
+        
         {totalPages > 1 && (
           <div className="flex justify-center mt-4">
             <Pagination
