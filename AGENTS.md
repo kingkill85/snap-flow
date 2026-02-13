@@ -444,6 +444,46 @@ cd backend && deno task test
 
 ---
 
+## UI Consistency Patterns
+
+### Action Buttons in Tables
+When displaying Edit/Delete buttons in table rows, use this consistent pattern:
+
+```tsx
+<Table.Cell>
+  <div className="flex gap-2">
+    <Button
+      color="light"
+      size="xs"
+      onClick={() => openEditModal(item)}
+    >
+      <HiPencil className="mr-1 h-4 w-4" />
+      Edit
+    </Button>
+    <Button
+      color="failure"
+      size="xs"
+      onClick={() => openDeleteModal(item)}
+    >
+      <HiTrash className="mr-1 h-4 w-4" />
+      Delete
+    </Button>
+  </div>
+</Table.Cell>
+```
+
+**Rules:**
+1. Always include both icon AND text label for accessibility
+2. Use `color="light"` for Edit, `color="failure"` for Delete
+3. Use `size="xs"` for table action buttons
+4. Add `mr-1` class to icons for consistent spacing
+5. Wrap buttons in a `flex gap-2` container
+6. Edit button comes before Delete button
+
+**Applies to:** UserManagement, CategoryManagement, ItemManagement, and any future admin tables
+
+---
+
 ## Common Commands
 
 ```bash
