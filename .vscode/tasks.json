@@ -30,7 +30,33 @@
       "label": "Run Frontend Only",
       "type": "npm",
       "script": "dev:frontend",
-      "problemMatcher": [],
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "."
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "> vite",
+          "endsPattern": "ready in"
+        }
+      },
+      "group": "build"
+    },
+    {
+      "label": "Start Frontend Server",
+      "type": "shell",
+      "command": "cd frontend && npm run dev",
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "."
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "> vite",
+          "endsPattern": "ready in"
+        }
+      },
+      "isBackground": true,
       "group": "build"
     },
     {

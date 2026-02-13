@@ -22,6 +22,7 @@
       "request": "launch",
       "url": "http://localhost:5173",
       "webRoot": "${workspaceFolder}/frontend/src",
+      "preLaunchTask": "Start Frontend Server",
       "sourceMapPathOverrides": {
         "webpack:///src/*": "${webRoot}/*"
       }
@@ -31,7 +32,8 @@
       "type": "msedge",
       "request": "launch",
       "url": "http://localhost:5173",
-      "webRoot": "${workspaceFolder}/frontend/src"
+      "webRoot": "${workspaceFolder}/frontend/src",
+      "preLaunchTask": "Start Frontend Server"
     }
   ],
   "compounds": [
