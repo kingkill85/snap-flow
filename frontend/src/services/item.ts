@@ -99,12 +99,8 @@ export const itemService = {
     if (data.dimensions) formData.append('dimensions', data.dimensions);
     if (data.image) formData.append('image', data.image);
 
-    const response = await api.post('/items', formData, {
-      signal,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    // Don't set Content-Type manually - axios will set it with the correct boundary
+    const response = await api.post('/items', formData, { signal });
     return response.data.data;
   },
 
@@ -119,12 +115,8 @@ export const itemService = {
     if (data.dimensions !== undefined) formData.append('dimensions', data.dimensions);
     if (data.image) formData.append('image', data.image);
 
-    const response = await api.put(`/items/${id}`, formData, {
-      signal,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    // Don't set Content-Type manually - axios will set it with the correct boundary
+    const response = await api.put(`/items/${id}`, formData, { signal });
     return response.data.data;
   },
 
