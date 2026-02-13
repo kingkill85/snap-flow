@@ -1,10 +1,17 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { authService } from '../services/auth';
+import { authService, type User as AuthUser } from '../services/auth';
 
 interface User {
   id: number;
   email: string;
+  full_name: string | null;
   role: 'admin' | 'user';
+}
+
+interface UpdateProfileData {
+  full_name?: string;
+  email?: string;
+  password?: string;
 }
 
 interface AuthContextType {
@@ -13,6 +20,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  updateProfile: (data: UpdateProfileData) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -72,6 +80,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     authService.logout();
   };
 
+  const updateProfile = async (data: UpdateProfileData) => {
+    const controller = new AbortController();
+    try {
+      const updatedUser = await authService.updateProfile(data, controller.signal);
+      setUser(updatedUser);
+    } finally {
+      controller.abort();
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -80,6 +98,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isLoading,
         login,
         logout,
+        updateProfile,
       }}
     >
       {children}
@@ -94,3 +113,5 @@ export const useAuth = () => {
   }
   return context;
 };
+
+export type { User, UpdateProfileData };

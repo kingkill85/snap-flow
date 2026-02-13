@@ -7,6 +7,13 @@ const Header = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
 
+  // Helper to get display name (full_name or email)
+  const getDisplayName = () => user?.full_name || user?.email?.split('@')[0] || 'User';
+  const getAvatarLetter = () => {
+    const name = user?.full_name || user?.email || 'U';
+    return name.charAt(0).toUpperCase();
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -29,11 +36,11 @@ const Header = () => {
               <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
-                    {user?.email.charAt(0).toUpperCase()}
+                    {getAvatarLetter()}
                   </div>
                   <div className="hidden md:flex flex-col items-start">
                     <span className="text-sm font-medium text-gray-900 leading-tight">
-                      {user?.email.split('@')[0]}
+                      {getDisplayName()}
                     </span>
                     <span className="text-xs text-gray-500 capitalize leading-tight">
                       {user?.role}
@@ -49,24 +56,28 @@ const Header = () => {
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold">
-                  {user?.email.charAt(0).toUpperCase()}
+                  {getAvatarLetter()}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">{user?.email}</p>
+                  <p className="text-sm font-semibold text-gray-900">{user?.full_name || user?.email}</p>
                   <p className="text-xs text-gray-500 capitalize">{user?.role} Account</p>
                 </div>
               </div>
             </div>
+            <Dropdown.Divider />
+            <Dropdown.Item as={Link} to="/profile">
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              Your Profile
+            </Dropdown.Item>
             {user?.role === 'admin' && (
-              <>
-                <Dropdown.Divider />
-                <Dropdown.Item as={Link} to="/admin/users">
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                  User Management
-                </Dropdown.Item>
-              </>
+              <Dropdown.Item as={Link} to="/admin/users">
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                User Management
+              </Dropdown.Item>
             )}
             <Dropdown.Divider />
             <Dropdown.Item onClick={handleLogout} className="text-red-600 hover:bg-red-50 hover:text-red-700">

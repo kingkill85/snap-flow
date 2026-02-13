@@ -4,6 +4,7 @@ interface LoginResponse {
   user: {
     id: number;
     email: string;
+    full_name: string | null;
     role: 'admin' | 'user';
   };
   token: string;
@@ -12,8 +13,15 @@ interface LoginResponse {
 interface User {
   id: number;
   email: string;
+  full_name: string | null;
   role: 'admin' | 'user';
   created_at?: string;
+}
+
+interface UpdateProfileDTO {
+  full_name?: string;
+  email?: string;
+  password?: string;
 }
 
 export const authService = {
@@ -34,4 +42,11 @@ export const authService = {
     const response = await api.get('/auth/me', { signal });
     return response.data.data;
   },
+
+  async updateProfile(data: UpdateProfileDTO, signal?: AbortSignal): Promise<User> {
+    const response = await api.put('/auth/me', data, { signal });
+    return response.data.data;
+  },
 };
+
+export type { User, UpdateProfileDTO };

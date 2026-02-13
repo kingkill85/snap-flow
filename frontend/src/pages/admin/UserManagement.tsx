@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Button, Card, Table, Modal, Label, TextInput, Select, Alert, Spinner } from 'flowbite-react';
-import { HiPlus, HiTrash, HiUserAdd } from 'react-icons/hi';
+import { HiPlus, HiTrash, HiUserAdd, HiPencil } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
 
 interface User {
   id: number;
   email: string;
+  full_name: string | null;
   role: 'admin' | 'user';
   created_at: string;
 }
@@ -15,16 +16,26 @@ const UserManagement = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [userToEdit, setUserToEdit] = useState<User | null>(null);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const { user: currentUser } = useAuth();
 
-  // Form state
+  // Create form state
+  const [newUserFullName, setNewUserFullName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<'admin' | 'user'>('user');
   const [createError, setCreateError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+
+  // Edit form state
+  const [editFullName, setEditFullName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editRole, setEditRole] = useState<'admin' | 'user'>('user');
+  const [editError, setEditError] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
 
   const fetchUsers = async (signal?: AbortSignal) => {
     try {
@@ -70,6 +81,7 @@ const UserManagement = () => {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({
+          full_name: newUserFullName || undefined,
           email: newUserEmail,
           password: newUserPassword,
           role: newUserRole,
@@ -83,6 +95,7 @@ const UserManagement = () => {
       }
 
       // Reset form and close modal
+      setNewUserFullName('');
       setNewUserEmail('');
       setNewUserPassword('');
       setNewUserRole('user');
@@ -94,6 +107,43 @@ const UserManagement = () => {
       setCreateError(err.message);
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userToEdit) return;
+
+    setEditError('');
+    setIsEditing(true);
+
+    try {
+      const response = await fetch(`/api/users/${userToEdit.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({
+          full_name: editFullName || null,
+          email: editEmail,
+          role: editRole,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update user');
+      }
+
+      setShowEditModal(false);
+      setUserToEdit(null);
+      fetchUsers();
+    } catch (err: any) {
+      setEditError(err.message);
+    } finally {
+      setIsEditing(false);
     }
   };
 
@@ -121,10 +171,21 @@ const UserManagement = () => {
     }
   };
 
+  const openEditModal = (user: User) => {
+    setUserToEdit(user);
+    setEditFullName(user.full_name || '');
+    setEditEmail(user.email);
+    setEditRole(user.role);
+    setEditError('');
+    setShowEditModal(true);
+  };
+
   const openDeleteModal = (user: User) => {
     setUserToDelete(user);
     setShowDeleteModal(true);
   };
+
+  const getDisplayName = (user: User) => user.full_name || user.email;
 
   if (isLoading) {
     return (
@@ -156,6 +217,7 @@ const UserManagement = () => {
       <Card>
         <Table>
           <Table.Head>
+            <Table.HeadCell>Name</Table.HeadCell>
             <Table.HeadCell>Email</Table.HeadCell>
             <Table.HeadCell>Role</Table.HeadCell>
             <Table.HeadCell>Created</Table.HeadCell>
@@ -166,7 +228,10 @@ const UserManagement = () => {
           <Table.Body>
             {users.map((user) => (
               <Table.Row key={user.id}>
-                <Table.Cell className="font-medium">{user.email}</Table.Cell>
+                <Table.Cell className="font-medium">
+                  {getDisplayName(user)}
+                </Table.Cell>
+                <Table.Cell className="text-gray-600">{user.email}</Table.Cell>
                 <Table.Cell>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     user.role === 'admin' 
@@ -180,16 +245,26 @@ const UserManagement = () => {
                   {new Date(user.created_at).toLocaleDateString()}
                 </Table.Cell>
                 <Table.Cell>
-                  {user.id !== currentUser?.id && (
+                  <div className="flex gap-2">
                     <Button
-                      color="failure"
+                      color="light"
                       size="xs"
-                      onClick={() => openDeleteModal(user)}
+                      onClick={() => openEditModal(user)}
                     >
-                      <HiTrash className="mr-1 h-4 w-4" />
-                      Delete
+                      <HiPencil className="mr-1 h-4 w-4" />
+                      Edit
                     </Button>
-                  )}
+                    {user.id !== currentUser?.id && (
+                      <Button
+                        color="failure"
+                        size="xs"
+                        onClick={() => openDeleteModal(user)}
+                      >
+                        <HiTrash className="mr-1 h-4 w-4" />
+                        Delete
+                      </Button>
+                    )}
+                  </div>
                 </Table.Cell>
               </Table.Row>
             ))}
@@ -207,6 +282,16 @@ const UserManagement = () => {
             </Alert>
           )}
           <form onSubmit={handleCreateUser} className="space-y-4">
+            <div>
+              <Label htmlFor="fullName" value="Full Name (Optional)" />
+              <TextInput
+                id="fullName"
+                type="text"
+                placeholder="John Doe"
+                value={newUserFullName}
+                onChange={(e) => setNewUserFullName(e.target.value)}
+              />
+            </div>
             <div>
               <Label htmlFor="email" value="Email" />
               <TextInput
@@ -263,6 +348,70 @@ const UserManagement = () => {
         </Modal.Footer>
       </Modal>
 
+      {/* Edit User Modal */}
+      <Modal show={showEditModal} onClose={() => setShowEditModal(false)}>
+        <Modal.Header>Edit User</Modal.Header>
+        <Modal.Body>
+          {editError && (
+            <Alert color="failure" className="mb-4">
+              {editError}
+            </Alert>
+          )}
+          <form onSubmit={handleEditUser} className="space-y-4">
+            <div>
+              <Label htmlFor="editFullName" value="Full Name" />
+              <TextInput
+                id="editFullName"
+                type="text"
+                placeholder="John Doe"
+                value={editFullName}
+                onChange={(e) => setEditFullName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="editEmail" value="Email" />
+              <TextInput
+                id="editEmail"
+                type="email"
+                placeholder="user@example.com"
+                required
+                value={editEmail}
+                onChange={(e) => setEditEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="editRole" value="Role" />
+              <Select
+                id="editRole"
+                value={editRole}
+                onChange={(e) => setEditRole(e.target.value as 'admin' | 'user')}
+              >
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </Select>
+            </div>
+          </form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button onClick={handleEditUser} disabled={isEditing}>
+            {isEditing ? (
+              <>
+                <Spinner size="sm" className="mr-2" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <HiPencil className="mr-2 h-5 w-5" />
+                Save Changes
+              </>
+            )}
+          </Button>
+          <Button color="gray" onClick={() => setShowEditModal(false)}>
+            Cancel
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
       {/* Delete Confirmation Modal */}
       <Modal show={showDeleteModal} onClose={() => setShowDeleteModal(false)} size="md">
         <Modal.Header>Delete User</Modal.Header>
@@ -271,7 +420,7 @@ const UserManagement = () => {
             <HiTrash className="mx-auto mb-4 h-14 w-14 text-gray-400" />
             <h3 className="mb-5 text-lg font-normal text-gray-500">
               Are you sure you want to delete user{' '}
-              <span className="font-semibold">{userToDelete?.email}</span>?
+              <span className="font-semibold">{userToDelete?.full_name || userToDelete?.email}</span>?
             </h3>
             <div className="flex justify-center gap-4">
               <Button color="failure" onClick={handleDeleteUser}>
