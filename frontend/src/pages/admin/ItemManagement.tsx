@@ -535,7 +535,7 @@ const ItemManagement = () => {
               <Label htmlFor="editDescription" value="Description" />
               <Textarea
                 id="editDescription"
-                value={editItem.description}
+                value={editItem.description || ''}
                 onChange={(e) => setEditItem({ ...editItem, description: e.target.value })}
                 rows={3}
               />
