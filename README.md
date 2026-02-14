@@ -137,6 +137,27 @@ snap-flow/
 └── README.md                  # This file
 ```
 
+## Frontend Routes
+
+### Page Structure
+```
+frontend/src/pages/
+├── Home.tsx                    → /
+├── Login.tsx                   → /login
+├── Profile.tsx                 → /profile
+├── catalog/
+│   ├── ItemManagement.tsx      → /catalog/items
+│   └── CategoryManagement.tsx  → /catalog/categories
+├── settings/
+│   └── UserManagement.tsx      → /settings/users
+└── NotFound.tsx               → /* (404)
+```
+
+### Navigation Groups
+- **Projects** ▼ → Projects, Customers
+- **Catalog** ▼ (admin only) → Items, Categories
+- **Settings** ▼ (admin only) → User Management
+
 ## API Endpoints
 
 ### Authentication
