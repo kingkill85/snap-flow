@@ -1,4 +1,4 @@
-import { db } from '../config/database.ts';
+import { getDb } from '../config/database.ts';
 import type { VariantAddon, CreateVariantAddonDTO, ItemVariant } from '../models/index.ts';
 
 /**
@@ -7,7 +7,7 @@ import type { VariantAddon, CreateVariantAddonDTO, ItemVariant } from '../models
  */
 export class VariantAddonRepository {
   async findByVariantId(variantId: number): Promise<VariantAddon[]> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT 
         va.id, va.variant_id, va.addon_variant_id, va.is_optional, va.sort_order, va.created_at,
         iv.style_name as addon_style_name, iv.price as addon_price, iv.image_path as addon_image_path
@@ -21,7 +21,7 @@ export class VariantAddonRepository {
       id: row.id,
       variant_id: row.variant_id,
       addon_variant_id: row.addon_variant_id,
-      is_optional: Boolean(row.is_optional),
+      is_optional: row.is_optional === 1 || row.is_optional === true,
       sort_order: row.sort_order,
       created_at: row.created_at,
       addon_variant: {
@@ -34,7 +34,7 @@ export class VariantAddonRepository {
   }
 
   async findById(id: number): Promise<VariantAddon | null> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, variant_id, addon_variant_id, is_optional, sort_order, created_at
       FROM variant_addons
       WHERE id = ?
@@ -43,7 +43,7 @@ export class VariantAddonRepository {
   }
 
   async create(data: CreateVariantAddonDTO): Promise<VariantAddon> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       INSERT INTO variant_addons (variant_id, addon_variant_id, is_optional, sort_order)
       VALUES (?, ?, ?, ?)
       RETURNING id, variant_id, addon_variant_id, is_optional, sort_order, created_at
@@ -54,15 +54,23 @@ export class VariantAddonRepository {
       data.sort_order || 0,
     ]);
 
-    return result[0] as unknown as VariantAddon;
+    const row = result[0];
+    return {
+      id: row.id,
+      variant_id: row.variant_id,
+      addon_variant_id: row.addon_variant_id,
+      is_optional: row.is_optional === 1 || row.is_optional === true,
+      sort_order: row.sort_order,
+      created_at: row.created_at,
+    } as VariantAddon;
   }
 
   async delete(id: number): Promise<void> {
-    db.query(`DELETE FROM variant_addons WHERE id = ?`, [id]);
+    getDb().query(`DELETE FROM variant_addons WHERE id = ?`, [id]);
   }
 
   async deleteByVariantId(variantId: number): Promise<void> {
-    db.query(`DELETE FROM variant_addons WHERE variant_id = ?`, [variantId]);
+    getDb().query(`DELETE FROM variant_addons WHERE variant_id = ?`, [variantId]);
   }
 
   async addAddonIfNotExists(
@@ -71,7 +79,7 @@ export class VariantAddonRepository {
     isOptional: boolean
   ): Promise<VariantAddon> {
     // Check if relationship already exists
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, variant_id, addon_variant_id, is_optional, sort_order, created_at
       FROM variant_addons
       WHERE variant_id = ? AND addon_variant_id = ?

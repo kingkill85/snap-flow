@@ -41,6 +41,7 @@ A web application for smart home automation companies to create professional pro
 - [Deno](https://deno.land/manual/getting_started/installation) 1.40+
 - [Node.js](https://nodejs.org/) 18+
 - Git
+- OpenSSL (for generating JWT_SECRET)
 
 ### Installation
 
@@ -63,14 +64,24 @@ A web application for smart home automation companies to create professional pro
    ```bash
    # Backend
    cp backend/.env.example backend/.env
-   # Edit backend/.env and set JWT_SECRET to a secure value
+   
+   # IMPORTANT: Generate a secure JWT_SECRET (minimum 32 characters)
+   # Using OpenSSL:
+   openssl rand -base64 32
+   
+   # Or generate one online at https://jwtsecret.com/generate
+   # Then edit backend/.env and set JWT_SECRET to your generated value
    
    # Frontend
    cp frontend/.env.example frontend/.env
    # Edit frontend/.env if your backend runs on a different port
    ```
 
-4. **Run database migrations**
+4. **Database migrations (automatic)**
+   
+   Migrations run automatically when the server starts. No manual action needed!
+   
+   To run migrations manually:
    ```bash
    cd backend && deno run --allow-all src/scripts/migrate.ts && cd ..
    ```
@@ -161,8 +172,19 @@ frontend/src/pages/
 ## API Endpoints
 
 ### Authentication
-- `POST /auth/login` - Authenticate user, return JWT
-- `POST /auth/logout` - Invalidate token
+
+The application uses JWT with refresh tokens for secure authentication:
+
+- **Access tokens**: Short-lived (15 minutes), automatically refreshed
+- **Refresh tokens**: Long-lived (7 days), stored securely in database
+- **Rate limiting**: 10 login attempts per 5 minutes, 10 refresh attempts per minute
+
+**Authentication Endpoints:**
+- `POST /auth/login` - Authenticate user, returns access token + refresh token
+- `POST /auth/logout` - Invalidate all refresh tokens for user
+- `POST /auth/logout-all` - Invalidate all tokens across all devices
+- `POST /auth/refresh` - Get new access token using refresh token
+- `GET /auth/me` - Get current user info
 
 ### Users (Admin)
 - `POST /users` - Create new user
@@ -219,8 +241,8 @@ frontend/src/pages/
 ```bash
 cd backend
 
-# Run all tests (requires server running on port 8000)
-deno task test
+# Run all tests (NO server required! Uses in-memory database)
+deno test --allow-all tests/
 
 # Run specific test file
 deno test --allow-all tests/routes/categories_test.ts
@@ -258,25 +280,38 @@ npm test -- tests/Header.test.tsx
 - Backend: `backend/tests/**/*.test.ts`
 - Frontend: `frontend/tests/**/*.test.tsx`
 
-**Note:** Backend tests require the server to be running on port 8000. Start the backend first:
-```bash
-# Terminal 1
-cd backend && deno task dev
-
-# Terminal 2
-cd backend && deno task test
-```
+**Note:** Backend tests use an in-memory database and test client pattern - **no running server required!**
 
 ### Database Migrations
 
+**Migrations run automatically when the server starts.** No manual intervention needed!
+
+To run migrations manually (optional):
 ```bash
 cd backend && deno run --allow-all src/scripts/migrate.ts
 ```
+
+The migration system:
+- Runs automatically on every server startup
+- Tracks applied migrations in the `migrations` table
+- Skips already-applied migrations
+- Fails fast if a migration errors (server won't start)
 
 ### Code Style
 
 - **Backend:** Strict TypeScript, Repository pattern, RESTful API design
 - **Frontend:** Functional React components, custom hooks, Context API for state
+
+## Security Features
+
+- **JWT Authentication**: Short-lived access tokens (15 min) with refresh tokens (7 days)
+- **Token Storage**: Refresh tokens stored as SHA-256 hashes (never raw tokens)
+- **Rate Limiting**: 
+  - Login: 10 attempts per 5 minutes per IP
+  - Token refresh: 10 attempts per minute per IP
+- **Token Revocation**: Logout invalidates all refresh tokens for the user
+- **Automatic Token Refresh**: Frontend silently refreshes expired access tokens
+- **Required Secrets**: JWT_SECRET must be set (no default fallback)
 
 ## Database Schema
 
@@ -305,13 +340,32 @@ uploads/
 ## Environment Variables
 
 ### Backend (.env)
-```
+
+**Required Variables:**
+```bash
 PORT=8000
 DATABASE_URL=./data/database.sqlite
-JWT_SECRET=your-secret-key
+JWT_SECRET=your-secret-key-minimum-32-characters  # REQUIRED - No default!
 UPLOAD_DIR=./uploads
 CORS_ORIGIN=http://localhost:5173
 ```
+
+**JWT_SECRET Setup:**
+The `JWT_SECRET` is required and has no default value. The server will fail to start without it.
+
+Generate a secure secret:
+```bash
+# Using OpenSSL (recommended)
+openssl rand -base64 32
+
+# Output example: 7f8a9b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6
+```
+
+**Token Configuration (code-level):**
+- Access tokens expire in 15 minutes (auto-refreshed by frontend)
+- Refresh tokens expire in 7 days (users must re-login after this)
+- Refresh tokens are stored as SHA-256 hashes in the database
+- Compromised tokens can be revoked via logout
 
 ### Frontend (.env)
 ```

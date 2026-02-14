@@ -2,14 +2,8 @@ import { useState, useEffect } from 'react';
 import { Button, Card, Table, Modal, Label, TextInput, Select, Alert, Spinner } from 'flowbite-react';
 import { HiPlus, HiTrash, HiUserAdd, HiPencil } from 'react-icons/hi';
 import { useAuth } from '../../context/AuthContext';
-
-interface User {
-  id: number;
-  email: string;
-  full_name: string | null;
-  role: 'admin' | 'user';
-  created_at: string;
-}
+import { userService, type User, type CreateUserDTO, type UpdateUserDTO } from '../../services/user';
+import axios from 'axios';
 
 const UserManagement = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -40,20 +34,25 @@ const UserManagement = () => {
 
   const fetchUsers = async (signal?: AbortSignal) => {
     try {
-      const response = await fetch('/api/users', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        signal,
-      });
-      
-      if (!response.ok) throw new Error('Failed to fetch users');
-      
-      const data = await response.json();
-      setUsers(data.data);
+      setIsLoading(true);
+      const data = await userService.getAll(signal);
+      setUsers(data);
+      setError('');
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        setError(err.message);
+      if (!axios.isCancel(err) && err.name !== 'AbortError') {
+        const errorData = err.response?.data?.error;
+        // Handle Zod validation errors which come as objects
+        let errorMessage: string;
+        if (typeof errorData === 'object' && errorData !== null) {
+          if (errorData.issues && Array.isArray(errorData.issues)) {
+            errorMessage = errorData.issues.map((issue: any) => issue.message).join(', ');
+          } else {
+            errorMessage = JSON.stringify(errorData);
+          }
+        } else {
+          errorMessage = errorData || err.message || 'Failed to fetch users';
+        }
+        setError(errorMessage);
       }
     } finally {
       setIsLoading(false);
@@ -75,25 +74,14 @@ const UserManagement = () => {
     setIsCreating(true);
 
     try {
-      const response = await fetch('/api/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({
-          full_name: newUserFullName || undefined,
-          email: newUserEmail,
-          password: newUserPassword,
-          role: newUserRole,
-        }),
-      });
+      const data: CreateUserDTO = {
+        full_name: newUserFullName || undefined,
+        email: newUserEmail,
+        password: newUserPassword,
+        role: newUserRole,
+      };
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create user');
-      }
+      await userService.create(data);
 
       // Reset form and close modal
       setNewUserFullName('');
@@ -105,7 +93,20 @@ const UserManagement = () => {
       // Refresh user list
       fetchUsers();
     } catch (err: any) {
-      setCreateError(err.message);
+      const errorData = err.response?.data?.error;
+      // Handle Zod validation errors which come as objects
+      let errorMessage: string;
+      if (typeof errorData === 'object' && errorData !== null) {
+        // Zod error format: { issues: [{ message: ... }], name: "ZodError" }
+        if (errorData.issues && Array.isArray(errorData.issues)) {
+          errorMessage = errorData.issues.map((issue: any) => issue.message).join(', ');
+        } else {
+          errorMessage = JSON.stringify(errorData);
+        }
+      } else {
+        errorMessage = errorData || err.message || 'Failed to create user';
+      }
+      setCreateError(errorMessage);
     } finally {
       setIsCreating(false);
     }
@@ -119,7 +120,7 @@ const UserManagement = () => {
     setIsEditing(true);
 
     try {
-      const body: any = {
+      const data: UpdateUserDTO = {
         full_name: editFullName || null,
         email: editEmail,
         role: editRole,
@@ -127,30 +128,29 @@ const UserManagement = () => {
       
       // Only include password if it's set
       if (editPassword) {
-        body.password = editPassword;
+        data.password = editPassword;
       }
 
-      const response = await fetch(`/api/users/${userToEdit.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify(body),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update user');
-      }
+      await userService.update(userToEdit.id, data);
 
       setShowEditModal(false);
       setUserToEdit(null);
       setEditPassword('');
       fetchUsers();
     } catch (err: any) {
-      setEditError(err.message);
+      const errorData = err.response?.data?.error;
+      // Handle Zod validation errors which come as objects
+      let errorMessage: string;
+      if (typeof errorData === 'object' && errorData !== null) {
+        if (errorData.issues && Array.isArray(errorData.issues)) {
+          errorMessage = errorData.issues.map((issue: any) => issue.message).join(', ');
+        } else {
+          errorMessage = JSON.stringify(errorData);
+        }
+      } else {
+        errorMessage = errorData || err.message || 'Failed to update user';
+      }
+      setEditError(errorMessage);
     } finally {
       setIsEditing(false);
     }
@@ -160,23 +160,25 @@ const UserManagement = () => {
     if (!userToDelete) return;
 
     try {
-      const response = await fetch(`/api/users/${userToDelete.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to delete user');
-      }
+      await userService.delete(userToDelete.id);
 
       setShowDeleteModal(false);
       setUserToDelete(null);
       fetchUsers();
     } catch (err: any) {
-      setError(err.message);
+      const errorData = err.response?.data?.error;
+      // Handle Zod validation errors which come as objects
+      let errorMessage: string;
+      if (typeof errorData === 'object' && errorData !== null) {
+        if (errorData.issues && Array.isArray(errorData.issues)) {
+          errorMessage = errorData.issues.map((issue: any) => issue.message).join(', ');
+        } else {
+          errorMessage = JSON.stringify(errorData);
+        }
+      } else {
+        errorMessage = errorData || err.message || 'Failed to delete user';
+      }
+      setError(errorMessage);
     }
   };
 

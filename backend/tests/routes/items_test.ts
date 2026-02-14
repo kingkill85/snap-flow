@@ -1,12 +1,16 @@
 import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
-import { clearDatabase } from '../test-utils.ts';
-import { userRepository } from '../../src/repositories/user.ts';
-import { categoryRepository } from '../../src/repositories/category.ts';
-import { itemRepository } from '../../src/repositories/item.ts';
-import { itemVariantRepository } from '../../src/repositories/item-variant.ts';
+import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
+import { testRequest, parseJSON } from '../test-client.ts';
 import { hashPassword } from '../../src/services/password.ts';
 
-const BASE_URL = 'http://localhost:8000';
+// Setup test database before all tests
+await setupTestDatabase();
+
+// Import repositories after database is set up
+const { userRepository } = await import('../../src/repositories/user.ts');
+const { categoryRepository } = await import('../../src/repositories/category.ts');
+const { itemRepository } = await import('../../src/repositories/item.ts');
+const { itemVariantRepository } = await import('../../src/repositories/item-variant.ts');
 
 async function getAdminToken(): Promise<string> {
   clearDatabase();
@@ -18,7 +22,7 @@ async function getAdminToken(): Promise<string> {
     role: 'admin',
   });
 
-  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+  const loginResponse = await testRequest('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -27,8 +31,8 @@ async function getAdminToken(): Promise<string> {
     }),
   });
 
-  const loginData = await loginResponse.json();
-  return loginData.data.token;
+  const loginData = await parseJSON(loginResponse);
+  return loginData.data.accessToken;
 }
 
 Deno.test('GET /items - should list all items (public)', async () => {
@@ -47,8 +51,8 @@ Deno.test('GET /items - should list all items (public)', async () => {
     base_model_number: 'SS-200',
   });
 
-  const response = await fetch(`${BASE_URL}/api/items`);
-  const data = await response.json();
+  const response = await testRequest('/api/items');
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertExists(data.data);
@@ -74,8 +78,8 @@ Deno.test('GET /items - should filter by category', async () => {
     base_model_number: 'SC-100',
   });
 
-  const response = await fetch(`${BASE_URL}/api/items?category_id=${cat1.id}`);
-  const data = await response.json();
+  const response = await testRequest(`/api/items?category_id=${cat1.id}`);
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.length, 1);
@@ -97,8 +101,8 @@ Deno.test('GET /items - should search items', async () => {
     base_model_number: 'SS-200',
   });
 
-  const response = await fetch(`${BASE_URL}/api/items?search=Bulb`);
-  const data = await response.json();
+  const response = await testRequest('/api/items?search=Bulb');
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.length, 1);
@@ -122,8 +126,8 @@ Deno.test('GET /items/:id - should get single item with variants', async () => {
     price: 29.99,
   });
 
-  const response = await fetch(`${BASE_URL}/api/items/${item.id}`);
-  const data = await response.json();
+  const response = await testRequest(`/api/items/${item.id}`);
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.id, item.id);
@@ -137,15 +141,15 @@ Deno.test('GET /items/:id - should get single item with variants', async () => {
 Deno.test('GET /items/:id - should return 404 for non-existent item', async () => {
   clearDatabase();
   
-  const response = await fetch(`${BASE_URL}/api/items/99999`);
-  const data = await response.json();
+  const response = await testRequest('/api/items/99999');
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 404);
   assertExists(data.error);
 });
 
 Deno.test('POST /items - should require authentication', async () => {
-  const response = await fetch(`${BASE_URL}/api/items`, {
+  const response = await testRequest('/api/items', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -168,7 +172,7 @@ Deno.test('POST /items - should require admin role', async () => {
     role: 'user',
   });
 
-  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+  const loginResponse = await testRequest('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -176,10 +180,10 @@ Deno.test('POST /items - should require admin role', async () => {
       password: 'user123',
     }),
   });
-  const loginData = await loginResponse.json();
-  const token = loginData.data.token;
+  const loginData = await parseJSON(loginResponse);
+  const token = loginData.data.accessToken;
 
-  const response = await fetch(`${BASE_URL}/api/items`, {
+  const response = await testRequest('/api/items', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -198,7 +202,7 @@ Deno.test('POST /items - should create base item (admin)', async () => {
   const token = await getAdminToken();
   const category = await categoryRepository.create({ name: 'Lighting' });
 
-  const response = await fetch(`${BASE_URL}/api/items`, {
+  const response = await testRequest('/api/items', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -213,7 +217,7 @@ Deno.test('POST /items - should create base item (admin)', async () => {
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 201);
   assertExists(data.data);
@@ -226,7 +230,7 @@ Deno.test('POST /items - should create base item (admin)', async () => {
 Deno.test('POST /items - should reject invalid category', async () => {
   const token = await getAdminToken();
 
-  const response = await fetch(`${BASE_URL}/api/items`, {
+  const response = await testRequest('/api/items', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -238,7 +242,7 @@ Deno.test('POST /items - should reject invalid category', async () => {
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 400);
   assertExists(data.error);
@@ -247,7 +251,7 @@ Deno.test('POST /items - should reject invalid category', async () => {
 Deno.test('POST /items - should require mandatory fields', async () => {
   const token = await getAdminToken();
 
-  const response = await fetch(`${BASE_URL}/api/items`, {
+  const response = await testRequest('/api/items', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -271,7 +275,7 @@ Deno.test('PUT /items/:id - should update item (admin)', async () => {
     base_model_number: 'ON-100',
   });
 
-  const response = await fetch(`${BASE_URL}/api/items/${item.id}`, {
+  const response = await testRequest(`/api/items/${item.id}`, {
     method: 'PUT',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -283,7 +287,7 @@ Deno.test('PUT /items/:id - should update item (admin)', async () => {
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.name, 'Updated Name');
@@ -307,20 +311,20 @@ Deno.test('DELETE /items/:id - should delete item and variants (admin)', async (
     price: 29.99,
   });
 
-  const response = await fetch(`${BASE_URL}/api/items/${item.id}`, {
+  const response = await testRequest(`/api/items/${item.id}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${token}`,
     },
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.message, 'Item and all variants deleted successfully');
 
   // Verify deletion
-  const getResponse = await fetch(`${BASE_URL}/api/items/${item.id}`);
+  const getResponse = await testRequest(`/api/items/${item.id}`);
   assertEquals(getResponse.status, 404);
 });
 
@@ -348,8 +352,8 @@ Deno.test('GET /items/:id/variants - should list variants', async () => {
     price: 29.99,
   });
 
-  const response = await fetch(`${BASE_URL}/api/items/${item.id}/variants`);
-  const data = await response.json();
+  const response = await testRequest(`/api/items/${item.id}/variants`);
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.length, 2);
@@ -370,7 +374,7 @@ Deno.test('POST /items/:id/variants - should create variant (admin)', async () =
   formData.append('style_name', 'Silver');
   formData.append('price', '34.99');
 
-  const response = await fetch(`${BASE_URL}/api/items/${item.id}/variants`, {
+  const response = await testRequest(`/api/items/${item.id}/variants`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -378,7 +382,7 @@ Deno.test('POST /items/:id/variants - should create variant (admin)', async () =
     body: formData,
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 201);
   assertEquals(data.data.style_name, 'Silver');
@@ -399,14 +403,14 @@ Deno.test('DELETE /items/:id/variants/:variantId - should delete variant (admin)
     price: 29.99,
   });
 
-  const response = await fetch(`${BASE_URL}/api/items/${item.id}/variants/${variant.id}`, {
+  const response = await testRequest(`/api/items/${item.id}/variants/${variant.id}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${token}`,
     },
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.message, 'Variant deleted successfully');
@@ -434,7 +438,7 @@ Deno.test('PUT /items/:id/variants/:variantId - should update variant (admin)', 
   formData.append('style_name', 'Off-White');
   formData.append('price', '32.99');
 
-  const response = await fetch(`${BASE_URL}/api/items/${item.id}/variants/${variant.id}`, {
+  const response = await testRequest(`/api/items/${item.id}/variants/${variant.id}`, {
     method: 'PUT',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -442,7 +446,7 @@ Deno.test('PUT /items/:id/variants/:variantId - should update variant (admin)', 
     body: formData,
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.style_name, 'Off-White');
@@ -470,7 +474,7 @@ Deno.test('PUT /items/:id/variants/:variantId - should remove image when flag is
   formData.append('price', '29.99');
   formData.append('remove_image', 'true');
 
-  const response = await fetch(`${BASE_URL}/api/items/${item.id}/variants/${variant.id}`, {
+  const response = await testRequest(`/api/items/${item.id}/variants/${variant.id}`, {
     method: 'PUT',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -478,7 +482,7 @@ Deno.test('PUT /items/:id/variants/:variantId - should remove image when flag is
     body: formData,
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.image_path, null);
@@ -491,6 +495,7 @@ Deno.test('PUT /items/:id/variants/:variantId - should remove image when flag is
 
 Deno.test('GET /items/:id/variants/:variantId/addons - should list variant addons', async () => {
   clearDatabase();
+  const token = await getAdminToken();
   const category = await categoryRepository.create({ name: 'Lighting' });
   
   // Create main item with variant
@@ -518,10 +523,10 @@ Deno.test('GET /items/:id/variants/:variantId/addons - should list variant addon
   });
 
   // Add addon relationship
-  const response1 = await fetch(`${BASE_URL}/api/items/${item.id}/variants/${variant.id}/addons`, {
+  const response1 = await testRequest(`/api/items/${item.id}/variants/${variant.id}/addons`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${await getAdminToken()}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -532,12 +537,12 @@ Deno.test('GET /items/:id/variants/:variantId/addons - should list variant addon
   assertEquals(response1.status, 201);
 
   // List addons
-  const response2 = await fetch(`${BASE_URL}/api/items/${item.id}/variants/${variant.id}/addons`, {
+  const response2 = await testRequest(`/api/items/${item.id}/variants/${variant.id}/addons`, {
     headers: {
-      'Authorization': `Bearer ${await getAdminToken()}`,
+      'Authorization': `Bearer ${token}`,
     },
   });
-  const data = await response2.json();
+  const data = await parseJSON(response2);
 
   assertEquals(response2.status, 200);
   assertEquals(data.data.length, 1);
@@ -571,7 +576,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should add addon (admin)
     price: 9.99,
   });
 
-  const response = await fetch(`${BASE_URL}/api/items/${item.id}/variants/${variant.id}/addons`, {
+  const response = await testRequest(`/api/items/${item.id}/variants/${variant.id}/addons`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -583,7 +588,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should add addon (admin)
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 201);
   assertEquals(data.data.addon_variant_id, addonVariant.id);
@@ -618,7 +623,7 @@ Deno.test('DELETE /items/:id/variants/:variantId/addons/:addonId - should remove
   });
 
   // Add addon first
-  const response1 = await fetch(`${BASE_URL}/api/items/${item.id}/variants/${variant.id}/addons`, {
+  const response1 = await testRequest(`/api/items/${item.id}/variants/${variant.id}/addons`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -629,18 +634,18 @@ Deno.test('DELETE /items/:id/variants/:variantId/addons/:addonId - should remove
       is_optional: true,
     }),
   });
-  const addonData = await response1.json();
+  const addonData = await parseJSON(response1);
   const addonId = addonData.data.id;
 
   // Now delete it
-  const response2 = await fetch(`${BASE_URL}/api/items/${item.id}/variants/${variant.id}/addons/${addonId}`, {
+  const response2 = await testRequest(`/api/items/${item.id}/variants/${variant.id}/addons/${addonId}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${token}`,
     },
   });
 
-  const data = await response2.json();
+  const data = await parseJSON(response2);
 
   assertEquals(response2.status, 200);
   assertEquals(data.message, 'Add-on removed successfully');
@@ -673,7 +678,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should reject duplicate 
   });
 
   // Add addon first time
-  await fetch(`${BASE_URL}/api/items/${item.id}/variants/${variant.id}/addons`, {
+  await testRequest(`/api/items/${item.id}/variants/${variant.id}/addons`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -686,7 +691,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should reject duplicate 
   });
 
   // Try to add same addon again
-  const response = await fetch(`${BASE_URL}/api/items/${item.id}/variants/${variant.id}/addons`, {
+  const response = await testRequest(`/api/items/${item.id}/variants/${variant.id}/addons`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -698,7 +703,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should reject duplicate 
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 409);
   assertExists(data.error);

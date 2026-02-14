@@ -20,14 +20,20 @@ vi.mock('../src/services/auth', () => ({
   authService: {
     login: vi.fn(),
     logout: vi.fn(),
+    logoutAll: vi.fn(),
     getCurrentUser: vi.fn(),
+    getAccessToken: vi.fn(),
+    getRefreshToken: vi.fn(),
+    setTokens: vi.fn(),
+    clearTokens: vi.fn(),
+    refreshAccessToken: vi.fn(),
+    updateProfile: vi.fn(),
   },
 }));
 
 describe('Header', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    localStorageMock.getItem.mockReturnValue(null);
   });
 
   it('renders SnapFlow brand', () => {
@@ -69,9 +75,9 @@ describe('Header', () => {
 
   it('renders user dropdown when authenticated', async () => {
     const mockUser = { id: 1, email: 'test@example.com', full_name: 'Test User', role: 'user' };
-    localStorageMock.getItem.mockReturnValue('valid-token');
-    
     const { authService } = await import('../src/services/auth');
+    authService.getAccessToken.mockReturnValue('valid-token');
+    authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
     render(
@@ -93,9 +99,9 @@ describe('Header', () => {
 
   it('displays user full name when available', async () => {
     const mockUser = { id: 1, email: 'test@example.com', full_name: 'John Doe', role: 'user' };
-    localStorageMock.getItem.mockReturnValue('valid-token');
-    
     const { authService } = await import('../src/services/auth');
+    authService.getAccessToken.mockReturnValue('valid-token');
+    authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
     render(
@@ -113,9 +119,9 @@ describe('Header', () => {
 
   it('displays email prefix when full_name is not available', async () => {
     const mockUser = { id: 1, email: 'jane@example.com', full_name: null, role: 'user' };
-    localStorageMock.getItem.mockReturnValue('valid-token');
-    
     const { authService } = await import('../src/services/auth');
+    authService.getAccessToken.mockReturnValue('valid-token');
+    authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
     render(
@@ -133,9 +139,9 @@ describe('Header', () => {
 
   it('displays user role in dropdown', async () => {
     const mockUser = { id: 1, email: 'admin@example.com', full_name: 'Admin User', role: 'admin' };
-    localStorageMock.getItem.mockReturnValue('admin-token');
-    
     const { authService } = await import('../src/services/auth');
+    authService.getAccessToken.mockReturnValue('admin-token');
+    authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
     render(
@@ -153,9 +159,9 @@ describe('Header', () => {
 
   it('shows admin menu items for admin users', async () => {
     const mockUser = { id: 1, email: 'admin@example.com', full_name: 'Admin User', role: 'admin' };
-    localStorageMock.getItem.mockReturnValue('admin-token');
-    
     const { authService } = await import('../src/services/auth');
+    authService.getAccessToken.mockReturnValue('admin-token');
+    authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
     render(
@@ -201,9 +207,9 @@ describe('Header', () => {
 
   it('calls logout when sign out is clicked', async () => {
     const mockUser = { id: 1, email: 'test@example.com', full_name: 'Test User', role: 'user' };
-    localStorageMock.getItem.mockReturnValue('valid-token');
-    
     const { authService } = await import('../src/services/auth');
+    authService.getAccessToken.mockReturnValue('valid-token');
+    authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
     authService.logout.mockResolvedValue(undefined);
 
@@ -264,9 +270,9 @@ describe('Header', () => {
 
   it('renders profile link in dropdown for authenticated users', async () => {
     const mockUser = { id: 1, email: 'test@example.com', full_name: 'Test User', role: 'user' };
-    localStorageMock.getItem.mockReturnValue('valid-token');
-    
     const { authService } = await import('../src/services/auth');
+    authService.getAccessToken.mockReturnValue('valid-token');
+    authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
     render(

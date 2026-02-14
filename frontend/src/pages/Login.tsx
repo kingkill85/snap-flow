@@ -20,7 +20,19 @@ const Login = () => {
       await login(email, password);
       navigate('/');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.');
+      const errorData = err.response?.data?.error;
+      // Handle Zod validation errors which come as objects
+      let errorMessage: string;
+      if (typeof errorData === 'object' && errorData !== null) {
+        if (errorData.issues && Array.isArray(errorData.issues)) {
+          errorMessage = errorData.issues.map((issue: any) => issue.message).join(', ');
+        } else {
+          errorMessage = JSON.stringify(errorData);
+        }
+      } else {
+        errorMessage = errorData || 'Login failed. Please try again.';
+      }
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }

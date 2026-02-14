@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Spinner } from 'flowbite-react';
+import { authService } from '../../services/auth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -14,7 +15,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const { isAuthenticated, user, isLoading } = useAuth();
 
   // Only show loading spinner if we have a token and are validating it
-  const hasToken = localStorage.getItem('token');
+  const hasToken = authService.getAccessToken();
   
   if (isLoading && hasToken) {
     return (

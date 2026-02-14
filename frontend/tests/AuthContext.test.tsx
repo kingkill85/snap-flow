@@ -3,26 +3,34 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
-import { authService } from '../src/services/auth';
+
+// Create mock functions that will be shared
+const mockLogin = vi.fn();
+const mockLogout = vi.fn();
+const mockLogoutAll = vi.fn();
+const mockGetCurrentUser = vi.fn();
+const mockGetAccessToken = vi.fn();
+const mockGetRefreshToken = vi.fn();
+const mockSetTokens = vi.fn();
+const mockClearTokens = vi.fn();
+const mockRefreshAccessToken = vi.fn();
+const mockUpdateProfile = vi.fn();
 
 // Mock the auth service
 vi.mock('../src/services/auth', () => ({
   authService: {
-    login: vi.fn(),
-    logout: vi.fn(),
-    getCurrentUser: vi.fn(),
+    get login() { return mockLogin; },
+    get logout() { return mockLogout; },
+    get logoutAll() { return mockLogoutAll; },
+    get getCurrentUser() { return mockGetCurrentUser; },
+    get getAccessToken() { return mockGetAccessToken; },
+    get getRefreshToken() { return mockGetRefreshToken; },
+    get setTokens() { return mockSetTokens; },
+    get clearTokens() { return mockClearTokens; },
+    get refreshAccessToken() { return mockRefreshAccessToken; },
+    get updateProfile() { return mockUpdateProfile; },
   },
 }));
-
-// Mock localStorage
-const localStorageMock = {
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-};
-Object.defineProperty(window, 'localStorage', {
-  value: localStorageMock,
-});
 
 // Test component that uses auth
 function TestComponent() {
@@ -44,7 +52,8 @@ function TestComponent() {
 describe('AuthContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    localStorageMock.getItem.mockReturnValue(null);
+    mockGetAccessToken.mockReturnValue(null);
+    mockGetRefreshToken.mockReturnValue(null);
   });
 
   it('initializes with no user when no token exists', () => {
@@ -63,11 +72,13 @@ describe('AuthContext', () => {
 
   it('login updates user state', async () => {
     const mockUser = { id: 1, email: 'test@example.com', role: 'user' };
-    const mockToken = 'mock-token-123';
+    const mockAccessToken = 'mock-access-token-123';
+    const mockRefreshToken = 'mock-refresh-token-123';
     
-    authService.login.mockResolvedValueOnce({
+    mockLogin.mockResolvedValueOnce({
       user: mockUser,
-      token: mockToken,
+      accessToken: mockAccessToken,
+      refreshToken: mockRefreshToken,
     });
 
     render(
@@ -86,16 +97,19 @@ describe('AuthContext', () => {
       expect(screen.getByTestId('user')).toHaveTextContent('test@example.com');
     });
 
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('token', mockToken);
+    // Verify login was called
+    expect(mockLogin).toHaveBeenCalledTimes(1);
   });
 
   it('logout clears user state', async () => {
     const mockUser = { id: 1, email: 'test@example.com', role: 'user' };
-    const mockToken = 'mock-token-123';
+    const mockAccessToken = 'mock-access-token-123';
+    const mockRefreshToken = 'mock-refresh-token-123';
     
-    authService.login.mockResolvedValueOnce({
+    mockLogin.mockResolvedValueOnce({
       user: mockUser,
-      token: mockToken,
+      accessToken: mockAccessToken,
+      refreshToken: mockRefreshToken,
     });
 
     render(
@@ -123,13 +137,14 @@ describe('AuthContext', () => {
       expect(screen.getByTestId('user')).toHaveTextContent('No User');
     });
 
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('token');
+    expect(mockLogout).toHaveBeenCalled();
   });
 
   it('loads user from token on mount', async () => {
     const mockUser = { id: 1, email: 'loaded@example.com', role: 'user' };
-    localStorageMock.getItem.mockReturnValue('existing-token');
-    authService.getCurrentUser.mockResolvedValueOnce(mockUser);
+    mockGetAccessToken.mockReturnValue('existing-access-token');
+    mockGetRefreshToken.mockReturnValue('existing-refresh-token');
+    mockGetCurrentUser.mockResolvedValueOnce(mockUser);
 
     render(
       <BrowserRouter>
@@ -149,8 +164,9 @@ describe('AuthContext', () => {
   });
 
   it('clears token on invalid user fetch', async () => {
-    localStorageMock.getItem.mockReturnValue('invalid-token');
-    authService.getCurrentUser.mockRejectedValueOnce(new Error('Invalid token'));
+    mockGetAccessToken.mockReturnValue('invalid-token');
+    mockGetRefreshToken.mockReturnValue('invalid-refresh-token');
+    mockGetCurrentUser.mockRejectedValueOnce(new Error('Invalid token'));
 
     render(
       <BrowserRouter>
@@ -164,6 +180,6 @@ describe('AuthContext', () => {
       expect(screen.getByTestId('authenticated')).toHaveTextContent('No');
     });
 
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('token');
+    expect(mockClearTokens).toHaveBeenCalled();
   });
 });

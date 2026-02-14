@@ -1,45 +1,65 @@
 /**
  * Test utilities for backend tests
  */
-import { db } from '../src/config/database.ts';
+import Database, { setTestDb, getDb } from '../src/config/database.ts';
+import { runMigrations } from '../src/scripts/migrate.ts';
+import { clearRateLimitStore } from '../src/middleware/rate-limit.ts';
+
+let isTestDatabaseInitialized = false;
 
 /**
- * Clear all data from tables (for test isolation)
+ * Setup test database with in-memory storage and migrations
+ */
+export async function setupTestDatabase(): Promise<void> {
+  if (!isTestDatabaseInitialized) {
+    // Initialize in-memory database
+    const memDb = Database.initInMemory();
+    
+    // Set it as the global db instance
+    setTestDb(memDb);
+    
+    // Run migrations
+    await runMigrations();
+    
+    isTestDatabaseInitialized = true;
+    console.log('✅ Test database initialized');
+  }
+}
+
+/**
+ * Clear all data from tables and rate limits (for test isolation)
  */
 export function clearDatabase(): void {
+  // Clear rate limits to prevent tests from hitting rate limits
+  clearRateLimitStore();
+  
+  const dbInstance = getDb();
+  
   // Disable foreign key checks temporarily
-  db.query('PRAGMA foreign_keys = OFF');
+  dbInstance.query('PRAGMA foreign_keys = OFF');
   
   // Get all tables
-  const tables = db.queryEntries<{ name: string }>(
+  const tables = dbInstance.queryEntries<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'migrations'"
   );
   
   // Delete from each table
   for (const table of tables) {
     try {
-      db.query(`DELETE FROM ${table.name}`);
+      dbInstance.query(`DELETE FROM ${table.name}`);
     } catch {
       // Ignore errors (might be view or other non-deletable object)
     }
   }
   
   // Re-enable foreign key checks
-  db.query('PRAGMA foreign_keys = ON');
-}
-
-/**
- * Setup test database with migrations
- */
-export async function setupTestDatabase(): Promise<void> {
-  // Migrations should already be run in the main database file
-  // This just ensures we're connected
-  console.log('Test database ready');
+  dbInstance.query('PRAGMA foreign_keys = ON');
 }
 
 /**
  * Teardown test database
  */
 export function teardownTestDatabase(): void {
-  // Cleanup if needed
+  Database.close();
+  isTestDatabaseInitialized = false;
 }

@@ -1,4 +1,4 @@
-import { db } from '../config/database.ts';
+import { getDb } from '../config/database.ts';
 
 /**
  * Migration runner
@@ -13,7 +13,7 @@ interface Migration {
 
 export async function setupMigrations(): Promise<void> {
   // Create migrations table if not exists
-  db.execute(`
+  getDb().execute(`
     CREATE TABLE IF NOT EXISTS migrations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -23,14 +23,14 @@ export async function setupMigrations(): Promise<void> {
 }
 
 export async function getAppliedMigrations(): Promise<string[]> {
-  const result = db.query<[string]>(`SELECT name FROM migrations ORDER BY id`);
+  const result = getDb().query<[string]>(`SELECT name FROM migrations ORDER BY id`);
   return result.map((row: [string]) => row[0]);
 }
 
 export async function applyMigration(name: string, sql: string): Promise<void> {
   try {
-    db.execute(sql);
-    db.query(`INSERT INTO migrations (name) VALUES (?)`, [name]);
+    getDb().execute(sql);
+    getDb().query(`INSERT INTO migrations (name) VALUES (?)`, [name]);
     console.log(`✅ Applied migration: ${name}`);
   } catch (error) {
     console.error(`❌ Failed to apply migration ${name}:`, error);
@@ -240,6 +240,23 @@ export async function runMigrations(): Promise<void> {
         
         CREATE INDEX idx_variant_addons_variant ON variant_addons(variant_id);
         CREATE INDEX idx_variant_addons_addon ON variant_addons(addon_variant_id);
+      `
+    },
+    {
+      name: '015_create_refresh_tokens_table',
+      sql: `
+        CREATE TABLE refresh_tokens (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          token_hash TEXT NOT NULL UNIQUE,
+          expires_at DATETIME NOT NULL,
+          revoked_at DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
+        CREATE INDEX idx_refresh_tokens_hash ON refresh_tokens(token_hash);
+        CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens(expires_at);
       `
     }
   ];

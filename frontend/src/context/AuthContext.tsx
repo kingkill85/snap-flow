@@ -20,6 +20,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  logoutAll: () => void;
   updateProfile: (data: UpdateProfileData) => Promise<void>;
 }
 
@@ -31,22 +32,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     const controller = new AbortController();
-    
+
     const checkAuth = async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
+      const accessToken = authService.getAccessToken();
+      const refreshToken = authService.getRefreshToken();
+
+      if (!accessToken && !refreshToken) {
         setIsLoading(false);
         return;
       }
 
       try {
+        // If we have a refresh token but no access token, try to refresh
+        if (!accessToken && refreshToken) {
+          await authService.refreshAccessToken(controller.signal);
+        }
+
         const userData = await authService.getCurrentUser(controller.signal);
         if (!controller.signal.aborted) {
           setUser(userData);
         }
       } catch (error) {
         if (!controller.signal.aborted) {
-          localStorage.removeItem('token');
+          authService.clearTokens();
           setUser(null);
         }
       } finally {
@@ -57,7 +65,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     checkAuth();
-    
+
     return () => {
       controller.abort();
     };
@@ -66,8 +74,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      const { user: userData, token } = await authService.login(email, password);
-      localStorage.setItem('token', token);
+      const { user: userData } = await authService.login(email, password);
       setUser(userData);
     } finally {
       setIsLoading(false);
@@ -75,9 +82,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    setUser(null);
     authService.logout();
+    setUser(null);
+  };
+
+  const logoutAll = () => {
+    authService.logoutAll();
+    setUser(null);
   };
 
   const updateProfile = async (data: UpdateProfileData) => {
@@ -98,6 +109,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isLoading,
         login,
         logout,
+        logoutAll,
         updateProfile,
       }}
     >

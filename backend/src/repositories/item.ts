@@ -1,4 +1,4 @@
-import { db } from '../config/database.ts';
+import { getDb } from '../config/database.ts';
 import type { Item, CreateItemDTO, UpdateItemDTO } from '../models/index.ts';
 import { itemVariantRepository } from './item-variant.ts';
 import { itemAddonRepository } from './item-addon.ts';
@@ -46,7 +46,7 @@ export class ItemRepository {
     }
 
     // Get total count
-    const countResult = db.query(`SELECT COUNT(*) as total FROM items i ${whereClause}`, values);
+    const countResult = getDb().query(`SELECT COUNT(*) as total FROM items i ${whereClause}`, values);
     const total = countResult[0][0] as number;
 
     // Build query
@@ -65,7 +65,7 @@ export class ItemRepository {
     query += ` LIMIT ? OFFSET ?`;
     values.push(limit, offset);
 
-    const result = db.queryEntries(query, values);
+    const result = getDb().queryEntries(query, values);
 
     return {
       items: result as unknown as Item[],
@@ -76,7 +76,7 @@ export class ItemRepository {
   }
 
   async findById(id: number, includeRelations: boolean = false): Promise<Item | null> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, category_id, name, description, base_model_number, dimensions, created_at
       FROM items
       WHERE id = ?
@@ -97,7 +97,7 @@ export class ItemRepository {
   }
 
   async findByBaseModelNumber(baseModelNumber: string): Promise<Item | null> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, category_id, name, description, base_model_number, dimensions, created_at
       FROM items
       WHERE base_model_number = ?
@@ -106,7 +106,7 @@ export class ItemRepository {
   }
 
   async findByCategory(categoryId: number): Promise<Item[]> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, category_id, name, description, base_model_number, dimensions, created_at
       FROM items
       WHERE category_id = ?
@@ -116,7 +116,7 @@ export class ItemRepository {
   }
 
   async create(data: CreateItemDTO): Promise<Item> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       INSERT INTO items (category_id, name, description, base_model_number, dimensions)
       VALUES (?, ?, ?, ?, ?)
       RETURNING id, category_id, name, description, base_model_number, dimensions, created_at
@@ -162,7 +162,7 @@ export class ItemRepository {
 
     values.push(id);
 
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       UPDATE items
       SET ${sets.join(', ')}
       WHERE id = ?
@@ -177,7 +177,7 @@ export class ItemRepository {
     await itemVariantRepository.deleteByItemId(id);
     await itemAddonRepository.deleteByParentItemId(id);
     
-    db.query(`DELETE FROM items WHERE id = ?`, [id]);
+    getDb().query(`DELETE FROM items WHERE id = ?`, [id]);
   }
 
   async findOrCreateByBaseModelNumber(

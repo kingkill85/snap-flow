@@ -4,7 +4,14 @@ import { z } from 'zod';
 import { userRepository } from '../repositories/user.ts';
 import { hashPassword, comparePassword } from '../services/password.ts';
 import { generateToken } from '../services/jwt.ts';
+import {
+  createRefreshToken,
+  verifyRefreshToken,
+  revokeRefreshToken,
+  revokeAllUserTokens,
+} from '../services/refresh-token.ts';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.ts';
+import { loginRateLimit, refreshRateLimit } from '../middleware/rate-limit.ts';
 
 const authRoutes = new Hono();
 
@@ -21,7 +28,7 @@ const createUserSchema = z.object({
 });
 
 // POST /auth/login - Authenticate user
-authRoutes.post('/login', zValidator('json', loginSchema), async (c) => {
+authRoutes.post('/login', loginRateLimit(), zValidator('json', loginSchema), async (c) => {
   const { email, password } = c.req.valid('json');
 
   try {
@@ -37,8 +44,11 @@ authRoutes.post('/login', zValidator('json', loginSchema), async (c) => {
       return c.json({ error: 'Invalid email or password' }, 401);
     }
 
-    // Generate JWT token
-    const token = await generateToken(user.id, user.email, user.role);
+    // Generate access token (short-lived)
+    const accessToken = await generateToken(user.id, user.email, user.role);
+
+    // Generate refresh token (long-lived)
+    const refreshToken = await createRefreshToken(user.id);
 
     return c.json({
       data: {
@@ -48,7 +58,8 @@ authRoutes.post('/login', zValidator('json', loginSchema), async (c) => {
           full_name: user.full_name,
           role: user.role,
         },
-        token,
+        accessToken,
+        refreshToken,
       },
       message: 'Login successful',
     });
@@ -58,12 +69,76 @@ authRoutes.post('/login', zValidator('json', loginSchema), async (c) => {
   }
 });
 
-// POST /auth/logout - Invalidate token (client-side for JWT)
+// POST /auth/logout - Invalidate refresh token
 authRoutes.post('/logout', authMiddleware, async (c) => {
-  // With JWT, logout is handled client-side by removing the token
-  return c.json({
-    message: 'Logout successful',
-  });
+  const userId = c.get('userId');
+  
+  try {
+    // Revoke all refresh tokens for this user
+    await revokeAllUserTokens(userId);
+    
+    return c.json({
+      message: 'Logout successful',
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// POST /auth/logout-all - Invalidate all tokens (from all devices)
+authRoutes.post('/logout-all', authMiddleware, async (c) => {
+  const userId = c.get('userId');
+  
+  try {
+    // Revoke all refresh tokens for this user
+    await revokeAllUserTokens(userId);
+    
+    return c.json({
+      message: 'Logged out from all devices successfully',
+    });
+  } catch (error) {
+    console.error('Logout all error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Refresh token schema
+const refreshSchema = z.object({
+  refreshToken: z.string(),
+});
+
+// POST /auth/refresh - Get new access token using refresh token
+authRoutes.post('/refresh', refreshRateLimit(), zValidator('json', refreshSchema), async (c) => {
+  const { refreshToken } = c.req.valid('json');
+
+  try {
+    // Verify refresh token
+    const userId = await verifyRefreshToken(refreshToken);
+    
+    if (!userId) {
+      return c.json({ error: 'Invalid or expired refresh token' }, 401);
+    }
+
+    // Get user details
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    // Generate new access token
+    const newAccessToken = await generateToken(user.id, user.email, user.role);
+
+    return c.json({
+      data: {
+        accessToken: newAccessToken,
+      },
+      message: 'Token refreshed successfully',
+    });
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
 });
 
 // GET /auth/me - Get current user info

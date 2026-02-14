@@ -58,7 +58,127 @@ itemRoutes.get('/', async (c) => {
   }
 });
 
+// ==========================================
+// VARIANT ADD-ON ROUTES (MUST BE BEFORE /:id)
+// ==========================================
+
+// GET /items/:id/variants/:variantId/addons - Get all add-ons for a variant
+itemRoutes.get('/:id/variants/:variantId/addons', async (c) => {
+  try {
+    const itemId = parseInt(c.req.param('id'));
+    const variantId = parseInt(c.req.param('variantId'));
+    
+    const item = await itemRepository.findById(itemId);
+    if (!item) {
+      return c.json({ error: 'Item not found' }, 404);
+    }
+
+    const variant = await itemVariantRepository.findById(variantId);
+    if (!variant || variant.item_id !== itemId) {
+      return c.json({ error: 'Variant not found' }, 404);
+    }
+
+    const addons = await variantAddonRepository.findByVariantId(variantId);
+
+    return c.json({
+      data: addons,
+    });
+  } catch (error) {
+    console.error('Get variant addons error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// POST /items/:id/variants/:variantId/addons - Add add-on to variant
+itemRoutes.post('/:id/variants/:variantId/addons', authMiddleware, adminMiddleware, async (c) => {
+  try {
+    const itemId = parseInt(c.req.param('id'));
+    const variantId = parseInt(c.req.param('variantId'));
+    const { addon_variant_id, is_optional } = await c.req.json();
+
+    if (!addon_variant_id) {
+      return c.json({ error: 'addon_variant_id is required' }, 400);
+    }
+
+    const item = await itemRepository.findById(itemId);
+    if (!item) {
+      return c.json({ error: 'Item not found' }, 404);
+    }
+
+    const variant = await itemVariantRepository.findById(variantId);
+    if (!variant || variant.item_id !== itemId) {
+      return c.json({ error: 'Variant not found' }, 404);
+    }
+
+    // Prevent self-reference
+    if (variantId === parseInt(addon_variant_id)) {
+      return c.json({ error: 'Variant cannot be an add-on of itself' }, 400);
+    }
+
+    // Check if addon already exists
+    const existingAddons = await variantAddonRepository.findByVariantId(variantId);
+    const alreadyExists = existingAddons.some(a => a.addon_variant_id === parseInt(addon_variant_id));
+    if (alreadyExists) {
+      return c.json({ error: 'Add-on already exists for this variant' }, 409);
+    }
+
+    const createData: CreateVariantAddonDTO = {
+      variant_id: variantId,
+      addon_variant_id: parseInt(addon_variant_id),
+      is_optional: is_optional ?? true,
+    };
+
+    const addon = await variantAddonRepository.create(createData);
+
+    return c.json({
+      data: addon,
+      message: 'Add-on added successfully',
+    }, 201);
+  } catch (error) {
+    console.error('Create variant addon error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// DELETE /items/:id/variants/:variantId/addons/:addonId - Remove add-on from variant
+itemRoutes.delete('/:id/variants/:variantId/addons/:addonId', authMiddleware, adminMiddleware, async (c) => {
+  try {
+    const itemId = parseInt(c.req.param('id'));
+    const variantId = parseInt(c.req.param('variantId'));
+    const addonId = parseInt(c.req.param('addonId'));
+
+    const item = await itemRepository.findById(itemId);
+    if (!item) {
+      return c.json({ error: 'Item not found' }, 404);
+    }
+
+    const variant = await itemVariantRepository.findById(variantId);
+    if (!variant || variant.item_id !== itemId) {
+      return c.json({ error: 'Variant not found' }, 404);
+    }
+
+    const addon = await variantAddonRepository.findById(addonId);
+    if (!addon || addon.variant_id !== variantId) {
+      return c.json({ error: 'Add-on not found' }, 404);
+    }
+
+    await variantAddonRepository.delete(addonId);
+
+    return c.json({
+      message: 'Add-on removed successfully',
+    });
+  } catch (error) {
+    console.error('Delete variant addon error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// ==========================================
+// BASIC CRUD ROUTES
+// ==========================================
+
 // GET /items/:id - Get single item with variants and add-ons
+// NOTE: This must be AFTER all more specific /:id/* routes
 itemRoutes.get('/:id', async (c) => {
   try {
     const id = parseInt(c.req.param('id'));
@@ -555,114 +675,6 @@ itemRoutes.post('/import', authMiddleware, adminMiddleware, async (c) => {
   } catch (error) {
     console.error('Import execution error:', error);
     return c.json({ error: 'Failed to execute import' }, 500);
-  }
-});
-
-// ==========================================
-// VARIANT ADD-ON ROUTES (Add-ons per variant)
-// ==========================================
-
-// GET /items/:id/variants/:variantId/addons - Get all add-ons for a variant
-itemRoutes.get('/:id/variants/:variantId/addons', async (c) => {
-  try {
-    const itemId = parseInt(c.req.param('id'));
-    const variantId = parseInt(c.req.param('variantId'));
-    
-    const item = await itemRepository.findById(itemId);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const variant = await itemVariantRepository.findById(variantId);
-    if (!variant || variant.item_id !== itemId) {
-      return c.json({ error: 'Variant not found' }, 404);
-    }
-
-    const addons = await variantAddonRepository.findByVariantId(variantId);
-
-    return c.json({
-      data: addons,
-    });
-  } catch (error) {
-    console.error('Get variant addons error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// POST /items/:id/variants/:variantId/addons - Add add-on to variant
-itemRoutes.post('/:id/variants/:variantId/addons', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const itemId = parseInt(c.req.param('id'));
-    const variantId = parseInt(c.req.param('variantId'));
-    const { addon_variant_id, is_optional } = await c.req.json();
-
-    if (!addon_variant_id) {
-      return c.json({ error: 'addon_variant_id is required' }, 400);
-    }
-
-    const item = await itemRepository.findById(itemId);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const variant = await itemVariantRepository.findById(variantId);
-    if (!variant || variant.item_id !== itemId) {
-      return c.json({ error: 'Variant not found' }, 404);
-    }
-
-    // Prevent self-reference
-    if (variantId === parseInt(addon_variant_id)) {
-      return c.json({ error: 'Variant cannot be an add-on of itself' }, 400);
-    }
-
-    const createData: CreateVariantAddonDTO = {
-      variant_id: variantId,
-      addon_variant_id: parseInt(addon_variant_id),
-      is_optional: is_optional ?? true,
-    };
-
-    const addon = await variantAddonRepository.create(createData);
-
-    return c.json({
-      data: addon,
-      message: 'Add-on added successfully',
-    }, 201);
-  } catch (error) {
-    console.error('Create variant addon error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// DELETE /items/:id/variants/:variantId/addons/:addonId - Remove add-on from variant
-itemRoutes.delete('/:id/variants/:variantId/addons/:addonId', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const itemId = parseInt(c.req.param('id'));
-    const variantId = parseInt(c.req.param('variantId'));
-    const addonId = parseInt(c.req.param('addonId'));
-
-    const item = await itemRepository.findById(itemId);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const variant = await itemVariantRepository.findById(variantId);
-    if (!variant || variant.item_id !== itemId) {
-      return c.json({ error: 'Variant not found' }, 404);
-    }
-
-    const addon = await variantAddonRepository.findById(addonId);
-    if (!addon || addon.variant_id !== variantId) {
-      return c.json({ error: 'Add-on not found' }, 404);
-    }
-
-    await variantAddonRepository.delete(addonId);
-
-    return c.json({
-      message: 'Add-on removed successfully',
-    });
-  } catch (error) {
-    console.error('Delete variant addon error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
   }
 });
 

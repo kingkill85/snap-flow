@@ -1,10 +1,14 @@
 import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
-import { clearDatabase } from '../test-utils.ts';
-import { userRepository } from '../../src/repositories/user.ts';
-import { categoryRepository } from '../../src/repositories/category.ts';
+import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
+import { testRequest, parseJSON } from '../test-client.ts';
 import { hashPassword } from '../../src/services/password.ts';
 
-const BASE_URL = 'http://localhost:8000';
+// Setup test database before all tests
+await setupTestDatabase();
+
+// Import repositories after database is set up
+const { userRepository } = await import('../../src/repositories/user.ts');
+const { categoryRepository } = await import('../../src/repositories/category.ts');
 
 async function getAdminToken(): Promise<string> {
   clearDatabase();
@@ -18,7 +22,7 @@ async function getAdminToken(): Promise<string> {
   });
 
   // Login as admin
-  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+  const loginResponse = await testRequest('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -27,8 +31,8 @@ async function getAdminToken(): Promise<string> {
     }),
   });
 
-  const loginData = await loginResponse.json();
-  return loginData.data.token;
+  const loginData = await parseJSON(loginResponse);
+  return loginData.data.accessToken;
 }
 
 async function getUserToken(): Promise<string> {
@@ -43,7 +47,7 @@ async function getUserToken(): Promise<string> {
   });
 
   // Login as user
-  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+  const loginResponse = await testRequest('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -52,8 +56,8 @@ async function getUserToken(): Promise<string> {
     }),
   });
 
-  const loginData = await loginResponse.json();
-  return loginData.data.token;
+  const loginData = await parseJSON(loginResponse);
+  return loginData.data.accessToken;
 }
 
 Deno.test('GET /categories - should list all categories (public)', async () => {
@@ -64,8 +68,8 @@ Deno.test('GET /categories - should list all categories (public)', async () => {
   await categoryRepository.create({ name: 'Security' });
   await categoryRepository.create({ name: 'Climate Control' });
 
-  const response = await fetch(`${BASE_URL}/api/categories`);
-  const data = await response.json();
+  const response = await testRequest('/api/categories');
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertExists(data.data);
@@ -77,8 +81,8 @@ Deno.test('GET /categories/:id - should get single category', async () => {
   
   const category = await categoryRepository.create({ name: 'Lighting' });
 
-  const response = await fetch(`${BASE_URL}/api/categories/${category.id}`);
-  const data = await response.json();
+  const response = await testRequest(`/api/categories/${category.id}`);
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.id, category.id);
@@ -88,8 +92,8 @@ Deno.test('GET /categories/:id - should get single category', async () => {
 Deno.test('GET /categories/:id - should return 404 for non-existent category', async () => {
   clearDatabase();
   
-  const response = await fetch(`${BASE_URL}/api/categories/99999`);
-  const data = await response.json();
+  const response = await testRequest('/api/categories/99999');
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 404);
   assertExists(data.error);
@@ -98,7 +102,7 @@ Deno.test('GET /categories/:id - should return 404 for non-existent category', a
 Deno.test('POST /categories - should create category (admin only)', async () => {
   const token = await getAdminToken();
 
-  const response = await fetch(`${BASE_URL}/api/categories`, {
+  const response = await testRequest('/api/categories', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -109,7 +113,7 @@ Deno.test('POST /categories - should create category (admin only)', async () => 
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 201);
   assertExists(data.data);
@@ -121,7 +125,7 @@ Deno.test('POST /categories - should create category (admin only)', async () => 
 Deno.test('POST /categories - should reject non-admin users', async () => {
   const token = await getUserToken();
 
-  const response = await fetch(`${BASE_URL}/api/categories`, {
+  const response = await testRequest('/api/categories', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -142,7 +146,7 @@ Deno.test('POST /categories - should reject duplicate category names', async () 
   await categoryRepository.create({ name: 'Lighting' });
 
   // Try to create duplicate
-  const response = await fetch(`${BASE_URL}/api/categories`, {
+  const response = await testRequest('/api/categories', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -153,7 +157,7 @@ Deno.test('POST /categories - should reject duplicate category names', async () 
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 400);
   assertExists(data.error);
@@ -164,7 +168,7 @@ Deno.test('PUT /categories/:id - should update category (admin only)', async () 
   
   const category = await categoryRepository.create({ name: 'Lighting' });
 
-  const response = await fetch(`${BASE_URL}/api/categories/${category.id}`, {
+  const response = await testRequest(`/api/categories/${category.id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -175,7 +179,7 @@ Deno.test('PUT /categories/:id - should update category (admin only)', async () 
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.name, 'Smart Lighting');
@@ -185,7 +189,7 @@ Deno.test('PUT /categories/:id - should update category (admin only)', async () 
 Deno.test('PUT /categories/:id - should return 404 for non-existent category', async () => {
   const token = await getAdminToken();
 
-  const response = await fetch(`${BASE_URL}/api/categories/99999`, {
+  const response = await testRequest('/api/categories/99999', {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -204,20 +208,20 @@ Deno.test('DELETE /categories/:id - should delete category (admin only)', async 
   
   const category = await categoryRepository.create({ name: 'To Delete' });
 
-  const response = await fetch(`${BASE_URL}/api/categories/${category.id}`, {
+  const response = await testRequest(`/api/categories/${category.id}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${token}`,
     },
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.message, 'Category deleted successfully');
 
   // Verify deletion
-  const getResponse = await fetch(`${BASE_URL}/api/categories/${category.id}`);
+  const getResponse = await testRequest(`/api/categories/${category.id}`);
   assertEquals(getResponse.status, 404);
 });
 
@@ -229,7 +233,7 @@ Deno.test('PATCH /categories/reorder - should reorder categories (admin only)', 
   const cat3 = await categoryRepository.create({ name: 'Third', sort_order: 3 });
 
   // Reorder: put Third first, First second, Second third
-  const response = await fetch(`${BASE_URL}/api/categories/reorder`, {
+  const response = await testRequest('/api/categories/reorder', {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -240,7 +244,7 @@ Deno.test('PATCH /categories/reorder - should reorder categories (admin only)', 
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.message, 'Categories reordered successfully');
@@ -253,7 +257,7 @@ Deno.test('PATCH /categories/reorder - should reorder categories (admin only)', 
 });
 
 Deno.test('POST /categories - should require authentication', async () => {
-  const response = await fetch(`${BASE_URL}/api/categories`, {
+  const response = await testRequest('/api/categories', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'Test' }),

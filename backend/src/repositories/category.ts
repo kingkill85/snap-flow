@@ -1,4 +1,4 @@
-import { db } from '../config/database.ts';
+import { getDb } from '../config/database.ts';
 import type { Category, CreateCategoryDTO, UpdateCategoryDTO } from '../models/index.ts';
 
 /**
@@ -7,7 +7,7 @@ import type { Category, CreateCategoryDTO, UpdateCategoryDTO } from '../models/i
  */
 export class CategoryRepository {
   async findAll(): Promise<Category[]> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, name, sort_order 
       FROM categories 
       ORDER BY sort_order ASC, name ASC
@@ -16,7 +16,7 @@ export class CategoryRepository {
   }
 
   async findById(id: number): Promise<Category | null> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, name, sort_order 
       FROM categories 
       WHERE id = ?
@@ -25,7 +25,7 @@ export class CategoryRepository {
   }
 
   async findByName(name: string): Promise<Category | null> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, name, sort_order 
       FROM categories 
       WHERE name = ?
@@ -34,14 +34,14 @@ export class CategoryRepository {
   }
 
   async getNextSortOrder(): Promise<number> {
-    const result = db.query(`SELECT MAX(sort_order) as max_order FROM categories`);
+    const result = getDb().query(`SELECT MAX(sort_order) as max_order FROM categories`);
     return ((result[0][0] as number) || 0) + 1;
   }
 
   async create(data: CreateCategoryDTO): Promise<Category> {
     const sortOrder = data.sort_order ?? await this.getNextSortOrder();
     
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       INSERT INTO categories (name, sort_order) 
       VALUES (?, ?)
       RETURNING id, name, sort_order
@@ -69,7 +69,7 @@ export class CategoryRepository {
 
     values.push(id);
 
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       UPDATE categories 
       SET ${sets.join(', ')} 
       WHERE id = ?
@@ -80,12 +80,12 @@ export class CategoryRepository {
   }
 
   async delete(id: number): Promise<void> {
-    db.query(`DELETE FROM categories WHERE id = ?`, [id]);
+    getDb().query(`DELETE FROM categories WHERE id = ?`, [id]);
   }
 
   async reorder(categoryIds: number[]): Promise<void> {
     for (let i = 0; i < categoryIds.length; i++) {
-      db.query(`
+      getDb().query(`
         UPDATE categories 
         SET sort_order = ? 
         WHERE id = ?

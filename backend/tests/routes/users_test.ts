@@ -1,9 +1,13 @@
 import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
-import { clearDatabase } from '../test-utils.ts';
-import { userRepository } from '../../src/repositories/user.ts';
+import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
+import { testRequest, parseJSON } from '../test-client.ts';
 import { hashPassword } from '../../src/services/password.ts';
 
-const BASE_URL = 'http://localhost:8000';
+// Setup test database before all tests
+await setupTestDatabase();
+
+// Import repositories after database is set up
+const { userRepository } = await import('../../src/repositories/user.ts');
 
 async function getAdminToken(): Promise<string> {
   clearDatabase();
@@ -17,7 +21,7 @@ async function getAdminToken(): Promise<string> {
   });
 
   // Login as admin
-  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+  const loginResponse = await testRequest('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -26,8 +30,8 @@ async function getAdminToken(): Promise<string> {
     }),
   });
 
-  const loginData = await loginResponse.json();
-  return loginData.data.token;
+  const loginData = await parseJSON(loginResponse);
+  return loginData.data.accessToken;
 }
 
 async function getUserToken(): Promise<string> {
@@ -42,7 +46,7 @@ async function getUserToken(): Promise<string> {
   });
 
   // Login as user
-  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+  const loginResponse = await testRequest('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -51,14 +55,14 @@ async function getUserToken(): Promise<string> {
     }),
   });
 
-  const loginData = await loginResponse.json();
-  return loginData.data.token;
+  const loginData = await parseJSON(loginResponse);
+  return loginData.data.accessToken;
 }
 
 Deno.test('User management - admin can create user', async () => {
   const adminToken = await getAdminToken();
 
-  const response = await fetch(`${BASE_URL}/users`, {
+  const response = await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -71,7 +75,7 @@ Deno.test('User management - admin can create user', async () => {
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 201);
   assertEquals(data.data.email, 'newuser@example.com');
@@ -81,7 +85,7 @@ Deno.test('User management - admin can create user', async () => {
 Deno.test('User management - non-admin cannot create user', async () => {
   const userToken = await getUserToken();
 
-  const response = await fetch(`${BASE_URL}/users`, {
+  const response = await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -94,7 +98,7 @@ Deno.test('User management - non-admin cannot create user', async () => {
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 403);
   assertEquals(data.error, 'Forbidden - Admin access required');
@@ -104,7 +108,7 @@ Deno.test('User management - cannot create duplicate user', async () => {
   const adminToken = await getAdminToken();
 
   // Create user first
-  await fetch(`${BASE_URL}/users`, {
+  await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -118,7 +122,7 @@ Deno.test('User management - cannot create duplicate user', async () => {
   });
 
   // Try to create again
-  const response = await fetch(`${BASE_URL}/users`, {
+  const response = await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -131,7 +135,7 @@ Deno.test('User management - cannot create duplicate user', async () => {
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 400);
   assertEquals(data.error, 'User with this email already exists');
@@ -140,11 +144,11 @@ Deno.test('User management - cannot create duplicate user', async () => {
 Deno.test('User management - admin can list users', async () => {
   const adminToken = await getAdminToken();
 
-  const response = await fetch(`${BASE_URL}/users`, {
+  const response = await testRequest('/api/users', {
     headers: { 'Authorization': `Bearer ${adminToken}` },
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertExists(data.data);
@@ -154,11 +158,11 @@ Deno.test('User management - admin can list users', async () => {
 Deno.test('User management - non-admin cannot list users', async () => {
   const userToken = await getUserToken();
 
-  const response = await fetch(`${BASE_URL}/users`, {
+  const response = await testRequest('/api/users', {
     headers: { 'Authorization': `Bearer ${userToken}` },
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 403);
   assertEquals(data.error, 'Forbidden - Admin access required');
@@ -168,7 +172,7 @@ Deno.test('User management - admin can delete user', async () => {
   const adminToken = await getAdminToken();
 
   // Create a user to delete
-  const createResponse = await fetch(`${BASE_URL}/users`, {
+  const createResponse = await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -181,16 +185,16 @@ Deno.test('User management - admin can delete user', async () => {
     }),
   });
 
-  const createData = await createResponse.json();
+  const createData = await parseJSON(createResponse);
   const userId = createData.data.id;
 
   // Delete the user
-  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+  const response = await testRequest(`/api/users/${userId}`, {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${adminToken}` },
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertExists(data.message);
@@ -207,7 +211,7 @@ Deno.test('User management - cannot delete yourself', async () => {
     role: 'admin',
   });
 
-  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+  const loginResponse = await testRequest('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -216,16 +220,16 @@ Deno.test('User management - cannot delete yourself', async () => {
     }),
   });
 
-  const loginData = await loginResponse.json();
-  const adminToken = loginData.data.token;
+  const loginData = await parseJSON(loginResponse);
+  const adminToken = loginData.data.accessToken;
 
   // Try to delete self
-  const response = await fetch(`${BASE_URL}/users/${admin.id}`, {
+  const response = await testRequest(`/api/users/${admin.id}`, {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${adminToken}` },
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 400);
   assertEquals(data.error, 'Cannot delete your own account');
@@ -235,7 +239,7 @@ Deno.test('User management - created user can login', async () => {
   const adminToken = await getAdminToken();
 
   // Create user
-  await fetch(`${BASE_URL}/users`, {
+  await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -249,7 +253,7 @@ Deno.test('User management - created user can login', async () => {
   });
 
   // Login with created user
-  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+  const loginResponse = await testRequest('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -258,17 +262,17 @@ Deno.test('User management - created user can login', async () => {
     }),
   });
 
-  const loginData = await loginResponse.json();
+  const loginData = await parseJSON(loginResponse);
 
   assertEquals(loginResponse.status, 200);
-  assertExists(loginData.data.token);
+  assertExists(loginData.data.accessToken);
 });
 
 Deno.test('User management - admin can update user full_name', async () => {
   const adminToken = await getAdminToken();
 
   // Create a user to update
-  const createResponse = await fetch(`${BASE_URL}/users`, {
+  const createResponse = await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -281,11 +285,11 @@ Deno.test('User management - admin can update user full_name', async () => {
     }),
   });
 
-  const createData = await createResponse.json();
+  const createData = await parseJSON(createResponse);
   const userId = createData.data.id;
 
   // Update the user's full_name
-  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+  const response = await testRequest(`/api/users/${userId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -296,7 +300,7 @@ Deno.test('User management - admin can update user full_name', async () => {
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.full_name, 'Updated Full Name');
@@ -306,7 +310,7 @@ Deno.test('User management - admin can update user email', async () => {
   const adminToken = await getAdminToken();
 
   // Create a user to update
-  const createResponse = await fetch(`${BASE_URL}/users`, {
+  const createResponse = await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -319,11 +323,11 @@ Deno.test('User management - admin can update user email', async () => {
     }),
   });
 
-  const createData = await createResponse.json();
+  const createData = await parseJSON(createResponse);
   const userId = createData.data.id;
 
   // Update the user's email
-  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+  const response = await testRequest(`/api/users/${userId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -334,7 +338,7 @@ Deno.test('User management - admin can update user email', async () => {
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.email, 'newuseremail@example.com');
@@ -344,7 +348,7 @@ Deno.test('User management - admin can update user password', async () => {
   const adminToken = await getAdminToken();
 
   // Create a user to update
-  const createResponse = await fetch(`${BASE_URL}/users`, {
+  const createResponse = await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -357,11 +361,11 @@ Deno.test('User management - admin can update user password', async () => {
     }),
   });
 
-  const createData = await createResponse.json();
+  const createData = await parseJSON(createResponse);
   const userId = createData.data.id;
 
   // Update the user's password
-  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+  const response = await testRequest(`/api/users/${userId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -375,7 +379,7 @@ Deno.test('User management - admin can update user password', async () => {
   assertEquals(response.status, 200);
 
   // Verify new password works
-  const loginResponse = await fetch(`${BASE_URL}/auth/login`, {
+  const loginResponse = await testRequest('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -391,7 +395,7 @@ Deno.test('User management - admin can update user role', async () => {
   const adminToken = await getAdminToken();
 
   // Create a user to update
-  const createResponse = await fetch(`${BASE_URL}/users`, {
+  const createResponse = await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -404,11 +408,11 @@ Deno.test('User management - admin can update user role', async () => {
     }),
   });
 
-  const createData = await createResponse.json();
+  const createData = await parseJSON(createResponse);
   const userId = createData.data.id;
 
   // Promote the user to admin
-  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+  const response = await testRequest(`/api/users/${userId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -419,7 +423,7 @@ Deno.test('User management - admin can update user role', async () => {
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   assertEquals(data.data.role, 'admin');
@@ -429,7 +433,7 @@ Deno.test('User management - admin update without changes fails', async () => {
   const adminToken = await getAdminToken();
 
   // Create a user to update
-  const createResponse = await fetch(`${BASE_URL}/users`, {
+  const createResponse = await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -442,11 +446,11 @@ Deno.test('User management - admin update without changes fails', async () => {
     }),
   });
 
-  const createData = await createResponse.json();
+  const createData = await parseJSON(createResponse);
   const userId = createData.data.id;
 
   // Try to update without any changes
-  const response = await fetch(`${BASE_URL}/users/${userId}`, {
+  const response = await testRequest(`/api/users/${userId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -455,7 +459,7 @@ Deno.test('User management - admin update without changes fails', async () => {
     body: JSON.stringify({}),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 400);
   assertEquals(data.error, 'No fields to update');
@@ -465,7 +469,7 @@ Deno.test('User management - admin cannot update non-existent user', async () =>
   const adminToken = await getAdminToken();
 
   // Try to update non-existent user
-  const response = await fetch(`${BASE_URL}/users/99999`, {
+  const response = await testRequest('/api/users/99999', {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -476,7 +480,7 @@ Deno.test('User management - admin cannot update non-existent user', async () =>
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 404);
   assertEquals(data.error, 'User not found');
@@ -486,7 +490,7 @@ Deno.test('User management - admin cannot use duplicate email', async () => {
   const adminToken = await getAdminToken();
 
   // Create two users
-  await fetch(`${BASE_URL}/users`, {
+  await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -499,7 +503,7 @@ Deno.test('User management - admin cannot use duplicate email', async () => {
     }),
   });
 
-  const createResponse2 = await fetch(`${BASE_URL}/users`, {
+  const createResponse2 = await testRequest('/api/users', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -512,11 +516,11 @@ Deno.test('User management - admin cannot use duplicate email', async () => {
     }),
   });
 
-  const createData2 = await createResponse2.json();
+  const createData2 = await parseJSON(createResponse2);
   const userId2 = createData2.data.id;
 
   // Try to update second user with first user's email
-  const response = await fetch(`${BASE_URL}/users/${userId2}`, {
+  const response = await testRequest(`/api/users/${userId2}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -527,7 +531,7 @@ Deno.test('User management - admin cannot use duplicate email', async () => {
     }),
   });
 
-  const data = await response.json();
+  const data = await parseJSON(response);
 
   assertEquals(response.status, 400);
   assertEquals(data.error, 'Email already in use');

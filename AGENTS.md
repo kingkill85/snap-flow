@@ -18,9 +18,10 @@
 - **Runtime:** Deno (v1.40+)
 - **Framework:** Hono
 - **Database:** SQLite with Repository pattern
-- **Auth:** JWT (djwt library)
+- **Auth:** JWT with refresh tokens (djwt library)
 - **Excel:** xlsx library (server-side)
-- **Testing:** Deno.test
+- **Testing:** Deno.test (with in-memory database)
+- **Rate Limiting:** In-memory with configurable limits
 
 ### Frontend
 - **Framework:** React 18 + TypeScript
@@ -112,6 +113,21 @@ export const itemService = {
   getAll: () => api.get('/items'),
 }
 
+// Using the centralized API instance
+import api from './api';
+
+export const userService = {
+  async getAll(signal?: AbortSignal) {
+    const response = await api.get('/users', { signal });
+    return response.data.data;
+  },
+  
+  async create(data: CreateUserDTO, signal?: AbortSignal) {
+    const response = await api.post('/users', data, { signal });
+    return response.data.data;
+  },
+};
+
 // Hook
 export function useCategories() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -126,6 +142,96 @@ export function useCategories() {
 - Services: `camelCase.ts`
 - Repositories: `PascalCase.ts` (e.g., `CategoryRepository.ts`)
 - Routes: `camelCase.ts` in routes/ folder
+
+---
+
+## Backend Test Infrastructure
+
+### Test Database Setup
+Tests use an **in-memory SQLite database** (`:memory:`) that runs independently of the production database.
+
+**Setup (`tests/test-utils.ts`):**
+```typescript
+import { setupTestDatabase, clearDatabase } from './test-utils.ts';
+
+// Initialize in-memory database with migrations
+await setupTestDatabase();
+
+// Clear data between tests
+clearDatabase();
+```
+
+### Test Client Pattern
+Routes are tested using `app.fetch()` directly without running a server:
+
+**Example (`tests/test-client.ts`):**
+```typescript
+import { testRequest, parseJSON } from './test-client.ts';
+
+const response = await testRequest('/api/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password }),
+});
+
+const data = await parseJSON(response);
+assertEquals(response.status, 200);
+```
+
+**Benefits:**
+- No running server required for tests
+- Faster test execution
+- Tests run in isolation with in-memory database
+- Proper test isolation with database clearing between tests
+
+**Running Backend Tests:**
+```bash
+cd backend
+# No server needed! Tests run standalone
+deno test --allow-all tests/
+```
+
+---
+
+## Frontend Test Patterns
+
+### Mocking authService
+All tests must mock the `authService` to prevent actual API calls:
+
+```typescript
+// Mock the auth service
+vi.mock('../src/services/auth', () => ({
+  authService: {
+    login: vi.fn(),
+    logout: vi.fn(),
+    logoutAll: vi.fn(),
+    getCurrentUser: vi.fn(),
+    getAccessToken: vi.fn(),
+    getRefreshToken: vi.fn(),
+    setTokens: vi.fn(),
+    clearTokens: vi.fn(),
+    refreshAccessToken: vi.fn(),
+    updateProfile: vi.fn(),
+  },
+}));
+```
+
+### Error Handling for Zod Validation
+Backend returns Zod validation errors as objects. Handle them properly:
+
+```typescript
+const errorData = err.response?.data?.error;
+let errorMessage: string;
+if (typeof errorData === 'object' && errorData !== null) {
+  if (errorData.issues && Array.isArray(errorData.issues)) {
+    errorMessage = errorData.issues.map((issue: any) => issue.message).join(', ');
+  } else {
+    errorMessage = JSON.stringify(errorData);
+  }
+} else {
+  errorMessage = errorData || 'Default error message';
+}
+```
 
 ---
 
@@ -186,6 +292,61 @@ itemRoutes.post(
 
 ---
 
+## Authentication (JWT with Refresh Tokens)
+
+The application uses JWT with refresh tokens for secure authentication:
+
+- **Access tokens**: Short-lived (15 minutes), automatically refreshed
+- **Refresh tokens**: Long-lived (7 days), stored securely in database
+- **Rate limiting**: 10 login attempts per 5 minutes, 10 refresh attempts per minute
+
+### Authentication Endpoints
+```
+POST /auth/login          - Authenticate, returns access + refresh tokens
+POST /auth/logout         - Invalidate all refresh tokens for user
+POST /auth/logout-all     - Invalidate all tokens across all devices
+POST /auth/refresh        - Get new access token using refresh token
+GET  /auth/me             - Get current user info
+```
+
+### Token Storage (Frontend)
+```typescript
+// Access token: localStorage key 'accessToken' (15 min expiry)
+// Refresh token: localStorage key 'refreshToken' (7 days expiry)
+```
+
+### Environment Variables
+```bash
+# JWT_SECRET is REQUIRED - no default value
+# Generate with: openssl rand -base64 32
+JWT_SECRET=your-secret-key-minimum-32-characters
+```
+
+---
+
+## Rate Limiting
+
+In-memory rate limiting middleware protects auth endpoints:
+
+```typescript
+// Login: 10 attempts per 5 minutes
+loginRateLimit()
+
+// Refresh: 10 attempts per minute
+refreshRateLimit()
+
+// Custom limits
+rateLimit(maxRequests, windowMs, key)
+```
+
+**Clear rate limits (for tests):**
+```typescript
+import { clearRateLimitStore } from '../src/middleware/rate-limit.ts';
+clearRateLimitStore();
+```
+
+---
+
 ## API Endpoints
 
 ### Categories
@@ -219,6 +380,24 @@ DELETE /api/items/:id               # Delete item + image (admin only)
 Uploaded images are served at `/uploads/*`:
 - Item images: `/uploads/items/{filename}`
 - Example: `http://localhost:8000/uploads/items/1234567890-abc123.jpg`
+
+---
+
+## Hono Route Ordering
+
+**CRITICAL:** Routes in Hono are matched in order of definition. More specific routes MUST come before general ones.
+
+**Example - CORRECT:**
+```typescript
+// Specific routes first
+itemRoutes.get('/:id/variants/:variantId/addons', ...);
+itemRoutes.post('/:id/variants/:variantId/addons', ...);
+
+// General route last
+itemRoutes.get('/:id', ...);  // Catches everything else
+```
+
+**Wrong order causes 404s** because `/:id` catches `/items/16/variants/9/addons` as `id=16`.
 
 ---
 
@@ -310,6 +489,17 @@ const items = await itemRepository.bulkCreate([item1, item2, item3]);
 - Floorplan → Placements (1:N)
 - Item → Placements (1:N)
 - Category → Items (1:N)
+- Item → ItemVariants (1:N, CASCADE delete)
+- ItemVariant → VariantAddons (1:N, CASCADE delete)
+
+### Cascade Delete Behavior
+When you delete an item, all related data is automatically cleaned up:
+1. ItemVariants are deleted (CASCADE)
+2. VariantAddons are deleted (CASCADE)
+3. ItemAddons are deleted (explicit cleanup in repository)
+4. The item itself is deleted
+
+This prevents orphaned records in the database.
 
 ---
 
@@ -332,12 +522,32 @@ uploads/
 ## Environment Variables
 
 ### Backend (.env)
-```
+
+**Required Variables:**
+```bash
 PORT=8000
 DATABASE_URL=./data/database.sqlite
-JWT_SECRET=your-secret-key
+JWT_SECRET=your-secret-key-minimum-32-characters  # REQUIRED - No default!
 UPLOAD_DIR=./uploads
+CORS_ORIGIN=http://localhost:5173
+NODE_ENV=development
 ```
+
+**JWT_SECRET Setup:**
+The `JWT_SECRET` is required and has no default value. The server will fail to start without it.
+
+Generate a secure secret:
+```bash
+# Using OpenSSL (recommended)
+openssl rand -base64 32
+
+# Output example: 7f8a9b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6
+```
+
+**Token Configuration (code-level):**
+- Access tokens expire in 15 minutes (auto-refreshed by frontend)
+- Refresh tokens expire in 7 days (users must re-login after this)
+- Refresh tokens are stored as SHA-256 hashes in the database
 
 ### Frontend (.env)
 ```
@@ -398,8 +608,8 @@ describe('ItemCard', () => {
 ```bash
 cd backend
 
-# Run all tests
-deno task test
+# Run all tests (NO server needed!)
+deno test --allow-all tests/
 
 # Run specific test file
 deno test --allow-all tests/routes/categories_test.ts
@@ -430,12 +640,7 @@ npm test -- tests/Header.test.tsx
 - Backend: `backend/tests/**/*.test.ts`
 - Frontend: `frontend/tests/**/*.test.tsx`
 
-**Important:** Backend tests require the server to be running on port 8000. Start the backend first:
-```bash
-cd backend && deno task dev
-# Then in another terminal:
-cd backend && deno task test
-```
+**Note:** Backend tests use an in-memory database and test client pattern - no running server required!
 
 ### Coverage Goals
 - Backend: >80%
@@ -606,4 +811,4 @@ deno run --allow-all main.ts
 
 ---
 
-Last Updated: 2026-02-12
+Last Updated: 2026-02-14

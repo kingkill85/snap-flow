@@ -1,4 +1,4 @@
-import { db } from '../config/database.ts';
+import { getDb } from '../config/database.ts';
 import type { ItemAddon, CreateItemAddonDTO, Item } from '../models/index.ts';
 
 /**
@@ -7,7 +7,7 @@ import type { ItemAddon, CreateItemAddonDTO, Item } from '../models/index.ts';
  */
 export class ItemAddonRepository {
   async findByParentItemId(parentItemId: number): Promise<ItemAddon[]> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT 
         ia.id, ia.parent_item_id, ia.addon_item_id, ia.slot_number, 
         ia.is_required, ia.sort_order, ia.created_at,
@@ -37,7 +37,7 @@ export class ItemAddonRepository {
   }
 
   async findById(id: number): Promise<ItemAddon | null> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, parent_item_id, addon_item_id, slot_number, is_required, sort_order, created_at
       FROM item_addons
       WHERE id = ?
@@ -46,7 +46,7 @@ export class ItemAddonRepository {
   }
 
   async findByParentAndSlot(parentItemId: number, slotNumber: number): Promise<ItemAddon[]> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT 
         ia.id, ia.parent_item_id, ia.addon_item_id, ia.slot_number, 
         ia.is_required, ia.sort_order, ia.created_at,
@@ -76,7 +76,7 @@ export class ItemAddonRepository {
   }
 
   async create(data: CreateItemAddonDTO): Promise<ItemAddon> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       INSERT INTO item_addons (parent_item_id, addon_item_id, slot_number, is_required, sort_order)
       VALUES (?, ?, ?, ?, ?)
       RETURNING id, parent_item_id, addon_item_id, slot_number, is_required, sort_order, created_at
@@ -92,19 +92,19 @@ export class ItemAddonRepository {
   }
 
   async delete(id: number): Promise<void> {
-    db.query(`DELETE FROM item_addons WHERE id = ?`, [id]);
+    getDb().query(`DELETE FROM item_addons WHERE id = ?`, [id]);
   }
 
   async deleteByParentItemId(parentItemId: number): Promise<void> {
-    db.query(`DELETE FROM item_addons WHERE parent_item_id = ?`, [parentItemId]);
+    getDb().query(`DELETE FROM item_addons WHERE parent_item_id = ?`, [parentItemId]);
   }
 
   async deleteByParentAndSlot(parentItemId: number, slotNumber: number): Promise<void> {
-    db.query(`DELETE FROM item_addons WHERE parent_item_id = ? AND slot_number = ?`, [parentItemId, slotNumber]);
+    getDb().query(`DELETE FROM item_addons WHERE parent_item_id = ? AND slot_number = ?`, [parentItemId, slotNumber]);
   }
 
   async getRequiredAddons(parentItemId: number): Promise<ItemAddon[]> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT 
         ia.id, ia.parent_item_id, ia.addon_item_id, ia.slot_number, 
         ia.is_required, ia.sort_order, ia.created_at,
@@ -134,7 +134,7 @@ export class ItemAddonRepository {
   }
 
   async getOptionalAddons(parentItemId: number): Promise<ItemAddon[]> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT 
         ia.id, ia.parent_item_id, ia.addon_item_id, ia.slot_number, 
         ia.is_required, ia.sort_order, ia.created_at,
@@ -170,7 +170,7 @@ export class ItemAddonRepository {
     isRequired: boolean
   ): Promise<ItemAddon> {
     // Check if relationship already exists
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, parent_item_id, addon_item_id, slot_number, is_required, sort_order, created_at
       FROM item_addons
       WHERE parent_item_id = ? AND addon_item_id = ? AND slot_number = ?

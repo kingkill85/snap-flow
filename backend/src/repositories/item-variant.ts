@@ -1,4 +1,4 @@
-import { db } from '../config/database.ts';
+import { getDb } from '../config/database.ts';
 import type { ItemVariant, CreateItemVariantDTO } from '../models/index.ts';
 
 /**
@@ -7,7 +7,7 @@ import type { ItemVariant, CreateItemVariantDTO } from '../models/index.ts';
  */
 export class ItemVariantRepository {
   async findByItemId(itemId: number): Promise<ItemVariant[]> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, item_id, style_name, price, image_path, sort_order, created_at
       FROM item_variants
       WHERE item_id = ?
@@ -17,7 +17,7 @@ export class ItemVariantRepository {
   }
 
   async findById(id: number): Promise<ItemVariant | null> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, item_id, style_name, price, image_path, sort_order, created_at
       FROM item_variants
       WHERE id = ?
@@ -26,7 +26,7 @@ export class ItemVariantRepository {
   }
 
   async create(data: CreateItemVariantDTO): Promise<ItemVariant> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       INSERT INTO item_variants (item_id, style_name, price, image_path, sort_order)
       VALUES (?, ?, ?, ?, ?)
       RETURNING id, item_id, style_name, price, image_path, sort_order, created_at
@@ -68,7 +68,7 @@ export class ItemVariantRepository {
 
     values.push(id);
 
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       UPDATE item_variants
       SET ${sets.join(', ')}
       WHERE id = ?
@@ -79,16 +79,16 @@ export class ItemVariantRepository {
   }
 
   async delete(id: number): Promise<void> {
-    db.query(`DELETE FROM item_variants WHERE id = ?`, [id]);
+    getDb().query(`DELETE FROM item_variants WHERE id = ?`, [id]);
   }
 
   async deleteByItemId(itemId: number): Promise<void> {
-    db.query(`DELETE FROM item_variants WHERE item_id = ?`, [itemId]);
+    getDb().query(`DELETE FROM item_variants WHERE item_id = ?`, [itemId]);
   }
 
   async reorder(itemId: number, variantIds: number[]): Promise<void> {
     for (let i = 0; i < variantIds.length; i++) {
-      db.query(`
+      getDb().query(`
         UPDATE item_variants
         SET sort_order = ?
         WHERE id = ? AND item_id = ?

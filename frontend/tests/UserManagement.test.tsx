@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
 import UserManagement from '../src/pages/settings/UserManagement';
@@ -10,19 +10,17 @@ vi.mock('../src/context/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
-// Mock localStorage
-const localStorageMock = {
-  getItem: vi.fn(),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-};
-Object.defineProperty(window, 'localStorage', {
-  value: localStorageMock,
-});
+// Mock the user service
+vi.mock('../src/services/user', () => ({
+  userService: {
+    getAll: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+}));
 
-// Mock fetch globally
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
+import { userService } from '../src/services/user';
 
 describe('UserManagement', () => {
   const mockCurrentUser = {
@@ -51,7 +49,6 @@ describe('UserManagement', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    localStorageMock.getItem.mockReturnValue('mock-token');
     (useAuth as any).mockReturnValue({ user: mockCurrentUser });
   });
 
@@ -60,10 +57,7 @@ describe('UserManagement', () => {
   });
 
   it('renders user management page', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ data: mockUsers }),
-    });
+    userService.getAll.mockResolvedValueOnce(mockUsers);
 
     render(
       <BrowserRouter>
@@ -80,7 +74,7 @@ describe('UserManagement', () => {
   });
 
   it('displays loading state initially', () => {
-    mockFetch.mockImplementation(() => new Promise(() => {})); // Never resolves
+    userService.getAll.mockImplementation(() => new Promise(() => {})); // Never resolves
 
     render(
       <BrowserRouter>
@@ -92,10 +86,7 @@ describe('UserManagement', () => {
   });
 
   it('fetches and displays users', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ data: mockUsers }),
-    });
+    userService.getAll.mockResolvedValueOnce(mockUsers);
 
     render(
       <BrowserRouter>
@@ -113,10 +104,7 @@ describe('UserManagement', () => {
   });
 
   it('displays role badges', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ data: mockUsers }),
-    });
+    userService.getAll.mockResolvedValueOnce(mockUsers);
 
     render(
       <BrowserRouter>
@@ -133,10 +121,7 @@ describe('UserManagement', () => {
   });
 
   it('displays creation dates', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ data: mockUsers }),
-    });
+    userService.getAll.mockResolvedValueOnce(mockUsers);
 
     render(
       <BrowserRouter>
@@ -153,10 +138,7 @@ describe('UserManagement', () => {
   });
 
   it('shows edit and delete buttons for each user', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ data: mockUsers }),
-    });
+    userService.getAll.mockResolvedValueOnce(mockUsers);
 
     render(
       <BrowserRouter>
@@ -171,10 +153,7 @@ describe('UserManagement', () => {
   });
 
   it('hides delete button for current user', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ data: mockUsers }),
-    });
+    userService.getAll.mockResolvedValueOnce(mockUsers);
 
     render(
       <BrowserRouter>
@@ -192,10 +171,7 @@ describe('UserManagement', () => {
   });
 
   it('shows create user modal when add user clicked', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ data: mockUsers }),
-    });
+    userService.getAll.mockResolvedValueOnce(mockUsers);
 
     render(
       <BrowserRouter>
@@ -217,19 +193,11 @@ describe('UserManagement', () => {
   });
 
   it('creates new user successfully', async () => {
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ data: mockUsers }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ data: { id: 3, email: 'new@example.com', full_name: 'New User', role: 'user' } }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ data: [...mockUsers, { id: 3, email: 'new@example.com', full_name: 'New User', role: 'user', created_at: '2024-01-03T00:00:00Z' }] }),
-      });
+    userService.getAll
+      .mockResolvedValueOnce(mockUsers)
+      .mockResolvedValueOnce([...mockUsers, { id: 3, email: 'new@example.com', full_name: 'New User', role: 'user', created_at: '2024-01-03T00:00:00Z' }]);
+    
+    userService.create.mockResolvedValueOnce({ id: 3, email: 'new@example.com', full_name: 'New User', role: 'user', created_at: '2024-01-03T00:00:00Z' });
 
     render(
       <BrowserRouter>
@@ -253,18 +221,15 @@ describe('UserManagement', () => {
     await userEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith(
-        '/api/users',
-        expect.objectContaining({
-          method: 'POST',
-          body: expect.stringContaining('new@example.com'),
-        })
-      );
+      expect(userService.create).toHaveBeenCalledWith(expect.objectContaining({
+        email: 'new@example.com',
+        password: 'password123',
+      }));
     });
   });
 
   it('shows error message on fetch failure', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Network error'));
+    userService.getAll.mockRejectedValueOnce(new Error('Network error'));
 
     render(
       <BrowserRouter>
@@ -277,34 +242,8 @@ describe('UserManagement', () => {
     });
   });
 
-  it('includes auth token in requests', async () => {
-    localStorageMock.getItem.mockReturnValue('test-token');
-    
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ data: mockUsers }),
-    });
-
-    render(
-      <BrowserRouter>
-        <UserManagement />
-      </BrowserRouter>
-    );
-
-    await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith(
-        '/api/users',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'Authorization': 'Bearer test-token',
-          }),
-        })
-      );
-    });
-  });
-
   it('can dismiss error alert', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Test error'));
+    userService.getAll.mockRejectedValueOnce(new Error('Test error'));
 
     render(
       <BrowserRouter>

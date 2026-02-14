@@ -1,4 +1,4 @@
-import { db } from '../config/database.ts';
+import { getDb } from '../config/database.ts';
 
 /**
  * Base Repository class
@@ -8,12 +8,12 @@ export abstract class BaseRepository<T, CreateDTO, UpdateDTO> {
   protected abstract tableName: string;
 
   async findAll(): Promise<T[]> {
-    const result = db.query(`SELECT * FROM ${this.tableName}`);
+    const result = getDb().query(`SELECT * FROM ${this.tableName}`);
     return result as T[];
   }
 
   async findById(id: number): Promise<T | null> {
-    const result = db.query(`SELECT * FROM ${this.tableName} WHERE id = ?`, [id]);
+    const result = getDb().query(`SELECT * FROM ${this.tableName} WHERE id = ?`, [id]);
     return result.length > 0 ? (result[0] as T) : null;
   }
 
@@ -21,6 +21,6 @@ export abstract class BaseRepository<T, CreateDTO, UpdateDTO> {
   abstract update(id: number, data: UpdateDTO): Promise<T>;
 
   async delete(id: number): Promise<void> {
-    db.query(`DELETE FROM ${this.tableName} WHERE id = ?`, [id]);
+    getDb().query(`DELETE FROM ${this.tableName} WHERE id = ?`, [id]);
   }
 }

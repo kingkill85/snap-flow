@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { env } from './config/env.ts';
+import { runMigrations } from './scripts/migrate.ts';
 import authRoutes from './routes/auth.ts';
 import userRoutes from './routes/users.ts';
 import categoryRoutes from './routes/categories.ts';
@@ -39,11 +40,9 @@ app.get('/', (c: Context) => {
 const api = new Hono();
 
 // Auth routes at /api/auth/*
-// Includes: /login, /logout, /me
 api.route('/auth', authRoutes);
 
 // User management routes at /api/users/*
-// Includes: / (POST, GET), /:id (DELETE)
 api.route('/users', userRoutes);
 
 // Category routes at /api/categories/*
@@ -56,7 +55,6 @@ api.route('/items', itemRoutes);
 app.route('/api', api);
 
 // Serve uploaded files statically at /uploads/*
-// This allows accessing item images via /uploads/items/filename.jpg
 app.get('/uploads/*', async (c: Context) => {
   const filePath = c.req.path.replace('/uploads/', '');
   const fullPath = `${env.UPLOAD_DIR}/${filePath}`;
@@ -65,7 +63,6 @@ app.get('/uploads/*', async (c: Context) => {
     const file = await Deno.open(fullPath);
     const stat = await file.stat();
     
-    // Determine content type
     const ext = filePath.split('.').pop()?.toLowerCase();
     let contentType = 'application/octet-stream';
     
@@ -96,7 +93,6 @@ app.get('/uploads/*', async (c: Context) => {
   }
 });
 
-// Handle CORS preflight for uploads
 app.options('/uploads/*', (c) => {
   c.header('Access-Control-Allow-Origin', '*');
   c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -104,15 +100,31 @@ app.options('/uploads/*', (c) => {
   return c.body(null, 204);
 });
 
-// Start server
-const port = env.PORT;
-console.log(`🚀 SnapFlow API server starting on port ${port}...`);
+// Export app for testing
+export default app;
 
-Deno.serve({
-  port,
-  onListen: () => {
-    console.log(`✅ Server running at http://localhost:${port}`);
-    console.log(`📊 Health check: http://localhost:${port}/health`);
-    console.log(`🔒 API routes: http://localhost:${port}/api`);
-  },
-}, app.fetch);
+// Start server only if this is the main module
+if (import.meta.main) {
+  // Run migrations before starting server
+  console.log('🔄 Running database migrations...');
+  try {
+    await runMigrations();
+    console.log('✅ Database migrations complete');
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
+    Deno.exit(1);
+  }
+
+  // Start server
+  const port = env.PORT;
+  console.log(`🚀 SnapFlow API server starting on port ${port}...`);
+
+  Deno.serve({
+    port,
+    onListen: () => {
+      console.log(`✅ Server running at http://localhost:${port}`);
+      console.log(`📊 Health check: http://localhost:${port}/health`);
+      console.log(`🔒 API routes: http://localhost:${port}/api`);
+    },
+  }, app.fetch);
+}

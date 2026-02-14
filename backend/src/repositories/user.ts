@@ -1,4 +1,4 @@
-import { db } from '../config/database.ts';
+import { getDb } from '../config/database.ts';
 import type { User, CreateUserDTO, UpdateUserDTO } from '../models/index.ts';
 
 /**
@@ -7,7 +7,7 @@ import type { User, CreateUserDTO, UpdateUserDTO } from '../models/index.ts';
  */
 export class UserRepository {
   async findAll(): Promise<User[]> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, email, full_name, role, created_at 
       FROM users 
       ORDER BY created_at DESC
@@ -16,7 +16,7 @@ export class UserRepository {
   }
 
   async findById(id: number): Promise<User | null> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT id, email, full_name, role, created_at 
       FROM users 
       WHERE id = ?
@@ -25,14 +25,14 @@ export class UserRepository {
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       SELECT * FROM users WHERE email = ?
     `, [email]);
     return result.length > 0 ? (result[0] as unknown as User) : null;
   }
 
   async create(data: CreateUserDTO & { password_hash: string }): Promise<User> {
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       INSERT INTO users (email, full_name, password_hash, role) 
       VALUES (?, ?, ?, ?)
       RETURNING id, email, full_name, role, created_at
@@ -68,7 +68,7 @@ export class UserRepository {
 
     values.push(id.toString());
 
-    const result = db.queryEntries(`
+    const result = getDb().queryEntries(`
       UPDATE users 
       SET ${sets.join(', ')} 
       WHERE id = ?
@@ -79,7 +79,7 @@ export class UserRepository {
   }
 
   async delete(id: number): Promise<void> {
-    db.query(`DELETE FROM users WHERE id = ?`, [id]);
+    getDb().query(`DELETE FROM users WHERE id = ?`, [id]);
   }
 }
 
