@@ -4,7 +4,7 @@ import { verifyToken } from '../services/jwt.ts';
 /**
  * Auth middleware - verifies JWT token from Authorization header
  */
-export async function authMiddleware(c: Context, next: Next) {
+export async function authMiddleware(c: Context, next: Next): Promise<Response | void> {
   const authHeader = c.req.header('Authorization');
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -31,7 +31,7 @@ export async function authMiddleware(c: Context, next: Next) {
  * Admin middleware - checks if user has admin role
  * Must be used after authMiddleware
  */
-export async function adminMiddleware(c: Context, next: Next) {
+export async function adminMiddleware(c: Context, next: Next): Promise<Response | void> {
   const userRole = c.get('userRole');
   
   if (userRole !== 'admin') {

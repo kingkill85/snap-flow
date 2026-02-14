@@ -148,6 +148,99 @@ export async function runMigrations(): Promise<void> {
       sql: `
         ALTER TABLE users ADD COLUMN full_name TEXT;
       `
+    },
+    {
+      name: '009_create_item_variants_table',
+      sql: `
+        CREATE TABLE item_variants (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          style_name TEXT NOT NULL,
+          model_number TEXT,
+          price REAL NOT NULL,
+          image_path TEXT,
+          sort_order INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX idx_item_variants_item ON item_variants(item_id);
+      `
+    },
+    {
+      name: '010_create_item_addons_table',
+      sql: `
+        CREATE TABLE item_addons (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          parent_item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          addon_item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          slot_number INTEGER NOT NULL CHECK(slot_number BETWEEN 1 AND 4),
+          is_required BOOLEAN NOT NULL DEFAULT false,
+          sort_order INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX idx_item_addons_parent ON item_addons(parent_item_id);
+        CREATE INDEX idx_item_addons_addon ON item_addons(addon_item_id);
+      `
+    },
+    {
+      name: '011_add_base_model_number_to_items',
+      sql: `
+        ALTER TABLE items ADD COLUMN base_model_number TEXT;
+        CREATE INDEX idx_items_base_model ON items(base_model_number);
+      `
+    },
+    {
+      name: '012_update_placements_for_variants',
+      sql: `
+        ALTER TABLE placements ADD COLUMN item_variant_id INTEGER REFERENCES item_variants(id);
+        ALTER TABLE placements ADD COLUMN selected_addons TEXT;
+        CREATE INDEX idx_placements_variant ON placements(item_variant_id);
+      `
+    },
+    {
+      name: '013_make_items_columns_nullable',
+      sql: `
+        -- SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+        CREATE TABLE items_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          category_id INTEGER REFERENCES categories(id),
+          name TEXT NOT NULL,
+          description TEXT,
+          model_number TEXT,
+          dimensions TEXT,
+          price REAL DEFAULT 0,
+          image_path TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          base_model_number TEXT
+        );
+        
+        INSERT INTO items_new (id, category_id, name, description, model_number, dimensions, price, image_path, created_at, base_model_number)
+        SELECT id, category_id, name, description, model_number, dimensions, COALESCE(price, 0), image_path, created_at, base_model_number
+        FROM items;
+        
+        DROP TABLE items;
+        
+        ALTER TABLE items_new RENAME TO items;
+        
+        CREATE INDEX idx_items_category ON items(category_id);
+        CREATE INDEX idx_items_base_model ON items(base_model_number);
+      `
+    },
+    {
+      name: '014_create_variant_addons_table',
+      sql: `
+        -- Add-ons are now per variant, not per item
+        CREATE TABLE variant_addons (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          variant_id INTEGER NOT NULL REFERENCES item_variants(id) ON DELETE CASCADE,
+          addon_variant_id INTEGER NOT NULL REFERENCES item_variants(id) ON DELETE CASCADE,
+          is_optional BOOLEAN NOT NULL DEFAULT true,
+          sort_order INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX idx_variant_addons_variant ON variant_addons(variant_id);
+        CREATE INDEX idx_variant_addons_addon ON variant_addons(addon_variant_id);
+      `
     }
   ];
 

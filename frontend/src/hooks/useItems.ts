@@ -1,16 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-
-interface Item {
-  id: number;
-  category_id: number;
-  name: string;
-  description: string;
-  model_number: string;
-  dimensions: string;
-  price: number;
-  image_path: string;
-  created_at: string;
-}
+import type { Item } from '../services/item';
 
 interface Pagination {
   total: number;

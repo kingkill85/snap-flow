@@ -45,37 +45,111 @@ export interface UpdateCategoryDTO {
   sort_order?: number;
 }
 
-// Item
+// Item (Base Product)
 export interface Item {
   id: number;
   category_id: number;
   name: string;
   description: string;
-  model_number: string;
+  base_model_number: string;
   dimensions: string;
-  price: number;
-  image_path: string;
   created_at: string;
+  // Relations
+  variants?: ItemVariant[];
+  addons?: ItemAddon[];
 }
 
 export interface CreateItemDTO {
   category_id: number;
   name: string;
   description?: string;
-  model_number?: string;
+  base_model_number?: string;
   dimensions?: string;
-  price: number;
-  image_path?: string;
 }
 
 export interface UpdateItemDTO {
   category_id?: number;
   name?: string;
   description?: string;
-  model_number?: string;
+  base_model_number?: string;
   dimensions?: string;
+}
+
+// Item Variant
+export interface ItemVariant {
+  id: number;
+  item_id: number;
+  style_name: string;
+  price: number;
+  image_path: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface CreateItemVariantDTO {
+  item_id: number;
+  style_name: string;
+  price: number;
+  image_path?: string;
+  sort_order?: number;
+}
+
+export interface UpdateItemVariantDTO {
+  style_name?: string;
+  model_number?: string;
   price?: number;
   image_path?: string;
+  sort_order?: number;
+}
+
+// Item Add-On (Relationship)
+export interface ItemAddon {
+  id: number;
+  parent_item_id: number;
+  addon_item_id: number;
+  slot_number: number;
+  is_required: boolean;
+  sort_order: number;
+  created_at: string;
+  // Joined data
+  addon_item?: Item;
+}
+
+export interface CreateItemAddonDTO {
+  parent_item_id: number;
+  addon_item_id: number;
+  slot_number: number;
+  is_required?: boolean;
+  sort_order?: number;
+}
+
+// Variant Add-On (New - per variant, not per item)
+export interface VariantAddon {
+  id: number;
+  variant_id: number;
+  addon_variant_id: number;
+  is_optional: boolean;
+  sort_order: number;
+  created_at: string;
+  // Joined data
+  addon_variant?: ItemVariant;
+}
+
+export interface CreateVariantAddonDTO {
+  variant_id: number;
+  addon_variant_id: number;
+  is_optional?: boolean;
+  sort_order?: number;
+}
+
+export interface UpdatePlacementDTO {
+  floorplan_id?: number;
+  item_variant_id?: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  selected_addons?: string; // JSON array of addon IDs
 }
 
 // Customer
@@ -152,28 +226,23 @@ export interface UpdateFloorplanDTO {
 export interface Placement {
   id: number;
   floorplan_id: number;
-  item_id: number;
+  item_variant_id: number;
   x: number;
   y: number;
   width: number;
   height: number;
+  selected_addons: string | null; // JSON array of addon IDs
   created_at: string;
+  // Joined data
+  item_variant?: ItemVariant;
 }
 
 export interface CreatePlacementDTO {
   floorplan_id: number;
-  item_id: number;
+  item_variant_id: number;
   x: number;
   y: number;
   width: number;
   height: number;
-}
-
-export interface UpdatePlacementDTO {
-  floorplan_id?: number;
-  item_id?: number;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
+  selected_addons?: string; // JSON array of addon IDs
 }

@@ -1,5 +1,7 @@
 import { db } from '../config/database.ts';
 import type { Item, CreateItemDTO, UpdateItemDTO } from '../models/index.ts';
+import { itemVariantRepository } from './item-variant.ts';
+import { itemAddonRepository } from './item-addon.ts';
 
 export interface ItemFilter {
   category_id?: number;
@@ -20,7 +22,7 @@ export interface PaginatedItemsResult {
 
 /**
  * Item Repository
- * Handles all database operations for items
+ * Handles all database operations for items (base products)
  */
 export class ItemRepository {
   async findAll(filter?: ItemFilter, pagination?: PaginationOptions): Promise<PaginatedItemsResult> {
@@ -29,12 +31,12 @@ export class ItemRepository {
     const values: (string | number)[] = [];
 
     if (filter?.category_id) {
-      whereConditions.push('category_id = ?');
+      whereConditions.push('i.category_id = ?');
       values.push(filter.category_id);
     }
 
     if (filter?.search) {
-      whereConditions.push('(name LIKE ? OR description LIKE ? OR model_number LIKE ?)');
+      whereConditions.push('(i.name LIKE ? OR i.description LIKE ? OR i.base_model_number LIKE ?)');
       const searchPattern = `%${filter.search}%`;
       values.push(searchPattern, searchPattern, searchPattern);
     }
@@ -44,15 +46,15 @@ export class ItemRepository {
     }
 
     // Get total count
-    const countResult = db.query(`SELECT COUNT(*) as total FROM items ${whereClause}`, values);
+    const countResult = db.query(`SELECT COUNT(*) as total FROM items i ${whereClause}`, values);
     const total = countResult[0][0] as number;
 
     // Build query
     let query = `
-      SELECT id, category_id, name, description, model_number, dimensions, price, image_path, created_at
-      FROM items
+      SELECT i.id, i.category_id, i.name, i.description, i.base_model_number, i.dimensions, i.created_at
+      FROM items i
       ${whereClause}
-      ORDER BY name ASC
+      ORDER BY i.name ASC
     `;
 
     // Add pagination
@@ -73,27 +75,39 @@ export class ItemRepository {
     };
   }
 
-  async findById(id: number): Promise<Item | null> {
+  async findById(id: number, includeRelations: boolean = false): Promise<Item | null> {
     const result = db.queryEntries(`
-      SELECT id, category_id, name, description, model_number, dimensions, price, image_path, created_at
+      SELECT id, category_id, name, description, base_model_number, dimensions, created_at
       FROM items
       WHERE id = ?
     `, [id]);
-    return result.length > 0 ? (result[0] as unknown as Item) : null;
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const item = result[0] as unknown as Item;
+
+    if (includeRelations) {
+      item.variants = await itemVariantRepository.findByItemId(id);
+      item.addons = await itemAddonRepository.findByParentItemId(id);
+    }
+
+    return item;
   }
 
-  async findByModelNumber(modelNumber: string): Promise<Item | null> {
+  async findByBaseModelNumber(baseModelNumber: string): Promise<Item | null> {
     const result = db.queryEntries(`
-      SELECT id, category_id, name, description, model_number, dimensions, price, image_path, created_at
+      SELECT id, category_id, name, description, base_model_number, dimensions, created_at
       FROM items
-      WHERE model_number = ?
-    `, [modelNumber]);
+      WHERE base_model_number = ?
+    `, [baseModelNumber]);
     return result.length > 0 ? (result[0] as unknown as Item) : null;
   }
 
   async findByCategory(categoryId: number): Promise<Item[]> {
     const result = db.queryEntries(`
-      SELECT id, category_id, name, description, model_number, dimensions, price, image_path, created_at
+      SELECT id, category_id, name, description, base_model_number, dimensions, created_at
       FROM items
       WHERE category_id = ?
       ORDER BY name ASC
@@ -103,17 +117,15 @@ export class ItemRepository {
 
   async create(data: CreateItemDTO): Promise<Item> {
     const result = db.queryEntries(`
-      INSERT INTO items (category_id, name, description, model_number, dimensions, price, image_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-      RETURNING id, category_id, name, description, model_number, dimensions, price, image_path, created_at
+      INSERT INTO items (category_id, name, description, base_model_number, dimensions)
+      VALUES (?, ?, ?, ?, ?)
+      RETURNING id, category_id, name, description, base_model_number, dimensions, created_at
     `, [
       data.category_id,
       data.name,
       data.description || null,
-      data.model_number || null,
+      data.base_model_number || null,
       data.dimensions || null,
-      data.price,
-      data.image_path || null,
     ]);
 
     return result[0] as unknown as Item;
@@ -135,21 +147,13 @@ export class ItemRepository {
       sets.push('description = ?');
       values.push(data.description);
     }
-    if (data.model_number !== undefined) {
-      sets.push('model_number = ?');
-      values.push(data.model_number);
+    if (data.base_model_number !== undefined) {
+      sets.push('base_model_number = ?');
+      values.push(data.base_model_number);
     }
     if (data.dimensions !== undefined) {
       sets.push('dimensions = ?');
       values.push(data.dimensions);
-    }
-    if (data.price !== undefined) {
-      sets.push('price = ?');
-      values.push(data.price);
-    }
-    if (data.image_path !== undefined) {
-      sets.push('image_path = ?');
-      values.push(data.image_path);
     }
 
     if (sets.length === 0) {
@@ -162,25 +166,56 @@ export class ItemRepository {
       UPDATE items
       SET ${sets.join(', ')}
       WHERE id = ?
-      RETURNING id, category_id, name, description, model_number, dimensions, price, image_path, created_at
+      RETURNING id, category_id, name, description, base_model_number, dimensions, created_at
     `, values);
 
     return result.length > 0 ? (result[0] as unknown as Item) : null;
   }
 
   async delete(id: number): Promise<void> {
+    // Delete related variants and addons first (cascade should handle this, but be explicit)
+    await itemVariantRepository.deleteByItemId(id);
+    await itemAddonRepository.deleteByParentItemId(id);
+    
     db.query(`DELETE FROM items WHERE id = ?`, [id]);
   }
 
-  async bulkCreate(items: CreateItemDTO[]): Promise<Item[]> {
-    const createdItems: Item[] = [];
-
-    for (const item of items) {
-      const created = await this.create(item);
-      createdItems.push(created);
+  async findOrCreateByBaseModelNumber(
+    categoryId: number,
+    name: string,
+    baseModelNumber: string,
+    description?: string,
+    dimensions?: string
+  ): Promise<Item> {
+    const existing = await this.findByBaseModelNumber(baseModelNumber);
+    if (existing) {
+      return existing;
     }
 
-    return createdItems;
+    const createData: CreateItemDTO = {
+      category_id: categoryId,
+      name,
+      base_model_number: baseModelNumber,
+    };
+    if (description) {
+      createData.description = description;
+    }
+    if (dimensions) {
+      createData.dimensions = dimensions;
+    }
+    return this.create(createData);
+  }
+
+  async updateByBaseModelNumber(
+    baseModelNumber: string,
+    data: UpdateItemDTO
+  ): Promise<Item | null> {
+    const item = await this.findByBaseModelNumber(baseModelNumber);
+    if (!item) {
+      return null;
+    }
+
+    return this.update(item.id, data);
   }
 }
 

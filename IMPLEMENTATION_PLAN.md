@@ -29,14 +29,14 @@ A web-based smart home configurator for automation companies to create proposals
 - Full test coverage for category endpoints
 - Support for category reordering with drag-and-drop
 
-**3.2 Backend - Items - COMPLETED ✅**
-- ItemRepository with pagination, filtering, and search
-- REST endpoints: GET /items, GET /items/:id, POST /items, PUT /items/:id, DELETE /items/:id
-- File upload middleware for image uploads
-- File storage service for saving images to /uploads/items/
-- Static file serving for uploaded images at /uploads/*
-- Image file cleanup on delete/update
-- Full test coverage for item endpoints
+**3.2 Backend - Items - IN PROGRESS 🚧**
+- ~~ItemRepository with pagination, filtering, and search~~ (UPDATED for variants)
+- ~~REST endpoints~~ (UPDATING for variants)
+- ~~File upload middleware for image uploads~~ (UPDATING for variant images)
+- **NEW:** ItemVariantRepository ✅
+- **NEW:** ItemAddonRepository ✅
+- **NEW:** Database migrations 009-012 ✅
+- **NEW:** Updated models (Item, ItemVariant, ItemAddon) ✅
 
 **3.3 Frontend - Category Management - COMPLETED ✅**
 - Category service with API integration
@@ -47,26 +47,172 @@ A web-based smart home configurator for automation companies to create proposals
 - Navigation reorganized: Projects ▼, Catalog ▼, Admin ▼
 
 **3.4 Frontend - Item Management - COMPLETED ✅**
-- Item service with API integration (REST + multipart/form-data for images)
-- Item management page with list view
-- Search functionality with debounced input
-- Category filter dropdown
-- Pagination support
-- Create item form with image upload and preview
-- Edit item form with image replacement
-- Delete functionality with confirmation
-- Consistent UI patterns (action buttons matching UserManagement)
+- ✅ Unified ItemFormModal for create/edit base items
+- ✅ Unified VariantFormModal for create/edit variants with add-ons
+- ✅ Expandable variant subtables in item list
+- ✅ Two-step variant creation (create variant → add add-ons)
+- ✅ Add-on management with Optional/Required flags
+- ✅ Delete variant confirmation
+- ✅ Image upload/delete for variants
+- ✅ Add-on labels: "Model - Variant ($price)"
+- ✅ Proper image sizing and "No Image" placeholders
 
-**Recent Commits:**
-- `3355dcd` - Reorganize navigation into logical groups (Projects/Catalog/Admin)
-- `e794ef7` - Change 'Order' to 'Position' in Category Management
-- `6b9441c` - Add useCategories and useItems hooks
-- `0e53819` - Update AGENTS.md with Phase 3 patterns
-- `7240d21` - Phase 3.1-3.3: Category and Item Management backend
+**3.5 Item Management with Variants & Add-Ons - COMPLETED ✅**
 
-**Next:**
-- Phase 3.5: Excel Import (Critical Feature)
-- Phase 4: Customer & Project Management
+**Backend (COMPLETED):**
+- ✅ Migrations 009-014 (item_variants, item_addons, variant_addons)
+- ✅ Models updated (Item, ItemVariant, ItemAddon, VariantAddon)
+- ✅ ItemVariantRepository with CRUD operations
+- ✅ ItemAddonRepository with CRUD operations
+- ✅ VariantAddonRepository for variant-addons
+- ✅ ItemRepository updated for new schema
+- ✅ Routes: /items, /items/:id/variants/*, /items/:id/variants/:variantId/addons/*
+- ✅ Full test coverage for all endpoints
+
+---
+
+## Phase 3.5 Reworked - Variant & Add-On Migration
+
+### **Phase A: Integration Fix (CRITICAL - Fix the breakage)**
+**Goal:** Make existing ItemManagement work with new backend structure
+
+**A1. Update Frontend Types**
+- [x] Update `Item` interface in `frontend/src/services/item.ts`
+  - Remove: price, image_path, model_number
+  - Add: base_model_number, variants[], addons[]
+- [x] Add `ItemVariant` interface (id, item_id, style_name, model_number, price, image_path)
+- [x] Add `ItemAddon` interface (id, parent_item_id, addon_item_id, slot_number, is_required)
+- [x] Update hooks that use Item type (useItems.ts) ✅
+
+**A2. Update ItemService Methods**
+- [x] Modify create() to NOT send price/image (create base item only) ✅
+- [x] Add getVariants(itemId): Promise<ItemVariant[]> ✅
+- [x] Add createVariant(itemId, data): Promise<ItemVariant> ✅
+- [x] Add updateVariant(itemId, variantId, data): Promise<ItemVariant> ✅
+- [x] Add deleteVariant(itemId, variantId): Promise<void> ✅
+- [x] Add getAddons(itemId): Promise<ItemAddon[]> ✅
+- [x] Add addAddon(itemId, addonData): Promise<ItemAddon> ✅
+- [x] Add removeAddon(itemId, addonId): Promise<void> ✅
+
+**A3. Update ItemManagement (Minimal Fix)**
+- [x] List view: Show first variant's image/price (temporary solution) ✅
+- [x] Create form: Create base item + first variant together ✅
+- [x] Edit form: Edit base item only (remove price/image fields) ✅
+- [ ] Add "Manage Variants" button (opens placeholder modal)
+
+**TESTS FOR PHASE A: ✅**
+- ✅ Frontend types compile without TypeScript errors
+- ✅ ItemService.create() works with new structure
+- ✅ ItemManagement displays items correctly (using first variant)
+- ✅ Can create new item with first variant
+- ✅ Can edit base item details
+- ✅ All existing item-related tests pass
+- ✅ No console errors when viewing items
+
+---
+
+### **Phase B: Variant Management**
+**Goal:** Full variant and add-on management UI
+
+**B1. Variant Subtable in ItemManagement ✅**
+- [x] Expandable row showing all variants
+- [x] Variant details: image, style, model number, price
+- [x] Add "Add Variant" button (placeholder)
+- [x] Edit/Delete buttons per variant
+- [x] Loading state
+- [x] Empty state
+
+**B2. Variant CRUD Modals ✅**
+- ✅ Unified VariantFormModal (handles both create and edit)
+- ✅ DeleteVariantModal for confirmation
+- ✅ Full add/edit/delete functionality
+
+**B3. AddonManager (Integrated into VariantFormModal) ✅**
+- ✅ Add-on list with remove functionality
+- ✅ Add new add-on with variant selector
+- ✅ Optional/Required checkbox
+- ✅ Add-on display: "Model - Variant ($price)"
+
+**TESTS FOR PHASE B: ✅**
+- ✅ Can add variant to existing item
+- ✅ Can edit variant price and style
+- ✅ Can upload variant image
+- ✅ Can delete variant with confirmation
+- ✅ Can add add-ons to variants
+- ✅ Can remove add-ons from variants
+- ✅ UI updates immediately after add/remove operations
+- ✅ Comprehensive unit tests for all components
+
+---
+
+### **Phase C: Excel Import**
+**Goal:** Complete Excel import with error logging
+
+**C1. Create ImportModal Component**
+- [ ] File upload with drag-drop or file picker
+- [ ] Show parsing progress spinner
+- [ ] Preview table columns:
+  - Base Model Number
+  - Item Name
+  - Category
+  - Variants (count)
+  - Action (create/update)
+- [ ] Preview shows grouped data (variants under base items)
+
+**C2. Error Display**
+- [ ] Error table showing:
+  - Row number from Excel
+  - Field with error
+  - Error message
+  - Value that caused error
+- [ ] Warning section for missing add-ons
+- [ ] Color-coded errors (red) vs warnings (yellow)
+
+**C3. Import Execution**
+- [ ] "Preview Import" button (parses without saving)
+- [ ] "Confirm Import" button (executes import)
+- [ ] Progress indicator during import
+- [ ] Success summary showing:
+  - Items created
+  - Items updated
+  - Variants created
+  - Add-ons linked
+- [ ] Error summary if import fails
+
+**TESTS FOR PHASE C:**
+- [ ] Can upload valid Excel file
+- [ ] Preview shows correct item/variant structure
+- [ ] Errors display with correct row numbers
+- [ ] Import creates new items correctly
+- [ ] Import updates existing items correctly
+- [ ] Import creates variants with correct prices
+- [ ] Import creates add-on relationships
+- [ ] Shows success summary after import
+- [ ] Handles Excel with missing images gracefully
+- [ ] Validates add-on references exist
+
+---
+
+### **Phase D: Testing & Validation**
+**Goal:** Full end-to-end testing
+
+**D1. Integration Tests**
+- [ ] Create item → Add variants → Add add-ons → Verify in list
+- [ ] Update item → Verify changes persist
+- [ ] Delete variant → Verify removed from item
+- [ ] Import Excel → Verify all items created with variants
+
+**D2. Error Handling Tests**
+- [ ] Invalid Excel format shows clear error
+- [ ] Missing required fields in Excel shows row error
+- [ ] Duplicate model numbers handled correctly
+- [ ] Network errors during import show user-friendly message
+
+**D3. Edge Cases**
+- [ ] Item with no variants (should not be possible, verify)
+- [ ] Item with 10+ variants
+- [ ] Excel with 221 rows imports successfully
+- [ ] Import cancelled mid-way doesn't corrupt data
 
 ## Tech Stack
 - **Frontend**: React + TypeScript + Vite + Flowbite React + Tailwind CSS
@@ -241,28 +387,84 @@ snap-flow/
 - [ ] Handle image upload with preview
 - [ ] Write tests for item components
 
-### 3.5 Excel Import (Critical Feature)
-- [ ] Research xlsx library for Deno
-- [ ] Create Excel parsing service
-- [ ] POST /items/import - upload and parse Excel
-- [ ] Parse Excel columns:
-  - [ ] Category (create if not exists)
-  - [ ] Name
-  - [ ] Description
-  - [ ] Model Number
-  - [ ] Dimensions
-  - [ ] Price
-  - [ ] Image filename (reference)
-- [ ] Validate parsed data
-- [ ] Handle duplicate items (update or skip)
-- [ ] Create categories dynamically from Excel
-- [ ] Return preview of items to be imported
-- [ ] Confirm import endpoint
-- [ ] Create frontend Excel upload component
-- [ ] Show upload progress
-- [ ] Show import preview table
-- [ ] Handle import confirmation
-- [ ] Write tests for Excel import
+### 3.5 Excel Import with Variants & Add-Ons (Critical Feature)
+
+**Current Understanding:**
+- Excel contains 221 rows (flat list)
+- Products have **variants** (same base model, different style/color)
+- Each variant has **its own full price** and **its own image**
+- Add-Ons reference other products by **model number**
+- Add-On 1 & 2 are **required** (customer must pick exactly one each)
+- Add-On 3 & 4 are **optional** (customer can pick 0 or more)
+
+**Database Schema Changes:**
+- [x] Migration 009: Create `item_variants` table ✅
+- [x] Migration 010: Create `item_addons` table ✅
+- [x] Migration 011: Add `base_model_number` to items table ✅
+- [x] Migration 012: Update placements for variants ✅
+
+**Backend Implementation:**
+- [x] Update TypeScript models/interfaces (Item, ItemVariant, ItemAddon, Placement) ✅
+- [x] Update ItemRepository to work with new schema ✅
+- [x] Create ItemVariantRepository ✅
+- [x] Create ItemAddonRepository ✅
+- [x] Update Item routes for variants and add-ons ✅
+- [x] Update tests for new schema ✅
+- [x] Create Excel parsing service ✅
+- [x] Create import endpoints (preview + execute) ✅
+  - Parse 221 rows from Excel
+  - Group by base model number to identify variants
+  - Extract Add-On references (model numbers)
+  - Match images to variants
+- [ ] Create import service (3-pass logic):
+  - **Pass 1:** Create all base items and variants
+  - **Pass 2:** Create Add-On relationships (link by model number)
+  - **Pass 3:** Match and assign images to variants
+- [ ] POST /items/import-preview - Parse Excel and return preview
+- [ ] POST /items/import - Execute the import with validation
+- [ ] Handle validation errors (invalid model numbers, missing add-ons, etc.)
+- [x] Write tests for updated repositories ✅
+- [x] Write tests for Excel parsing (basic tests updated) ✅
+- [ ] Write tests for import service (manual testing for now)
+
+**Image Handling:**
+- [x] Extract 74 images from Excel (done: /tmp/excel_images/) ✅
+- [ ] Create image matching logic (Phase 2 - after basic import works)
+- [x] Store images in /uploads/items/{variant_id}/ ✅ (handled in variant creation)
+- [x] Handle missing images gracefully ✅
+
+**Frontend Implementation:**
+- [ ] Step 5: Update TypeScript types and services
+- [ ] Step 6: Update ItemManagement with variant accordion
+- [ ] Step 7: Update configurator with auto-addons
+- [ ] Step 8: Create ImportModal with error log
+  - Display preview table:
+    - Base products
+    - Variants with style and price
+    - Add-On relationships
+    - Missing references (errors)
+  - Confirm/Cancel buttons
+- [ ] Show import progress (x of 221 items processed)
+- [ ] Display import results (success count, error count)
+- [ ] Write tests for import UI
+
+**Data Structure After Import:**
+```
+Item (Base Product)
+  ├─ Variant 1: "Ink Black" - $815 - image1.jpg
+  ├─ Variant 2: "Pine Green" - $815 - image2.jpg
+  └─ Add-Ons:
+      ├─ Slot 1 (Required): Mounting Bracket
+      ├─ Slot 2 (Required): Face Plate
+      └─ Slot 3 (Optional): Extra Cable, Wall Adapter
+```
+
+**Import Validation Rules:**
+- All rows must have valid model numbers
+- Variants must share the same base model number
+- Add-On model numbers must exist in the catalog (or be created first)
+- Prices must be positive numbers
+- Categories are created dynamically if not existing
 
 ---
 
@@ -562,17 +764,42 @@ interface Category {
 }
 ```
 
-### Item
+### Item (Base Product)
 ```typescript
 interface Item {
   id: number;
   category_id: number;
-  name: string;
+  name: string;                    // Product name (e.g., "Source 7")
   description: string;
-  model_number: string;
+  base_model_number: string;       // Base model (e.g., "MGWSIPD-LK.18")
   dimensions: string;
-  price: number;
-  image_path: string;
+  created_at: string;
+}
+```
+
+### Item Variant
+```typescript
+interface ItemVariant {
+  id: number;
+  item_id: number;                 // Reference to parent Item
+  style_name: string;              // Variant name (e.g., "Ink Black", "Pine Green")
+  model_number: string;            // Full model number (e.g., "MGWSIPD-LK.18 Ink Black")
+  price: number;                   // Full price (not adjustment)
+  image_path: string;              // Path to variant image
+  sort_order: number;              // Display order within product
+  created_at: string;
+}
+```
+
+### Item Add-On (Relationship)
+```typescript
+interface ItemAddon {
+  id: number;
+  parent_item_id: number;          // The item that has add-ons
+  addon_item_id: number;           // The add-on item
+  slot_number: number;             // 1-4 (slots 1-2 required, 3-4 optional)
+  is_required: boolean;            // true for slots 1-2, false for 3-4
+  sort_order: number;              // Display order within slot
   created_at: string;
 }
 ```
@@ -617,11 +844,12 @@ interface Floorplan {
 interface Placement {
   id: number;
   floorplan_id: number;
-  item_id: number;
+  item_variant_id: number;         // Reference to specific variant (e.g., "Ink Black")
   x: number;
   y: number;
   width: number;
   height: number;
+  selected_addons: number[];       // IDs of selected add-ons (slots 1-4)
   created_at: string;
 }
 ```
@@ -665,13 +893,26 @@ uploads/
 - DELETE /categories/:id (Admin)
 - PATCH /categories/reorder (Admin)
 
-### Items
+### Items (Base Products)
 - POST /items (Admin)
 - GET /items
 - GET /items/:id
 - PUT /items/:id (Admin)
 - DELETE /items/:id (Admin)
 - POST /items/import (Admin)
+- POST /items/import-preview (Admin)
+
+### Item Variants
+- POST /items/:id/variants (Admin)
+- GET /items/:id/variants
+- PUT /items/:id/variants/:variantId (Admin)
+- DELETE /items/:id/variants/:variantId (Admin)
+- PATCH /items/:id/variants/reorder (Admin)
+
+### Item Add-Ons
+- POST /items/:id/addons (Admin)
+- GET /items/:id/addons
+- DELETE /items/:id/addons/:addonId (Admin)
 
 ### Customers
 - POST /customers

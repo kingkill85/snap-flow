@@ -1,17 +1,19 @@
-import { useState, useEffect } from 'react';
-import { Button, Card, Table, Modal, Label, TextInput, Textarea, Select, Alert, Spinner, Pagination } from 'flowbite-react';
-import { HiPlus, HiSearch } from 'react-icons/hi';
-import { itemService, type Item, type CreateItemDTO } from '../../services/item';
+import React, { useState, useEffect } from 'react';
+import { Button, Card, Table, Modal, TextInput, Select, Alert, Spinner, Pagination } from 'flowbite-react';
+import { HiPlus, HiSearch, HiChevronDown, HiChevronRight } from 'react-icons/hi';
+import { itemService, type Item, type ItemVariant } from '../../services/item';
 import { categoryService, type Category } from '../../services/category';
+import { ItemFormModal } from '../../components/items/ItemFormModal';
+import { VariantFormModal } from '../../components/items/VariantFormModal';
+import { DeleteVariantModal } from '../../components/items/DeleteVariantModal';
 
 const ItemManagement = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState('');
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showItemFormModal, setShowItemFormModal] = useState(false);
   const [itemToEdit, setItemToEdit] = useState<Item | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
 
   // Filter and pagination state
@@ -21,33 +23,18 @@ const ItemManagement = () => {
   const [totalPages, setTotalPages] = useState(1);
   const itemsPerPage = 10;
 
-  // Create form state
-  const [newItem, setNewItem] = useState<{
-    category_id?: number;
-    name: string;
-    description: string;
-    model_number: string;
-    dimensions: string;
-    price: string;
-  }>({
-    category_id: undefined,
-    name: '',
-    description: '',
-    model_number: '',
-    dimensions: '',
-    price: '',
-  });
-  const [newItemImage, setNewItemImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [createError, setCreateError] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
+  // Variants state
+  const [itemVariants, setItemVariants] = useState<Record<number, ItemVariant[]>>({});
+  const [loadingVariants, setLoadingVariants] = useState<Record<number, boolean>>({});
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
 
-  // Edit form state
-  const [editItem, setEditItem] = useState<Partial<CreateItemDTO>>({});
-  const [editItemImage, setEditItemImage] = useState<File | null>(null);
-  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
-  const [editError, setEditError] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
+  // Unified Variant Form Modal state
+  const [showVariantFormModal, setShowVariantFormModal] = useState(false);
+  const [variantFormItemId, setVariantFormItemId] = useState<number | null>(null);
+  const [variantFormItem, setVariantFormItem] = useState<Item | null>(null);
+  const [variantToEdit, setVariantToEdit] = useState<ItemVariant | null>(null);
+  const [showDeleteVariantModal, setShowDeleteVariantModal] = useState(false);
+  const [variantToDelete, setVariantToDelete] = useState<ItemVariant | null>(null);
 
   // Fetch categories
   useEffect(() => {
@@ -91,6 +78,17 @@ const ItemManagement = () => {
 
         setItems(result.items);
         setTotalPages(result.totalPages);
+        
+        // Auto-expand all items by default
+        const allItemIds = new Set(result.items.map(item => item.id));
+        setExpandedItems(allItemIds);
+        
+        // Load variants for all items
+        result.items.forEach(item => {
+          if (!itemVariants[item.id]) {
+            loadVariants(item.id);
+          }
+        });
       } catch (err: any) {
         if (err.name === 'AbortError' || err.name === 'CanceledError' || err.message === 'canceled') {
           return;
@@ -108,104 +106,82 @@ const ItemManagement = () => {
     };
   }, [selectedCategory, searchQuery, currentPage]);
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (isEdit) {
-        setEditItemImage(file);
-        setEditImagePreview(URL.createObjectURL(file));
+  // Toggle item expansion
+  const toggleItem = (itemId: number) => {
+    setExpandedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
       } else {
-        setNewItemImage(file);
-        setImagePreview(URL.createObjectURL(file));
+        newSet.add(itemId);
+        // Load variants if not already loaded
+        if (!itemVariants[itemId]) {
+          loadVariants(itemId);
+        }
       }
+      return newSet;
+    });
+  };
+
+  // Load variants for an item
+  const loadVariants = async (itemId: number) => {
+    if (itemVariants[itemId]) {
+      return; // Already loaded
+    }
+
+    setLoadingVariants(prev => ({ ...prev, [itemId]: true }));
+    try {
+      const variants = await itemService.getVariants(itemId);
+      setItemVariants(prev => ({ ...prev, [itemId]: variants }));
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to load variants');
+    } finally {
+      setLoadingVariants(prev => ({ ...prev, [itemId]: false }));
     }
   };
 
-  const handleCreateItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreateError('');
-    setIsCreating(true);
-
+  // Refresh variants for expanded item
+  const refreshVariants = async (itemId: number) => {
+    setLoadingVariants(prev => ({ ...prev, [itemId]: true }));
     try {
-      if (!newItem.category_id || !newItem.name || !newItem.price) {
-        setCreateError('Please fill in all required fields (Category, Name, and Price)');
-        setIsCreating(false);
-        return;
-      }
-
-      const priceValue = parseFloat(newItem.price);
-      if (isNaN(priceValue) || priceValue < 0) {
-        setCreateError('Please enter a valid price');
-        setIsCreating(false);
-        return;
-      }
-
-      await itemService.create({
-        category_id: newItem.category_id,
-        name: newItem.name,
-        description: newItem.description || undefined,
-        model_number: newItem.model_number || undefined,
-        dimensions: newItem.dimensions || undefined,
-        price: priceValue,
-        image: newItemImage || undefined,
+      // Clear cache first to force re-render
+      setItemVariants(prev => {
+        const newState = { ...prev };
+        delete newState[itemId];
+        return newState;
       });
-
-      setNewItem({
-        category_id: undefined,
-        name: '',
-        description: '',
-        model_number: '',
-        dimensions: '',
-        price: '',
-      });
-      setNewItemImage(null);
-      setImagePreview(null);
-      setShowCreateModal(false);
-      
-      // Refresh items
-      const result = await itemService.getAll(
-        { category_id: selectedCategory || undefined, search: searchQuery || undefined },
-        { page: currentPage, limit: itemsPerPage }
-      );
-      setItems(result.items);
-      setTotalPages(result.totalPages);
+      // Small delay to ensure React processes the state change
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const variants = await itemService.getVariants(itemId);
+      setItemVariants(prev => ({ ...prev, [itemId]: variants }));
     } catch (err: any) {
-      setCreateError(err.response?.data?.error || 'Failed to create item');
+      setError(err.response?.data?.error || 'Failed to refresh variants');
     } finally {
-      setIsCreating(false);
+      setLoadingVariants(prev => ({ ...prev, [itemId]: false }));
     }
   };
 
-  const handleEditItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!itemToEdit) return;
+  // Variant modal handlers
+  const openAddVariantModal = (itemId: number) => {
+    const item = items.find(i => i.id === itemId) || null;
+    setVariantFormItemId(itemId);
+    setVariantFormItem(item);
+    setVariantToEdit(null);
+    setShowVariantFormModal(true);
+  };
 
-    setEditError('');
-    setIsEditing(true);
+  const openEditVariantModal = (itemId: number, variant: ItemVariant) => {
+    const item = items.find(i => i.id === itemId) || null;
+    setVariantFormItemId(itemId);
+    setVariantFormItem(item);
+    setVariantToEdit(variant);
+    setShowVariantFormModal(true);
+  };
 
-    try {
-      await itemService.update(itemToEdit.id, {
-        ...editItem,
-        image: editItemImage || undefined,
-      });
-
-      setShowEditModal(false);
-      setItemToEdit(null);
-      setEditItemImage(null);
-      setEditImagePreview(null);
-      
-      // Refresh items
-      const result = await itemService.getAll(
-        { category_id: selectedCategory || undefined, search: searchQuery || undefined },
-        { page: currentPage, limit: itemsPerPage }
-      );
-      setItems(result.items);
-      setTotalPages(result.totalPages);
-    } catch (err: any) {
-      setEditError(err.response?.data?.error || 'Failed to update item');
-    } finally {
-      setIsEditing(false);
-    }
+  const openDeleteVariantModal = (itemId: number, variant: ItemVariant) => {
+    setVariantFormItemId(itemId);
+    setVariantToDelete(variant);
+    setShowDeleteVariantModal(true);
   };
 
   const handleDeleteItem = async () => {
@@ -231,17 +207,12 @@ const ItemManagement = () => {
 
   const openEditModal = (item: Item) => {
     setItemToEdit(item);
-    setEditItem({
-      category_id: item.category_id,
-      name: item.name,
-      description: item.description,
-      model_number: item.model_number,
-      dimensions: item.dimensions,
-      price: item.price,
-    });
-    setEditImagePreview(item.image_path ? itemService.getImageUrl(item.image_path) : null);
-    setEditError('');
-    setShowEditModal(true);
+    setShowItemFormModal(true);
+  };
+
+  const openCreateItem = () => {
+    setItemToEdit(null);
+    setShowItemFormModal(true);
   };
 
   const openDeleteModal = (item: Item) => {
@@ -256,7 +227,7 @@ const ItemManagement = () => {
           <h1 className="text-2xl font-bold text-gray-900">Item Management</h1>
           <p className="text-gray-600">Manage products and their details</p>
         </div>
-        <Button onClick={() => setShowCreateModal(true)}>
+        <Button onClick={openCreateItem}>
           <HiPlus className="mr-2 h-5 w-5" />
           Add Item
         </Button>
@@ -306,55 +277,144 @@ const ItemManagement = () => {
       <Card>
         <Table hoverable>
           <Table.Head>
-            <Table.HeadCell>Image</Table.HeadCell>
-            <Table.HeadCell>Name</Table.HeadCell>
-            <Table.HeadCell>Category</Table.HeadCell>
-            <Table.HeadCell>Model</Table.HeadCell>
-            <Table.HeadCell>Price</Table.HeadCell>
-            <Table.HeadCell>
-              <span className="sr-only">Actions</span>
-            </Table.HeadCell>
+            <Table.HeadCell className="w-10"></Table.HeadCell>
+            <Table.HeadCell>NAME</Table.HeadCell>
+            <Table.HeadCell>MODEL</Table.HeadCell>
+            <Table.HeadCell>CATEGORY</Table.HeadCell>
+            <Table.HeadCell className="w-32"></Table.HeadCell>
           </Table.Head>
           <Table.Body>
             {items.length === 0 ? (
               <Table.Row>
-                <Table.Cell colSpan={6} className="text-center py-8 text-gray-500">
+                <Table.Cell colSpan={5} className="text-center py-8 text-gray-500">
                   No items found. Create your first item to get started.
                 </Table.Cell>
               </Table.Row>
             ) : (
               items.map((item) => {
                 const category = categories.find(c => c.id === item.category_id);
+                const variants = itemVariants[item.id] || [];
+                const isLoading = loadingVariants[item.id];
+                const isExpanded = expandedItems.has(item.id);
+                
                 return (
-                  <Table.Row key={item.id}>
-                    <Table.Cell>
-                      {item.image_path ? (
-                        <img
-                          src={itemService.getImageUrl(item.image_path) || ''}
-                          alt={item.name}
-                          className="w-16 h-16 object-cover rounded"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
-                          No Image
+                  <React.Fragment key={item.id}>
+                    {/* Main Item Row */}
+                    <Table.Row className="hover:bg-gray-50">
+                      <Table.Cell className="text-center">
+                        <button 
+                          onClick={() => toggleItem(item.id)}
+                          className="p-1 hover:bg-gray-100 rounded transition-colors"
+                          title={isExpanded ? "Collapse" : "Expand"}
+                        >
+                          {isExpanded ? <HiChevronDown className="w-5 h-5 text-gray-600" /> : <HiChevronRight className="w-5 h-5 text-gray-600" />}
+                        </button>
+                      </Table.Cell>
+                      <Table.Cell className="font-medium">{item.name}</Table.Cell>
+                      <Table.Cell className="text-gray-600">{item.base_model_number || '-'}</Table.Cell>
+                      <Table.Cell>{category?.name || 'Unknown'}</Table.Cell>
+                      <Table.Cell>
+                        <div className="flex gap-2 justify-end">
+                          <Button 
+                            color="light" 
+                            size="xs" 
+                            onClick={() => openEditModal(item)}
+                          >
+                            Edit
+                          </Button>
+                          <Button 
+                            color="failure" 
+                            size="xs" 
+                            onClick={() => openDeleteModal(item)}
+                          >
+                            Delete
+                          </Button>
                         </div>
-                      )}
-                    </Table.Cell>
-                    <Table.Cell className="font-medium">{item.name}</Table.Cell>
-                    <Table.Cell>{category?.name || 'Unknown'}</Table.Cell>
-                    <Table.Cell className="text-gray-600">{item.model_number || '-'}</Table.Cell>
-                    <Table.Cell>${item.price.toFixed(2)}</Table.Cell>
-                    <Table.Cell>
-                      <div className="flex gap-2">
-                        <Button color="light" size="xs" onClick={() => openEditModal(item)}>
-                          Edit
-                        </Button>
-                        <Button color="failure" size="xs" onClick={() => openDeleteModal(item)}>
-                          Delete
-                        </Button>
-                      </div>
-                    </Table.Cell>
-                  </Table.Row>
+                      </Table.Cell>
+                    </Table.Row>
+                    
+                    {/* Variants Subtable - Visible when expanded */}
+                    {isExpanded && (
+                    <Table.Row className="bg-gray-50">
+                      <Table.Cell colSpan={5} className="p-0">
+                          <div className="p-4">
+                            <div className="flex justify-between items-center mb-3">
+                              <h4 className="text-sm font-semibold text-gray-700">Variants</h4>
+                              <Button 
+                                size="xs" 
+                                color="light"
+                                onClick={() => openAddVariantModal(item.id)}
+                              >
+                                <HiPlus className="mr-1" /> Add Variant
+                              </Button>
+                            </div>
+                            
+                            {isLoading ? (
+                              <div className="text-center py-4">
+                                <Spinner size="sm" />
+                                <span className="ml-2 text-sm text-gray-500">Loading variants...</span>
+                              </div>
+                            ) : variants.length === 0 ? (
+                              <div className="text-center py-4 text-gray-500 text-sm">
+                                No variants found. Add a variant to set price and image.
+                              </div>
+                            ) : (
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b">
+                                    <th className="text-left py-2 px-2">IMAGE</th>
+                                    <th className="text-left py-2 px-2">STYLE</th>
+                                    <th className="text-left py-2 px-2">PRICE</th>
+                                    <th className="w-24"></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {variants.map((variant) => (
+                                    <tr key={variant.id} className="border-b border-gray-200">
+                                      <td className="py-2 px-2">
+                                        {variant.image_path ? (
+                                          <img
+                                            src={itemService.getImageUrl(variant.image_path) || ''}
+                                            alt={variant.style_name}
+                                            className="h-16 w-auto max-w-24 object-contain rounded bg-white"
+                                          />
+                                        ) : (
+                                          <div className="h-16 w-24 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                                            No Image
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="py-2 px-2 font-medium">{variant.style_name}</td>
+                                      <td className="py-2 px-2">${variant.price.toFixed(2)}</td>
+                                      <td className="py-2 px-2 text-right">
+                                        <div className="flex gap-1 justify-end">
+                                          <Button 
+                                            size="xs" 
+                                            color="light"
+                                            onClick={() => openEditVariantModal(item.id, variant)}
+                                          >
+                                            Edit
+                                          </Button>
+                                          <Button 
+                                            size="xs" 
+                                            color="failure"
+                                            onClick={() => openDeleteVariantModal(item.id, variant)}
+                                          >
+                                            Delete
+                                          </Button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+
+                          </div>
+                        </Table.Cell>
+                      </Table.Row>
+                    )}
+                  </React.Fragment>
                 );
               })
             )}
@@ -372,243 +432,41 @@ const ItemManagement = () => {
         )}
       </Card>
 
-      {/* Create Item Modal */}
-      <Modal show={showCreateModal} onClose={() => setShowCreateModal(false)} size="lg">
-        <Modal.Header>Create New Item</Modal.Header>
-        <Modal.Body>
-          {createError && (
-            <Alert color="failure" className="mb-4">
-              {createError}
-            </Alert>
-          )}
-          <form onSubmit={handleCreateItem} className="space-y-4">
-            <div>
-              <Label htmlFor="category" value="Category *" />
-              <Select
-                id="category"
-                required
-                value={newItem.category_id || ''}
-                onChange={(e) => setNewItem({ ...newItem, category_id: parseInt(e.target.value) })}
-              >
-                <option value="">Select a category</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="name" value="Name *" />
-              <TextInput
-                id="name"
-                type="text"
-                required
-                value={newItem.name}
-                onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
-                placeholder="e.g., Smart Light Bulb"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="description" value="Description" />
-              <Textarea
-                id="description"
-                value={newItem.description}
-                onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-                placeholder="Product description..."
-                rows={3}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="modelNumber" value="Model Number" />
-                <TextInput
-                  id="modelNumber"
-                  type="text"
-                  value={newItem.model_number}
-                  onChange={(e) => setNewItem({ ...newItem, model_number: e.target.value })}
-                  placeholder="e.g., SB-100"
-                />
-              </div>
-              <div>
-                <Label htmlFor="dimensions" value="Dimensions" />
-                <TextInput
-                  id="dimensions"
-                  type="text"
-                  value={newItem.dimensions}
-                  onChange={(e) => setNewItem({ ...newItem, dimensions: e.target.value })}
-                  placeholder="e.g., 120x80mm"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="price" value="Price *" />
-              <TextInput
-                id="price"
-                type="number"
-                required
-                min="0"
-                step="0.01"
-                value={newItem.price}
-                onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
-                placeholder="29.99"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="image" value="Image" />
-              <input
-                id="image"
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleImageChange(e)}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-              {imagePreview && (
-                <img
-                  src={imagePreview}
-                  alt="Preview"
-                  className="mt-2 w-32 h-32 object-cover rounded"
-                />
-              )}
-            </div>
-          </form>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button onClick={handleCreateItem} disabled={isCreating}>
-            {isCreating ? (
-              <>
-                <Spinner size="sm" className="mr-2" />
-                Creating...
-              </>
-            ) : (
-              'Create Item'
-            )}
-          </Button>
-          <Button color="gray" onClick={() => setShowCreateModal(false)}>
-            Cancel
-          </Button>
-        </Modal.Footer>
-      </Modal>
-
-      {/* Edit Item Modal */}
-      <Modal show={showEditModal} onClose={() => setShowEditModal(false)} size="lg">
-        <Modal.Header>Edit Item</Modal.Header>
-        <Modal.Body>
-          {editError && (
-            <Alert color="failure" className="mb-4">
-              {editError}
-            </Alert>
-          )}
-          <form onSubmit={handleEditItem} className="space-y-4">
-            <div>
-              <Label htmlFor="editCategory" value="Category" />
-              <Select
-                id="editCategory"
-                value={editItem.category_id || ''}
-                onChange={(e) => setEditItem({ ...editItem, category_id: parseInt(e.target.value) })}
-              >
-                <option value="">Select a category</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="editName" value="Name" />
-              <TextInput
-                id="editName"
-                type="text"
-                value={editItem.name}
-                onChange={(e) => setEditItem({ ...editItem, name: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="editDescription" value="Description" />
-              <Textarea
-                id="editDescription"
-                value={editItem.description || ''}
-                onChange={(e) => setEditItem({ ...editItem, description: e.target.value })}
-                rows={3}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="editModelNumber" value="Model Number" />
-                <TextInput
-                  id="editModelNumber"
-                  type="text"
-                  value={editItem.model_number}
-                  onChange={(e) => setEditItem({ ...editItem, model_number: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="editDimensions" value="Dimensions" />
-                <TextInput
-                  id="editDimensions"
-                  type="text"
-                  value={editItem.dimensions}
-                  onChange={(e) => setEditItem({ ...editItem, dimensions: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="editPrice" value="Price" />
-              <TextInput
-                id="editPrice"
-                type="number"
-                min="0"
-                step="0.01"
-                value={editItem.price || ''}
-                onChange={(e) => setEditItem({ ...editItem, price: parseFloat(e.target.value) })}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="editImage" value="Image (leave empty to keep current)" />
-              <input
-                id="editImage"
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleImageChange(e, true)}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-              {editImagePreview && (
-                <img
-                  src={editImagePreview}
-                  alt="Preview"
-                  className="mt-2 w-32 h-32 object-cover rounded"
-                />
-              )}
-            </div>
-          </form>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button onClick={handleEditItem} disabled={isEditing}>
-            {isEditing ? (
-              <>
-                <Spinner size="sm" className="mr-2" />
-                Saving...
-              </>
-            ) : (
-              'Save Changes'
-            )}
-          </Button>
-          <Button color="gray" onClick={() => setShowEditModal(false)}>
-            Cancel
-          </Button>
-        </Modal.Footer>
-      </Modal>
+      {/* Unified Item Form Modal */}
+      <ItemFormModal
+        item={itemToEdit}
+        categories={categories}
+        isOpen={showItemFormModal}
+        onClose={() => {
+          setShowItemFormModal(false);
+          setItemToEdit(null);
+        }}
+        onSubmit={async (data) => {
+          if (itemToEdit) {
+            // Edit mode
+            await itemService.update(itemToEdit.id, data);
+            // Refresh items
+            const result = await itemService.getAll(
+              { category_id: selectedCategory || undefined, search: searchQuery || undefined },
+              { page: currentPage, limit: itemsPerPage }
+            );
+            setItems(result.items);
+          } else {
+            // Create mode - category_id is guaranteed by modal validation
+            await itemService.create(data as import('../../services/item').CreateItemDTO);
+            // Refresh items
+            const result = await itemService.getAll(
+              { category_id: selectedCategory || undefined, search: searchQuery || undefined },
+              { page: currentPage, limit: itemsPerPage }
+            );
+            setItems(result.items);
+            setTotalPages(result.totalPages);
+            // Auto-expand new items
+            const allItemIds = new Set(result.items.map(item => item.id));
+            setExpandedItems(allItemIds);
+          }
+        }}
+      />
 
       {/* Delete Modal */}
       <Modal show={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
@@ -628,6 +486,58 @@ const ItemManagement = () => {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* Unified Variant Form Modal */}
+      <VariantFormModal
+        itemId={variantFormItemId || 0}
+        item={variantFormItem}
+        variant={variantToEdit}
+        availableVariants={variantFormItemId ? (itemVariants[variantFormItemId] || []) : []}
+        isOpen={showVariantFormModal}
+        onClose={() => {
+          setShowVariantFormModal(false);
+          setVariantToEdit(null);
+          setVariantFormItemId(null);
+          setVariantFormItem(null);
+        }}
+        onSubmit={async (data) => {
+          if (variantToEdit && variantFormItemId) {
+            // Edit mode - update and close
+            await itemService.updateVariant(variantFormItemId, variantToEdit.id, data);
+            // Small delay to ensure backend has processed the update
+            await new Promise(resolve => setTimeout(resolve, 100));
+            // Refresh variants
+            if (variantFormItemId) {
+              await refreshVariants(variantFormItemId);
+            }
+          } else if (variantFormItemId) {
+            // Create mode - create variant and stay open for add-ons
+            const newVariant = await itemService.createVariant(variantFormItemId, data);
+            // Refresh variants to get the new one in the list
+            await refreshVariants(variantFormItemId);
+            // Switch to edit mode with the new variant
+            setVariantToEdit(newVariant);
+            // Don't close - user can now add add-ons
+          }
+        }}
+      />
+
+      <DeleteVariantModal
+        itemId={variantFormItemId || 0}
+        variant={variantToDelete}
+        isOpen={showDeleteVariantModal}
+        onClose={() => {
+          setShowDeleteVariantModal(false);
+          setVariantToDelete(null);
+          setVariantFormItemId(null);
+        }}
+        onSuccess={() => {
+          if (variantFormItemId) {
+            refreshVariants(variantFormItemId);
+          }
+        }}
+      />
+
     </div>
   );
 };
