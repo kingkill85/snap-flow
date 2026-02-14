@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Card, Table, Modal, Label, TextInput, Textarea, Select, Alert, Spinner, Pagination } from 'flowbite-react';
 import { HiPlus } from 'react-icons/hi';
 import { itemService, type Item, type CreateItemDTO } from '../../services/item';
@@ -71,7 +71,10 @@ const ItemManagement = () => {
 
   const fetchItems = useCallback(async (signal?: AbortSignal) => {
     try {
-      setIsLoading(true);
+      // Only show loading state on initial fetch (no items yet)
+      if (items.length === 0) {
+        setIsLoading(true);
+      }
       setError('');
       
       const filter: { category_id?: number; search?: string } = {};
@@ -94,7 +97,7 @@ const ItemManagement = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedCategory, searchQuery, currentPage]);
+  }, [selectedCategory, searchQuery, currentPage, items.length]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -228,7 +231,8 @@ const ItemManagement = () => {
 
 
 
-  if (isLoading) {
+  // Only show full-page loading on initial load (no items yet)
+  if (isLoading && items.length === 0) {
     return (
       <div className="flex justify-center items-center h-64">
         <Spinner size="xl" />
@@ -255,7 +259,7 @@ const ItemManagement = () => {
         </Alert>
       )}
 
-      <SearchFilter categories={categories} onSearch={handleSearch} />
+      <SearchFilter categories={useMemo(() => categories, [categories.length])} onSearch={handleSearch} />
 
       {/* Items Table */}
       <Card>
