@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Button, Card, Table, Modal, Label, TextInput, Textarea, Select, Alert, Spinner, Pagination } from 'flowbite-react';
-import { HiPlus } from 'react-icons/hi';
+import { HiPlus, HiSearch } from 'react-icons/hi';
 import { itemService, type Item, type CreateItemDTO } from '../../services/item';
 import { categoryService, type Category } from '../../services/category';
-import SearchFilter from './SearchFilter';
 
 const ItemManagement = () => {
   const [items, setItems] = useState<Item[]>([]);
@@ -22,16 +21,6 @@ const ItemManagement = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const itemsPerPage = 10;
-
-  // Handle search from SearchFilter component
-  const handleSearch = useCallback((search: string, categoryId: number | '') => {
-    setSearchQuery(search);
-    setSelectedCategory(categoryId);
-    setCurrentPage(1);
-  }, []);
-
-  // Memoize categories to prevent SearchFilter re-renders
-  const memoizedCategories = useMemo(() => categories, [categories.length]);
 
   // Create form state
   const [newItem, setNewItem] = useState<{
@@ -61,56 +50,68 @@ const ItemManagement = () => {
   const [editError, setEditError] = useState('');
   const [isEditing, setIsEditing] = useState(false);
 
-  const fetchCategories = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const data = await categoryService.getAll(signal);
-      setCategories(data);
-    } catch (err: any) {
-      if (err.name !== 'AbortError' && err.name !== 'CanceledError' && err.message !== 'canceled') {
-        console.error('Failed to fetch categories:', err);
-      }
-    }
-  }, []);
-
-  const fetchItems = useCallback(async (signal?: AbortSignal) => {
-    try {
-      // Only show loading state on initial fetch (no items yet)
-      if (items.length === 0) {
-        setIsLoading(true);
-      }
-      setError('');
-      
-      const filter: { category_id?: number; search?: string } = {};
-      if (selectedCategory) filter.category_id = selectedCategory;
-      if (searchQuery) filter.search = searchQuery;
-
-      const result = await itemService.getAll(
-        filter,
-        { page: currentPage, limit: itemsPerPage },
-        signal
-      );
-
-      setItems(result.items);
-      setTotalPages(result.totalPages);
-    } catch (err: any) {
-      if (err.name === 'AbortError' || err.name === 'CanceledError' || err.message === 'canceled') {
-        return;
-      }
-      setError(err.response?.data?.error || err.message || 'Failed to fetch items');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedCategory, searchQuery, currentPage, items.length]);
-
+  // Fetch categories
   useEffect(() => {
     const controller = new AbortController();
-    fetchCategories(controller.signal);
-    fetchItems(controller.signal);
+    
+    const fetchCategories = async () => {
+      try {
+        const data = await categoryService.getAll(controller.signal);
+        setCategories(data);
+      } catch (err: any) {
+        if (err.name !== 'AbortError' && err.name !== 'CanceledError' && err.message !== 'canceled') {
+          console.error('Failed to fetch categories:', err);
+        }
+      }
+    };
+    
+    fetchCategories();
     
     return () => {
       controller.abort();
     };
-  }, [fetchCategories, fetchItems]);
+  }, []);
+
+  // Fetch items when filters or pagination change
+  useEffect(() => {
+    const controller = new AbortController();
+    
+    const fetchItems = async () => {
+      try {
+        // Only show loading state on initial fetch (no items yet)
+        if (items.length === 0) {
+          setIsLoading(true);
+        }
+        setError('');
+        
+        const filter: { category_id?: number; search?: string } = {};
+        if (selectedCategory) filter.category_id = selectedCategory;
+        if (searchQuery) filter.search = searchQuery;
+
+        const result = await itemService.getAll(
+          filter,
+          { page: currentPage, limit: itemsPerPage },
+          controller.signal
+        );
+
+        setItems(result.items);
+        setTotalPages(result.totalPages);
+      } catch (err: any) {
+        if (err.name === 'AbortError' || err.name === 'CanceledError' || err.message === 'canceled') {
+          return;
+        }
+        setError(err.response?.data?.error || err.message || 'Failed to fetch items');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchItems();
+    
+    return () => {
+      controller.abort();
+    };
+  }, [selectedCategory, searchQuery, currentPage]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const file = e.target.files?.[0];
@@ -165,7 +166,14 @@ const ItemManagement = () => {
       setNewItemImage(null);
       setImagePreview(null);
       setShowCreateModal(false);
-      fetchItems();
+      
+      // Refresh items
+      const result = await itemService.getAll(
+        { category_id: selectedCategory || undefined, search: searchQuery || undefined },
+        { page: currentPage, limit: itemsPerPage }
+      );
+      setItems(result.items);
+      setTotalPages(result.totalPages);
     } catch (err: any) {
       setCreateError(err.response?.data?.error || 'Failed to create item');
     } finally {
@@ -190,7 +198,14 @@ const ItemManagement = () => {
       setItemToEdit(null);
       setEditItemImage(null);
       setEditImagePreview(null);
-      fetchItems();
+      
+      // Refresh items
+      const result = await itemService.getAll(
+        { category_id: selectedCategory || undefined, search: searchQuery || undefined },
+        { page: currentPage, limit: itemsPerPage }
+      );
+      setItems(result.items);
+      setTotalPages(result.totalPages);
     } catch (err: any) {
       setEditError(err.response?.data?.error || 'Failed to update item');
     } finally {
@@ -205,7 +220,14 @@ const ItemManagement = () => {
       await itemService.delete(itemToDelete.id);
       setShowDeleteModal(false);
       setItemToDelete(null);
-      fetchItems();
+      
+      // Refresh items
+      const result = await itemService.getAll(
+        { category_id: selectedCategory || undefined, search: searchQuery || undefined },
+        { page: currentPage, limit: itemsPerPage }
+      );
+      setItems(result.items);
+      setTotalPages(result.totalPages);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to delete item');
       setShowDeleteModal(false);
@@ -231,8 +253,6 @@ const ItemManagement = () => {
     setItemToDelete(item);
     setShowDeleteModal(true);
   };
-
-
 
   // Only show full-page loading on initial load (no items yet)
   if (isLoading && items.length === 0) {
@@ -262,7 +282,39 @@ const ItemManagement = () => {
         </Alert>
       )}
 
-      <SearchFilter categories={memoizedCategories} onSearch={handleSearch} />
+      {/* Search and Filter */}
+      <Card>
+        <div className="flex flex-wrap gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <TextInput
+              type="text"
+              placeholder="Search items..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              icon={HiSearch}
+            />
+          </div>
+          <div className="w-48">
+            <Select
+              value={selectedCategory}
+              onChange={(e) => {
+                setSelectedCategory(e.target.value ? parseInt(e.target.value) : '');
+                setCurrentPage(1);
+              }}
+            >
+              <option value="">All Categories</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+      </Card>
 
       {/* Items Table */}
       <Card>
