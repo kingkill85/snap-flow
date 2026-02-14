@@ -26,17 +26,17 @@ function App() {
               <Profile />
             </ProtectedRoute>
           } />
-          <Route path="admin/users" element={
+          <Route path="settings/users" element={
             <ProtectedRoute requireAdmin>
               <UserManagement />
             </ProtectedRoute>
           } />
-          <Route path="admin/categories" element={
+          <Route path="catalog/categories" element={
             <ProtectedRoute requireAdmin>
               <CategoryManagement />
             </ProtectedRoute>
           } />
-          <Route path="admin/items" element={
+          <Route path="catalog/items" element={
             <ProtectedRoute requireAdmin>
               <ItemManagement />
             </ProtectedRoute>
