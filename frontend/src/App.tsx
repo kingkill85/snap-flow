@@ -5,9 +5,9 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Profile from './pages/Profile';
-import UserManagement from './pages/admin/UserManagement';
-import CategoryManagement from './pages/admin/CategoryManagement';
-import ItemManagement from './pages/admin/ItemManagement';
+import UserManagement from './pages/settings/UserManagement';
+import CategoryManagement from './pages/catalog/CategoryManagement';
+import ItemManagement from './pages/catalog/ItemManagement';
 import NotFound from './pages/NotFound';
 
 function App() {

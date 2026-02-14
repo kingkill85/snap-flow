@@ -170,9 +170,9 @@ describe('Header', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument();
     });
 
-    // Check that Catalog and Admin menu items are visible in top nav
+    // Check that Catalog and Settings menu items are visible in top nav
     expect(screen.getByText('Catalog')).toBeInTheDocument();
-    expect(screen.getByText('Admin')).toBeInTheDocument();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
   });
 
   it('does not show admin menu items for regular users', async () => {
@@ -196,7 +196,7 @@ describe('Header', () => {
 
     // Admin items should not be present in top nav
     expect(screen.queryByText('Catalog')).not.toBeInTheDocument();
-    expect(screen.queryByText('Admin')).not.toBeInTheDocument();
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument();
   });
 
   it('calls logout when sign out is clicked', async () => {
