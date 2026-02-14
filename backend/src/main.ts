@@ -84,6 +84,7 @@ app.get('/uploads/*', async (c: Context) => {
 
     c.header('Content-Type', contentType);
     c.header('Content-Length', stat.size.toString());
+    c.header('Access-Control-Allow-Origin', '*');
     
     return c.body(file.readable);
   } catch (error) {
@@ -93,6 +94,14 @@ app.get('/uploads/*', async (c: Context) => {
     console.error('Serve uploads error:', error);
     return c.json({ error: 'Failed to serve file' }, 500);
   }
+});
+
+// Handle CORS preflight for uploads
+app.options('/uploads/*', (c) => {
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  c.header('Access-Control-Allow-Headers', 'Content-Type');
+  return c.body(null, 204);
 });
 
 // Start server
