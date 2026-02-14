@@ -30,6 +30,9 @@ const ItemManagement = () => {
     setCurrentPage(1);
   }, []);
 
+  // Memoize categories to prevent SearchFilter re-renders
+  const memoizedCategories = useMemo(() => categories, [categories.length]);
+
   // Create form state
   const [newItem, setNewItem] = useState<{
     category_id?: number;
@@ -259,7 +262,7 @@ const ItemManagement = () => {
         </Alert>
       )}
 
-      <SearchFilter categories={useMemo(() => categories, [categories.length])} onSearch={handleSearch} />
+      <SearchFilter categories={memoizedCategories} onSearch={handleSearch} />
 
       {/* Items Table */}
       <Card>
