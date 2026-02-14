@@ -7,7 +7,6 @@ import { categoryService, type Category } from '../../services/category';
 const ItemManagement = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -78,10 +77,6 @@ const ItemManagement = () => {
     
     const fetchItems = async () => {
       try {
-        // Only show loading state on initial fetch (no items yet)
-        if (items.length === 0) {
-          setIsLoading(true);
-        }
         setError('');
         
         const filter: { category_id?: number; search?: string } = {};
@@ -102,7 +97,7 @@ const ItemManagement = () => {
         }
         setError(err.response?.data?.error || err.message || 'Failed to fetch items');
       } finally {
-        setIsLoading(false);
+        // No loading state for searches
       }
     };
     
@@ -253,15 +248,6 @@ const ItemManagement = () => {
     setItemToDelete(item);
     setShowDeleteModal(true);
   };
-
-  // Only show full-page loading on initial load (no items yet)
-  if (isLoading && items.length === 0) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <Spinner size="xl" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
