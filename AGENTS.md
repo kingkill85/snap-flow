@@ -444,6 +444,30 @@ cd backend && deno task test
 
 ---
 
+## Frontend Page Structure
+
+Current route and file organization:
+
+```
+frontend/src/pages/
+├── Home.tsx                    → /
+├── Login.tsx                   → /login
+├── Profile.tsx                 → /profile
+├── catalog/
+│   ├── ItemManagement.tsx      → /catalog/items
+│   └── CategoryManagement.tsx  → /catalog/categories
+├── settings/
+│   └── UserManagement.tsx      → /settings/users
+└── NotFound.tsx               → /* (404)
+```
+
+**Navigation Groups:**
+- **Projects** ▼ → Projects, Customers
+- **Catalog** ▼ (admin only) → Items, Categories
+- **Settings** ▼ (admin only) → User Management
+
+---
+
 ## UI Consistency Patterns
 
 ### Action Buttons in Tables
