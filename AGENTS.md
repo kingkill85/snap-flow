@@ -713,6 +713,118 @@ When displaying Edit/Delete buttons in table rows, use this consistent pattern:
 
 ---
 
+## Modal Components Pattern
+
+**NEVER** create inline modals directly in page components. All modals should be extracted into reusable components.
+
+### Modal Component Structure
+
+```
+frontend/src/components/
+├── common/
+│   └── ConfirmDeleteModal.tsx    # Reusable delete confirmation
+├── users/
+│   └── UserFormModal.tsx         # Create/Edit user form
+├── categories/
+│   └── CategoryFormModal.tsx     # Create/Edit category form
+└── items/
+    ├── ItemFormModal.tsx         # Create/Edit item form
+    ├── VariantFormModal.tsx      # Create/Edit variant form
+    └── DeleteVariantModal.tsx    # Variant-specific delete
+```
+
+### Common Reusable Components
+
+**ConfirmDeleteModal** - Use for ALL delete confirmations:
+```typescript
+import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
+
+<ConfirmDeleteModal
+  title="Delete Item"
+  itemName={itemToDelete?.name || ''}
+  warningText="Optional warning message"
+  isOpen={showDeleteModal}
+  onClose={() => {
+    setShowDeleteModal(false);
+    setItemToDelete(null);
+  }}
+  onConfirm={handleDeleteItem}
+/>
+```
+
+### Form Modal Pattern
+
+Create unified Create/Edit modals (single component handles both):
+
+```typescript
+interface UserFormModalProps {
+  user: User | null;  // null = create mode, object = edit mode
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (data: CreateUserDTO | UpdateUserDTO) => Promise<void>;
+}
+
+export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModalProps) {
+  const isEdit = !!user;
+  // Component handles both create and edit modes
+}
+```
+
+### Page Implementation
+
+Pages should import and use modal components, never define them inline:
+
+```typescript
+// GOOD: Uses imported modal components
+import { UserFormModal } from '../../components/users/UserFormModal';
+import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
+
+const UserManagement = () => {
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [userToEdit, setUserToEdit] = useState<User | null>(null);
+  
+  const handleSubmit = async (data: CreateUserDTO | UpdateUserDTO) => {
+    if (userToEdit) {
+      await userService.update(userToEdit.id, data as UpdateUserDTO);
+    } else {
+      await userService.create(data as CreateUserDTO);
+    }
+    fetchUsers();
+  };
+
+  return (
+    <>
+      <UserFormModal
+        user={userToEdit}
+        isOpen={showFormModal}
+        onClose={() => {
+          setShowFormModal(false);
+          setUserToEdit(null);
+        }}
+        onSubmit={handleSubmit}
+      />
+      <ConfirmDeleteModal ... />
+    </>
+  );
+};
+
+// BAD: Inline modal code in the page component
+<Modal show={showCreateModal}>
+  <Modal.Header>Create User</Modal.Header>
+  {/* ... lots of inline JSX ... */}
+</Modal>
+```
+
+### Rules
+1. **NO inline modals** in page components - always extract to `src/components/`
+2. **Single unified modal** for Create/Edit operations (use `item: Item | null` pattern)
+3. **Use ConfirmDeleteModal** for all delete confirmations
+4. **Place domain-specific modals** in feature folders (e.g., `components/users/`, `components/categories/`)
+5. **Place common modals** in `components/common/`
+6. **Keep pages lean** - pages should orchestrate, components should implement
+
+---
+
 ## Common Commands
 
 ```bash

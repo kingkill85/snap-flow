@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Card, Table, Modal, TextInput, Select, Alert, Spinner, Pagination } from 'flowbite-react';
+import { Button, Card, Table, TextInput, Select, Alert, Spinner, Pagination } from 'flowbite-react';
 import { HiPlus, HiSearch, HiChevronDown, HiChevronRight } from 'react-icons/hi';
 import { itemService, type Item, type ItemVariant } from '../../services/item';
 import { categoryService, type Category } from '../../services/category';
 import { ItemFormModal } from '../../components/items/ItemFormModal';
 import { VariantFormModal } from '../../components/items/VariantFormModal';
 import { DeleteVariantModal } from '../../components/items/DeleteVariantModal';
+import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 
 const ItemManagement = () => {
   const [items, setItems] = useState<Item[]>([]);
@@ -186,23 +187,15 @@ const ItemManagement = () => {
 
   const handleDeleteItem = async () => {
     if (!itemToDelete) return;
-
-    try {
-      await itemService.delete(itemToDelete.id);
-      setShowDeleteModal(false);
-      setItemToDelete(null);
-      
-      // Refresh items
-      const result = await itemService.getAll(
-        { category_id: selectedCategory || undefined, search: searchQuery || undefined },
-        { page: currentPage, limit: itemsPerPage }
-      );
-      setItems(result.items);
-      setTotalPages(result.totalPages);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to delete item');
-      setShowDeleteModal(false);
-    }
+    await itemService.delete(itemToDelete.id);
+    
+    // Refresh items
+    const result = await itemService.getAll(
+      { category_id: selectedCategory || undefined, search: searchQuery || undefined },
+      { page: currentPage, limit: itemsPerPage }
+    );
+    setItems(result.items);
+    setTotalPages(result.totalPages);
   };
 
   const openEditModal = (item: Item) => {
@@ -468,24 +461,16 @@ const ItemManagement = () => {
         }}
       />
 
-      {/* Delete Modal */}
-      <Modal show={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
-        <Modal.Header>Delete Item</Modal.Header>
-        <Modal.Body>
-          <p className="text-gray-600 dark:text-gray-400">
-            Are you sure you want to delete &quot;{itemToDelete?.name}&quot;? 
-            This action cannot be undone.
-          </p>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button color="failure" onClick={handleDeleteItem}>
-            Delete
-          </Button>
-          <Button color="gray" onClick={() => setShowDeleteModal(false)}>
-            Cancel
-          </Button>
-        </Modal.Footer>
-      </Modal>
+      <ConfirmDeleteModal
+        title="Delete Item"
+        itemName={itemToDelete?.name || ''}
+        isOpen={showDeleteModal}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setItemToDelete(null);
+        }}
+        onConfirm={handleDeleteItem}
+      />
 
       {/* Unified Variant Form Modal */}
       <VariantFormModal
