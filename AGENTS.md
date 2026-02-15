@@ -825,6 +825,130 @@ const UserManagement = () => {
 
 ---
 
+## Docker Deployment
+
+### Building the Docker Image
+
+The project includes a multi-stage Dockerfile that builds the frontend and packages it with the backend.
+
+**Build locally:**
+```bash
+# Build the Docker image
+docker build -t ghcr.io/kingkill85/snap-flow:latest .
+```
+
+**Build and push to GitHub Container Registry:**
+```bash
+# 1. Login to GitHub Container Registry (first time only)
+docker login ghcr.io -u kingkill85
+# Enter your GitHub Personal Access Token when prompted
+
+# 2. Build the image
+docker build -t ghcr.io/kingkill85/snap-flow:latest .
+
+# 3. Push to registry
+docker push ghcr.io/kingkill85/snap-flow:latest
+```
+
+### Automated Build Script
+
+Use the provided `deploy.sh` script to automate the entire process:
+
+```bash
+# Make executable
+chmod +x deploy.sh
+
+# Run deployment (builds, commits, and pushes)
+./deploy.sh
+```
+
+This script will:
+1. Check prerequisites (Docker, npm, git)
+2. Generate JWT_SECRET automatically
+3. Build frontend production bundle
+4. Build Docker image
+5. Push to GitHub Container Registry
+6. Commit and push code changes
+
+### Running with Docker
+
+**Using Docker Compose (recommended):**
+```bash
+# Start the application
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+
+# Update to latest image
+docker-compose pull && docker-compose up -d
+```
+
+**Using Docker Run:**
+```bash
+docker run -d \
+  --name snapflow \
+  -p 8000:8000 \
+  -v snapflow_data:/app/backend/data \
+  -v snapflow_uploads:/app/backend/uploads \
+  ghcr.io/kingkill85/snap-flow:latest
+```
+
+### Docker Configuration
+
+**Image:** `ghcr.io/kingkill85/snap-flow:latest`
+
+**Ports:**
+- `8000` - Main application port (HTTP)
+
+**Volumes:**
+- `snapflow_data` - SQLite database persistence
+- `snapflow_uploads` - File uploads persistence
+
+**Environment Variables:**
+- `JWT_SECRET` - Auto-generated if not provided
+- `PORT` - Server port (default: 8000)
+- `NODE_ENV` - Environment mode (production)
+- `CORS_ORIGIN` - Allowed origins (* for all, or specific URL)
+
+### First Run
+
+On first run, an admin user is automatically created:
+- **Email:** `admin@snapflow.com`
+- **Password:** Check container logs: `docker-compose logs | grep "Password:"`
+
+**Important:** Change the password immediately after first login!
+
+### Common Docker Issues
+
+**Container restarts continuously:**
+- Check logs: `docker-compose logs`
+- Usually caused by seed script calling `Deno.exit(0)` - this is now fixed
+
+**CORS errors:**
+- Set `CORS_ORIGIN=*` in docker-compose.yml for local network access
+- Or set to your specific origin: `CORS_ORIGIN=http://192.168.1.100:8010`
+
+**Can't login:**
+- API URL is set to `/api` (relative), works with Docker's single-origin setup
+- Check browser console for CORS errors
+- Verify `CORS_ORIGIN` includes your frontend URL
+
+### Development vs Production URLs
+
+**Development (Vite):**
+- Frontend: `http://localhost:5173`
+- API: `http://localhost:8000/api` (via Vite proxy)
+
+**Production (Docker):**
+- Everything on: `http://localhost:8000`
+- API: `http://localhost:8000/api` (same origin)
+
+---
+
 ## Common Commands
 
 ```bash
@@ -923,4 +1047,4 @@ deno run --allow-all main.ts
 
 ---
 
-Last Updated: 2026-02-14
+Last Updated: 2026-02-15
