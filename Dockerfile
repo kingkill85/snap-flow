@@ -1,6 +1,6 @@
 # Multi-stage build for SnapFlow
 # Stage 1: Build frontend
-FROM node:20-alpine AS frontend-builder
+FROM docker.io/library/node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
@@ -17,12 +17,12 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Backend runtime
-FROM denoland/deno:1.40-alpine
+FROM docker.io/denoland/deno:alpine
 
 WORKDIR /app
 
-# Install required packages
-RUN apk add --no-cache openssl
+# Install required packages including Python and build tools for bcrypt
+RUN apk add --no-cache openssl python3 make g++
 
 # Create directories
 RUN mkdir -p backend/data backend/uploads frontend/dist
@@ -38,6 +38,9 @@ COPY .env.production ./backend/.env
 
 # Set working directory to backend
 WORKDIR /app/backend
+
+# Install dependencies with scripts allowed for bcrypt
+RUN deno install --allow-scripts=npm:bcrypt --entrypoint src/main.ts
 
 # Cache dependencies
 RUN deno cache src/main.ts

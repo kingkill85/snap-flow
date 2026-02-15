@@ -146,6 +146,14 @@ if (import.meta.main) {
     Deno.exit(1);
   }
 
+  // Seed admin user on first run
+  console.log('🌱 Checking for admin user...');
+  try {
+    const seedScript = await import('./scripts/seed-admin.ts');
+  } catch (error) {
+    console.error('❌ Failed to run seed script:', error);
+  }
+
   // Start server
   const port = env.PORT;
   console.log(`🚀 SnapFlow API server starting on port ${port}...`);
