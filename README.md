@@ -177,8 +177,6 @@ Password: XXXXXXXXXXXX  ← This is your temporary password
 Create a `docker-compose.yml` file in your project directory:
 
 ```yaml
-version: '3.8'
-
 services:
   snapflow:
     image: ghcr.io/kingkill85/snap-flow:latest
