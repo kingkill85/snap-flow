@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Button, Modal, Label, TextInput, Alert, Spinner, Select, Checkbox, ToggleSwitch } from 'flowbite-react';
-import { HiPlus, HiTrash, HiXCircle } from 'react-icons/hi';
-import { itemService, type ItemVariant, type VariantAddon } from '../../services/item';
+import { Button, Modal, Label, TextInput, Alert, Spinner, Checkbox, ToggleSwitch } from 'flowbite-react';
+import { HiPlus, HiTrash, HiXCircle, HiSearch } from 'react-icons/hi';
+import { itemService, type ItemVariant, type VariantAddon, type Item } from '../../services/item';
 
 interface VariantFormModalProps {
   itemId: number;
@@ -35,9 +35,12 @@ export function VariantFormModal({ itemId, variant, isOpen, onClose, onSubmit }:
   const [selectedAddonVariant, setSelectedAddonVariant] = useState<string>('');
   const [isOptional, setIsOptional] = useState(true);
   const [addingAddon, setAddingAddon] = useState(false);
+  const [addonSearchQuery, setAddonSearchQuery] = useState('');
+  const [isAddonDropdownOpen, setIsAddonDropdownOpen] = useState(false);
   
   // All variants from all items (for add-on selection)
   const [allVariants, setAllVariants] = useState<ItemVariant[]>([]);
+  const [allItems, setAllItems] = useState<Item[]>([]);
   const [loadingAllVariants, setLoadingAllVariants] = useState(false);
 
   // Fetch all variants from all items for add-on selection
@@ -58,12 +61,20 @@ export function VariantFormModal({ itemId, variant, isOpen, onClose, onSubmit }:
         }
       }
       
+      setAllItems(result.items);
       setAllVariants(variants);
     } catch (err) {
       console.error('Failed to fetch all variants:', err);
     } finally {
       setLoadingAllVariants(false);
     }
+  };
+
+  // Helper to get item info for a variant
+  const getItemForVariant = (variantId: number): Item | undefined => {
+    const variant = allVariants.find(v => v.id === variantId);
+    if (!variant) return undefined;
+    return allItems.find(item => item.id === variant.item_id);
   };
 
   // Load variant data when modal opens
@@ -105,6 +116,19 @@ export function VariantFormModal({ itemId, variant, isOpen, onClose, onSubmit }:
       setShowCreatedMessage(true);
       loadAddons();
     }
+  }, [variant, isOpen, isEdit]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (isAddonDropdownOpen && !target.closest('.addon-dropdown-container')) {
+        setIsAddonDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [variant, isOpen, isEdit]);
 
   const loadAddons = async () => {
@@ -336,64 +360,161 @@ export function VariantFormModal({ itemId, variant, isOpen, onClose, onSubmit }:
               ) : addons.length === 0 ? (
                 <p className="text-sm text-gray-500 italic mb-3">No add-ons configured.</p>
               ) : (
-                <div className="space-y-2 mb-4">
-                  {addons.map((addon) => (
-                    <div key={addon.id} className={`flex items-center justify-between p-2 rounded ${addon.addon_variant?.is_active ? 'bg-gray-50' : 'bg-gray-100 opacity-75'}`}>
-                      <div className="flex items-center gap-2">
-                        {addon.addon_variant?.image_path ? (
-                          <img
-                            src={itemService.getImageUrl(addon.addon_variant.image_path) || ''}
-                            alt={addon.addon_variant.style_name}
-                            className="h-16 w-auto max-w-24 object-contain rounded bg-white"
-                          />
-                        ) : (
-                          <div className="h-16 w-24 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
-                            No Image
-                          </div>
-                        )}
-                        <div className="flex flex-col">
-                          <span className="font-medium">{addon.addon_variant?.style_name}</span>
-                          <span className="text-gray-500 text-sm">${addon.addon_variant?.price}</span>
-                        </div>
-                        <div className="flex gap-1 ml-2">
-                          {!addon.addon_variant?.is_active && (
-                            <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-gray-200 text-gray-600">
-                              <HiXCircle className="w-3 h-3 mr-1" />
-                              Inactive
-                            </span>
+                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+                  {addons.map((addon) => {
+                    const addonItem = addon.addon_variant ? getItemForVariant(addon.addon_variant.id) : undefined;
+                    const fullModel = addonItem && addon.addon_variant 
+                      ? `${addonItem.base_model_number} ${addon.addon_variant.style_name}`
+                      : addon.addon_variant?.style_name || 'Unknown';
+                    return (
+                      <div key={addon.id} className={`flex items-center justify-between p-2 rounded ${addon.addon_variant?.is_active ? 'bg-gray-50' : 'bg-gray-100 opacity-75'}`}>
+                        <div className="flex items-center gap-3">
+                          {addon.addon_variant?.image_path ? (
+                            <img
+                              src={itemService.getImageUrl(addon.addon_variant.image_path) || ''}
+                              alt={addon.addon_variant.style_name}
+                              className="h-16 w-16 object-contain rounded bg-white"
+                            />
+                          ) : (
+                            <div className="h-16 w-16 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                              No Image
+                            </div>
                           )}
-                          <span className={`text-xs px-2 py-1 rounded ${addon.is_optional ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            {addon.is_optional ? 'Optional' : 'Required'}
-                          </span>
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-medium text-sm truncate">{addonItem?.name || 'Unknown Item'}</span>
+                            <span className="text-gray-600 text-xs">{fullModel}</span>
+                            <span className="text-gray-500 text-xs">${addon.addon_variant?.price}</span>
+                          </div>
+                          <div className="flex gap-1 ml-2 flex-shrink-0">
+                            {!addon.addon_variant?.is_active && (
+                              <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-gray-200 text-gray-600">
+                                <HiXCircle className="w-3 h-3 mr-1" />
+                                Inactive
+                              </span>
+                            )}
+                            <span className={`text-xs px-2 py-1 rounded ${addon.is_optional ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {addon.is_optional ? 'Optional' : 'Required'}
+                            </span>
+                          </div>
                         </div>
+                        <Button size="xs" color="failure" onClick={() => handleRemoveAddon(addon.id)}>
+                          <HiTrash />
+                        </Button>
                       </div>
-                      <Button size="xs" color="failure" onClick={() => handleRemoveAddon(addon.id)}>
-                        <HiTrash />
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
               {(loadingAllVariants || availableAddonVariants.length > 0) && (
                 <div className="bg-blue-50 p-3 rounded space-y-2">
                   <p className="text-sm font-medium text-gray-700">Add New Add-on</p>
-                  <div className="flex gap-2 items-center">
-                    <div className="flex-1">
-                      <Select
-                        value={selectedAddonVariant}
-                        onChange={(e) => setSelectedAddonVariant(e.target.value)}
-                        disabled={loadingAllVariants}
-                      >
-                        <option value="">
-                          {loadingAllVariants ? 'Loading variants...' : 'Select variant...'}
-                        </option>
-                        {availableAddonVariants.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.style_name} (${v.price}){!v.is_active ? ' (Inactive)' : ''}
-                          </option>
-                        ))}
-                      </Select>
+                  <div className="flex gap-2 items-start">
+                    <div className="flex-1 relative addon-dropdown-container">
+                      {/* Custom dropdown with images */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddonDropdownOpen(!isAddonDropdownOpen)}
+                          disabled={loadingAllVariants}
+                          className="w-full flex items-center justify-between px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                        >
+                          {selectedAddonVariant ? (
+                            (() => {
+                              const selectedVar = availableAddonVariants.find(v => v.id.toString() === selectedAddonVariant);
+                              if (!selectedVar) return 'Select variant...';
+                              const item = getItemForVariant(selectedVar.id);
+                              return `${item?.name || 'Unknown'} - ${item?.base_model_number || ''} ${selectedVar.style_name}`;
+                            })()
+                          ) : (
+                            'Select variant...'
+                          )}
+                          <svg className={`w-4 h-4 transition-transform ${isAddonDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+
+                        {isAddonDropdownOpen && (
+                          <div className="absolute z-50 bottom-full left-0 mb-1 w-96 bg-white border border-gray-200 rounded-lg shadow-xl max-h-96 overflow-hidden">
+                            {/* Search input */}
+                            <div className="p-3 border-b border-gray-100 bg-gray-50">
+                              <div className="relative">
+                                <HiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                                <input
+                                  type="text"
+                                  placeholder="Search variants..."
+                                  value={addonSearchQuery}
+                                  onChange={(e) => setAddonSearchQuery(e.target.value)}
+                                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  autoFocus
+                                />
+                              </div>
+                            </div>
+                            
+                            {/* Options list */}
+                            <div className="max-h-72 overflow-y-auto">
+                              {availableAddonVariants
+                                .filter(v => {
+                                  if (!addonSearchQuery) return true;
+                                  const item = getItemForVariant(v.id);
+                                  const searchLower = addonSearchQuery.toLowerCase();
+                                  return (
+                                    item?.name?.toLowerCase().includes(searchLower) ||
+                                    item?.base_model_number?.toLowerCase().includes(searchLower) ||
+                                    v.style_name.toLowerCase().includes(searchLower)
+                                  );
+                                })
+                                .map((v) => {
+                                  const item = getItemForVariant(v.id);
+                                  const isSelected = selectedAddonVariant === v.id.toString();
+                                  return (
+                                    <button
+                                      key={v.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedAddonVariant(v.id.toString());
+                                        setIsAddonDropdownOpen(false);
+                                        setAddonSearchQuery('');
+                                      }}
+                                      className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0 ${isSelected ? 'bg-blue-50' : ''}`}
+                                    >
+                                      {v.image_path ? (
+                                        <img
+                                          src={itemService.getImageUrl(v.image_path) || ''}
+                                          alt={v.style_name}
+                                          className="h-12 w-12 object-contain rounded bg-gray-100 flex-shrink-0"
+                                        />
+                                      ) : (
+                                        <div className="h-12 w-12 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                                          No Img
+                                        </div>
+                                      )}
+                                      <div className="flex-1 min-w-0 text-left">
+                                        <div className="font-medium text-sm">{item?.name || 'Unknown'}</div>
+                                        <div className="text-xs text-gray-500">
+                                          {item?.base_model_number} {v.style_name}
+                                        </div>
+                                        <div className="text-xs text-gray-600 font-medium">
+                                          ${v.price}
+                                          {!v.is_active && (
+                                            <span className="ml-2 text-red-500">(Inactive)</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {isSelected && (
+                                        <div className="text-blue-500 flex-shrink-0">
+                                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                          </svg>
+                                        </div>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 h-10">
                       <Checkbox

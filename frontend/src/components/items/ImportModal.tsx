@@ -23,6 +23,11 @@ interface SyncPhase {
     imagesExtracted: number;
     total: number;
   };
+  addons: {
+    linked: number;
+    notFound: number;
+    total: number;
+  };
 }
 
 interface SyncResult {
@@ -272,7 +277,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
         </div>
 
         {/* Results Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <h4 className="font-medium text-gray-900 mb-3">Categories</h4>
             <div className="space-y-2 text-sm">
@@ -335,6 +340,28 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
               <div className="border-t pt-2 flex justify-between font-medium">
                 <span>Total:</span>
                 <span>{phases.variants.total}</span>
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <h4 className="font-medium text-gray-900 mb-3">Variant Addons</h4>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-blue-600">References:</span>
+                <span className="font-medium">{phases.addons.total}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-green-600">Resolved:</span>
+                <span className="font-medium">{phases.addons.total - phases.addons.notFound}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-purple-600">Links Created:</span>
+                <span className="font-medium">{phases.addons.linked}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-yellow-600">Not Found:</span>
+                <span className="font-medium">{phases.addons.notFound}</span>
               </div>
             </div>
           </Card>
