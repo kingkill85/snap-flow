@@ -184,6 +184,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
           accept=".xlsx,.xls"
           onChange={handleFileSelect}
           className="hidden"
+          data-testid="file-input"
         />
         
         {selectedFile ? (
