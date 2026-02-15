@@ -639,6 +639,12 @@ const ItemManagement = () => {
             setItems(result.items);
             setTotalPages(result.totalPages);
           });
+          
+          // Also refresh categories since import may have added/activated/deactivated categories
+          const controller = new AbortController();
+          categoryService.getAll(controller.signal, true).then(data => {
+            setCategories(data);
+          });
         }}
       />
 

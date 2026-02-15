@@ -420,8 +420,8 @@ export class ExcelSyncService {
       }
     });
 
-    // Get existing categories from DB
-    const dbCategories = await categoryRepository.findAll();
+    // Get existing categories from DB (include inactive to find categories to reactivate)
+    const dbCategories = await categoryRepository.findAll(true);
     const dbCategoryMap = new Map(dbCategories.map(c => [c.name.toLowerCase(), c]));
 
     // Activate/Create Excel categories
