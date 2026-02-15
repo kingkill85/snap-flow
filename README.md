@@ -110,45 +110,110 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-## Docker Deployment
+## 🐳 Docker Deployment (Recommended)
 
-### Quick Deploy with Script
+The easiest way to run SnapFlow is using Docker. The image is available on GitHub Container Registry.
 
-Deploy everything in one command:
+### 🚀 Quick Start (Production)
 
-```bash
-# Make script executable
-chmod +x deploy.sh
-
-# Run deployment (builds frontend, creates Docker image, pushes to GitHub)
-./deploy.sh
-```
-
-This script will:
-1. ✅ Check prerequisites (Docker, npm, git)
-2. 🔐 Generate JWT_SECRET automatically
-3. 📦 Build frontend production bundle
-4. 🐳 Build Docker image
-5. ☁️ Push to GitHub Container Registry
-6. 📤 Commit and push code changes
-
-### Manual Docker Build
+**Option 1: Using Docker Compose (Recommended)**
 
 ```bash
-# Build frontend
-cd frontend && npm run build && cd ..
+# Clone the repository
+git clone https://github.com/kingkill85/snap-flow.git
+cd snap-flow
 
-# Generate JWT secret
-export JWT_SECRET=$(openssl rand -base64 32)
+# Start the application
+docker-compose up -d
 
-# Build Docker image
-docker build -t ghcr.io/kingkill85/snap-flow:latest .
-
-# Push to registry
-docker push ghcr.io/kingkill85/snap-flow:latest
+# View logs and get admin password
+docker-compose logs -f
 ```
 
-### Running with Docker Compose
+**Option 2: Using Docker Run**
+
+```bash
+# Pull and run from GitHub Container Registry
+docker run -d \
+  --name snapflow \
+  -p 8000:8000 \
+  -v snapflow_data:/app/backend/data \
+  -v snapflow_uploads:/app/backend/uploads \
+  ghcr.io/kingkill85/snap-flow:latest
+
+# View logs to get admin password
+docker logs -f snapflow
+```
+
+### 📋 First Run Setup
+
+**Access the application:**
+- **Web App:** http://localhost:8000
+- **API:** http://localhost:8000/api
+- **Health Check:** http://localhost:8000/health
+
+**Default Admin Credentials (Auto-Generated):**
+
+On first run, an admin user is automatically created. Check the logs for the password:
+
+```bash
+docker logs snapflow | grep -A 5 "DEFAULT ADMIN USER CREATED"
+```
+
+You will see:
+```
+========================================
+       DEFAULT ADMIN USER CREATED       
+========================================
+Email: admin@snapflow.com
+Password: XXXXXXXXXXXX  ← This is your temporary password
+========================================
+```
+
+**⚠️ Important:** Change the default admin password immediately after first login!
+
+### 🛠️ Docker Compose Configuration
+
+Create a `docker-compose.yml` file:
+
+```yaml
+version: '3.8'
+
+services:
+  snapflow:
+    image: ghcr.io/kingkill85/snap-flow:latest
+    container_name: snapflow
+    ports:
+      - "8000:8000"
+    volumes:
+      - snapflow_data:/app/backend/data
+      - snapflow_uploads:/app/backend/uploads
+    environment:
+      - NODE_ENV=production
+      - PORT=8000
+      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=./data/database.sqlite
+      - UPLOAD_DIR=./uploads
+      - CORS_ORIGIN=http://localhost:8000
+    restart: unless-stopped
+
+volumes:
+  snapflow_data:
+    driver: local
+  snapflow_uploads:
+    driver: local
+```
+
+### 💾 Data Persistence
+
+The Docker setup uses named volumes for data persistence:
+
+- **snapflow_data** - SQLite database (`/app/backend/data`)
+- **snapflow_uploads** - Uploaded files (`/app/backend/uploads`)
+
+Data persists even when the container is stopped or removed.
+
+### 🔄 Common Docker Commands
 
 ```bash
 # Start the application
@@ -160,49 +225,83 @@ docker-compose logs -f
 # Stop the application
 docker-compose down
 
-# Stop and remove volumes (WARNING: deletes all data)
+# Stop and remove volumes (WARNING: deletes all data!)
 docker-compose down -v
+
+# Restart container
+docker-compose restart
+
+# Update to latest image
+docker-compose pull && docker-compose up -d
+
+# Shell into container
+docker exec -it snapflow sh
 ```
 
-### Running Standalone Container
+### 🔧 Building from Source
+
+If you want to build the Docker image yourself:
 
 ```bash
-# Pull and run
-docker run -d \
-  --name snapflow \
-  -p 8000:8000 \
-  -v snapflow_data:/app/backend/data \
-  -v snapflow_uploads:/app/backend/uploads \
-  -e JWT_SECRET=$(openssl rand -base64 32) \
-  ghcr.io/kingkill85/snap-flow:latest
-
-# View logs
-docker logs -f snapflow
+# Make deploy script executable and run
+chmod +x deploy.sh
+./deploy.sh
 ```
 
-### Data Persistence
+Or manually:
 
-The Docker setup uses named volumes for data persistence:
+```bash
+# Build frontend
+cd frontend && npm run build && cd ..
 
-- **snapflow_data** - SQLite database (`/app/backend/data`)
-- **snapflow_uploads** - Uploaded files (`/app/backend/uploads`)
+# Build Docker image
+docker build -t ghcr.io/kingkill85/snap-flow:latest .
 
-Data persists even when the container is stopped or removed.
+# Push to registry (requires authentication)
+docker push ghcr.io/kingkill85/snap-flow:latest
+```
 
-### Accessing the Application
+### 🔐 Environment Variables
 
-After deployment:
-- **Web App:** http://localhost:8000
-- **API:** http://localhost:8000/api
-- **Health Check:** http://localhost:8000/health
+You can customize the container with these environment variables:
 
-### Default Admin User
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWT_SECRET` | Auto-generated | Secret key for JWT tokens (auto-generated if not set) |
+| `PORT` | 8000 | Server port |
+| `NODE_ENV` | production | Environment mode |
+| `DATABASE_URL` | ./data/database.sqlite | SQLite database path |
+| `UPLOAD_DIR` | ./uploads | Upload directory |
+| `CORS_ORIGIN` | http://localhost:8000 | CORS allowed origin |
 
-On first run, the application automatically creates a default admin user:
-- **Email:** `admin@snapflow.com`
-- **Password:** Check the Docker logs (`docker-compose logs`) for the auto-generated password
+### 🐛 Troubleshooting
 
-**⚠️ Security Note:** Change the default admin password immediately after first login!
+**Container won't start:**
+```bash
+# Check logs
+docker logs snapflow
+
+# Check if port 8000 is already in use
+lsof -i :8000
+```
+
+**Permission issues:**
+```bash
+# Fix volume permissions
+docker exec snapflow chown -R deno:deno /app/backend/data
+docker exec snapflow chown -R deno:deno /app/backend/uploads
+```
+
+**Reset to fresh state:**
+```bash
+docker-compose down -v
+docker-compose up -d
+```
+
+**View admin password:**
+```bash
+docker logs snapflow | grep "Password:"
+```
 
 ## Project Structure
 
