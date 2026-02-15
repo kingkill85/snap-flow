@@ -14,7 +14,7 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - DATABASE_URL=./data/database.sqlite
       - UPLOAD_DIR=./uploads
-      - CORS_ORIGIN=http://localhost:8000
+      - CORS_ORIGIN=*
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "deno", "eval", "const res = await fetch('http://localhost:8000/health'); if (!res.ok) throw new Error('Health check failed');"]

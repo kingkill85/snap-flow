@@ -1,7 +1,9 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { authService } from './auth';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+// Use relative URL for API when served from backend (production/Docker)
+// Use full URL for development when running frontend separately
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Flag to prevent multiple refresh attempts
 let isRefreshing = false;

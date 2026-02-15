@@ -15,7 +15,39 @@ const app = new Hono();
 // Middleware
 app.use(logger());
 app.use(cors({
-  origin: env.CORS_ORIGIN,
+  origin: (origin) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return '*';
+    
+    // In production, check against allowed origins
+    if (env.NODE_ENV === 'production') {
+      // Allow the configured origin
+      if (origin === env.CORS_ORIGIN) {
+        return origin;
+      }
+      
+      // Allow any localhost origin for development
+      if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
+        return origin;
+      }
+      
+      // Allow local network IPs (192.168.x.x, 10.x.x.x)
+      if (/^http:\/\/192\.168\.\d+\.\d+/.test(origin) || 
+          /^http:\/\/10\.\d+\.\d+\.\d+/.test(origin)) {
+        return origin;
+      }
+      
+      // If CORS_ORIGIN is '*', allow all
+      if (env.CORS_ORIGIN === '*') {
+        return '*';
+      }
+      
+      return env.CORS_ORIGIN;
+    }
+    
+    // In development, allow all origins
+    return origin || '*';
+  },
   credentials: true,
 }));
 
