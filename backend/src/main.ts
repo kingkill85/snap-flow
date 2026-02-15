@@ -149,7 +149,8 @@ if (import.meta.main) {
   // Seed admin user on first run
   console.log('🌱 Checking for admin user...');
   try {
-    const seedScript = await import('./scripts/seed-admin.ts');
+    const { seedAdmin } = await import('./scripts/seed-admin.ts');
+    await seedAdmin();
   } catch (error) {
     console.error('❌ Failed to run seed script:', error);
   }
