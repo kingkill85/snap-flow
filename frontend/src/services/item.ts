@@ -310,6 +310,17 @@ export const itemService = {
     return response.data.data;
   },
 
+  async syncCatalog(file: File, signal?: AbortSignal): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await api.post('/items/sync-catalog', formData, {
+      signal,
+      // Don't set Content-Type header - let Axios set it with the boundary
+    });
+    return response.data.data;
+  },
+
   // ==========================================
   // ACTIVATION/DEACTIVATION
   // ==========================================

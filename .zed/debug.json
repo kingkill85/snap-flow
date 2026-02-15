@@ -1,0 +1,62 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: Deno Debug",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/src/main.ts",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "run",
+        "--inspect-brk",
+        "--allow-all"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "env": {},
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "Backend: Deno Test",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "test",
+        "--inspect-brk",
+        "--allow-all"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "env": {},
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Frontend: Vite Debug",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/frontend",
+      "sourceMapPathOverrides": {
+        "webpack:///src/*": "${webRoot}/src/*"
+      },
+      "preLaunchTask": "Frontend: Start Dev Server"
+    },
+    {
+      "name": "Backend: Debug Current File",
+      "type": "node",
+      "request": "launch",
+      "program": "${file}",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "run",
+        "--inspect-brk",
+        "--allow-all"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "env": {},
+      "console": "integratedTerminal"
+    }
+  ]
+}

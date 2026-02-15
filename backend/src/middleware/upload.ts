@@ -4,7 +4,7 @@ import { fileStorageService } from '../services/file-storage.ts';
 /**
  * Allowed image MIME types
  */
-const ALLOWED_MIME_TYPES = [
+const ALLOWED_IMAGE_MIME_TYPES = [
   'image/jpeg',
   'image/jpg',
   'image/png',
@@ -12,9 +12,23 @@ const ALLOWED_MIME_TYPES = [
 ];
 
 /**
- * Maximum file size (5MB)
+ * Allowed Excel MIME types
  */
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const ALLOWED_EXCEL_MIME_TYPES = [
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/octet-stream',
+];
+
+/**
+ * Maximum file size for images (5MB)
+ */
+const MAX_IMAGE_FILE_SIZE = 5 * 1024 * 1024;
+
+/**
+ * Maximum file size for Excel files (15MB)
+ */
+const MAX_EXCEL_FILE_SIZE = 15 * 1024 * 1024;
 
 /**
  * Upload result interface
@@ -31,9 +45,22 @@ export interface UploadResult {
  * Returns the upload result and adds it to context
  */
 export function uploadMiddleware(
-  subdirectory: string = 'items'
+  subdirectory: string = 'items',
+  options: {
+    fieldName?: string;
+    allowedTypes?: string[];
+    maxSize?: number;
+    skipValidation?: boolean;
+  } = {}
 ): (c: Context, next: Next) => Promise<void> {
   return async (c: Context, next: Next) => {
+    const {
+      fieldName = 'image',
+      allowedTypes = ALLOWED_IMAGE_MIME_TYPES,
+      maxSize = MAX_IMAGE_FILE_SIZE,
+      skipValidation = false,
+    } = options;
+
     try {
       const contentType = c.req.header('content-type') || '';
       
@@ -48,32 +75,35 @@ export function uploadMiddleware(
       const formData = await c.req.formData();
       c.set('formData', formData);
       
-      const file = formData.get('image');
+      const file = formData.get(fieldName);
 
       if (!file || !(file instanceof File)) {
-        c.set('uploadResult', { success: false, error: 'No image file provided' });
+        c.set('uploadResult', { success: false, error: `No ${fieldName} file provided` });
         await next();
         return;
       }
 
-      // Validate file type
-      if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-        c.set('uploadResult', {
-          success: false,
-          error: `Invalid file type. Allowed types: ${ALLOWED_MIME_TYPES.join(', ')}`,
-        });
-        await next();
-        return;
-      }
+      // Skip validation for Excel files (we'll validate by extension)
+      if (!skipValidation) {
+        // Validate file type
+        if (!allowedTypes.includes(file.type)) {
+          c.set('uploadResult', {
+            success: false,
+            error: `Invalid file type. Allowed types: ${allowedTypes.join(', ')}`,
+          });
+          await next();
+          return;
+        }
 
-      // Validate file size
-      if (file.size > MAX_FILE_SIZE) {
-        c.set('uploadResult', {
-          success: false,
-          error: `File too large. Maximum size: ${MAX_FILE_SIZE / 1024 / 1024}MB`,
-        });
-        await next();
-        return;
+        // Validate file size
+        if (file.size > maxSize) {
+          c.set('uploadResult', {
+            success: false,
+            error: `File too large. Maximum size: ${maxSize / 1024 / 1024}MB`,
+          });
+          await next();
+          return;
+        }
       }
 
       // Read file buffer

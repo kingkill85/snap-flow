@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Card, Table, TextInput, Select, Alert, Spinner, Pagination, ToggleSwitch } from 'flowbite-react';
-import { HiPlus, HiSearch, HiChevronDown, HiChevronRight, HiCheckCircle, HiXCircle, HiPhotograph } from 'react-icons/hi';
+import { HiPlus, HiSearch, HiChevronDown, HiChevronRight, HiCheckCircle, HiXCircle, HiPhotograph, HiUpload } from 'react-icons/hi';
 import { itemService, type Item, type ItemVariant } from '../../services/item';
 import { categoryService, type Category } from '../../services/category';
 import { ItemFormModal } from '../../components/items/ItemFormModal';
 import { VariantFormModal } from '../../components/items/VariantFormModal';
 import { DeleteVariantModal } from '../../components/items/DeleteVariantModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
+import { ImportModal } from '../../components/items/ImportModal';
 
 const ItemManagement = () => {
   const [items, setItems] = useState<Item[]>([]);
@@ -38,6 +39,9 @@ const ItemManagement = () => {
 
   // Show inactive items toggle
   const [showInactive, setShowInactive] = useState(false);
+
+  // Import modal state
+  const [showImportModal, setShowImportModal] = useState(false);
 
   // Fetch categories (include inactive so we can display category names for all items)
   useEffect(() => {
@@ -223,10 +227,16 @@ const ItemManagement = () => {
           <h1 className="text-2xl font-bold text-gray-900">Item Management</h1>
           <p className="text-gray-600">Manage products and their details</p>
         </div>
-        <Button onClick={openCreateItem}>
-          <HiPlus className="mr-2 h-5 w-5" />
-          Add Item
-        </Button>
+        <div className="flex gap-3">
+          <Button color="light" onClick={() => setShowImportModal(true)}>
+            <HiUpload className="mr-2 h-5 w-5" />
+            Import Catalog
+          </Button>
+          <Button onClick={openCreateItem}>
+            <HiPlus className="mr-2 h-5 w-5" />
+            Add Item
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -609,6 +619,26 @@ const ItemManagement = () => {
           if (variantFormItemId) {
             refreshVariants(variantFormItemId);
           }
+        }}
+      />
+
+      <ImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={() => {
+          // Refresh items list after successful import
+          const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
+          if (selectedCategory) filter.category_id = selectedCategory;
+          if (searchQuery) filter.search = searchQuery;
+          if (showInactive) filter.include_inactive = true;
+          
+          itemService.getAll(
+            filter,
+            { page: currentPage, limit: itemsPerPage }
+          ).then(result => {
+            setItems(result.items);
+            setTotalPages(result.totalPages);
+          });
         }}
       />
 

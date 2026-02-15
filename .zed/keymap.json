@@ -1,0 +1,10 @@
+[
+  {
+    "context": "Workspace",
+    "bindings": {
+      "ctrl-shift-b": "task::Spawn",
+      "ctrl-shift-t": "terminal_panel::ToggleFocus",
+      "ctrl-shift-r": "task::Rerun"
+    }
+  }
+]

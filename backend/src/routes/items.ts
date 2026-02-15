@@ -9,6 +9,7 @@ import { uploadMiddleware } from '../middleware/upload.ts';
 import { fileStorageService } from '../services/file-storage.ts';
 import type { CreateItemDTO, UpdateItemDTO, CreateItemVariantDTO, CreateItemAddonDTO, CreateVariantAddonDTO } from '../models/index.ts';
 import { excelImportService } from '../services/excel-import.ts';
+import { excelSyncService, type ProgressCallback } from '../services/excel-sync.ts';
 
 // Extend Hono context types
 declare module 'hono' {
@@ -876,6 +877,48 @@ itemRoutes.post('/import', authMiddleware, adminMiddleware, async (c) => {
   } catch (error) {
     console.error('Import execution error:', error);
     return c.json({ error: 'Failed to execute import' }, 500);
+  }
+});
+
+// ==========================================
+// CATALOG SYNC ROUTES (with image extraction)
+// ==========================================
+
+// POST /items/sync-catalog - Full catalog sync from Excel
+// This syncs categories, items, and variants with images
+// Items/variants not in Excel are deactivated (not deleted)
+itemRoutes.post('/sync-catalog', authMiddleware, adminMiddleware, uploadMiddleware('imports', {
+  fieldName: 'file',
+  skipValidation: true,
+}), async (c) => {
+  try {
+    const uploadResult = c.get('uploadResult');
+
+    if (!uploadResult?.success || !uploadResult.filePath) {
+      return c.json({ error: uploadResult?.error || 'No file uploaded' }, 400);
+    }
+
+    // Validate Excel file extension
+    const fileName = uploadResult.originalName || '';
+    const isExcelFile = fileName.toLowerCase().endsWith('.xlsx') || fileName.toLowerCase().endsWith('.xls');
+    
+    if (!isExcelFile) {
+      await fileStorageService.deleteFile(uploadResult.filePath);
+      return c.json({ error: 'Invalid file type. Only .xlsx and .xls files are allowed' }, 400);
+    }
+
+    // Perform sync
+    const result = await excelSyncService.syncCatalog(uploadResult.filePath);
+
+    // Clean up uploaded file
+    await fileStorageService.deleteFile(uploadResult.filePath);
+
+    return c.json({
+      data: result,
+    });
+  } catch (error) {
+    console.error('Catalog sync error:', error);
+    return c.json({ error: 'Failed to sync catalog' }, 500);
   }
 });
 

@@ -1,0 +1,55 @@
+[
+  {
+    "label": "Backend: Dev Server",
+    "command": "deno task dev",
+    "cwd": "backend",
+    "use_new_terminal": true
+  },
+  {
+    "label": "Backend: Start",
+    "command": "deno task start",
+    "cwd": "backend"
+  },
+  {
+    "label": "Backend: Test",
+    "command": "deno task test",
+    "cwd": "backend"
+  },
+  {
+    "label": "Backend: Type Check",
+    "command": "deno check src/main.ts",
+    "cwd": "backend"
+  },
+  {
+    "label": "Backend: Migrate",
+    "command": "deno task migrate",
+    "cwd": "backend"
+  },
+  {
+    "label": "Frontend: Dev Server",
+    "command": "npm run dev",
+    "cwd": "frontend",
+    "use_new_terminal": true
+  },
+  {
+    "label": "Frontend: Build",
+    "command": "npm run build",
+    "cwd": "frontend"
+  },
+  {
+    "label": "Frontend: Test",
+    "command": "npm test",
+    "cwd": "frontend"
+  },
+  {
+    "label": "Frontend: Type Check",
+    "command": "npx tsc --noEmit",
+    "cwd": "frontend"
+  },
+  {
+    "label": "Full Stack: Dev",
+    "command": "npm run dev",
+    "cwd": ".",
+    "use_new_terminal": true
+  }
+]
