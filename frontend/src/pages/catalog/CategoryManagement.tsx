@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Button, Card, Table, Alert, Spinner } from 'flowbite-react';
-import { HiPlus, HiTrash, HiPencil, HiArrowUp, HiArrowDown } from 'react-icons/hi';
+import { Button, Card, Table, Alert, Spinner, ToggleSwitch } from 'flowbite-react';
+import { HiPlus, HiTrash, HiPencil, HiArrowUp, HiArrowDown, HiCheckCircle, HiXCircle } from 'react-icons/hi';
 import { categoryService, type Category } from '../../services/category';
 import { CategoryFormModal } from '../../components/categories/CategoryFormModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
@@ -13,11 +13,12 @@ const CategoryManagement = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [categoryToEdit, setCategoryToEdit] = useState<Category | null>(null);
   const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
 
   const fetchCategories = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
-      const data = await categoryService.getAll(signal);
+      const data = await categoryService.getAll(signal, showInactive);
       setCategories(data);
       setError('');
     } catch (err: any) {
@@ -36,16 +37,19 @@ const CategoryManagement = () => {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [showInactive]);
 
-  const handleCreateCategory = async (name: string) => {
-    await categoryService.create({ name });
+  const handleCreateCategory = async (data: { name: string; is_active: boolean }) => {
+    await categoryService.create({ name: data.name });
     fetchCategories();
   };
 
-  const handleUpdateCategory = async (name: string) => {
+  const handleUpdateCategory = async (data: { name: string; is_active: boolean }) => {
     if (!categoryToEdit) return;
-    await categoryService.update(categoryToEdit.id, { name });
+    await categoryService.update(categoryToEdit.id, { 
+      name: data.name, 
+      is_active: data.is_active 
+    });
     fetchCategories();
   };
 
@@ -121,22 +125,34 @@ const CategoryManagement = () => {
       )}
 
       <Card>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Categories</h2>
+          <ToggleSwitch
+            checked={showInactive}
+            onChange={setShowInactive}
+            label="Show inactive"
+          />
+        </div>
         <Table hoverable>
           <Table.Head>
             <Table.HeadCell>POSITION</Table.HeadCell>
             <Table.HeadCell>NAME</Table.HeadCell>
-            <Table.HeadCell className="w-32"></Table.HeadCell>
+            <Table.HeadCell>STATUS</Table.HeadCell>
+            <Table.HeadCell className="w-48"></Table.HeadCell>
           </Table.Head>
           <Table.Body>
             {categories.length === 0 ? (
               <Table.Row>
-                <Table.Cell colSpan={3} className="text-center py-8 text-gray-500">
+                <Table.Cell colSpan={4} className="text-center py-8 text-gray-500">
                   No categories found. Create your first category to get started.
                 </Table.Cell>
               </Table.Row>
             ) : (
               categories.map((category, index) => (
-                <Table.Row key={category.id} className="hover:bg-gray-50">
+                <Table.Row 
+                  key={category.id} 
+                  className={`hover:bg-gray-50 transition-colors ${!category.is_active ? 'border-l-4 border-l-gray-400 opacity-75' : ''}`}
+                >
                   <Table.Cell>
                     <div className="flex items-center gap-2">
                       <span className="text-gray-500">{category.sort_order}</span>
@@ -158,25 +174,40 @@ const CategoryManagement = () => {
                       </div>
                     </div>
                   </Table.Cell>
-                  <Table.Cell className="font-medium">{category.name}</Table.Cell>
+                  <Table.Cell className="font-medium">
+                    {category.name}
+                  </Table.Cell>
+                  <Table.Cell>
+                    {category.is_active ? (
+                      <span className="inline-flex items-center text-green-600 text-sm">
+                        <HiCheckCircle className="w-5 h-5 mr-1" />
+                        Active
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center text-gray-500 text-sm">
+                        <HiXCircle className="w-5 h-5 mr-1" />
+                        Inactive
+                      </span>
+                    )}
+                  </Table.Cell>
                   <Table.Cell>
                     <div className="flex gap-2 justify-end">
-                      <Button
-                        color="light"
-                        size="xs"
-                        onClick={() => openEditModal(category)}
-                      >
-                        <HiPencil className="mr-1 h-4 w-4" />
-                        Edit
-                      </Button>
-                      <Button
-                        color="failure"
-                        size="xs"
-                        onClick={() => openDeleteModal(category)}
-                      >
-                        <HiTrash className="mr-1 h-4 w-4" />
-                        Delete
-                      </Button>
+                      <Button 
+                            color="light" 
+                            size="xs" 
+                            onClick={() => openEditModal(category)}
+                          >
+                            <HiPencil className="mr-1 h-4 w-4" />
+                            Edit
+                          </Button>
+                          <Button 
+                            color="failure" 
+                            size="xs" 
+                            onClick={() => openDeleteModal(category)}
+                          >
+                            <HiTrash className="mr-1 h-4 w-4" />
+                            Delete
+                          </Button>
                     </div>
                   </Table.Cell>
                 </Table.Row>

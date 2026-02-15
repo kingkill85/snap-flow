@@ -258,6 +258,18 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_refresh_tokens_hash ON refresh_tokens(token_hash);
         CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens(expires_at);
       `
+    },
+    {
+      name: '016_add_is_active_to_catalog',
+      sql: `
+        ALTER TABLE categories ADD COLUMN is_active BOOLEAN DEFAULT true;
+        ALTER TABLE items ADD COLUMN is_active BOOLEAN DEFAULT true;
+        ALTER TABLE item_variants ADD COLUMN is_active BOOLEAN DEFAULT true;
+        
+        CREATE INDEX idx_categories_is_active ON categories(is_active);
+        CREATE INDEX idx_items_is_active ON items(is_active);
+        CREATE INDEX idx_item_variants_is_active ON item_variants(is_active);
+      `
     }
   ];
 

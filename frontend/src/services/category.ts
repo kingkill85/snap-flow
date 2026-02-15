@@ -5,16 +5,19 @@ export interface Category {
   id: number;
   name: string;
   sort_order: number;
+  is_active: boolean;
 }
 
 export interface CreateCategoryDTO {
   name: string;
   sort_order?: number;
+  is_active?: boolean;
 }
 
 export interface UpdateCategoryDTO {
   name?: string;
   sort_order?: number;
+  is_active?: boolean;
 }
 
 // Helper to check if error is a cancellation error
@@ -26,9 +29,10 @@ const isCancelError = (error: any): boolean => {
 };
 
 export const categoryService = {
-  async getAll(signal?: AbortSignal): Promise<Category[]> {
+  async getAll(signal?: AbortSignal, includeInactive = false): Promise<Category[]> {
     try {
-      const response = await api.get('/categories', { signal });
+      const params = includeInactive ? '?include_inactive=true' : '';
+      const response = await api.get(`/categories${params}`, { signal });
       return response.data.data;
     } catch (error) {
       if (isCancelError(error)) {
@@ -59,6 +63,16 @@ export const categoryService = {
 
   async reorder(categoryIds: number[], signal?: AbortSignal): Promise<Category[]> {
     const response = await api.patch('/categories/reorder', { category_ids: categoryIds }, { signal });
+    return response.data.data;
+  },
+
+  async deactivate(id: number, signal?: AbortSignal): Promise<Category> {
+    const response = await api.patch(`/categories/${id}/deactivate`, {}, { signal });
+    return response.data.data;
+  },
+
+  async activate(id: number, signal?: AbortSignal): Promise<Category> {
+    const response = await api.patch(`/categories/${id}/activate`, {}, { signal });
     return response.data.data;
   },
 };

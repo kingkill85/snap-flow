@@ -12,6 +12,8 @@ export interface Item {
   base_model_number: string;
   dimensions: string;
   created_at: string;
+  is_active: boolean;
+  preview_image?: string | null;
   // Relations (populated when fetching single item)
   variants?: ItemVariant[];
   addons?: ItemAddon[];
@@ -25,6 +27,7 @@ export interface ItemVariant {
   image_path: string | null;
   sort_order: number;
   created_at: string;
+  is_active: boolean;
 }
 
 export interface ItemAddon {
@@ -46,6 +49,7 @@ export interface CreateItemDTO {
   description?: string;
   base_model_number?: string;
   dimensions?: string;
+  is_active?: boolean;
 }
 
 export interface UpdateItemDTO {
@@ -54,6 +58,7 @@ export interface UpdateItemDTO {
   description?: string;
   base_model_number?: string;
   dimensions?: string;
+  is_active?: boolean;
 }
 
 // DTOs for variants
@@ -68,6 +73,7 @@ export interface UpdateVariantDTO {
   price?: number;
   image?: File;
   remove_image?: boolean;
+  is_active?: boolean;
 }
 
 // DTOs for add-ons
@@ -96,6 +102,7 @@ export interface CreateVariantAddonDTO {
 export interface ItemFilter {
   category_id?: number;
   search?: string;
+  include_inactive?: boolean;
 }
 
 export interface PaginationOptions {
@@ -132,6 +139,9 @@ export const itemService = {
     }
     if (filter?.search) {
       params.append('search', filter.search);
+    }
+    if (filter?.include_inactive) {
+      params.append('include_inactive', 'true');
     }
     if (pagination?.page) {
       params.append('page', pagination.page.toString());
@@ -173,8 +183,9 @@ export const itemService = {
   // VARIANT OPERATIONS
   // ==========================================
 
-  async getVariants(itemId: number, signal?: AbortSignal): Promise<ItemVariant[]> {
-    const response = await api.get(`/items/${itemId}/variants`, { signal });
+  async getVariants(itemId: number, includeInactive = false, signal?: AbortSignal): Promise<ItemVariant[]> {
+    const params = includeInactive ? '?include_inactive=true' : '';
+    const response = await api.get(`/items/${itemId}/variants${params}`, { signal });
     return response.data.data;
   },
 
@@ -205,6 +216,7 @@ export const itemService = {
     if (data.price !== undefined) formData.append('price', data.price.toString());
     if (data.image) formData.append('image', data.image);
     if (data.remove_image) formData.append('remove_image', 'true');
+    if (data.is_active !== undefined) formData.append('is_active', data.is_active.toString());
 
     const response = await api.put(`/items/${itemId}/variants/${variantId}`, formData, { signal });
     return response.data.data;
@@ -295,6 +307,30 @@ export const itemService = {
 
   async executeImport(preview: any, signal?: AbortSignal): Promise<any> {
     const response = await api.post('/items/import', { preview }, { signal });
+    return response.data.data;
+  },
+
+  // ==========================================
+  // ACTIVATION/DEACTIVATION
+  // ==========================================
+
+  async deactivate(id: number, signal?: AbortSignal): Promise<Item> {
+    const response = await api.patch(`/items/${id}/deactivate`, {}, { signal });
+    return response.data.data;
+  },
+
+  async activate(id: number, signal?: AbortSignal): Promise<Item> {
+    const response = await api.patch(`/items/${id}/activate`, {}, { signal });
+    return response.data.data;
+  },
+
+  async deactivateVariant(itemId: number, variantId: number, signal?: AbortSignal): Promise<ItemVariant> {
+    const response = await api.patch(`/items/${itemId}/variants/${variantId}/deactivate`, {}, { signal });
+    return response.data.data;
+  },
+
+  async activateVariant(itemId: number, variantId: number, signal?: AbortSignal): Promise<ItemVariant> {
+    const response = await api.patch(`/items/${itemId}/variants/${variantId}/activate`, {}, { signal });
     return response.data.data;
   },
 

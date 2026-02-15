@@ -1,14 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Button, Modal, Label, TextInput, Alert, Spinner, Select, Checkbox } from 'flowbite-react';
-import { HiPlus, HiTrash } from 'react-icons/hi';
+import { Button, Modal, Label, TextInput, Alert, Spinner, Select, Checkbox, ToggleSwitch } from 'flowbite-react';
+import { HiPlus, HiTrash, HiXCircle } from 'react-icons/hi';
 import { itemService, type ItemVariant, type VariantAddon } from '../../services/item';
-import type { Item } from '../../services/item';
 
 interface VariantFormModalProps {
   itemId: number;
-  item: Item | null;
   variant: ItemVariant | null;
-  availableVariants: ItemVariant[];
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: {
@@ -16,16 +13,18 @@ interface VariantFormModalProps {
     price: number;
     image?: File;
     remove_image?: boolean;
+    is_active?: boolean;
   }) => Promise<void>;
 }
 
-export function VariantFormModal({ itemId, item, variant, availableVariants, isOpen, onClose, onSubmit }: VariantFormModalProps) {
+export function VariantFormModal({ itemId, variant, isOpen, onClose, onSubmit }: VariantFormModalProps) {
   const isEdit = !!variant;
   const [styleName, setStyleName] = useState('');
   const [price, setPrice] = useState('');
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
+  const [isActive, setIsActive] = useState(true);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCreatedMessage, setShowCreatedMessage] = useState(false);
@@ -36,10 +35,43 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
   const [selectedAddonVariant, setSelectedAddonVariant] = useState<string>('');
   const [isOptional, setIsOptional] = useState(true);
   const [addingAddon, setAddingAddon] = useState(false);
+  
+  // All variants from all items (for add-on selection)
+  const [allVariants, setAllVariants] = useState<ItemVariant[]>([]);
+  const [loadingAllVariants, setLoadingAllVariants] = useState(false);
+
+  // Fetch all variants from all items for add-on selection
+  const fetchAllVariants = async () => {
+    setLoadingAllVariants(true);
+    try {
+      // Fetch all items first
+      const result = await itemService.getAll({ include_inactive: true }, { page: 1, limit: 1000 });
+      const variants: ItemVariant[] = [];
+      
+      // Fetch variants for each item separately
+      for (const item of result.items) {
+        try {
+          const itemVariants = await itemService.getVariants(item.id, true);
+          variants.push(...itemVariants);
+        } catch (err) {
+          console.error(`Failed to fetch variants for item ${item.id}:`, err);
+        }
+      }
+      
+      setAllVariants(variants);
+    } catch (err) {
+      console.error('Failed to fetch all variants:', err);
+    } finally {
+      setLoadingAllVariants(false);
+    }
+  };
 
   // Load variant data when modal opens
   useEffect(() => {
     if (isOpen) {
+      // Fetch all variants for add-on selection
+      fetchAllVariants();
+      
       if (variant) {
         // Edit mode - populate with existing data
         setStyleName(variant.style_name);
@@ -47,6 +79,9 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
         setImagePreview(variant.image_path ? itemService.getImageUrl(variant.image_path) : null);
         setImage(null);
         setRemoveImage(false);
+        // Ensure is_active is boolean, default to true if undefined
+        const activeStatus = variant.is_active !== undefined ? Boolean(variant.is_active) : true;
+        setIsActive(activeStatus);
         loadAddons();
       } else {
         // Create mode - reset form
@@ -55,6 +90,7 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
         setImage(null);
         setImagePreview(null);
         setRemoveImage(false);
+        setIsActive(true); // New variants are always active by default
         setAddons([]);
         setShowCreatedMessage(false);
       }
@@ -109,12 +145,25 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
 
     setIsSubmitting(true);
     try {
-      await onSubmit({
+      const submitData: {
+        style_name: string;
+        price: number;
+        image?: File;
+        remove_image?: boolean;
+        is_active?: boolean;
+      } = {
         style_name: styleName,
         price: priceValue,
         image: image || undefined,
         remove_image: removeImage,
-      });
+      };
+      
+      // Only include is_active when editing
+      if (isEdit) {
+        submitData.is_active = isActive;
+      }
+      
+      await onSubmit(submitData);
       // Only close on edit mode - create mode stays open for add-ons
       if (isEdit) {
         onClose();
@@ -164,9 +213,10 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
   };
 
   // Filter out current variant and already added variants
-  const availableAddonVariants = availableVariants.filter(v => {
-    if (v.id === variant?.id) return false;
-    if (addons.some(a => a.addon_variant_id === v.id)) return false;
+  // Include inactive variants but mark them
+  const availableAddonVariants = allVariants.filter(v => {
+    if (v.id === variant?.id) return false; // Can't add itself
+    if (addons.some(a => a.addon_variant_id === v.id)) return false; // Already added
     return true;
   });
 
@@ -249,6 +299,30 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
             </div>
           </div>
 
+          {/* Status Section - Only for Edit Mode */}
+          {isEdit && (
+            <div className="border-b pb-4">
+              <h4 className="text-sm font-semibold text-gray-700 mb-3">Status</h4>
+              <div className="flex items-center gap-3">
+                <ToggleSwitch
+                  checked={isActive}
+                  onChange={setIsActive}
+                  label=""
+                />
+                <Label className="mb-0">
+                  <span className={isActive ? 'text-green-600 font-medium' : 'text-gray-500'}>
+                    {isActive ? 'Active' : 'Inactive'}
+                  </span>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {isActive 
+                      ? 'Variant is visible in the catalog' 
+                      : 'Variant is hidden from the catalog'}
+                  </p>
+                </Label>
+              </div>
+            </div>
+          )}
+
           {/* Add-ons Section - Only for Edit Mode */}
           {isEdit && (
             <div>
@@ -264,7 +338,7 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
               ) : (
                 <div className="space-y-2 mb-4">
                   {addons.map((addon) => (
-                    <div key={addon.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                    <div key={addon.id} className={`flex items-center justify-between p-2 rounded ${addon.addon_variant?.is_active ? 'bg-gray-50' : 'bg-gray-100 opacity-75'}`}>
                       <div className="flex items-center gap-2">
                         {addon.addon_variant?.image_path ? (
                           <img
@@ -277,11 +351,21 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
                             No Image
                           </div>
                         )}
-                        <span className="font-medium">{item?.base_model_number || 'Unknown'} - {addon.addon_variant?.style_name}</span>
-                        <span className="text-gray-500">(${addon.addon_variant?.price})</span>
-                        <span className={`text-xs px-2 py-1 rounded ${addon.is_optional ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {addon.is_optional ? 'Optional' : 'Required'}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{addon.addon_variant?.style_name}</span>
+                          <span className="text-gray-500 text-sm">${addon.addon_variant?.price}</span>
+                        </div>
+                        <div className="flex gap-1 ml-2">
+                          {!addon.addon_variant?.is_active && (
+                            <span className="inline-flex items-center text-xs px-2 py-1 rounded bg-gray-200 text-gray-600">
+                              <HiXCircle className="w-3 h-3 mr-1" />
+                              Inactive
+                            </span>
+                          )}
+                          <span className={`text-xs px-2 py-1 rounded ${addon.is_optional ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {addon.is_optional ? 'Optional' : 'Required'}
+                          </span>
+                        </div>
                       </div>
                       <Button size="xs" color="failure" onClick={() => handleRemoveAddon(addon.id)}>
                         <HiTrash />
@@ -291,7 +375,7 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
                 </div>
               )}
 
-              {availableAddonVariants.length > 0 && (
+              {(loadingAllVariants || availableAddonVariants.length > 0) && (
                 <div className="bg-blue-50 p-3 rounded space-y-2">
                   <p className="text-sm font-medium text-gray-700">Add New Add-on</p>
                   <div className="flex gap-2 items-center">
@@ -299,11 +383,14 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
                       <Select
                         value={selectedAddonVariant}
                         onChange={(e) => setSelectedAddonVariant(e.target.value)}
+                        disabled={loadingAllVariants}
                       >
-                        <option value="">Select variant...</option>
+                        <option value="">
+                          {loadingAllVariants ? 'Loading variants...' : 'Select variant...'}
+                        </option>
                         {availableAddonVariants.map((v) => (
                           <option key={v.id} value={v.id}>
-                            {item?.base_model_number || 'Unknown'} - {v.style_name} (${v.price})
+                            {v.style_name} (${v.price}){!v.is_active ? ' (Inactive)' : ''}
                           </option>
                         ))}
                       </Select>
@@ -320,7 +407,7 @@ export function VariantFormModal({ itemId, item, variant, availableVariants, isO
                       size="sm"
                       color="light"
                       onClick={handleAddAddon}
-                      disabled={!selectedAddonVariant || addingAddon}
+                      disabled={!selectedAddonVariant || addingAddon || loadingAllVariants}
                     >
                       {addingAddon ? <Spinner size="sm" /> : <HiPlus />}
                     </Button>

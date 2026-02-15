@@ -1,22 +1,27 @@
 import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
-import { db } from '../../src/config/database.ts';
-import { clearDatabase } from '../test-utils.ts';
+import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
+
+// Setup test database before all tests
+await setupTestDatabase();
+
+// Import getDb function after test database is set up
+const { getDb } = await import('../../src/config/database.ts');
 
 Deno.test('Database - connection established', () => {
   // If we can query without error, connection is good
-  const result = db.query('SELECT 1');
+  const result = getDb().query('SELECT 1');
   assertEquals(result.length, 1);
 });
 
 Deno.test('Database - migrations table exists', () => {
-  const result = db.queryEntries(
+  const result = getDb().queryEntries(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='migrations'"
   );
   assertEquals(result.length, 1);
 });
 
 Deno.test('Database - users table has correct structure', () => {
-  const columns = db.queryEntries<{ name: string; type: string }>(
+  const columns = getDb().queryEntries<{ name: string; type: string }>(
     "PRAGMA table_info(users)"
   );
   
@@ -30,7 +35,7 @@ Deno.test('Database - users table has correct structure', () => {
 });
 
 Deno.test('Database - categories table has correct structure', () => {
-  const columns = db.queryEntries<{ name: string }>(
+  const columns = getDb().queryEntries<{ name: string }>(
     "PRAGMA table_info(categories)"
   );
   
@@ -42,7 +47,7 @@ Deno.test('Database - categories table has correct structure', () => {
 });
 
 Deno.test('Database - items table has correct structure', () => {
-  const columns = db.queryEntries<{ name: string }>(
+  const columns = getDb().queryEntries<{ name: string }>(
     "PRAGMA table_info(items)"
   );
   
@@ -60,7 +65,7 @@ Deno.test('Database - items table has correct structure', () => {
 });
 
 Deno.test('Database - customers table has correct structure', () => {
-  const columns = db.queryEntries<{ name: string }>(
+  const columns = getDb().queryEntries<{ name: string }>(
     "PRAGMA table_info(customers)"
   );
   
@@ -76,7 +81,7 @@ Deno.test('Database - customers table has correct structure', () => {
 });
 
 Deno.test('Database - projects table has correct structure', () => {
-  const columns = db.queryEntries<{ name: string }>(
+  const columns = getDb().queryEntries<{ name: string }>(
     "PRAGMA table_info(projects)"
   );
   
@@ -90,7 +95,7 @@ Deno.test('Database - projects table has correct structure', () => {
 });
 
 Deno.test('Database - floorplans table has correct structure', () => {
-  const columns = db.queryEntries<{ name: string }>(
+  const columns = getDb().queryEntries<{ name: string }>(
     "PRAGMA table_info(floorplans)"
   );
   
@@ -104,7 +109,7 @@ Deno.test('Database - floorplans table has correct structure', () => {
 });
 
 Deno.test('Database - placements table has correct structure', () => {
-  const columns = db.queryEntries<{ name: string }>(
+  const columns = getDb().queryEntries<{ name: string }>(
     "PRAGMA table_info(placements)"
   );
   
@@ -122,6 +127,6 @@ Deno.test('Database - placements table has correct structure', () => {
 
 Deno.test('Database - foreign key constraints exist', () => {
   // Check that foreign keys are enabled
-  const result = db.query('PRAGMA foreign_keys');
+  const result = getDb().query('PRAGMA foreign_keys');
   assertEquals(result[0][0], 1);
 });

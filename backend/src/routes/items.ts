@@ -24,14 +24,16 @@ declare module 'hono' {
 const itemRoutes = new Hono();
 
 // GET /items - List all items
+// Query params: category_id, search, page, limit, include_inactive (admin only)
 itemRoutes.get('/', async (c) => {
   try {
     const categoryId = c.req.query('category_id');
     const search = c.req.query('search');
     const page = parseInt(c.req.query('page') || '1', 10);
     const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
+    const includeInactive = c.req.query('include_inactive') === 'true';
 
-    const filter: { category_id?: number; search?: string } = {};
+    const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
     
     if (categoryId) {
       filter.category_id = parseInt(categoryId, 10);
@@ -39,6 +41,10 @@ itemRoutes.get('/', async (c) => {
     
     if (search) {
       filter.search = search;
+    }
+
+    if (includeInactive) {
+      filter.include_inactive = true;
     }
 
     const result = await itemRepository.findAll(filter, { page, limit });
@@ -223,6 +229,20 @@ itemRoutes.post(
         return c.json({ error: 'Category not found' }, 400);
       }
 
+      // Check for duplicate name
+      const existingByName = await itemRepository.findByName(name);
+      if (existingByName) {
+        return c.json({ error: 'An item with this name already exists' }, 400);
+      }
+
+      // Check for duplicate model number (if provided)
+      if (base_model_number) {
+        const existingByModel = await itemRepository.findByBaseModelNumber(base_model_number);
+        if (existingByModel) {
+          return c.json({ error: 'An item with this model number already exists' }, 400);
+        }
+      }
+
       const createData: CreateItemDTO = {
         category_id: categoryIdNum,
         name,
@@ -272,14 +292,52 @@ itemRoutes.put(
         }
       }
 
+      // Check if trying to activate item while category is inactive
+      if (body.is_active === true) {
+        const category = await categoryRepository.findById(existingItem.category_id);
+        if (category && !Boolean(category.is_active)) {
+          return c.json({ 
+            error: 'Cannot activate item while its category is inactive. Please activate the category first.' 
+          }, 400);
+        }
+      }
+
+      // Check for duplicate name (if changing name)
+      if (name !== undefined && name !== existingItem.name) {
+        const existingByName = await itemRepository.findByName(name);
+        if (existingByName && existingByName.id !== id) {
+          return c.json({ error: 'An item with this name already exists' }, 400);
+        }
+      }
+
+      // Check for duplicate model number (if changing model number)
+      if (base_model_number !== undefined && base_model_number !== existingItem.base_model_number) {
+        const existingByModel = await itemRepository.findByBaseModelNumber(base_model_number);
+        if (existingByModel && existingByModel.id !== id) {
+          return c.json({ error: 'An item with this model number already exists' }, 400);
+        }
+      }
+
       const updateData: UpdateItemDTO = {};
       if (category_id !== undefined) updateData.category_id = parseInt(category_id);
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
       if (base_model_number !== undefined) updateData.base_model_number = base_model_number;
       if (dimensions !== undefined) updateData.dimensions = dimensions;
+      if (body.is_active !== undefined) updateData.is_active = body.is_active;
 
       const item = await itemRepository.update(id, updateData);
+
+      // Cascade: If deactivating item, also deactivate all variants
+      // Note: SQLite returns is_active as integer (0/1), not boolean, so we convert to boolean
+      const existingIsActive = Boolean(existingItem.is_active);
+      if (body.is_active === false && existingIsActive) {
+        await itemRepository.deactivate(id);
+        return c.json({
+          data: item,
+          message: 'Item deactivated successfully. All variants of this item have been deactivated.',
+        });
+      }
 
       return c.json({
         data: item,
@@ -327,16 +385,18 @@ itemRoutes.delete('/:id', authMiddleware, adminMiddleware, async (c) => {
 // ==========================================
 
 // GET /items/:id/variants - Get all variants for an item
+// Query param: include_inactive=true (admin only) to include inactive variants
 itemRoutes.get('/:id/variants', async (c) => {
   try {
     const itemId = parseInt(c.req.param('id'));
+    const includeInactive = c.req.query('include_inactive') === 'true';
     
     const item = await itemRepository.findById(itemId);
     if (!item) {
       return c.json({ error: 'Item not found' }, 404);
     }
 
-    const variants = await itemVariantRepository.findByItemId(itemId);
+    const variants = await itemVariantRepository.findByItemId(itemId, includeInactive);
 
     return c.json({
       data: variants,
@@ -382,10 +442,22 @@ itemRoutes.post(
         return c.json({ error: 'Missing required fields: style_name, price' }, 400);
       }
 
+      // Check for duplicate style name within the same item
+      const existingVariants = await itemVariantRepository.findByItemId(itemId, true);
+      const styleExists = existingVariants.some(v => v.style_name.toLowerCase() === styleName.toLowerCase());
+      if (styleExists) {
+        if (uploadResult?.success && uploadResult.filePath) {
+          await fileStorageService.deleteFile(uploadResult.filePath);
+        }
+        return c.json({ error: 'A variant with this style name already exists for this item' }, 400);
+      }
+
       const createData: CreateItemVariantDTO = {
         item_id: itemId,
         style_name: styleName,
         price,
+        // If item is inactive, variant must also be inactive
+        is_active: Boolean(item.is_active),
       };
 
       if (uploadResult?.success && uploadResult.filePath) {
@@ -442,10 +514,37 @@ itemRoutes.put(
       const priceStr = formData.get('price')?.toString();
       const price = priceStr ? parseFloat(priceStr) : undefined;
       const removeImage = formData.get('remove_image')?.toString() === 'true';
+      const isActiveStr = formData.get('is_active')?.toString();
+      const isActive = isActiveStr !== undefined ? isActiveStr === 'true' : undefined;
 
-      const updateData: { style_name?: string; price?: number; image_path?: string | null } = {};
+      // Check if trying to activate variant while item is inactive
+      if (isActive === true && !Boolean(item.is_active)) {
+        if (uploadResult?.success && uploadResult.filePath) {
+          await fileStorageService.deleteFile(uploadResult.filePath);
+        }
+        return c.json({ 
+          error: 'Cannot activate variant while its item is inactive. Please activate the item first.' 
+        }, 400);
+      }
+
+      // Check for duplicate style name when updating (if changing style name)
+      if (styleName !== undefined && styleName !== existingVariant.style_name) {
+        const existingVariants = await itemVariantRepository.findByItemId(itemId, true);
+        const styleExists = existingVariants.some(v => 
+          v.id !== variantId && v.style_name.toLowerCase() === styleName.toLowerCase()
+        );
+        if (styleExists) {
+          if (uploadResult?.success && uploadResult.filePath) {
+            await fileStorageService.deleteFile(uploadResult.filePath);
+          }
+          return c.json({ error: 'A variant with this style name already exists for this item' }, 400);
+        }
+      }
+
+      const updateData: { style_name?: string; price?: number; image_path?: string | null; is_active?: boolean } = {};
       if (styleName !== undefined) updateData.style_name = styleName;
       if (price !== undefined) updateData.price = price;
+      if (isActive !== undefined) updateData.is_active = isActive;
       if (uploadResult?.success && uploadResult.filePath) {
         // New image uploaded - delete old one if exists
         if (existingVariant.image_path) {
@@ -526,6 +625,108 @@ itemRoutes.patch('/:id/variants/reorder', authMiddleware, adminMiddleware, async
     });
   } catch (error) {
     console.error('Reorder variants error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// PATCH /items/:id/deactivate - Deactivate item (admin only)
+// Cascades to all variants of this item
+itemRoutes.patch('/:id/deactivate', authMiddleware, adminMiddleware, async (c) => {
+  try {
+    const id = parseInt(c.req.param('id'));
+
+    const item = await itemRepository.findById(id);
+    if (!item) {
+      return c.json({ error: 'Item not found' }, 404);
+    }
+
+    const deactivatedItem = await itemRepository.deactivate(id);
+
+    return c.json({
+      data: deactivatedItem,
+      message: 'Item deactivated successfully. All variants of this item have been deactivated.',
+    });
+  } catch (error) {
+    console.error('Deactivate item error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// PATCH /items/:id/activate - Activate item (admin only)
+// Note: Does NOT cascade - variants must be activated individually
+itemRoutes.patch('/:id/activate', authMiddleware, adminMiddleware, async (c) => {
+  try {
+    const id = parseInt(c.req.param('id'));
+
+    const item = await itemRepository.findById(id);
+    if (!item) {
+      return c.json({ error: 'Item not found' }, 404);
+    }
+
+    const activatedItem = await itemRepository.activate(id);
+
+    return c.json({
+      data: activatedItem,
+      message: 'Item activated successfully. Note: Variants remain deactivated and must be activated individually.',
+    });
+  } catch (error) {
+    console.error('Activate item error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// PATCH /items/:id/variants/:variantId/deactivate - Deactivate variant (admin only)
+itemRoutes.patch('/:id/variants/:variantId/deactivate', authMiddleware, adminMiddleware, async (c) => {
+  try {
+    const itemId = parseInt(c.req.param('id'));
+    const variantId = parseInt(c.req.param('variantId'));
+
+    const item = await itemRepository.findById(itemId);
+    if (!item) {
+      return c.json({ error: 'Item not found' }, 404);
+    }
+
+    const variant = await itemVariantRepository.findById(variantId);
+    if (!variant || variant.item_id !== itemId) {
+      return c.json({ error: 'Variant not found' }, 404);
+    }
+
+    const deactivatedVariant = await itemVariantRepository.deactivate(variantId);
+
+    return c.json({
+      data: deactivatedVariant,
+      message: 'Variant deactivated successfully.',
+    });
+  } catch (error) {
+    console.error('Deactivate variant error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// PATCH /items/:id/variants/:variantId/activate - Activate variant (admin only)
+itemRoutes.patch('/:id/variants/:variantId/activate', authMiddleware, adminMiddleware, async (c) => {
+  try {
+    const itemId = parseInt(c.req.param('id'));
+    const variantId = parseInt(c.req.param('variantId'));
+
+    const item = await itemRepository.findById(itemId);
+    if (!item) {
+      return c.json({ error: 'Item not found' }, 404);
+    }
+
+    const variant = await itemVariantRepository.findById(variantId);
+    if (!variant || variant.item_id !== itemId) {
+      return c.json({ error: 'Variant not found' }, 404);
+    }
+
+    const activatedVariant = await itemVariantRepository.activate(variantId);
+
+    return c.json({
+      data: activatedVariant,
+      message: 'Variant activated successfully.',
+    });
+  } catch (error) {
+    console.error('Activate variant error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

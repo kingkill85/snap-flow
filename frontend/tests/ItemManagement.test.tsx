@@ -120,7 +120,9 @@ describe('ItemManagement', () => {
     expect(screen.getByText('SC-100')).toBeInTheDocument();
   });
 
-  it('expands item to show variants', async () => {
+  it('expands item to show variants when clicked', async () => {
+    const user = userEvent.setup();
+    
     render(
       <BrowserRouter>
         <ItemManagement />
@@ -132,8 +134,14 @@ describe('ItemManagement', () => {
       expect(screen.getByText('Smart Bulb')).toBeInTheDocument();
     });
 
-    // Verify that getVariants was called (indicating variants are being loaded)
-    expect(itemService.getVariants).toHaveBeenCalled();
+    // Click expand button on first item
+    const expandButtons = screen.getAllByRole('button', { name: /expand/i });
+    await user.click(expandButtons[0]);
+
+    // Verify that getVariants was called after expanding
+    await waitFor(() => {
+      expect(itemService.getVariants).toHaveBeenCalled();
+    });
   });
 
   it('opens create item modal when add item clicked', async () => {
@@ -190,21 +198,27 @@ describe('ItemManagement', () => {
   });
 
   it('shows add variant button in expanded view', async () => {
+    const user = userEvent.setup();
+    
     render(
       <BrowserRouter>
         <ItemManagement />
       </BrowserRouter>
     );
 
-    // Wait for items and variants to load
+    // Wait for items to load
     await waitFor(() => {
       expect(screen.getByText('Smart Bulb')).toBeInTheDocument();
     });
 
-    // Check that variant-related UI appears
+    // Click expand button on first item
+    const expandButtons = screen.getAllByRole('button', { name: /expand/i });
+    await user.click(expandButtons[0]);
+
+    // Wait for variants to load and check for "Add Variant" button
     await waitFor(() => {
       const buttons = screen.getAllByRole('button');
-      const hasAddVariant = buttons.some(btn => btn.textContent?.toLowerCase().includes('variant'));
+      const hasAddVariant = buttons.some(btn => btn.textContent?.toLowerCase().includes('add variant'));
       expect(hasAddVariant).toBe(true);
     });
   });

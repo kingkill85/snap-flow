@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button, Modal, Label, TextInput, Textarea, Select, Alert, Spinner } from 'flowbite-react';
+import { Button, Modal, Label, TextInput, Textarea, Select, Alert, Spinner, ToggleSwitch } from 'flowbite-react';
 import type { Item } from '../../services/item';
 import type { Category } from '../../services/category';
 
@@ -9,6 +9,7 @@ interface ItemFormData {
   description?: string;
   base_model_number?: string;
   dimensions?: string;
+  is_active?: boolean;
 }
 
 interface ItemFormModalProps {
@@ -27,6 +28,7 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
     description: '',
     base_model_number: '',
     dimensions: '',
+    is_active: true,
   });
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -42,6 +44,7 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
           description: item.description || '',
           base_model_number: item.base_model_number || '',
           dimensions: item.dimensions || '',
+          is_active: item.is_active,
         });
       } else {
         // Create mode - reset form
@@ -51,6 +54,7 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
           description: '',
           base_model_number: '',
           dimensions: '',
+          is_active: true, // New items are always active by default
         });
       }
       setError('');
@@ -73,13 +77,20 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
 
     setIsSubmitting(true);
     try {
-      await onSubmit({
+      const submitData: ItemFormData = {
         category_id: formData.category_id,
         name: formData.name,
         description: formData.description || undefined,
         base_model_number: formData.base_model_number || undefined,
         dimensions: formData.dimensions || undefined,
-      });
+      };
+      
+      // Only include is_active when editing
+      if (isEdit) {
+        submitData.is_active = formData.is_active;
+      }
+      
+      await onSubmit(submitData);
       onClose();
     } catch (err: any) {
       setError(err.response?.data?.error || `Failed to ${isEdit ? 'update' : 'create'} item`);
@@ -175,11 +186,30 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
           )}
 
           {isEdit && (
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-700">
-                <strong>Note:</strong> Price and images are managed per variant. Use "Edit" on a variant to manage add-ons and details.
-              </p>
-            </div>
+            <>
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-700">
+                  <strong>Note:</strong> Price and images are managed per variant. Use "Edit" on a variant to manage add-ons and details.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 pt-4 border-t">
+                <ToggleSwitch
+                  checked={formData.is_active}
+                  onChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                  label=""
+                />
+                <Label className="mb-0">
+                  <span className={formData.is_active ? 'text-green-600 font-medium' : 'text-gray-500'}>
+                    {formData.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {formData.is_active 
+                      ? 'Item is visible in the catalog' 
+                      : 'Item is hidden from the catalog. All variants will also be hidden.'}
+                  </p>
+                </Label>
+              </div>
+            </>
           )}
         </form>
       </Modal.Body>

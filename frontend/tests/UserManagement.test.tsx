@@ -130,8 +130,8 @@ describe('UserManagement', () => {
     );
 
     await waitFor(() => {
-      // Check for "Created" column header
-      expect(screen.getByText('Created')).toBeInTheDocument();
+      // Check for "CREATED" column header (uppercase)
+      expect(screen.getByText('CREATED')).toBeInTheDocument();
       // Check that users are displayed
       expect(screen.getByText('Admin User')).toBeInTheDocument();
     });

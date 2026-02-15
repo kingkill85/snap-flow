@@ -6,19 +6,27 @@ import type { ItemVariant, CreateItemVariantDTO } from '../models/index.ts';
  * Handles all database operations for item variants
  */
 export class ItemVariantRepository {
-  async findByItemId(itemId: number): Promise<ItemVariant[]> {
-    const result = getDb().queryEntries(`
-      SELECT id, item_id, style_name, price, image_path, sort_order, created_at
-      FROM item_variants
-      WHERE item_id = ?
-      ORDER BY sort_order ASC, id ASC
-    `, [itemId]);
+  async findByItemId(itemId: number, includeInactive = false): Promise<ItemVariant[]> {
+    const query = includeInactive
+      ? `
+        SELECT id, item_id, style_name, price, image_path, sort_order, created_at, is_active
+        FROM item_variants
+        WHERE item_id = ?
+        ORDER BY sort_order ASC, id ASC
+      `
+      : `
+        SELECT id, item_id, style_name, price, image_path, sort_order, created_at, is_active
+        FROM item_variants
+        WHERE item_id = ? AND is_active = true
+        ORDER BY sort_order ASC, id ASC
+      `;
+    const result = getDb().queryEntries(query, [itemId]);
     return result as unknown as ItemVariant[];
   }
 
   async findById(id: number): Promise<ItemVariant | null> {
     const result = getDb().queryEntries(`
-      SELECT id, item_id, style_name, price, image_path, sort_order, created_at
+      SELECT id, item_id, style_name, price, image_path, sort_order, created_at, is_active
       FROM item_variants
       WHERE id = ?
     `, [id]);
@@ -26,24 +34,31 @@ export class ItemVariantRepository {
   }
 
   async create(data: CreateItemVariantDTO): Promise<ItemVariant> {
+    const isActive = data.is_active ?? true;
     const result = getDb().queryEntries(`
-      INSERT INTO item_variants (item_id, style_name, price, image_path, sort_order)
-      VALUES (?, ?, ?, ?, ?)
-      RETURNING id, item_id, style_name, price, image_path, sort_order, created_at
+      INSERT INTO item_variants (item_id, style_name, price, image_path, sort_order, is_active)
+      VALUES (?, ?, ?, ?, ?, ?)
+      RETURNING id, item_id, style_name, price, image_path, sort_order, created_at, is_active
     `, [
       data.item_id,
       data.style_name,
       data.price,
       data.image_path || null,
       data.sort_order || 0,
+      isActive,
     ]);
 
-    return result[0] as unknown as ItemVariant;
+    // Convert integer is_active to boolean
+    const variant = result[0] as any;
+    if (variant && variant.is_active !== undefined) {
+      variant.is_active = Boolean(variant.is_active);
+    }
+    return variant as ItemVariant;
   }
 
-  async update(id: number, data: { style_name?: string; price?: number; image_path?: string | null; sort_order?: number }): Promise<ItemVariant | null> {
+  async update(id: number, data: { style_name?: string; price?: number; image_path?: string | null; sort_order?: number; is_active?: boolean }): Promise<ItemVariant | null> {
     const sets: string[] = [];
-    const values: (string | number | null)[] = [];
+    const values: (string | number | boolean | null)[] = [];
 
     if (data.style_name !== undefined) {
       sets.push('style_name = ?');
@@ -61,6 +76,10 @@ export class ItemVariantRepository {
       sets.push('sort_order = ?');
       values.push(data.sort_order);
     }
+    if (data.is_active !== undefined) {
+      sets.push('is_active = ?');
+      values.push(data.is_active);
+    }
 
     if (sets.length === 0) {
       return this.findById(id);
@@ -72,8 +91,30 @@ export class ItemVariantRepository {
       UPDATE item_variants
       SET ${sets.join(', ')}
       WHERE id = ?
-      RETURNING id, item_id, style_name, price, image_path, sort_order, created_at
+      RETURNING id, item_id, style_name, price, image_path, sort_order, created_at, is_active
     `, values);
+
+    return result.length > 0 ? (result[0] as unknown as ItemVariant) : null;
+  }
+
+  async deactivate(id: number): Promise<ItemVariant | null> {
+    const result = getDb().queryEntries(`
+      UPDATE item_variants
+      SET is_active = false
+      WHERE id = ?
+      RETURNING id, item_id, style_name, price, image_path, sort_order, created_at, is_active
+    `, [id]);
+
+    return result.length > 0 ? (result[0] as unknown as ItemVariant) : null;
+  }
+
+  async activate(id: number): Promise<ItemVariant | null> {
+    const result = getDb().queryEntries(`
+      UPDATE item_variants
+      SET is_active = true
+      WHERE id = ?
+      RETURNING id, item_id, style_name, price, image_path, sort_order, created_at, is_active
+    `, [id]);
 
     return result.length > 0 ? (result[0] as unknown as ItemVariant) : null;
   }

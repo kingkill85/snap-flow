@@ -52,10 +52,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!controller.signal.aborted) {
           setUser(userData);
         }
-      } catch (error) {
+      } catch (error: any) {
         if (!controller.signal.aborted) {
-          authService.clearTokens();
-          setUser(null);
+          // Only clear tokens on 401 errors (auth failures)
+          // Don't clear on network errors (server restarting) or other errors
+          if (error.response?.status === 401) {
+            console.log('[AuthContext] Authentication failed (401), clearing tokens');
+            authService.clearTokens();
+            setUser(null);
+          } else {
+            console.log('[AuthContext] Auth check failed but not due to invalid token:', error.message || 'Unknown error');
+            // Keep existing tokens for retry on network errors
+            setUser(null);
+          }
         }
       } finally {
         if (!controller.signal.aborted) {

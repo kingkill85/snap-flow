@@ -16,6 +16,7 @@ const createCategorySchema = z.object({
 const updateCategorySchema = z.object({
   name: z.string().min(1).max(100).optional(),
   sort_order: z.number().optional(),
+  is_active: z.boolean().optional(),
 });
 
 // Validation schema for reordering
@@ -24,14 +25,13 @@ const reorderSchema = z.object({
 });
 
 // GET /categories - List all categories
-// Public endpoint - no auth required
-// Admin endpoint with full details
-// Returns: id, name, sort_order for all categories
-// Used by: Configurator (to show items by category), Item management
+// Public endpoint - returns only active categories by default
+// Query param: include_inactive=true (admin only) to include inactive categories
 // Categories are sorted by sort_order ASC, then name ASC
 categoryRoutes.get('/', async (c) => {
   try {
-    const categories = await categoryRepository.findAll();
+    const includeInactive = c.req.query('include_inactive') === 'true';
+    const categories = await categoryRepository.findAll(includeInactive);
     return c.json({
       data: categories,
     });
@@ -90,7 +90,7 @@ categoryRoutes.post('/', authMiddleware, adminMiddleware, zValidator('json', cre
 // PUT /categories/:id - Update category (admin only)
 categoryRoutes.put('/:id', authMiddleware, adminMiddleware, zValidator('json', updateCategorySchema), async (c) => {
   const id = parseInt(c.req.param('id'));
-  const { name, sort_order } = c.req.valid('json');
+  const { name, sort_order, is_active } = c.req.valid('json');
 
   try {
     // Check if category exists
@@ -107,11 +107,23 @@ categoryRoutes.put('/:id', authMiddleware, adminMiddleware, zValidator('json', u
       }
     }
 
-    const updateData: { name?: string; sort_order?: number } = {};
+    const updateData: { name?: string; sort_order?: number; is_active?: boolean } = {};
     if (name !== undefined) updateData.name = name;
     if (sort_order !== undefined) updateData.sort_order = sort_order;
+    if (is_active !== undefined) updateData.is_active = is_active;
 
     const category = await categoryRepository.update(id, updateData);
+
+    // Cascade: If deactivating category, also deactivate items and variants
+    // Note: SQLite returns is_active as integer (0/1), not boolean, so we check both
+    const existingIsActive = Boolean(existingCategory.is_active);
+    if (is_active === false && existingIsActive) {
+      await categoryRepository.deactivate(id);
+      return c.json({
+        data: category,
+        message: 'Category deactivated successfully. All items and variants in this category have been deactivated.',
+      });
+    }
 
     return c.json({
       data: category,
@@ -159,13 +171,59 @@ categoryRoutes.patch('/reorder', authMiddleware, adminMiddleware, zValidator('js
     await categoryRepository.reorder(category_ids);
     
     // Return updated categories
-    const categories = await categoryRepository.findAll();
+    const categories = await categoryRepository.findAll(true);
     return c.json({
       data: categories,
       message: 'Categories reordered successfully',
     });
   } catch (error) {
     console.error('Reorder categories error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// PATCH /categories/:id/deactivate - Deactivate category (admin only)
+// Cascades to all items and variants in this category
+categoryRoutes.patch('/:id/deactivate', authMiddleware, adminMiddleware, async (c) => {
+  const id = parseInt(c.req.param('id'));
+
+  try {
+    const category = await categoryRepository.findById(id);
+    if (!category) {
+      return c.json({ error: 'Category not found' }, 404);
+    }
+
+    const deactivatedCategory = await categoryRepository.deactivate(id);
+    
+    return c.json({
+      data: deactivatedCategory,
+      message: 'Category deactivated successfully. All items and variants in this category have been deactivated.',
+    });
+  } catch (error) {
+    console.error('Deactivate category error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// PATCH /categories/:id/activate - Activate category (admin only)
+// Note: Does NOT cascade - items and variants must be activated individually
+categoryRoutes.patch('/:id/activate', authMiddleware, adminMiddleware, async (c) => {
+  const id = parseInt(c.req.param('id'));
+
+  try {
+    const category = await categoryRepository.findById(id);
+    if (!category) {
+      return c.json({ error: 'Category not found' }, 404);
+    }
+
+    const activatedCategory = await categoryRepository.activate(id);
+    
+    return c.json({
+      data: activatedCategory,
+      message: 'Category activated successfully. Note: Items and variants remain deactivated and must be activated individually.',
+    });
+  } catch (error) {
+    console.error('Activate category error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

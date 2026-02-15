@@ -1,7 +1,12 @@
 import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
-import { userRepository } from '../../src/repositories/user.ts';
 import { hashPassword } from '../../src/services/password.ts';
-import { clearDatabase } from '../test-utils.ts';
+import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
+
+// Setup test database before all tests
+await setupTestDatabase();
+
+// Import repositories after database is set up
+const { userRepository } = await import('../../src/repositories/user.ts');
 
 Deno.test('UserRepository - create user', async () => {
   clearDatabase();

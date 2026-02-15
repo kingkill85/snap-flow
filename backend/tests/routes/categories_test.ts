@@ -9,6 +9,8 @@ await setupTestDatabase();
 // Import repositories after database is set up
 const { userRepository } = await import('../../src/repositories/user.ts');
 const { categoryRepository } = await import('../../src/repositories/category.ts');
+const { itemRepository } = await import('../../src/repositories/item.ts');
+const { itemVariantRepository } = await import('../../src/repositories/item-variant.ts');
 
 async function getAdminToken(): Promise<string> {
   clearDatabase();
@@ -254,6 +256,149 @@ Deno.test('PATCH /categories/reorder - should reorder categories (admin only)', 
   assertEquals(categories[0].id, cat3.id);
   assertEquals(categories[1].id, cat1.id);
   assertEquals(categories[2].id, cat2.id);
+});
+
+Deno.test('PUT /categories/:id - should deactivate category and cascade to items and variants', async () => {
+  clearDatabase();
+  
+  // Create admin user
+  const passwordHash = await hashPassword('admin123');
+  const admin = await userRepository.create({
+    email: 'admin@test.com',
+    password_hash: passwordHash,
+    role: 'admin',
+  });
+
+  // Login
+  const loginResponse = await testRequest('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'admin@test.com',
+      password: 'admin123',
+    }),
+  });
+  const loginData = await parseJSON(loginResponse);
+  const token = loginData.data.accessToken;
+
+  // Create category
+  const category = await categoryRepository.create({ name: 'Test Category' });
+  
+  // Create item in category
+  const item = await itemRepository.create({
+    category_id: category.id,
+    name: 'Test Item',
+    base_model_number: 'TI-001',
+  });
+  
+  // Create variants for item
+  const variant1 = await itemVariantRepository.create({
+    item_id: item.id,
+    style_name: 'White',
+    price: 10,
+    is_active: true,
+  });
+  const variant2 = await itemVariantRepository.create({
+    item_id: item.id,
+    style_name: 'Black',
+    price: 10,
+    is_active: true,
+  });
+
+  // Verify everything is active initially (SQLite returns 1 for true)
+  assertEquals(Boolean(category.is_active), true);
+  assertEquals(Boolean(item.is_active), true);
+  assertEquals(Boolean(variant1.is_active), true);
+  assertEquals(Boolean(variant2.is_active), true);
+
+  // Deactivate category
+  const response = await testRequest(`/api/categories/${category.id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      is_active: false,
+    }),
+  });
+
+  const data = await parseJSON(response);
+
+  assertEquals(response.status, 200);
+  assertEquals(data.message, 'Category deactivated successfully. All items and variants in this category have been deactivated.');
+  
+  // Verify cascade deactivation
+  const updatedCategory = await categoryRepository.findById(category.id);
+  const updatedItem = await itemRepository.findById(item.id);
+  const updatedVariant1 = await itemVariantRepository.findById(variant1.id);
+  const updatedVariant2 = await itemVariantRepository.findById(variant2.id);
+  
+  assertEquals(Boolean(updatedCategory?.is_active), false);
+  assertEquals(Boolean(updatedItem?.is_active), false);
+  assertEquals(Boolean(updatedVariant1?.is_active), false);
+  assertEquals(Boolean(updatedVariant2?.is_active), false);
+});
+
+Deno.test('PUT /categories/:id - should activate category without cascading to children', async () => {
+  clearDatabase();
+  
+  // Create admin user
+  const passwordHash = await hashPassword('admin123');
+  const admin = await userRepository.create({
+    email: 'admin@test.com',
+    password_hash: passwordHash,
+    role: 'admin',
+  });
+
+  // Login
+  const loginResponse = await testRequest('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'admin@test.com',
+      password: 'admin123',
+    }),
+  });
+  const loginData = await parseJSON(loginResponse);
+  const token = loginData.data.accessToken;
+
+  // Create inactive category
+  const category = await categoryRepository.create({ 
+    name: 'Test Category',
+    is_active: false,
+  });
+  
+  // Create inactive item in category
+  const item = await itemRepository.create({
+    category_id: category.id,
+    name: 'Test Item',
+    base_model_number: 'TI-001',
+    is_active: false,
+  });
+
+  // Activate category
+  const response = await testRequest(`/api/categories/${category.id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      is_active: true,
+    }),
+  });
+
+  const data = await parseJSON(response);
+
+  assertEquals(response.status, 200);
+  
+  // Verify only category is activated, item stays inactive
+  const updatedCategory = await categoryRepository.findById(category.id);
+  const updatedItem = await itemRepository.findById(item.id);
+  
+  assertEquals(Boolean(updatedCategory?.is_active), true);
+  assertEquals(Boolean(updatedItem?.is_active), false); // Item should stay inactive
 });
 
 Deno.test('POST /categories - should require authentication', async () => {

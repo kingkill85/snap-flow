@@ -226,6 +226,110 @@ Deno.test('Auth endpoints - update profile with full_name', async () => {
   assertEquals(updateData.data.full_name, 'John Updated');
 });
 
+Deno.test('Auth endpoints - refresh token with valid refresh token', async () => {
+  clearDatabase();
+  
+  // Create and login a user
+  const passwordHash = await hashPassword('testpassword123');
+  await userRepository.create({
+    email: 'refreshtest@example.com',
+    password_hash: passwordHash,
+    role: 'user',
+  });
+
+  const loginResponse = await testRequest('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'refreshtest@example.com',
+      password: 'testpassword123',
+    }),
+  });
+
+  const loginData = await parseJSON(loginResponse);
+  const refreshToken = loginData.data.refreshToken;
+  const originalAccessToken = loginData.data.accessToken;
+
+  // Use refresh token to get new access token
+  const refreshResponse = await testRequest('/api/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      refreshToken: refreshToken,
+    }),
+  });
+
+  const refreshData = await parseJSON(refreshResponse);
+
+  assertEquals(refreshResponse.status, 200);
+  assertExists(refreshData.data.accessToken);
+  // New access token should be a valid JWT (contains 2 dots)
+  assertEquals(refreshData.data.accessToken.split('.').length, 3);
+});
+
+Deno.test('Auth endpoints - refresh token with invalid refresh token', async () => {
+  clearDatabase();
+
+  const refreshResponse = await testRequest('/api/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      refreshToken: 'invalid-token-12345',
+    }),
+  });
+
+  const refreshData = await parseJSON(refreshResponse);
+
+  assertEquals(refreshResponse.status, 401);
+  assertEquals(refreshData.error, 'Invalid or expired refresh token');
+});
+
+Deno.test('Auth endpoints - access protected endpoint with refreshed token', async () => {
+  clearDatabase();
+  
+  // Create and login a user
+  const passwordHash = await hashPassword('testpassword123');
+  await userRepository.create({
+    email: 'refreshthenaccess@example.com',
+    password_hash: passwordHash,
+    role: 'user',
+  });
+
+  const loginResponse = await testRequest('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'refreshthenaccess@example.com',
+      password: 'testpassword123',
+    }),
+  });
+
+  const loginData = await parseJSON(loginResponse);
+  const refreshToken = loginData.data.refreshToken;
+
+  // Refresh to get new access token
+  const refreshResponse = await testRequest('/api/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      refreshToken: refreshToken,
+    }),
+  });
+
+  const refreshData = await parseJSON(refreshResponse);
+  const newAccessToken = refreshData.data.accessToken;
+
+  // Use new access token to access protected endpoint
+  const meResponse = await testRequest('/api/auth/me', {
+    headers: { 'Authorization': `Bearer ${newAccessToken}` },
+  });
+
+  const meData = await parseJSON(meResponse);
+
+  assertEquals(meResponse.status, 200);
+  assertEquals(meData.data.email, 'refreshthenaccess@example.com');
+});
+
 Deno.test('Auth endpoints - update profile with email', async () => {
   clearDatabase();
   

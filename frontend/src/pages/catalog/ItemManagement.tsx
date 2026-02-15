@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Card, Table, TextInput, Select, Alert, Spinner, Pagination } from 'flowbite-react';
-import { HiPlus, HiSearch, HiChevronDown, HiChevronRight } from 'react-icons/hi';
+import { Button, Card, Table, TextInput, Select, Alert, Spinner, Pagination, ToggleSwitch } from 'flowbite-react';
+import { HiPlus, HiSearch, HiChevronDown, HiChevronRight, HiCheckCircle, HiXCircle, HiPhotograph } from 'react-icons/hi';
 import { itemService, type Item, type ItemVariant } from '../../services/item';
 import { categoryService, type Category } from '../../services/category';
 import { ItemFormModal } from '../../components/items/ItemFormModal';
@@ -32,18 +32,20 @@ const ItemManagement = () => {
   // Unified Variant Form Modal state
   const [showVariantFormModal, setShowVariantFormModal] = useState(false);
   const [variantFormItemId, setVariantFormItemId] = useState<number | null>(null);
-  const [variantFormItem, setVariantFormItem] = useState<Item | null>(null);
   const [variantToEdit, setVariantToEdit] = useState<ItemVariant | null>(null);
   const [showDeleteVariantModal, setShowDeleteVariantModal] = useState(false);
   const [variantToDelete, setVariantToDelete] = useState<ItemVariant | null>(null);
 
-  // Fetch categories
+  // Show inactive items toggle
+  const [showInactive, setShowInactive] = useState(false);
+
+  // Fetch categories (include inactive so we can display category names for all items)
   useEffect(() => {
     const controller = new AbortController();
     
     const fetchCategories = async () => {
       try {
-        const data = await categoryService.getAll(controller.signal);
+        const data = await categoryService.getAll(controller.signal, true);
         setCategories(data);
       } catch (err: any) {
         if (err.name !== 'AbortError' && err.name !== 'CanceledError' && err.message !== 'canceled') {
@@ -67,9 +69,10 @@ const ItemManagement = () => {
       try {
         setError('');
         
-        const filter: { category_id?: number; search?: string } = {};
+        const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
         if (selectedCategory) filter.category_id = selectedCategory;
         if (searchQuery) filter.search = searchQuery;
+        if (showInactive) filter.include_inactive = true;
 
         const result = await itemService.getAll(
           filter,
@@ -80,16 +83,7 @@ const ItemManagement = () => {
         setItems(result.items);
         setTotalPages(result.totalPages);
         
-        // Auto-expand all items by default
-        const allItemIds = new Set(result.items.map(item => item.id));
-        setExpandedItems(allItemIds);
-        
-        // Load variants for all items
-        result.items.forEach(item => {
-          if (!itemVariants[item.id]) {
-            loadVariants(item.id);
-          }
-        });
+        // Note: Items are collapsed by default, user must click to expand
       } catch (err: any) {
         if (err.name === 'AbortError' || err.name === 'CanceledError' || err.message === 'canceled') {
           return;
@@ -105,7 +99,15 @@ const ItemManagement = () => {
     return () => {
       controller.abort();
     };
-  }, [selectedCategory, searchQuery, currentPage]);
+  }, [selectedCategory, searchQuery, currentPage, showInactive]);
+
+  // Reload variants when showInactive changes
+  useEffect(() => {
+    // Reload variants for all expanded items
+    expandedItems.forEach(itemId => {
+      refreshVariants(itemId);
+    });
+  }, [showInactive]);
 
   // Toggle item expansion
   const toggleItem = (itemId: number) => {
@@ -132,7 +134,7 @@ const ItemManagement = () => {
 
     setLoadingVariants(prev => ({ ...prev, [itemId]: true }));
     try {
-      const variants = await itemService.getVariants(itemId);
+      const variants = await itemService.getVariants(itemId, showInactive);
       setItemVariants(prev => ({ ...prev, [itemId]: variants }));
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load variants');
@@ -153,7 +155,7 @@ const ItemManagement = () => {
       });
       // Small delay to ensure React processes the state change
       await new Promise(resolve => setTimeout(resolve, 50));
-      const variants = await itemService.getVariants(itemId);
+      const variants = await itemService.getVariants(itemId, showInactive);
       setItemVariants(prev => ({ ...prev, [itemId]: variants }));
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to refresh variants');
@@ -164,17 +166,13 @@ const ItemManagement = () => {
 
   // Variant modal handlers
   const openAddVariantModal = (itemId: number) => {
-    const item = items.find(i => i.id === itemId) || null;
     setVariantFormItemId(itemId);
-    setVariantFormItem(item);
     setVariantToEdit(null);
     setShowVariantFormModal(true);
   };
 
   const openEditVariantModal = (itemId: number, variant: ItemVariant) => {
-    const item = items.find(i => i.id === itemId) || null;
     setVariantFormItemId(itemId);
-    setVariantFormItem(item);
     setVariantToEdit(variant);
     setShowVariantFormModal(true);
   };
@@ -190,8 +188,13 @@ const ItemManagement = () => {
     await itemService.delete(itemToDelete.id);
     
     // Refresh items
+    const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
+    if (selectedCategory) filter.category_id = selectedCategory;
+    if (searchQuery) filter.search = searchQuery;
+    if (showInactive) filter.include_inactive = true;
+    
     const result = await itemService.getAll(
-      { category_id: selectedCategory || undefined, search: searchQuery || undefined },
+      filter,
       { page: currentPage, limit: itemsPerPage }
     );
     setItems(result.items);
@@ -268,18 +271,28 @@ const ItemManagement = () => {
 
       {/* Items Table */}
       <Card>
-        <Table hoverable>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Items</h2>
+          <ToggleSwitch
+            checked={showInactive}
+            onChange={setShowInactive}
+            label="Show inactive"
+          />
+        </div>
+         <Table hoverable>
           <Table.Head>
             <Table.HeadCell className="w-10"></Table.HeadCell>
+            <Table.HeadCell className="w-16">IMAGE</Table.HeadCell>
             <Table.HeadCell>NAME</Table.HeadCell>
             <Table.HeadCell>MODEL</Table.HeadCell>
             <Table.HeadCell>CATEGORY</Table.HeadCell>
+            <Table.HeadCell className="w-28">STATUS</Table.HeadCell>
             <Table.HeadCell className="w-32"></Table.HeadCell>
           </Table.Head>
           <Table.Body>
             {items.length === 0 ? (
               <Table.Row>
-                <Table.Cell colSpan={5} className="text-center py-8 text-gray-500">
+                <Table.Cell colSpan={6} className="text-center py-8 text-gray-500">
                   No items found. Create your first item to get started.
                 </Table.Cell>
               </Table.Row>
@@ -293,7 +306,7 @@ const ItemManagement = () => {
                 return (
                   <React.Fragment key={item.id}>
                     {/* Main Item Row */}
-                    <Table.Row className="hover:bg-gray-50">
+                    <Table.Row className={`hover:bg-gray-50 transition-colors ${!item.is_active ? 'border-l-4 border-l-gray-400 opacity-75' : ''}`}>
                       <Table.Cell className="text-center">
                         <button 
                           onClick={() => toggleItem(item.id)}
@@ -303,9 +316,37 @@ const ItemManagement = () => {
                           {isExpanded ? <HiChevronDown className="w-5 h-5 text-gray-600" /> : <HiChevronRight className="w-5 h-5 text-gray-600" />}
                         </button>
                       </Table.Cell>
-                      <Table.Cell className="font-medium">{item.name}</Table.Cell>
+                      <Table.Cell>
+                        {item.preview_image ? (
+                          <img
+                            src={itemService.getImageUrl(item.preview_image) || ''}
+                            alt={item.name}
+                            className="h-10 w-auto max-w-16 object-contain rounded border border-gray-200"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 bg-gray-100 rounded border border-gray-200 flex items-center justify-center text-gray-400">
+                            <HiPhotograph className="w-5 h-5" />
+                          </div>
+                        )}
+                      </Table.Cell>
+                      <Table.Cell className="font-medium">
+                        {item.name}
+                      </Table.Cell>
                       <Table.Cell className="text-gray-600">{item.base_model_number || '-'}</Table.Cell>
                       <Table.Cell>{category?.name || 'Unknown'}</Table.Cell>
+                      <Table.Cell>
+                        {item.is_active ? (
+                          <span className="inline-flex items-center text-green-600 text-sm">
+                            <HiCheckCircle className="w-5 h-5 mr-1" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center text-gray-500 text-sm">
+                            <HiXCircle className="w-5 h-5 mr-1" />
+                            Inactive
+                          </span>
+                        )}
+                      </Table.Cell>
                       <Table.Cell>
                         <div className="flex gap-2 justify-end">
                           <Button 
@@ -326,13 +367,18 @@ const ItemManagement = () => {
                       </Table.Cell>
                     </Table.Row>
                     
-                    {/* Variants Subtable - Visible when expanded */}
+                     {/* Variants Subtable - Visible when expanded */}
                     {isExpanded && (
-                    <Table.Row className="bg-gray-50">
-                      <Table.Cell colSpan={5} className="p-0">
-                          <div className="p-4">
-                            <div className="flex justify-between items-center mb-3">
-                              <h4 className="text-sm font-semibold text-gray-700">Variants</h4>
+                    <Table.Row className="bg-white">
+                      <Table.Cell colSpan={7} className="p-0">
+                          <div className="mx-4 mb-4 border rounded-lg bg-gray-50 shadow-sm">
+                            <div className="flex justify-between items-center px-4 py-3 border-b bg-gray-100 rounded-t-lg">
+                              <h4 className="text-sm font-semibold text-gray-700 flex items-center">
+                                <span className="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded-full mr-2">
+                                  {variants.length} variant{variants.length !== 1 ? 's' : ''}
+                                </span>
+                                Variants
+                              </h4>
                               <Button 
                                 size="xs" 
                                 color="light"
@@ -352,34 +398,50 @@ const ItemManagement = () => {
                                 No variants found. Add a variant to set price and image.
                               </div>
                             ) : (
-                              <table className="w-full text-sm">
+                              <table className="w-full">
                                 <thead>
-                                  <tr className="border-b">
-                                    <th className="text-left py-2 px-2">IMAGE</th>
-                                    <th className="text-left py-2 px-2">STYLE</th>
-                                    <th className="text-left py-2 px-2">PRICE</th>
-                                    <th className="w-24"></th>
+                                  <tr className="border-b border-gray-200">
+                                    <th className="text-left py-2 px-4 w-16 text-xs text-gray-700 uppercase font-semibold tracking-wider">Image</th>
+                                    <th className="text-left py-2 px-4 text-xs text-gray-700 uppercase font-semibold tracking-wider">Style</th>
+                                    <th className="text-left py-2 px-4 w-24 text-xs text-gray-700 uppercase font-semibold tracking-wider">Price</th>
+                                    <th className="text-left py-2 px-4 w-28 text-xs text-gray-700 uppercase font-semibold tracking-wider">Status</th>
+                                    <th className="w-32"></th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {variants.map((variant) => (
-                                    <tr key={variant.id} className="border-b border-gray-200">
-                                      <td className="py-2 px-2">
+                                     <tr key={variant.id} className={`border-b border-gray-200 last:border-b-0 text-sm ${!variant.is_active ? 'opacity-60' : ''}`}>
+                                      <td className="py-3 px-4">
                                         {variant.image_path ? (
                                           <img
                                             src={itemService.getImageUrl(variant.image_path) || ''}
                                             alt={variant.style_name}
-                                            className="h-16 w-auto max-w-24 object-contain rounded bg-white"
+                                            className="h-16 w-auto max-w-24 object-contain rounded border border-gray-200"
                                           />
                                         ) : (
-                                          <div className="h-16 w-24 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
-                                            No Image
+                                          <div className="h-16 w-24 bg-white rounded border border-gray-200 flex items-center justify-center text-gray-400">
+                                            <HiPhotograph className="w-6 h-6" />
                                           </div>
                                         )}
                                       </td>
-                                      <td className="py-2 px-2 font-medium">{variant.style_name}</td>
-                                      <td className="py-2 px-2">${variant.price.toFixed(2)}</td>
-                                      <td className="py-2 px-2 text-right">
+                                      <td className="py-3 px-4 font-medium text-gray-900">
+                                        {variant.style_name}
+                                      </td>
+                                      <td className="py-3 px-4 text-gray-600">${variant.price.toFixed(2)}</td>
+                                      <td className="py-3 px-4">
+                                        {variant.is_active ? (
+                                          <span className="inline-flex items-center text-green-600 text-sm">
+                                            <HiCheckCircle className="w-5 h-5 mr-1" />
+                                            Active
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center text-gray-500 text-sm">
+                                            <HiXCircle className="w-5 h-5 mr-1" />
+                                            Inactive
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="py-3 px-4 text-right">
                                         <div className="flex gap-1 justify-end">
                                           <Button 
                                             size="xs" 
@@ -438,18 +500,28 @@ const ItemManagement = () => {
           if (itemToEdit) {
             // Edit mode
             await itemService.update(itemToEdit.id, data);
-            // Refresh items
+            // Refresh items with current filters
+            const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
+            if (selectedCategory) filter.category_id = selectedCategory;
+            if (searchQuery) filter.search = searchQuery;
+            if (showInactive) filter.include_inactive = true;
+            
             const result = await itemService.getAll(
-              { category_id: selectedCategory || undefined, search: searchQuery || undefined },
+              filter,
               { page: currentPage, limit: itemsPerPage }
             );
             setItems(result.items);
           } else {
             // Create mode - category_id is guaranteed by modal validation
             await itemService.create(data as import('../../services/item').CreateItemDTO);
-            // Refresh items
+            // Refresh items with current filters
+            const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
+            if (selectedCategory) filter.category_id = selectedCategory;
+            if (searchQuery) filter.search = searchQuery;
+            if (showInactive) filter.include_inactive = true;
+            
             const result = await itemService.getAll(
-              { category_id: selectedCategory || undefined, search: searchQuery || undefined },
+              filter,
               { page: currentPage, limit: itemsPerPage }
             );
             setItems(result.items);
@@ -475,29 +547,46 @@ const ItemManagement = () => {
       {/* Unified Variant Form Modal */}
       <VariantFormModal
         itemId={variantFormItemId || 0}
-        item={variantFormItem}
         variant={variantToEdit}
-        availableVariants={variantFormItemId ? (itemVariants[variantFormItemId] || []) : []}
         isOpen={showVariantFormModal}
         onClose={() => {
           setShowVariantFormModal(false);
           setVariantToEdit(null);
           setVariantFormItemId(null);
-          setVariantFormItem(null);
         }}
         onSubmit={async (data) => {
           if (variantToEdit && variantFormItemId) {
             // Edit mode - update and close
-            await itemService.updateVariant(variantFormItemId, variantToEdit.id, data);
+            await itemService.updateVariant(variantFormItemId, variantToEdit.id, {
+              style_name: data.style_name,
+              price: data.price,
+              image: data.image,
+              remove_image: data.remove_image,
+              is_active: data.is_active,
+            });
             // Small delay to ensure backend has processed the update
             await new Promise(resolve => setTimeout(resolve, 100));
             // Refresh variants
             if (variantFormItemId) {
               await refreshVariants(variantFormItemId);
             }
+            // Refresh items to update preview_image
+            const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
+            if (selectedCategory) filter.category_id = selectedCategory;
+            if (searchQuery) filter.search = searchQuery;
+            if (showInactive) filter.include_inactive = true;
+            const result = await itemService.getAll(
+              filter,
+              { page: currentPage, limit: itemsPerPage }
+            );
+            setItems(result.items);
           } else if (variantFormItemId) {
             // Create mode - create variant and stay open for add-ons
-            const newVariant = await itemService.createVariant(variantFormItemId, data);
+            const newVariant = await itemService.createVariant(variantFormItemId, {
+              style_name: data.style_name,
+              price: data.price,
+              image: data.image,
+            });
             // Refresh variants to get the new one in the list
             await refreshVariants(variantFormItemId);
             // Switch to edit mode with the new variant

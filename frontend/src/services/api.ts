@@ -54,8 +54,15 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Skip token refresh for login endpoint
-    if (originalRequest.url?.includes('/auth/login')) {
+    // Skip token refresh for auth endpoints (login and refresh)
+    if (originalRequest.url?.includes('/auth/login') || originalRequest.url?.includes('/auth/refresh')) {
+      return Promise.reject(error);
+    }
+
+    // Handle network errors (no response) - don't redirect, just reject
+    // This happens when backend is restarting or network is down
+    if (!error.response) {
+      console.log('[Auth] Network error, backend may be restarting');
       return Promise.reject(error);
     }
 
@@ -65,6 +72,7 @@ api.interceptors.response.use(
 
       // If no refresh token, redirect to login
       if (!refreshToken) {
+        console.log('[Auth] No refresh token available, redirecting to login');
         authService.clearTokens();
         window.location.href = '/login';
         return Promise.reject(error);
@@ -72,6 +80,7 @@ api.interceptors.response.use(
 
       // If already refreshing, wait for the new token
       if (isRefreshing) {
+        console.log('[Auth] Token refresh already in progress, waiting...');
         return new Promise((resolve) => {
           subscribeTokenRefresh((token: string) => {
             originalRequest.headers.Authorization = `Bearer ${token}`;
@@ -81,23 +90,30 @@ api.interceptors.response.use(
       }
 
       // Try to refresh the token
+      console.log('[Auth] Access token expired, attempting refresh...');
       isRefreshing = true;
 
       try {
         const newAccessToken = await authService.refreshAccessToken();
+        console.log('[Auth] Token refreshed successfully');
         isRefreshing = false;
         onTokenRefreshed(newAccessToken);
 
         // Retry the original request with new token
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return api(originalRequest);
-      } catch (refreshError) {
+      } catch (refreshError: any) {
+        console.error('[Auth] Token refresh failed:', refreshError);
         isRefreshing = false;
         refreshSubscribers = [];
 
-        // Refresh failed - clear tokens and redirect to login
-        authService.clearTokens();
-        window.location.href = '/login';
+        // Only redirect on 401 from refresh endpoint
+        // Don't redirect on network errors
+        if (refreshError.response?.status === 401) {
+          console.log('[Auth] Refresh token invalid, redirecting to login');
+          authService.clearTokens();
+          window.location.href = '/login';
+        }
         return Promise.reject(refreshError);
       }
     }

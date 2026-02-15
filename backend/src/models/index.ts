@@ -33,16 +33,19 @@ export interface Category {
   id: number;
   name: string;
   sort_order: number;
+  is_active: boolean;
 }
 
 export interface CreateCategoryDTO {
   name: string;
   sort_order?: number;
+  is_active?: boolean;
 }
 
 export interface UpdateCategoryDTO {
   name?: string;
   sort_order?: number;
+  is_active?: boolean;
 }
 
 // Item (Base Product)
@@ -54,6 +57,8 @@ export interface Item {
   base_model_number: string;
   dimensions: string;
   created_at: string;
+  is_active: boolean;
+  preview_image?: string | null;
   // Relations
   variants?: ItemVariant[];
   addons?: ItemAddon[];
@@ -65,6 +70,7 @@ export interface CreateItemDTO {
   description?: string;
   base_model_number?: string;
   dimensions?: string;
+  is_active?: boolean;
 }
 
 export interface UpdateItemDTO {
@@ -73,6 +79,7 @@ export interface UpdateItemDTO {
   description?: string;
   base_model_number?: string;
   dimensions?: string;
+  is_active?: boolean;
 }
 
 // Item Variant
@@ -84,6 +91,7 @@ export interface ItemVariant {
   image_path: string | null;
   sort_order: number;
   created_at: string;
+  is_active: boolean;
 }
 
 export interface CreateItemVariantDTO {
@@ -92,6 +100,7 @@ export interface CreateItemVariantDTO {
   price: number;
   image_path?: string;
   sort_order?: number;
+  is_active?: boolean;
 }
 
 export interface UpdateItemVariantDTO {
@@ -100,6 +109,7 @@ export interface UpdateItemVariantDTO {
   price?: number;
   image_path?: string;
   sort_order?: number;
+  is_active?: boolean;
 }
 
 // Item Add-On (Relationship)
