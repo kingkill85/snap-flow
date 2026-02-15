@@ -174,7 +174,7 @@ Password: XXXXXXXXXXXX  ← This is your temporary password
 
 ### 🛠️ Docker Compose Configuration
 
-Create a `docker-compose.yml` file:
+Create a `docker-compose.yml` file in your project directory:
 
 ```yaml
 version: '3.8'
@@ -191,17 +191,62 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=8000
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-}
       - DATABASE_URL=./data/database.sqlite
       - UPLOAD_DIR=./uploads
       - CORS_ORIGIN=http://localhost:8000
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   snapflow_data:
     driver: local
   snapflow_uploads:
     driver: local
+```
+
+**Then run:**
+
+```bash
+# Start the application
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Check status
+docker-compose ps
+
+# Stop the application
+docker-compose down
+
+# Stop and remove all data (WARNING: deletes database and uploads!)
+docker-compose down -v
+```
+
+**Docker Compose Commands Reference:**
+
+| Command | Description |
+|---------|-------------|
+| `docker-compose up -d` | Start in detached mode (background) |
+| `docker-compose down` | Stop and remove containers |
+| `docker-compose down -v` | Stop and remove containers + volumes (data loss!) |
+| `docker-compose logs -f` | Follow logs in real-time |
+| `docker-compose logs --tail 100` | Show last 100 lines of logs |
+| `docker-compose ps` | Show running containers |
+| `docker-compose restart` | Restart all services |
+| `docker-compose pull` | Download latest image |
+| `docker-compose pull && docker-compose up -d` | Update to latest version |
+
+**View admin password after first start:**
+
+```bash
+docker-compose logs | grep "Password:"
 ```
 
 ### 💾 Data Persistence
