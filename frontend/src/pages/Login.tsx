@@ -94,10 +94,6 @@ const Login = () => {
             )}
           </Button>
         </form>
-
-        <div className="text-center mt-4 text-sm text-gray-500">
-          <p>Default admin: admin@snapflow.com / admin123</p>
-        </div>
       </Card>
     </div>
   );

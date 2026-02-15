@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { serveStatic } from 'hono/deno';
 import { env } from './config/env.ts';
 import { runMigrations } from './scripts/migrate.ts';
 import authRoutes from './routes/auth.ts';
@@ -24,15 +25,6 @@ app.get('/health', (c: Context) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: '0.1.0'
-  });
-});
-
-// Root endpoint (public)
-app.get('/', (c: Context) => {
-  return c.json({ 
-    message: 'SnapFlow API',
-    version: '0.1.0',
-    docs: '/health'
   });
 });
 
@@ -99,6 +91,45 @@ app.options('/uploads/*', (c) => {
   c.header('Access-Control-Allow-Headers', 'Content-Type');
   return c.body(null, 204);
 });
+
+// Serve static frontend files
+// In Docker, frontend is at ../frontend/dist
+// In development, this path won't exist so it will be skipped
+const frontendPath = '../frontend/dist';
+
+try {
+  // Check if frontend dist exists
+  const stat = await Deno.stat(frontendPath);
+  if (stat.isDirectory) {
+    console.log(`📁 Serving frontend from ${frontendPath}`);
+    
+    // Serve static files
+    app.use('/*', serveStatic({ root: frontendPath }));
+    
+    // SPA fallback - serve index.html for all non-API routes
+    app.get('*', async (c) => {
+      try {
+        const file = await Deno.open(`${frontendPath}/index.html`);
+        c.header('Content-Type', 'text/html');
+        return c.body(file.readable);
+      } catch (error) {
+        return c.json({ error: 'Not found' }, 404);
+      }
+    });
+  }
+} catch (error) {
+  // Frontend dist doesn't exist, running in development mode
+  console.log('⚠️ Frontend dist not found, running in API-only mode');
+  
+  // Root endpoint for API-only mode
+  app.get('/', (c: Context) => {
+    return c.json({ 
+      message: 'SnapFlow API',
+      version: '0.1.0',
+      docs: '/health'
+    });
+  });
+}
 
 // Export app for testing
 export default app;

@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+
+# Node modules
+node_modules
+frontend/node_modules
+backend/node_modules
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs (except the ones we need)
+frontend/dist
+
+# Test files
+tests/
+*.test.ts
+*.test.tsx
+
+# Documentation
+docs/
+
+# Database and uploads (will be mounted as volumes)
+data/*.sqlite
+uploads/*
+
+# Temporary files
+*.tmp
+*.temp
+
+# Excel test file
+*.xlsx

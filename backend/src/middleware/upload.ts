@@ -26,9 +26,9 @@ const ALLOWED_EXCEL_MIME_TYPES = [
 const MAX_IMAGE_FILE_SIZE = 5 * 1024 * 1024;
 
 /**
- * Maximum file size for Excel files (15MB)
+ * Maximum file size for Excel files (50MB)
  */
-const MAX_EXCEL_FILE_SIZE = 15 * 1024 * 1024;
+const MAX_EXCEL_FILE_SIZE = 50 * 1024 * 1024;
 
 /**
  * Upload result interface

@@ -110,10 +110,99 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-### Access the Application
+## Docker Deployment
 
-- **Web App:** http://localhost:5173
-- **API Health Check:** http://localhost:8000/health
+### Quick Deploy with Script
+
+Deploy everything in one command:
+
+```bash
+# Make script executable
+chmod +x deploy.sh
+
+# Run deployment (builds frontend, creates Docker image, pushes to GitHub)
+./deploy.sh
+```
+
+This script will:
+1. ✅ Check prerequisites (Docker, npm, git)
+2. 🔐 Generate JWT_SECRET automatically
+3. 📦 Build frontend production bundle
+4. 🐳 Build Docker image
+5. ☁️ Push to GitHub Container Registry
+6. 📤 Commit and push code changes
+
+### Manual Docker Build
+
+```bash
+# Build frontend
+cd frontend && npm run build && cd ..
+
+# Generate JWT secret
+export JWT_SECRET=$(openssl rand -base64 32)
+
+# Build Docker image
+docker build -t ghcr.io/kingkill85/snap-flow:latest .
+
+# Push to registry
+docker push ghcr.io/kingkill85/snap-flow:latest
+```
+
+### Running with Docker Compose
+
+```bash
+# Start the application
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the application
+docker-compose down
+
+# Stop and remove volumes (WARNING: deletes all data)
+docker-compose down -v
+```
+
+### Running Standalone Container
+
+```bash
+# Pull and run
+docker run -d \
+  --name snapflow \
+  -p 8000:8000 \
+  -v snapflow_data:/app/backend/data \
+  -v snapflow_uploads:/app/backend/uploads \
+  -e JWT_SECRET=$(openssl rand -base64 32) \
+  ghcr.io/kingkill85/snap-flow:latest
+
+# View logs
+docker logs -f snapflow
+```
+
+### Data Persistence
+
+The Docker setup uses named volumes for data persistence:
+
+- **snapflow_data** - SQLite database (`/app/backend/data`)
+- **snapflow_uploads** - Uploaded files (`/app/backend/uploads`)
+
+Data persists even when the container is stopped or removed.
+
+### Accessing the Application
+
+After deployment:
+- **Web App:** http://localhost:8000
+- **API:** http://localhost:8000/api
+- **Health Check:** http://localhost:8000/health
+
+### Default Admin User
+
+On first run, the application automatically creates a default admin user:
+- **Email:** `admin@snapflow.com`
+- **Password:** Check the Docker logs (`docker-compose logs`) for the auto-generated password
+
+**⚠️ Security Note:** Change the default admin password immediately after first login!
 
 ## Project Structure
 
