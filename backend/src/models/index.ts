@@ -61,7 +61,6 @@ export interface Item {
   preview_image?: string | null;
   // Relations
   variants?: ItemVariant[];
-  addons?: ItemAddon[];
 }
 
 export interface CreateItemDTO {
@@ -112,28 +111,7 @@ export interface UpdateItemVariantDTO {
   is_active?: boolean;
 }
 
-// Item Add-On (Relationship)
-export interface ItemAddon {
-  id: number;
-  parent_item_id: number;
-  addon_item_id: number;
-  slot_number: number;
-  is_required: boolean;
-  sort_order: number;
-  created_at: string;
-  // Joined data
-  addon_item?: Item;
-}
-
-export interface CreateItemAddonDTO {
-  parent_item_id: number;
-  addon_item_id: number;
-  slot_number: number;
-  is_required?: boolean;
-  sort_order?: number;
-}
-
-// Variant Add-On (New - per variant, not per item)
+// Variant Add-On (per variant, not per item)
 export interface VariantAddon {
   id: number;
   variant_id: number;
@@ -153,13 +131,13 @@ export interface CreateVariantAddonDTO {
 }
 
 export interface UpdatePlacementDTO {
-  floorplan_id?: number;
-  item_variant_id?: number;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  selected_addons?: string; // JSON array of addon IDs
+  floorplan_id?: number | undefined;
+  item_variant_id?: number | undefined;
+  x?: number | undefined;
+  y?: number | undefined;
+  width?: number | undefined;
+  height?: number | undefined;
+  selected_addons?: string | undefined; // JSON array of addon IDs
 }
 
 // Customer
@@ -236,6 +214,7 @@ export interface UpdateFloorplanDTO {
 export interface Placement {
   id: number;
   floorplan_id: number;
+  item_id: number;
   item_variant_id: number;
   x: number;
   y: number;
@@ -254,5 +233,5 @@ export interface CreatePlacementDTO {
   y: number;
   width: number;
   height: number;
-  selected_addons?: string; // JSON array of addon IDs
+  selected_addons?: string | undefined; // JSON array of addon IDs
 }

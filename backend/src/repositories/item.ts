@@ -1,7 +1,6 @@
 import { getDb } from '../config/database.ts';
 import type { Item, CreateItemDTO, UpdateItemDTO } from '../models/index.ts';
 import { itemVariantRepository } from './item-variant.ts';
-import { itemAddonRepository } from './item-addon.ts';
 
 export interface ItemFilter {
   category_id?: number;
@@ -110,7 +109,6 @@ export class ItemRepository {
 
     if (includeRelations) {
       item.variants = await itemVariantRepository.findByItemId(id);
-      item.addons = await itemAddonRepository.findByParentItemId(id);
     }
 
     return item;
@@ -250,9 +248,8 @@ export class ItemRepository {
   }
 
   async delete(id: number): Promise<void> {
-    // Delete related variants and addons first (cascade should handle this, but be explicit)
+    // Delete related variants first (cascade should handle this, but be explicit)
     await itemVariantRepository.deleteByItemId(id);
-    await itemAddonRepository.deleteByParentItemId(id);
     
     getDb().query(`DELETE FROM items WHERE id = ?`, [id]);
   }

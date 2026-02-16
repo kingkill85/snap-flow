@@ -9,6 +9,10 @@ import authRoutes from './routes/auth.ts';
 import userRoutes from './routes/users.ts';
 import categoryRoutes from './routes/categories.ts';
 import itemRoutes from './routes/items.ts';
+import customerRoutes from './routes/customers.ts';
+import projectRoutes from './routes/projects.ts';
+import floorplanRoutes from './routes/floorplans.ts';
+import placementRoutes from './routes/placements.ts';
 
 const app = new Hono();
 
@@ -60,6 +64,15 @@ app.get('/health', (c: Context) => {
   });
 });
 
+// API root endpoint (always returns JSON, even with frontend)
+app.get('/api', (c: Context) => {
+  return c.json({ 
+    message: 'SnapFlow API',
+    version: '0.1.0',
+    docs: '/health'
+  });
+});
+
 // API routes (all protected routes under /api)
 const api = new Hono();
 
@@ -75,8 +88,25 @@ api.route('/categories', categoryRoutes);
 // Item routes at /api/items/*
 api.route('/items', itemRoutes);
 
+// Customer routes at /api/customers/*
+api.route('/customers', customerRoutes);
+
+// Project routes at /api/projects/*
+api.route('/projects', projectRoutes);
+
+// Floorplan routes at /api/floorplans/*
+api.route('/floorplans', floorplanRoutes);
+
+// Placement routes at /api/placements/*
+api.route('/placements', placementRoutes);
+
 // Mount API router
 app.route('/api', api);
+
+// 404 handler for unknown API routes (must come before static file serving)
+app.get('/api/*', (c: Context) => {
+  return c.json({ error: 'Not found' }, 404);
+});
 
 // Serve uploaded files statically at /uploads/*
 app.get('/uploads/*', async (c: Context) => {

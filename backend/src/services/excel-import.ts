@@ -1,7 +1,6 @@
 import * as xlsx from 'xlsx';
 import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
-import { itemAddonRepository } from '../repositories/item-addon.ts';
 import { categoryRepository } from '../repositories/category.ts';
 import { fileStorageService } from './file-storage.ts';
 import type { Item, ItemVariant } from '../models/index.ts';
@@ -264,41 +263,8 @@ export class ExcelImportService {
       }
     }
 
-    // Third pass: Create add-on relationships
-    for (const previewItem of preview.items) {
-      const parentItemId = itemIdMap.get(previewItem.baseModelNumber);
-      if (!parentItemId) continue;
-
-      for (const addon of previewItem.addons) {
-        if (!addon.found) continue;
-
-        try {
-          const addonBaseModel = this.extractBaseModelNumber(addon.modelNumber);
-          const addonItemId = itemIdMap.get(addonBaseModel);
-          
-          if (!addonItemId) {
-            // Try to find in database
-            const addonItem = await itemRepository.findByBaseModelNumber(addonBaseModel);
-            if (!addonItem) continue;
-          }
-
-          await itemAddonRepository.addAddonIfNotExists(
-            parentItemId,
-            addonItemId || 0,
-            addon.slot,
-            addon.isRequired
-          );
-          result.addonsCreated++;
-        } catch (error) {
-          result.errors.push({
-            row: 0,
-            field: 'addon',
-            message: `Failed to add add-on ${addon.modelNumber}: ${error}`,
-            value: addon.modelNumber,
-          });
-        }
-      }
-    }
+    // Note: Add-ons are now handled at variant level via excel-sync service
+    // This legacy import service does not create item-level add-ons
 
     result.success = result.errors.length === 0;
     return result;

@@ -1,13 +1,12 @@
 import { Hono } from 'hono';
 import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
-import { itemAddonRepository } from '../repositories/item-addon.ts';
 import { variantAddonRepository } from '../repositories/variant-addon.ts';
 import { categoryRepository } from '../repositories/category.ts';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.ts';
 import { uploadMiddleware } from '../middleware/upload.ts';
 import { fileStorageService } from '../services/file-storage.ts';
-import type { CreateItemDTO, UpdateItemDTO, CreateItemVariantDTO, CreateItemAddonDTO, CreateVariantAddonDTO } from '../models/index.ts';
+import type { CreateItemDTO, UpdateItemDTO, CreateItemVariantDTO, CreateVariantAddonDTO } from '../models/index.ts';
 import { excelImportService } from '../services/excel-import.ts';
 import { excelSyncService, type ProgressCallback } from '../services/excel-sync.ts';
 
@@ -728,107 +727,6 @@ itemRoutes.patch('/:id/variants/:variantId/activate', authMiddleware, adminMiddl
     });
   } catch (error) {
     console.error('Activate variant error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// ==========================================
-// ADD-ON ROUTES
-// ==========================================
-
-// GET /items/:id/addons - Get all add-ons for an item
-itemRoutes.get('/:id/addons', async (c) => {
-  try {
-    const itemId = parseInt(c.req.param('id'));
-    
-    const item = await itemRepository.findById(itemId);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const addons = await itemAddonRepository.findByParentItemId(itemId);
-
-    return c.json({
-      data: addons,
-    });
-  } catch (error) {
-    console.error('Get addons error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// POST /items/:id/addons - Add add-on relationship
-itemRoutes.post('/:id/addons', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const parentItemId = parseInt(c.req.param('id'));
-    const { addon_item_id, slot_number, is_required } = await c.req.json();
-
-    if (!addon_item_id || !slot_number) {
-      return c.json({ error: 'Missing required fields: addon_item_id, slot_number' }, 400);
-    }
-
-    const parentItem = await itemRepository.findById(parentItemId);
-    if (!parentItem) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const addonItem = await itemRepository.findById(parseInt(addon_item_id));
-    if (!addonItem) {
-      return c.json({ error: 'Add-on item not found' }, 404);
-    }
-
-    // Prevent circular reference
-    if (parentItemId === parseInt(addon_item_id)) {
-      return c.json({ error: 'Item cannot be an add-on of itself' }, 400);
-    }
-
-    const slotNum = parseInt(slot_number);
-    if (slotNum < 1 || slotNum > 4) {
-      return c.json({ error: 'slot_number must be between 1 and 4' }, 400);
-    }
-
-    const createData: CreateItemAddonDTO = {
-      parent_item_id: parentItemId,
-      addon_item_id: parseInt(addon_item_id),
-      slot_number: slotNum,
-      is_required: is_required ?? (slotNum <= 2), // Auto-set required for slots 1-2
-    };
-
-    const addon = await itemAddonRepository.create(createData);
-
-    return c.json({
-      data: addon,
-      message: 'Add-on added successfully',
-    }, 201);
-  } catch (error) {
-    console.error('Create addon error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// DELETE /items/:id/addons/:addonId - Remove add-on relationship
-itemRoutes.delete('/:id/addons/:addonId', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const parentItemId = parseInt(c.req.param('id'));
-    const addonId = parseInt(c.req.param('addonId'));
-
-    const parentItem = await itemRepository.findById(parentItemId);
-    if (!parentItem) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const addon = await itemAddonRepository.findById(addonId);
-    if (!addon || addon.parent_item_id !== parentItemId) {
-      return c.json({ error: 'Add-on not found' }, 404);
-    }
-
-    await itemAddonRepository.delete(addonId);
-
-    return c.json({
-      message: 'Add-on removed successfully',
-    });
-  } catch (error) {
-    console.error('Delete addon error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

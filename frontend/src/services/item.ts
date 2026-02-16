@@ -1,7 +1,7 @@
 import api from './api';
 
 // ==========================================
-// TYPES - Updated for Variant/Add-On Structure
+// TYPES
 // ==========================================
 
 export interface Item {
@@ -16,7 +16,6 @@ export interface Item {
   preview_image?: string | null;
   // Relations (populated when fetching single item)
   variants?: ItemVariant[];
-  addons?: ItemAddon[];
 }
 
 export interface ItemVariant {
@@ -28,18 +27,6 @@ export interface ItemVariant {
   sort_order: number;
   created_at: string;
   is_active: boolean;
-}
-
-export interface ItemAddon {
-  id: number;
-  parent_item_id: number;
-  addon_item_id: number;
-  slot_number: number;
-  is_required: boolean;
-  sort_order: number;
-  created_at: string;
-  // Joined data
-  addon_item?: Item;
 }
 
 // DTOs for creating/updating base items
@@ -74,13 +61,6 @@ export interface UpdateVariantDTO {
   image?: File;
   remove_image?: boolean;
   is_active?: boolean;
-}
-
-// DTOs for add-ons
-export interface CreateAddonDTO {
-  addon_item_id: number;
-  slot_number: number;
-  is_required?: boolean;
 }
 
 // Variant Add-On (per variant)
@@ -232,28 +212,6 @@ export const itemService = {
     signal?: AbortSignal
   ): Promise<void> {
     await api.patch(`/items/${itemId}/variants/reorder`, { variant_ids: variantIds }, { signal });
-  },
-
-  // ==========================================
-  // ADD-ON OPERATIONS
-  // ==========================================
-
-  async getAddons(itemId: number, signal?: AbortSignal): Promise<ItemAddon[]> {
-    const response = await api.get(`/items/${itemId}/addons`, { signal });
-    return response.data.data;
-  },
-
-  async addAddon(
-    itemId: number,
-    data: CreateAddonDTO,
-    signal?: AbortSignal
-  ): Promise<ItemAddon> {
-    const response = await api.post(`/items/${itemId}/addons`, data, { signal });
-    return response.data.data;
-  },
-
-  async removeAddon(itemId: number, addonId: number, signal?: AbortSignal): Promise<void> {
-    await api.delete(`/items/${itemId}/addons/${addonId}`, { signal });
   },
 
   // ==========================================

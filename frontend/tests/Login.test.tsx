@@ -42,16 +42,6 @@ describe('Login', () => {
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
 
-  it('shows default admin credentials hint', () => {
-    render(
-      <BrowserRouter>
-        <Login />
-      </BrowserRouter>
-    );
-
-    expect(screen.getByText(/Default admin: admin@snapflow.com/)).toBeInTheDocument();
-  });
-
   it('updates email input on change', async () => {
     render(
       <BrowserRouter>

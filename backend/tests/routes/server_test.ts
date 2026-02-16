@@ -16,7 +16,7 @@ Deno.test('Health endpoint - returns status ok', async () => {
 });
 
 Deno.test('Root endpoint - returns API info', async () => {
-  const response = await testRequest('/');
+  const response = await testRequest('/api');
   const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
@@ -30,8 +30,8 @@ Deno.test('Root endpoint - returns API info', async () => {
 // The CORS middleware is properly configured in the app, but this can't be
 // tested without making real HTTP requests to a running server.
 
-Deno.test('404 handler - returns error for unknown routes', async () => {
-  const response = await testRequest('/unknown-route');
+Deno.test('404 handler - returns error for unknown API routes', async () => {
+  const response = await testRequest('/api/unknown-route');
   
   assertEquals(response.status, 404);
 });

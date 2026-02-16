@@ -270,6 +270,16 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_items_is_active ON items(is_active);
         CREATE INDEX idx_item_variants_is_active ON item_variants(is_active);
       `
+    },
+    {
+      name: '017_drop_item_addons_table',
+      sql: `
+        -- Drop indexes first
+        DROP INDEX IF EXISTS idx_item_addons_parent;
+        DROP INDEX IF EXISTS idx_item_addons_addon;
+        -- Drop the table
+        DROP TABLE IF EXISTS item_addons;
+      `
     }
   ];
 
