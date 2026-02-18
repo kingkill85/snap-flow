@@ -33,8 +33,16 @@ COPY backend/ ./backend/
 # Copy built frontend from builder
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Copy production environment file
-COPY .env.production ./backend/.env
+# Accept JWT_SECRET as build argument
+ARG JWT_SECRET
+
+# Create production environment file
+RUN echo "NODE_ENV=production
+PORT=8000
+JWT_SECRET=${JWT_SECRET}
+DATABASE_URL=./data/database.sqlite
+UPLOAD_DIR=./uploads
+CORS_ORIGIN=*" > ./backend/.env
 
 # Set working directory to backend
 WORKDIR /app/backend

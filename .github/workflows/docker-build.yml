@@ -47,6 +47,12 @@ jobs:
             type=sha,prefix={{branch}}-
             latest
 
+      - name: Generate JWT_SECRET
+        id: jwt
+        run: |
+          JWT_SECRET=$(openssl rand -base64 32)
+          echo "JWT_SECRET=$JWT_SECRET" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -56,6 +62,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            JWT_SECRET=${{ steps.jwt.outputs.JWT_SECRET }}
 
       - name: Image digest
         if: github.event_name != 'pull_request'
