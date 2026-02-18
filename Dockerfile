@@ -37,12 +37,7 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 ARG JWT_SECRET
 
 # Create production environment file
-RUN echo "NODE_ENV=production
-PORT=8000
-JWT_SECRET=${JWT_SECRET}
-DATABASE_URL=./data/database.sqlite
-UPLOAD_DIR=./uploads
-CORS_ORIGIN=*" > ./backend/.env
+RUN printf 'NODE_ENV=production\nPORT=8000\nJWT_SECRET=%s\nDATABASE_URL=./data/database.sqlite\nUPLOAD_DIR=./uploads\nCORS_ORIGIN=*\n' "$JWT_SECRET" > ./backend/.env
 
 # Set working directory to backend
 WORKDIR /app/backend
