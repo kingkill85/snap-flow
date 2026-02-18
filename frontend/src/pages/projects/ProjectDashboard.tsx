@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Spinner, Alert, Tabs } from 'flowbite-react';
 import { HiArrowLeft, HiPlus, HiPencil, HiTrash } from 'react-icons/hi';
 import { projectService, type Project } from '../../services/project';
-import { customerService, type Customer } from '../../services/customer';
 import { floorplanService, type Floorplan } from '../../services/floorplan';
 import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
@@ -15,7 +14,6 @@ const ProjectDashboard = () => {
   const projectId = parseInt(id || '0');
 
   const [project, setProject] = useState<Project | null>(null);
-  const [customer, setCustomer] = useState<Customer | null>(null);
   const [floorplans, setFloorplans] = useState<Floorplan[]>([]);
   const [activeFloorplan, setActiveFloorplan] = useState<Floorplan | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,9 +26,6 @@ const ProjectDashboard = () => {
       setIsLoading(true);
       const projectData = await projectService.getById(projectId, signal);
       setProject(projectData);
-
-      const customerData = await customerService.getById(projectData.customer_id, signal);
-      setCustomer(customerData);
 
       const floorplansData = await floorplanService.getAll(projectId, signal);
       setFloorplans(floorplansData);
@@ -85,7 +80,7 @@ const ProjectDashboard = () => {
     );
   }
 
-  if (error || !project || !customer) {
+  if (error || !project) {
     return (
       <div className="space-y-6">
         <Button color="light" onClick={() => navigate('/projects')}>
@@ -115,8 +110,18 @@ const ProjectDashboard = () => {
             </span>
           </div>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Customer: {customer.name}
+            Customer: {project.customer_name}
           </p>
+          {project.customer_email && (
+            <p className="text-gray-500 text-sm mt-1">
+              Email: {project.customer_email}
+            </p>
+          )}
+          {project.customer_phone && (
+            <p className="text-gray-500 text-sm mt-1">
+              Phone: {project.customer_phone}
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           <Button color="light" onClick={() => setShowEditModal(true)}>
@@ -182,7 +187,6 @@ const ProjectDashboard = () => {
       {/* Modals */}
       <ProjectFormModal
         project={project}
-        customerId={customer.id}
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
         onSubmit={handleUpdateProject}

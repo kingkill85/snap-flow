@@ -280,6 +280,69 @@ export async function runMigrations(): Promise<void> {
         -- Drop the table
         DROP TABLE IF EXISTS item_addons;
       `
+    },
+    {
+      name: '018_remove_customers_table',
+      sql: `
+        -- Add customer fields to projects table
+        ALTER TABLE projects ADD COLUMN customer_name TEXT NOT NULL DEFAULT 'Unknown Customer';
+        ALTER TABLE projects ADD COLUMN customer_email TEXT;
+        ALTER TABLE projects ADD COLUMN customer_phone TEXT;
+        ALTER TABLE projects ADD COLUMN customer_address TEXT;
+        
+        -- Migrate existing customer data to projects
+        UPDATE projects
+        SET 
+          customer_name = COALESCE(
+            (SELECT c.name FROM customers c WHERE c.id = projects.customer_id),
+            'Unknown Customer'
+          ),
+          customer_email = (
+            SELECT c.email FROM customers c WHERE c.id = projects.customer_id
+          ),
+          customer_phone = (
+            SELECT c.phone FROM customers c WHERE c.id = projects.customer_id
+          ),
+          customer_address = (
+            SELECT c.address FROM customers c WHERE c.id = projects.customer_id
+          );
+        
+        -- Recreate projects table without customer_id foreign key
+        CREATE TABLE projects_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          status TEXT CHECK(status IN ('active', 'completed', 'cancelled')) DEFAULT 'active',
+          customer_name TEXT NOT NULL,
+          customer_email TEXT,
+          customer_phone TEXT,
+          customer_address TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        -- Copy data to new table
+        INSERT INTO projects_new (id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at)
+        SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at
+        FROM projects;
+        
+        -- Drop old projects table and rename new one
+        DROP TABLE projects;
+        ALTER TABLE projects_new RENAME TO projects;
+        
+        -- Recreate indexes
+        CREATE INDEX idx_projects_status ON projects(status);
+        CREATE INDEX idx_projects_customer_name ON projects(customer_name);
+        
+        -- Drop customers table
+        DROP INDEX IF EXISTS idx_customers_name;
+        DROP TABLE IF EXISTS customers;
+      `
+    },
+    {
+      name: '019_add_unique_project_name_customer',
+      sql: `
+        -- Create unique index for project name + customer_name combination
+        CREATE UNIQUE INDEX idx_projects_unique_name_customer ON projects(name, customer_name);
+      `
     }
   ];
 

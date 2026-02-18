@@ -12,7 +12,7 @@ const Home = () => {
           Smart home automation configurator and proposal generator
         </p>
         <div className="flex justify-center gap-4">
-          <Button as={Link} to="/customers" size="lg">
+          <Button as={Link} to="/projects" state={{ openCreateModal: true }} size="lg">
             Get Started
           </Button>
           <Button color="light" as={Link} to="/projects" size="lg">

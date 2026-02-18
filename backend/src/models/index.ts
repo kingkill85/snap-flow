@@ -140,51 +140,34 @@ export interface UpdatePlacementDTO {
   selected_addons?: string | undefined; // JSON array of addon IDs
 }
 
-// Customer
-export interface Customer {
-  id: number;
-  name: string;
-  email: string;
-  phone: string;
-  address: string;
-  created_by: number;
-  created_at: string;
-}
-
-export interface CreateCustomerDTO {
-  name: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  created_by: number;
-}
-
-export interface UpdateCustomerDTO {
-  name?: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-}
-
-// Project
+// Project (includes customer information directly)
 export interface Project {
   id: number;
-  customer_id: number;
   name: string;
   status: 'active' | 'completed' | 'cancelled';
+  customer_name: string;
+  customer_email: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
   created_at: string;
 }
 
 export interface CreateProjectDTO {
-  customer_id: number;
   name: string;
   status?: 'active' | 'completed' | 'cancelled';
+  customer_name: string;
+  customer_email?: string;
+  customer_phone?: string;
+  customer_address?: string;
 }
 
 export interface UpdateProjectDTO {
-  customer_id?: number;
   name?: string;
   status?: 'active' | 'completed' | 'cancelled';
+  customer_name?: string;
+  customer_email?: string;
+  customer_phone?: string;
+  customer_address?: string;
 }
 
 // Floorplan

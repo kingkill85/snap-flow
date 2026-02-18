@@ -64,22 +64,6 @@ Deno.test('Database - items table has correct structure', () => {
   assertEquals(columnNames.includes('created_at'), true);
 });
 
-Deno.test('Database - customers table has correct structure', () => {
-  const columns = getDb().queryEntries<{ name: string }>(
-    "PRAGMA table_info(customers)"
-  );
-  
-  const columnNames = columns.map(c => c.name);
-  
-  assertEquals(columnNames.includes('id'), true);
-  assertEquals(columnNames.includes('name'), true);
-  assertEquals(columnNames.includes('email'), true);
-  assertEquals(columnNames.includes('phone'), true);
-  assertEquals(columnNames.includes('address'), true);
-  assertEquals(columnNames.includes('created_by'), true);
-  assertEquals(columnNames.includes('created_at'), true);
-});
-
 Deno.test('Database - projects table has correct structure', () => {
   const columns = getDb().queryEntries<{ name: string }>(
     "PRAGMA table_info(projects)"
@@ -88,10 +72,23 @@ Deno.test('Database - projects table has correct structure', () => {
   const columnNames = columns.map(c => c.name);
   
   assertEquals(columnNames.includes('id'), true);
-  assertEquals(columnNames.includes('customer_id'), true);
   assertEquals(columnNames.includes('name'), true);
   assertEquals(columnNames.includes('status'), true);
+  assertEquals(columnNames.includes('customer_name'), true);
+  assertEquals(columnNames.includes('customer_email'), true);
+  assertEquals(columnNames.includes('customer_phone'), true);
+  assertEquals(columnNames.includes('customer_address'), true);
   assertEquals(columnNames.includes('created_at'), true);
+});
+
+Deno.test('Database - projects table has unique constraint on name and customer_name', () => {
+  const indexes = getDb().queryEntries<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='projects'"
+  );
+  
+  const indexNames = indexes.map(i => i.name);
+  
+  assertEquals(indexNames.includes('idx_projects_unique_name_customer'), true);
 });
 
 Deno.test('Database - floorplans table has correct structure', () => {

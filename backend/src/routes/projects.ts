@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { projectRepository } from '../repositories/project.ts';
-import { customerRepository } from '../repositories/customer.ts';
 import { authMiddleware } from '../middleware/auth.ts';
 import type { CreateProjectDTO } from '../models/index.ts';
 
@@ -19,22 +18,30 @@ const projectRoutes = new Hono();
 
 // Validation schema for creating projects
 const createProjectSchema = z.object({
-  customer_id: z.number().int().positive(),
   name: z.string().min(1).max(200),
   status: z.enum(['active', 'completed', 'cancelled']).optional(),
+  customer_name: z.string().min(1).max(200),
+  customer_email: z.string().email().optional().or(z.literal('')),
+  customer_phone: z.string().max(50).optional().or(z.literal('')),
+  customer_address: z.string().max(500).optional().or(z.literal('')),
 });
 
 // Validation schema for updating projects
 const updateProjectSchema = z.object({
-  customer_id: z.number().int().positive().optional(),
   name: z.string().min(1).max(200).optional(),
   status: z.enum(['active', 'completed', 'cancelled']).optional(),
+  customer_name: z.string().min(1).max(200).optional(),
+  customer_email: z.string().email().optional().or(z.literal('')),
+  customer_phone: z.string().max(50).optional().or(z.literal('')),
+  customer_address: z.string().max(500).optional().or(z.literal('')),
 });
 
-// GET /projects - List all projects
+// GET /projects - List all projects with optional search
+// Query param: search (filters by project name or customer name)
 projectRoutes.get('/', authMiddleware, async (c) => {
   try {
-    const projects = await projectRepository.findAll();
+    const search = c.req.query('search');
+    const projects = await projectRepository.findAll(search || undefined);
     return c.json({
       data: projects,
     });
@@ -65,33 +72,32 @@ projectRoutes.get('/:id', authMiddleware, async (c) => {
 
 // POST /projects - Create new project
 projectRoutes.post('/', authMiddleware, zValidator('json', createProjectSchema), async (c) => {
-  const { customer_id, name, status } = c.req.valid('json');
+  const { name, status, customer_name, customer_email, customer_phone, customer_address } = c.req.valid('json');
 
   try {
-    // Check if customer exists
-    const customer = await customerRepository.findById(customer_id);
-    if (!customer) {
-      return c.json({ error: 'Customer not found' }, 404);
-    }
-
-    // Check for duplicate project name (case-insensitive)
-    const existingProjects = await projectRepository.findByCustomer(customer_id);
-    const duplicateName = existingProjects.find(p => p.name.toLowerCase() === name.toLowerCase());
-    if (duplicateName) {
-      return c.json({ error: 'A project with this name already exists for this customer' }, 400);
-    }
-
-    // Create project
-    const createData: CreateProjectDTO = { customer_id, name };
+    // Create project with customer info
+    const createData: CreateProjectDTO = { 
+      name,
+      customer_name,
+    };
+    
     if (status) createData.status = status;
+    if (customer_email) createData.customer_email = customer_email;
+    if (customer_phone) createData.customer_phone = customer_phone;
+    if (customer_address) createData.customer_address = customer_address;
+    
     const project = await projectRepository.create(createData);
 
     return c.json({
       data: project,
       message: 'Project created successfully',
     }, 201);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create project error:', error);
+    // Check for duplicate project error
+    if (error.message?.includes('already exists')) {
+      return c.json({ error: error.message }, 400);
+    }
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -99,7 +105,7 @@ projectRoutes.post('/', authMiddleware, zValidator('json', createProjectSchema),
 // PUT /projects/:id - Update project
 projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema), async (c) => {
   const id = parseInt(c.req.param('id'));
-  const { customer_id, name, status } = c.req.valid('json');
+  const { name, status, customer_name, customer_email, customer_phone, customer_address } = c.req.valid('json');
 
   try {
     // Check if project exists
@@ -108,30 +114,21 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
       return c.json({ error: 'Project not found' }, 404);
     }
 
-    // Check if customer exists if changing customer
-    if (customer_id) {
-      const customer = await customerRepository.findById(customer_id);
-      if (!customer) {
-        return c.json({ error: 'Customer not found' }, 404);
-      }
-    }
-
-    // Check for duplicate project name when updating
-    if (name && name.toLowerCase() !== existingProject.name.toLowerCase()) {
-      const checkCustomerId = customer_id || existingProject.customer_id;
-      const existingProjects = await projectRepository.findByCustomer(checkCustomerId);
-      const duplicateName = existingProjects.find(p => 
-        p.id !== id && p.name.toLowerCase() === name.toLowerCase()
-      );
-      if (duplicateName) {
-        return c.json({ error: 'A project with this name already exists for this customer' }, 400);
-      }
-    }
-
-    const updateData: { customer_id?: number; name?: string; status?: 'active' | 'completed' | 'cancelled' } = {};
-    if (customer_id !== undefined) updateData.customer_id = customer_id;
+    const updateData: { 
+      name?: string; 
+      status?: 'active' | 'completed' | 'cancelled';
+      customer_name?: string;
+      customer_email?: string;
+      customer_phone?: string;
+      customer_address?: string;
+    } = {};
+    
     if (name !== undefined) updateData.name = name;
     if (status !== undefined) updateData.status = status;
+    if (customer_name !== undefined) updateData.customer_name = customer_name;
+    if (customer_email !== undefined && customer_email !== '') updateData.customer_email = customer_email;
+    if (customer_phone !== undefined && customer_phone !== '') updateData.customer_phone = customer_phone;
+    if (customer_address !== undefined && customer_address !== '') updateData.customer_address = customer_address;
 
     const project = await projectRepository.update(id, updateData);
 
@@ -139,8 +136,12 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
       data: project,
       message: 'Project updated successfully',
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Update project error:', error);
+    // Check for duplicate project error
+    if (error.message?.includes('already exists')) {
+      return c.json({ error: error.message }, 400);
+    }
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

@@ -1,20 +1,18 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button, Card, Table, Alert, Spinner, Select, TextInput } from 'flowbite-react';
 import { HiPlus, HiTrash, HiPencil, HiEye, HiSearch, HiCheckCircle, HiXCircle } from 'react-icons/hi';
 import { projectService, type Project, type CreateProjectDTO, type UpdateProjectDTO } from '../../services/project';
-import { customerService, type Customer } from '../../services/customer';
 import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import axios from 'axios';
 
 const ProjectList = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filterCustomer, setFilterCustomer] = useState<number | ''>('');
   const [filterStatus, setFilterStatus] = useState<string>('active'); // Default to active
   const [searchQuery, setSearchQuery] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
@@ -25,13 +23,8 @@ const ProjectList = () => {
   const fetchProjects = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
-      const data = await projectService.getAll(signal);
+      const data = await projectService.getAll(searchQuery || undefined, signal);
       setProjects(data);
-      
-      // Fetch customers for the dropdown
-      const customersData = await customerService.getAll(undefined, signal);
-      setCustomers(customersData);
-      
       setError('');
     } catch (err: any) {
       if (!axios.isCancel(err) && err.name !== 'AbortError') {
@@ -47,6 +40,24 @@ const ProjectList = () => {
     fetchProjects(controller.signal);
     return () => controller.abort();
   }, []);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchProjects();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Open create modal if navigated from Home "Get Started"
+  useEffect(() => {
+    if (location.state?.openCreateModal) {
+      setProjectToEdit(null);
+      setShowFormModal(true);
+      // Clear the state so modal doesn't reopen on refresh
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   const handleSubmitProject = async (data: CreateProjectDTO | UpdateProjectDTO) => {
     if (projectToEdit) {
@@ -78,17 +89,8 @@ const ProjectList = () => {
     setShowDeleteModal(true);
   };
 
-  const getCustomerName = (customerId: number) => {
-    const customer = customers.find(c => c.id === customerId);
-    return customer?.name || 'Unknown';
-  };
-
-  
-
   const filteredProjects = projects.filter(project => {
-    if (filterCustomer && project.customer_id !== filterCustomer) return false;
     if (filterStatus && project.status !== filterStatus) return false;
-    if (searchQuery && !project.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
 
@@ -125,24 +127,11 @@ const ProjectList = () => {
           <div className="flex-1 min-w-[200px]">
             <TextInput
               type="text"
-              placeholder="Search projects..."
+              placeholder="Search by project name or customer..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               icon={HiSearch}
             />
-          </div>
-          <div className="w-48">
-            <Select
-              value={filterCustomer}
-              onChange={(e) => setFilterCustomer(e.target.value ? parseInt(e.target.value) : '')}
-            >
-              <option value="">All Customers</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name}
-                </option>
-              ))}
-            </Select>
           </div>
           <div className="w-40">
             <Select
@@ -181,7 +170,7 @@ const ProjectList = () => {
                   <Table.Cell className="font-medium">
                     {project.name}
                   </Table.Cell>
-                  <Table.Cell>{getCustomerName(project.customer_id)}</Table.Cell>
+                  <Table.Cell>{project.customer_name}</Table.Cell>
                   <Table.Cell>
                     {project.status === 'active' ? (
                       <span className="inline-flex items-center text-green-600 text-sm">
@@ -240,8 +229,6 @@ const ProjectList = () => {
 
       <ProjectFormModal
         project={projectToEdit}
-        customerId={projectToEdit?.customer_id || (customers[0]?.id || 0)}
-        customers={customers}
         isOpen={showFormModal}
         onClose={() => {
           setShowFormModal(false);

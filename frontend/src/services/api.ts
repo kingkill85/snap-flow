@@ -22,9 +22,13 @@ const api: AxiosInstance = axios.create({
   baseURL: API_URL,
 });
 
+// Log all requests for debugging
+console.log('[API] Initialized with baseURL:', API_URL);
+
 // Add request interceptor for auth token and Content-Type
 api.interceptors.request.use(
   (config) => {
+    console.log('[API] Request:', config.method?.toUpperCase(), config.url, 'baseURL:', config.baseURL);
     const token = authService.getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -48,8 +52,12 @@ api.interceptors.request.use(
 
 // Add response interceptor for error handling and token refresh
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log('[API] Response:', response.status, response.config.url);
+    return response;
+  },
   async (error: AxiosError) => {
+    console.log('[API] Error:', error.response?.status, error.config?.url, error.message);
     const originalRequest = error.config;
 
     if (!originalRequest) {

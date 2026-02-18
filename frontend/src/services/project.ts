@@ -3,22 +3,31 @@ import axios from 'axios';
 
 export interface Project {
   id: number;
-  customer_id: number;
   name: string;
   status: 'active' | 'completed' | 'cancelled';
+  customer_name: string;
+  customer_email: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
   created_at: string;
 }
 
 export interface CreateProjectDTO {
-  customer_id: number;
   name: string;
   status?: 'active' | 'completed' | 'cancelled';
+  customer_name: string;
+  customer_email?: string;
+  customer_phone?: string;
+  customer_address?: string;
 }
 
 export interface UpdateProjectDTO {
-  customer_id?: number;
   name?: string;
   status?: 'active' | 'completed' | 'cancelled';
+  customer_name?: string;
+  customer_email?: string;
+  customer_phone?: string;
+  customer_address?: string;
 }
 
 // Helper to check if error is a cancellation error
@@ -30,9 +39,10 @@ const isCancelError = (error: any): boolean => {
 };
 
 export const projectService = {
-  async getAll(signal?: AbortSignal): Promise<Project[]> {
+  async getAll(search?: string, signal?: AbortSignal): Promise<Project[]> {
     try {
-      const response = await api.get('/projects', { signal });
+      const params = search ? { search } : undefined;
+      const response = await api.get('/projects', { params, signal });
       return response.data.data;
     } catch (error) {
       if (isCancelError(error)) {

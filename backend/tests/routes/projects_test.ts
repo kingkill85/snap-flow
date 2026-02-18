@@ -8,7 +8,6 @@ await setupTestDatabase();
 
 // Import repositories after database is set up
 const { userRepository } = await import('../../src/repositories/user.ts');
-const { customerRepository } = await import('../../src/repositories/customer.ts');
 const { projectRepository } = await import('../../src/repositories/project.ts');
 
 async function getAuthToken(): Promise<string> {
@@ -36,23 +35,8 @@ async function getAuthToken(): Promise<string> {
   return loginData.data.accessToken;
 }
 
-async function createCustomer(token: string, name: string): Promise<number> {
-  const response = await testRequest('/api/customers', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify({ name }),
-  });
-
-  const data = await parseJSON(response);
-  return data.data.id;
-}
-
 Deno.test('Project - can create project', async () => {
   const token = await getAuthToken();
-  const customerId = await createCustomer(token, 'Project Test Customer');
 
   const response = await testRequest('/api/projects', {
     method: 'POST',
@@ -61,8 +45,8 @@ Deno.test('Project - can create project', async () => {
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      customer_id: customerId,
       name: 'Test Project',
+      customer_name: 'Test Customer',
       status: 'active',
     }),
   });
@@ -71,14 +55,13 @@ Deno.test('Project - can create project', async () => {
 
   assertEquals(response.status, 201);
   assertEquals(data.data.name, 'Test Project');
-  assertEquals(data.data.customer_id, customerId);
+  assertEquals(data.data.customer_name, 'Test Customer');
   assertEquals(data.data.status, 'active');
   assertExists(data.data.id);
 });
 
 Deno.test('Project - can create project without status (defaults to active)', async () => {
   const token = await getAuthToken();
-  const customerId = await createCustomer(token, 'Default Status Customer');
 
   const response = await testRequest('/api/projects', {
     method: 'POST',
@@ -87,8 +70,8 @@ Deno.test('Project - can create project without status (defaults to active)', as
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      customer_id: customerId,
       name: 'Default Status Project',
+      customer_name: 'Default Status Customer',
     }),
   });
 
@@ -98,7 +81,24 @@ Deno.test('Project - can create project without status (defaults to active)', as
   assertEquals(data.data.status, 'active');
 });
 
-Deno.test('Project - cannot create project without customer', async () => {
+Deno.test('Project - cannot create project without name', async () => {
+  const token = await getAuthToken();
+
+  const response = await testRequest('/api/projects', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      customer_name: 'Test Customer',
+    }),
+  });
+
+  assertEquals(response.status, 400);
+});
+
+Deno.test('Project - cannot create project without customer_name', async () => {
   const token = await getAuthToken();
 
   const response = await testRequest('/api/projects', {
@@ -115,30 +115,8 @@ Deno.test('Project - cannot create project without customer', async () => {
   assertEquals(response.status, 400);
 });
 
-Deno.test('Project - cannot create project for non-existent customer', async () => {
-  const token = await getAuthToken();
-
-  const response = await testRequest('/api/projects', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      customer_id: 99999,
-      name: 'Invalid Customer Project',
-    }),
-  });
-
-  const data = await parseJSON(response);
-
-  assertEquals(response.status, 404);
-  assertEquals(data.error, 'Customer not found');
-});
-
 Deno.test('Project - can list projects', async () => {
   const token = await getAuthToken();
-  const customerId = await createCustomer(token, 'List Test Customer');
 
   // Create a project
   await testRequest('/api/projects', {
@@ -148,8 +126,8 @@ Deno.test('Project - can list projects', async () => {
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      customer_id: customerId,
       name: 'List Test Project',
+      customer_name: 'List Test Customer',
     }),
   });
 
@@ -164,9 +142,50 @@ Deno.test('Project - can list projects', async () => {
   assertEquals(Array.isArray(data.data), true);
 });
 
+Deno.test('Project - can search projects', async () => {
+  const token = await getAuthToken();
+
+  // Create projects
+  await testRequest('/api/projects', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: 'Searchable Project',
+      customer_name: 'John Doe',
+    }),
+  });
+
+  await testRequest('/api/projects', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: 'Another Project',
+      customer_name: 'Jane Smith',
+    }),
+  });
+
+  // Search by project name
+  const response = await testRequest('/api/projects?search=Searchable', {
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+
+  const data = await parseJSON(response);
+
+  assertEquals(response.status, 200);
+  assertEquals(Array.isArray(data.data), true);
+  // Should find the searchable project
+  const found = data.data.some((p: { name: string }) => p.name === 'Searchable Project');
+  assertEquals(found, true);
+});
+
 Deno.test('Project - can get single project', async () => {
   const token = await getAuthToken();
-  const customerId = await createCustomer(token, 'Single Test Customer');
 
   // Create a project
   const createResponse = await testRequest('/api/projects', {
@@ -176,8 +195,8 @@ Deno.test('Project - can get single project', async () => {
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      customer_id: customerId,
       name: 'Single Get Project',
+      customer_name: 'Single Get Customer',
     }),
   });
 
@@ -210,7 +229,6 @@ Deno.test('Project - get non-existent project returns 404', async () => {
 
 Deno.test('Project - can update project', async () => {
   const token = await getAuthToken();
-  const customerId = await createCustomer(token, 'Update Test Customer');
 
   // Create a project
   const createResponse = await testRequest('/api/projects', {
@@ -220,8 +238,8 @@ Deno.test('Project - can update project', async () => {
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      customer_id: customerId,
       name: 'Update Test Project',
+      customer_name: 'Update Test Customer',
     }),
   });
 
@@ -238,6 +256,7 @@ Deno.test('Project - can update project', async () => {
     body: JSON.stringify({
       name: 'Updated Project Name',
       status: 'completed',
+      customer_name: 'Updated Customer Name',
     }),
   });
 
@@ -246,6 +265,7 @@ Deno.test('Project - can update project', async () => {
   assertEquals(response.status, 200);
   assertEquals(data.data.name, 'Updated Project Name');
   assertEquals(data.data.status, 'completed');
+  assertEquals(data.data.customer_name, 'Updated Customer Name');
 });
 
 Deno.test('Project - update non-existent project returns 404', async () => {
@@ -270,7 +290,6 @@ Deno.test('Project - update non-existent project returns 404', async () => {
 
 Deno.test('Project - can delete project', async () => {
   const token = await getAuthToken();
-  const customerId = await createCustomer(token, 'Delete Test Customer');
 
   // Create a project
   const createResponse = await testRequest('/api/projects', {
@@ -280,8 +299,8 @@ Deno.test('Project - can delete project', async () => {
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      customer_id: customerId,
       name: 'Delete Test Project',
+      customer_name: 'Delete Test Customer',
     }),
   });
 
@@ -320,11 +339,10 @@ Deno.test('Project - delete non-existent project returns 404', async () => {
   assertEquals(data.error, 'Project not found');
 });
 
-Deno.test('Project - can get projects by customer', async () => {
+Deno.test('Project - cannot create duplicate project name for same customer', async () => {
   const token = await getAuthToken();
-  const customerId = await createCustomer(token, 'By Customer Test');
 
-  // Create two projects for the customer
+  // Create first project
   await testRequest('/api/projects', {
     method: 'POST',
     headers: {
@@ -332,11 +350,68 @@ Deno.test('Project - can get projects by customer', async () => {
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      customer_id: customerId,
-      name: 'Project 1',
+      name: 'Duplicate Project',
+      customer_name: 'Duplicate Customer',
     }),
   });
 
+  // Try to create second project with same name and customer
+  const response = await testRequest('/api/projects', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: 'Duplicate Project',
+      customer_name: 'Duplicate Customer',
+    }),
+  });
+
+  const data = await parseJSON(response);
+
+  assertEquals(response.status, 400);
+  assertEquals(data.error.includes('already exists'), true);
+});
+
+Deno.test('Project - can create same project name for different customers', async () => {
+  const token = await getAuthToken();
+
+  // Create first project for Customer A
+  const response1 = await testRequest('/api/projects', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: 'Same Name Project',
+      customer_name: 'Customer A',
+    }),
+  });
+
+  assertEquals(response1.status, 201);
+
+  // Create second project with same name for Customer B
+  const response2 = await testRequest('/api/projects', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: 'Same Name Project',
+      customer_name: 'Customer B',
+    }),
+  });
+
+  assertEquals(response2.status, 201);
+});
+
+Deno.test('Project - cannot update to duplicate project name for same customer', async () => {
+  const token = await getAuthToken();
+
+  // Create first project
   await testRequest('/api/projects', {
     method: 'POST',
     headers: {
@@ -344,23 +419,117 @@ Deno.test('Project - can get projects by customer', async () => {
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      customer_id: customerId,
-      name: 'Project 2',
+      name: 'First Project',
+      customer_name: 'Same Customer',
     }),
   });
 
-  // Get projects for customer
-  const response = await testRequest(`/api/customers/${customerId}/projects`, {
-    headers: { 'Authorization': `Bearer ${token}` },
+  // Create second project
+  const createResponse = await testRequest('/api/projects', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: 'Second Project',
+      customer_name: 'Same Customer',
+    }),
+  });
+
+  const createData = await parseJSON(createResponse);
+  const projectId = createData.data.id;
+
+  // Try to update second project to same name as first
+  const response = await testRequest(`/api/projects/${projectId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: 'First Project',
+    }),
+  });
+
+  const data = await parseJSON(response);
+
+  assertEquals(response.status, 400);
+  assertEquals(data.error.includes('already exists'), true);
+});
+
+Deno.test('Project - can create project with all customer fields', async () => {
+  const token = await getAuthToken();
+
+  const response = await testRequest('/api/projects', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: 'Complete Project',
+      customer_name: 'John Doe',
+      customer_email: 'john@example.com',
+      customer_phone: '+1 234 567 8900',
+      customer_address: '123 Main St, City, Country',
+      status: 'active',
+    }),
+  });
+
+  const data = await parseJSON(response);
+
+  assertEquals(response.status, 201);
+  assertEquals(data.data.name, 'Complete Project');
+  assertEquals(data.data.customer_name, 'John Doe');
+  assertEquals(data.data.customer_email, 'john@example.com');
+  assertEquals(data.data.customer_phone, '+1 234 567 8900');
+  assertEquals(data.data.customer_address, '123 Main St, City, Country');
+});
+
+Deno.test('Project - can update customer fields', async () => {
+  const token = await getAuthToken();
+
+  // Create project
+  const createResponse = await testRequest('/api/projects', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: 'Update Customer Fields Project',
+      customer_name: 'Original Name',
+      customer_email: 'original@example.com',
+    }),
+  });
+
+  const createData = await parseJSON(createResponse);
+  const projectId = createData.data.id;
+
+  // Update customer fields
+  const response = await testRequest(`/api/projects/${projectId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      customer_email: 'updated@example.com',
+      customer_phone: '+1 999 888 7777',
+      customer_address: '456 New St, New City',
+    }),
   });
 
   const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
-  assertEquals(data.data.length, 2);
-  // Verify both projects exist
-  const projectNames = data.data.map((p: { name: string }) => p.name).sort();
-  assertEquals(projectNames, ['Project 1', 'Project 2']);
+  assertEquals(data.data.customer_email, 'updated@example.com');
+  assertEquals(data.data.customer_phone, '+1 999 888 7777');
+  assertEquals(data.data.customer_address, '456 New St, New City');
+  // Name should remain unchanged
+  assertEquals(data.data.name, 'Update Customer Fields Project');
+  assertEquals(data.data.customer_name, 'Original Name');
 });
 
 Deno.test('Project - cannot access without auth', async () => {

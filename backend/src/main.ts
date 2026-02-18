@@ -9,7 +9,6 @@ import authRoutes from './routes/auth.ts';
 import userRoutes from './routes/users.ts';
 import categoryRoutes from './routes/categories.ts';
 import itemRoutes from './routes/items.ts';
-import customerRoutes from './routes/customers.ts';
 import projectRoutes from './routes/projects.ts';
 import floorplanRoutes from './routes/floorplans.ts';
 import placementRoutes from './routes/placements.ts';
@@ -87,9 +86,6 @@ api.route('/categories', categoryRoutes);
 
 // Item routes at /api/items/*
 api.route('/items', itemRoutes);
-
-// Customer routes at /api/customers/*
-api.route('/customers', customerRoutes);
 
 // Project routes at /api/projects/*
 api.route('/projects', projectRoutes);
@@ -223,10 +219,12 @@ if (import.meta.main) {
 
   Deno.serve({
     port,
-    onListen: () => {
-      console.log(`✅ Server running at http://localhost:${port}`);
-      console.log(`📊 Health check: http://localhost:${port}/health`);
-      console.log(`🔒 API routes: http://localhost:${port}/api`);
+    hostname: '0.0.0.0',
+    onListen: ({ hostname, port }) => {
+      console.log(`✅ Server running at http://${hostname}:${port}`);
+      console.log(`📊 Health check: http://${hostname}:${port}/health`);
+      console.log(`🔒 API routes: http://${hostname}:${port}/api`);
+      console.log(`🌐 Accessible from Windows at: http://localhost:${port}`);
     },
   }, app.fetch);
 }
