@@ -1039,11 +1039,61 @@ npm run build          # Build for production
 
 ## Workflow
 
+### Development Process
 1. Start with backend (API first)
 2. Write tests for endpoints
 3. Build frontend
 4. Test integration
 5. Refactor & polish
+
+### Git Workflow - Feature Branches (MANDATORY)
+
+**ALWAYS work on feature branches - even for small changes!**
+
+Never commit directly to `main`. If you're not on a feature branch, create one first.
+
+**Before starting work:**
+```bash
+# Check current branch
+git branch
+
+# If on main, create feature branch
+git checkout -b feature/short-description
+
+# Examples:
+git checkout -b feature/configurator-canvas
+git checkout -b feature/fix-login-error
+git checkout -b feature/add-search-filter
+```
+
+**Branch naming:**
+- `feature/description` - New features
+- `fix/description` - Bug fixes
+- `refactor/description` - Code refactoring
+- `docs/description` - Documentation updates
+
+**Completing work:**
+```bash
+# Commit changes
+git add .
+git commit -m "feat: description of changes"
+
+# Merge to main
+git checkout main
+git merge feature/branch-name
+git push origin main
+
+# Cleanup
+git branch -d feature/branch-name
+git push origin --delete feature/branch-name
+```
+
+**Why feature branches:**
+- Keeps `main` always deployable
+- Easy rollback if issues arise
+- Clean, organized commit history
+- Can work on multiple things simultaneously
+- Better for CI/CD (GitHub Actions runs on push)
 
 ---
 
