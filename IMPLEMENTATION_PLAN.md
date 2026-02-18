@@ -95,8 +95,13 @@ A web-based smart home configurator for automation companies to create proposals
 **Phase 8: Deployment - COMPLETED ✅**
 - Docker containerization with multi-stage build
 - GitHub Container Registry integration (ghcr.io/kingkill85/snap-flow:latest)
+- **GitHub Actions CI/CD** - automatic builds on push to main
+  - Workflow: `.github/workflows/docker-build.yml`
+  - Builds frontend and backend automatically
+  - Auto-generates JWT_SECRET during build
+  - Publishes to ghcr.io with multiple tags (main, latest, sha, semver)
+  - Requires CR_PAT secret for package write permission
 - docker-compose.yml with persistent volumes
-- Auto-generated JWT_SECRET
 - Auto-seed admin user on first run
 - Comprehensive README with Docker instructions
 - **Image:** `ghcr.io/kingkill85/snap-flow:latest`

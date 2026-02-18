@@ -827,9 +827,35 @@ const UserManagement = () => {
 
 ## Docker Deployment
 
-### Building the Docker Image
+### GitHub Actions CI/CD (Recommended)
 
-The project includes a multi-stage Dockerfile that builds the frontend and packages it with the backend.
+The project includes an automated GitHub Actions workflow that builds and publishes Docker images automatically on every push to main.
+
+**Setup:**
+1. Create Personal Access Token at https://github.com/settings/tokens/new
+   - Select scopes: `write:packages`, `read:packages`
+2. Add to repository secrets: https://github.com/kingkill85/snap-flow/settings/secrets/actions
+   - Name: `CR_PAT`
+   - Value: your token
+3. Enable workflow permissions:
+   - Go to Settings → Actions → General → Workflow permissions
+   - Select "Read and write permissions"
+
+**Automatic Builds:**
+- Triggered on every push to `main` branch
+- Triggered on version tags (e.g., `v1.0.0`)
+- Generates multiple tags:
+  - `ghcr.io/kingkill85/snap-flow:latest` - Always latest stable
+  - `ghcr.io/kingkill85/snap-flow:main` - Main branch builds
+  - `ghcr.io/kingkill85/snap-flow:v1.0.0` - Semantic version tags
+  - `ghcr.io/kingkill85/snap-flow:sha-{hash}` - Specific commit
+- View builds: https://github.com/kingkill85/snap-flow/actions
+
+**JWT_SECRET:** Auto-generated during build, baked into image
+
+### Manual Build (Fallback)
+
+If you need to build locally or the automated build fails:
 
 **Build locally:**
 ```bash
