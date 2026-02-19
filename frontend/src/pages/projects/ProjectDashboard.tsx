@@ -519,7 +519,7 @@ const ProjectDashboard = () => {
                 >
                   <div className="flex gap-4" style={{ height: '70vh', minHeight: '500px' }}>
                     {/* Item Palette Sidebar */}
-                    <div className="w-72 flex-shrink-0">
+                    <div className="w-72 flex-shrink-0 self-start">
                       <ItemPalette />
                     </div>
                     
