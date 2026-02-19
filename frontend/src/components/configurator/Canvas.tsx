@@ -190,13 +190,13 @@ function DraggablePlacement({
       {/* Selection overlay with resize handles */}
       {isSelected && (
         <>
-          {/* Delete button */}
+          {/* Delete button - positioned inside top-right corner of placement */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute -top-3 -right-3 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-md z-20 transition-transform hover:scale-110"
+            className="absolute top-1 right-1 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-md z-20 transition-transform hover:scale-110"
             title="Delete placement"
           >
             <HiTrash className="w-3 h-3" />
