@@ -234,19 +234,19 @@ const ProjectDashboard = () => {
                 key={floorplan.id}
                 active={activeFloorplan?.id === floorplan.id}
                 title={
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <span className="font-medium">{floorplan.name}</span>
-                    <div className="flex items-center gap-0.5">
+                    <div className="flex items-center gap-1 ml-2">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           openEditFloorplanModal(floorplan);
                         }}
-                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded transition-colors"
                         title="Rename"
                       >
-                        <HiPencil className="h-3.5 w-3.5" />
+                        <HiPencil className="h-4 w-4" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -255,10 +255,10 @@ const ProjectDashboard = () => {
                           if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
                         }}
                         disabled={index === 0}
-                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         title="Move Left"
                       >
-                        <HiArrowUp className="h-3.5 w-3.5" />
+                        <HiArrowUp className="h-4 w-4" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -267,10 +267,10 @@ const ProjectDashboard = () => {
                           if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
                         }}
                         disabled={index === floorplans.length - 1}
-                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         title="Move Right"
                       >
-                        <HiArrowDown className="h-3.5 w-3.5" />
+                        <HiArrowDown className="h-4 w-4" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -278,10 +278,10 @@ const ProjectDashboard = () => {
                           e.preventDefault();
                           openDeleteFloorplanModal(floorplan);
                         }}
-                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors"
                         title="Delete"
                       >
-                        <HiTrash className="h-3.5 w-3.5" />
+                        <HiTrash className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
