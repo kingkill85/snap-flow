@@ -270,7 +270,7 @@ export function Canvas({
 
   const handleImageClick = useCallback(
     (e: React.MouseEvent<HTMLImageElement>) => {
-      e.stopPropagation();
+      // Don't stop propagation - let it bubble up to deselect
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
@@ -302,7 +302,7 @@ export function Canvas({
           <img
             src={imageUrl}
             alt={floorplan.name}
-            className="max-w-full max-h-full object-contain cursor-crosshair select-none"
+            className="w-full h-full object-cover cursor-crosshair select-none"
             onClick={handleImageClick}
             draggable={false}
             onDragStart={(e) => e.preventDefault()}
@@ -338,28 +338,17 @@ export function Canvas({
       </div>
 
       {/* Instructions overlay */}
-      <div className="absolute top-4 left-4 bg-white bg-opacity-90 px-3 py-2 rounded shadow text-sm text-gray-600 max-w-sm">
+      <div className="absolute top-4 left-4 bg-white bg-opacity-90 px-3 py-2 rounded shadow text-sm text-gray-600 max-w-sm pointer-events-none">
         <p className="font-medium mb-1">Controls:</p>
         <ul className="text-xs space-y-1">
           <li>• Drag items from palette to place</li>
-          <li>• Click placement to select</li>
-          <li>• Drag placement to move</li>
-          <li>• Drag corner handles to resize seamlessly</li>
+          <li>• Click placement to select (red border)</li>
+          <li>• Click outside placement to deselect</li>
+          <li>• Drag unselected placement to move</li>
+          <li>• Drag corner handles to resize (when selected)</li>
           <li>• Click 🗑 to delete</li>
         </ul>
       </div>
-
-      {/* Deselect button (when something is selected) */}
-      {selectedPlacementId && (
-        <div className="absolute top-4 right-4">
-          <button
-            onClick={() => setSelectedPlacementId(null)}
-            className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
-          >
-            Done
-          </button>
-        </div>
-      )}
     </div>
   );
 }
