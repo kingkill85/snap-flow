@@ -71,16 +71,19 @@ function DraggablePlacement({ placement, displayName, isSelected, onSelect, onDe
         {displayName}
       </span>
       {isSelected && (
-        <button
+        <span
           onClick={(e) => {
             e.stopPropagation();
+            e.preventDefault();
+            console.log('Delete clicked for placement');
             onDelete();
           }}
-          className="mt-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-sm"
+          className="mt-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-sm cursor-pointer inline-flex items-center justify-center"
           title="Delete placement"
+          role="button"
         >
           <HiTrash className="w-3 h-3" />
-        </button>
+        </span>
       )}
     </div>
   );
@@ -114,24 +117,37 @@ export function Canvas({
 
   // Handle drag end - move placement
   const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over, delta } = event;
+    const { active, over } = event;
     
     // If dragging a placement and dropped on canvas, update position
     if (active.id.toString().startsWith('placement-')) {
       const placementId = parseInt(active.id.toString().replace('placement-', ''));
       const placement = placements.find(p => p.id === placementId);
       
-      if (placement && over) {
-        // Calculate new position
-        const newX = Math.max(0, placement.x + delta.x);
-        const newY = Math.max(0, placement.y + delta.y);
+      if (placement && over && containerRef.current) {
+        // Get the canvas rect
+        const canvasRect = containerRef.current.getBoundingClientRect();
         
-        onPlacementUpdate(placementId, { x: newX, y: newY });
+        // Get the active (dragged) element's rect
+        const activeRect = active.rect.current.translated;
+        
+        if (activeRect) {
+          // Calculate position relative to canvas (center the placement)
+          const newX = Math.max(0, activeRect.left - canvasRect.left);
+          const newY = Math.max(0, activeRect.top - canvasRect.top);
+          
+          console.log('Moving placement:', { 
+            id: placementId, 
+            oldPos: { x: placement.x, y: placement.y }, 
+            newPos: { x: newX, y: newY },
+            canvasRect,
+            activeRect
+          });
+          
+          onPlacementUpdate(placementId, { x: newX, y: newY });
+        }
       }
     }
-    
-    // If dragging an item from palette (this is handled by parent DndContext)
-    // We don't need to do anything here for new item creation
   };
 
   // Deselect when clicking on canvas
