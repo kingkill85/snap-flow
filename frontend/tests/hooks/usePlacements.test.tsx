@@ -27,7 +27,8 @@ describe('usePlacements', () => {
     const { result } = renderHook(() => usePlacements(1));
     
     expect(result.current.placements).toEqual([]);
-    expect(result.current.isLoading).toBe(false);
+    // isLoading starts true because useEffect triggers fetch immediately
+    expect(result.current.isLoading).toBe(true);
     expect(result.current.error).toBeNull();
   });
 

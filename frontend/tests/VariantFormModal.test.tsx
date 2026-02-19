@@ -11,6 +11,8 @@ vi.mock('../src/services/item', () => ({
     getVariantAddons: vi.fn(),
     addVariantAddon: vi.fn(),
     removeVariantAddon: vi.fn(),
+    getAll: vi.fn().mockResolvedValue({ items: [] }),
+    getVariants: vi.fn().mockResolvedValue([]),
   },
 }));
 
