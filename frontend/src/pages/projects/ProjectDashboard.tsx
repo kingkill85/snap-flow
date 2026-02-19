@@ -8,6 +8,15 @@ import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import axios from 'axios';
 
+// Generate project number: YYYY-MM-DD_Customer Name_Address
+const generateProjectNumber = (project: Project): string => {
+  const date = new Date(project.created_at);
+  const formattedDate = date.toISOString().split('T')[0]; // YYYY-MM-DD
+  const customerName = project.customer_name || 'Unknown';
+  const address = project.customer_address || 'No Address';
+  return `${formattedDate}_${customerName}_${address}`;
+};
+
 const ProjectDashboard = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -103,6 +112,9 @@ const ProjectDashboard = () => {
             <HiArrowLeft className="mr-2 h-4 w-4" />
             Back to Projects
           </Button>
+          <div className="text-sm text-gray-500 mb-2">
+            {generateProjectNumber(project)}
+          </div>
           <div className="flex items-center gap-4">
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{project.name}</h1>
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(project.status)}`}>

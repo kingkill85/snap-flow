@@ -7,6 +7,15 @@ import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import axios from 'axios';
 
+// Generate project number: YYYY-MM-DD_Customer Name_Address
+const generateProjectNumber = (project: Project): string => {
+  const date = new Date(project.created_at);
+  const formattedDate = date.toISOString().split('T')[0]; // YYYY-MM-DD
+  const customerName = project.customer_name || 'Unknown';
+  const address = project.customer_address || 'No Address';
+  return `${formattedDate}_${customerName}_${address}`;
+};
+
 const ProjectList = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -92,6 +101,11 @@ const ProjectList = () => {
   const filteredProjects = projects.filter(project => {
     if (filterStatus && project.status !== filterStatus) return false;
     return true;
+  }).sort((a, b) => {
+    // Sort by project number (date first, then customer, then address)
+    const numA = generateProjectNumber(a);
+    const numB = generateProjectNumber(b);
+    return numA.localeCompare(numB);
   });
 
   if (isLoading) {
@@ -151,10 +165,10 @@ const ProjectList = () => {
       <Card>
         <Table hoverable>
           <Table.Head>
+            <Table.HeadCell>PROJECT NUMBER</Table.HeadCell>
             <Table.HeadCell>PROJECT NAME</Table.HeadCell>
             <Table.HeadCell>CUSTOMER</Table.HeadCell>
             <Table.HeadCell className="w-28">STATUS</Table.HeadCell>
-            <Table.HeadCell className="w-32">CREATED</Table.HeadCell>
             <Table.HeadCell className="w-32"></Table.HeadCell>
           </Table.Head>
           <Table.Body>
@@ -167,6 +181,9 @@ const ProjectList = () => {
             ) : (
               filteredProjects.map((project) => (
                 <Table.Row key={project.id} className="hover:bg-gray-50 transition-colors">
+                  <Table.Cell className="text-sm text-gray-600">
+                    {generateProjectNumber(project)}
+                  </Table.Cell>
                   <Table.Cell className="font-medium">
                     {project.name}
                   </Table.Cell>
@@ -188,9 +205,6 @@ const ProjectList = () => {
                         Cancelled
                       </span>
                     )}
-                  </Table.Cell>
-                  <Table.Cell className="text-gray-600">
-                    {new Date(project.created_at).toLocaleDateString()}
                   </Table.Cell>
                   <Table.Cell>
                     <div className="flex gap-2 justify-end">
