@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { HiTrash } from 'react-icons/hi';
@@ -14,17 +14,26 @@ interface CanvasProps {
   onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number }) => void;
 }
 
-// Draggable placement component
+// Draggable placement component with resize handles
 interface DraggablePlacementProps {
   placement: Placement;
   item: Item | undefined;
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
-  onResize: (width: number, height: number) => void;
+  onResize: (x: number, y: number, width: number, height: number) => void;
+  containerRef: React.RefObject<HTMLDivElement>;
 }
 
-function DraggablePlacement({ placement, item, isSelected, onSelect, onDelete, onResize }: DraggablePlacementProps) {
+function DraggablePlacement({ 
+  placement, 
+  item, 
+  isSelected, 
+  onSelect, 
+  onDelete, 
+  onResize,
+  containerRef 
+}: DraggablePlacementProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `placement-${placement.id}`,
     data: {
@@ -33,18 +42,97 @@ function DraggablePlacement({ placement, item, isSelected, onSelect, onDelete, o
     },
   });
 
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0, placementX: 0, placementY: 0, corner: '' });
+
   const style = transform
     ? {
         transform: CSS.Translate.toString(transform),
-        zIndex: 100,
+        zIndex: isResizing ? 200 : 100,
       }
-    : { zIndex: isDragging ? 100 : 1 };
+    : { zIndex: isResizing ? 200 : isDragging ? 100 : 1 };
 
-  // Handle click - select the placement
   const handleClick = (e: React.MouseEvent) => {
+    if (isResizing) return;
     e.stopPropagation();
     onSelect();
   };
+
+  const startResize = (e: React.MouseEvent, corner: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setIsResizing(true);
+    
+    resizeStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: placement.width,
+      height: placement.height,
+      placementX: placement.x,
+      placementY: placement.y,
+      corner,
+    };
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const { x, y, width, height, placementX, placementY, corner } = resizeStartRef.current;
+      const deltaX = e.clientX - x;
+      const deltaY = e.clientY - y;
+      
+      let newX = placementX;
+      let newY = placementY;
+      let newWidth = width;
+      let newHeight = height;
+
+      // Calculate based on which corner is being dragged
+      switch (corner) {
+        case 'se': // Bottom-right
+          newWidth = Math.max(50, Math.min(400, width + deltaX));
+          newHeight = Math.max(50, Math.min(400, height + deltaY));
+          break;
+        case 'sw': // Bottom-left
+          newWidth = Math.max(50, Math.min(400, width - deltaX));
+          newHeight = Math.max(50, Math.min(400, height + deltaY));
+          newX = placementX + (width - newWidth);
+          break;
+        case 'ne': // Top-right
+          newWidth = Math.max(50, Math.min(400, width + deltaX));
+          newHeight = Math.max(50, Math.min(400, height - deltaY));
+          newY = placementY + (height - newHeight);
+          break;
+        case 'nw': // Top-left
+          newWidth = Math.max(50, Math.min(400, width - deltaX));
+          newHeight = Math.max(50, Math.min(400, height - deltaY));
+          newX = placementX + (width - newWidth);
+          newY = placementY + (height - newHeight);
+          break;
+      }
+
+      // Ensure placement stays within canvas bounds
+      if (containerRef.current) {
+        const canvasRect = containerRef.current.getBoundingClientRect();
+        newX = Math.max(0, Math.min(newX, canvasRect.width - newWidth));
+        newY = Math.max(0, Math.min(newY, canvasRect.height - newHeight));
+      }
+
+      onResize(newX, newY, newWidth, newHeight);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, onResize, containerRef]);
 
   const imageUrl = item?.preview_image ? `/uploads/${item.preview_image}` : null;
   const displayName = item?.name || 'Unknown';
@@ -62,11 +150,11 @@ function DraggablePlacement({ placement, item, isSelected, onSelect, onDelete, o
         width: placement.width,
         height: placement.height,
       }}
-      className={`border-2 rounded overflow-hidden select-none group ${
+      className={`rounded overflow-hidden select-none group ${
         isSelected
-          ? 'border-red-500 shadow-lg'
-          : 'border-blue-500'
-      } ${isDragging ? 'cursor-grabbing' : 'cursor-move'}`}
+          ? 'ring-2 ring-red-500 shadow-lg'
+          : 'border-2 border-blue-500'
+      } ${isDragging ? 'cursor-grabbing' : isResizing ? 'cursor-nwse-resize' : 'cursor-move'}`}
       title={displayName}
       onClick={handleClick}
     >
@@ -84,7 +172,7 @@ function DraggablePlacement({ placement, item, isSelected, onSelect, onDelete, o
         </div>
       )}
 
-      {/* Selection overlay */}
+      {/* Selection overlay with resize handles */}
       {isSelected && (
         <>
           {/* Delete button */}
@@ -93,39 +181,41 @@ function DraggablePlacement({ placement, item, isSelected, onSelect, onDelete, o
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute -top-2 -right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-sm z-10"
+            className="absolute -top-3 -right-3 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-md z-20 transition-transform hover:scale-110"
             title="Delete placement"
           >
             <HiTrash className="w-3 h-3" />
           </button>
 
-          {/* Resize controls */}
-          <div className="absolute bottom-0 right-0 p-1 flex gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onResize(Math.max(50, placement.width - 25), Math.max(50, placement.height - 25));
-              }}
-              className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600 shadow-sm"
-              title="Smaller"
-            >
-              <span className="text-xs">−</span>
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onResize(Math.min(300, placement.width + 25), Math.min(300, placement.height + 25));
-              }}
-              className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600 shadow-sm"
-              title="Larger"
-            >
-              <span className="text-xs">+</span>
-            </button>
-          </div>
+          {/* Resize handles - corners only */}
+          {/* Top-left */}
+          <div
+            className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-nw-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
+            onMouseDown={(e) => startResize(e, 'nw')}
+            title="Resize from top-left"
+          />
+          {/* Top-right */}
+          <div
+            className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-ne-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
+            onMouseDown={(e) => startResize(e, 'ne')}
+            title="Resize from top-right"
+          />
+          {/* Bottom-left */}
+          <div
+            className="absolute -bottom-1.5 -left-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-sw-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
+            onMouseDown={(e) => startResize(e, 'sw')}
+            title="Resize from bottom-left"
+          />
+          {/* Bottom-right */}
+          <div
+            className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-se-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
+            onMouseDown={(e) => startResize(e, 'se')}
+            title="Resize from bottom-right"
+          />
 
           {/* Size indicator */}
-          <div className="absolute -bottom-5 left-0 bg-black bg-opacity-75 text-white text-xs px-1.5 py-0.5 rounded">
-            {placement.width}×{placement.height}
+          <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-black bg-opacity-75 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap">
+            {Math.round(placement.width)}×{Math.round(placement.height)}
           </div>
         </>
       )}
@@ -146,13 +236,12 @@ export function Canvas({
     id: `canvas-${floorplan.id}`,
   });
 
-  // Deselect when clicking on canvas
   const handleCanvasClick = () => {
     setSelectedPlacementId(null);
   };
 
-  const handleResize = (placementId: number, width: number, height: number) => {
-    onPlacementUpdate(placementId, { width, height });
+  const handleResize = (placementId: number, x: number, y: number, width: number, height: number) => {
+    onPlacementUpdate(placementId, { x, y, width, height });
   };
 
   const handleImageClick = useCallback(
@@ -216,7 +305,8 @@ export function Canvas({
                 onPlacementDelete(placement.id);
                 setSelectedPlacementId(null);
               }}
-              onResize={(width, height) => handleResize(placement.id, width, height)}
+              onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
+              containerRef={containerRef}
             />
           );
         })}
@@ -229,7 +319,7 @@ export function Canvas({
           <li>• Drag items from palette to place</li>
           <li>• Click placement to select</li>
           <li>• Drag placement to move</li>
-          <li>• Use +/− buttons to resize when selected</li>
+          <li>• Drag corner handles to resize seamlessly</li>
           <li>• Click 🗑 to delete</li>
         </ul>
       </div>
