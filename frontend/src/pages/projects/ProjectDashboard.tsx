@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Spinner, Alert, Tabs, Dropdown } from 'flowbite-react';
-import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiDotsVertical, HiArrowUp, HiArrowDown, HiPhotograph } from 'react-icons/hi';
+import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowUp, HiArrowDown, HiPhotograph } from 'react-icons/hi';
 import { projectService, type Project } from '../../services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '../../services/floorplan';
 import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
@@ -215,10 +215,52 @@ const ProjectDashboard = () => {
       <Card>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Floorplans</h2>
-          <Button size="sm" onClick={openCreateFloorplanModal}>
-            <HiPlus className="mr-2 h-4 w-4" />
-            Add Floorplan
-          </Button>
+          <div className="flex gap-2">
+            {floorplans.length > 0 && activeFloorplan && (
+              <Dropdown
+                label="Manage"
+                dismissOnClick={true}
+                placement="bottom-end"
+              >
+                <Dropdown.Item onClick={() => openEditFloorplanModal(activeFloorplan)}>
+                  <HiPencil className="mr-2 h-4 w-4" />
+                  Rename
+                </Dropdown.Item>
+                <Dropdown.Item 
+                  onClick={() => {
+                    const index = floorplans.findIndex(fp => fp.id === activeFloorplan.id);
+                    if (index > 0) handleReorderFloorplans(activeFloorplan.id, 'up');
+                  }}
+                  disabled={floorplans.findIndex(fp => fp.id === activeFloorplan.id) === 0}
+                >
+                  <HiArrowUp className="mr-2 h-4 w-4" />
+                  Move Left
+                </Dropdown.Item>
+                <Dropdown.Item 
+                  onClick={() => {
+                    const index = floorplans.findIndex(fp => fp.id === activeFloorplan.id);
+                    if (index < floorplans.length - 1) handleReorderFloorplans(activeFloorplan.id, 'down');
+                  }}
+                  disabled={floorplans.findIndex(fp => fp.id === activeFloorplan.id) === floorplans.length - 1}
+                >
+                  <HiArrowDown className="mr-2 h-4 w-4" />
+                  Move Right
+                </Dropdown.Item>
+                <Dropdown.Divider />
+                <Dropdown.Item 
+                  onClick={() => openDeleteFloorplanModal(activeFloorplan)}
+                  className="text-red-600"
+                >
+                  <HiTrash className="mr-2 h-4 w-4" />
+                  Delete
+                </Dropdown.Item>
+              </Dropdown>
+            )}
+            <Button size="sm" onClick={openCreateFloorplanModal}>
+              <HiPlus className="mr-2 h-4 w-4" />
+              Add Floorplan
+            </Button>
+          </div>
         </div>
 
         {floorplans.length === 0 ? (
@@ -226,56 +268,13 @@ const ProjectDashboard = () => {
             <p>No floorplans yet. Add your first floorplan to start configuring.</p>
           </div>
         ) : (
-          <Tabs>
-            {floorplans.map((floorplan, index) => (
+          <Tabs 
+            onActiveTabChange={(index) => setActiveFloorplan(floorplans[index] || null)}
+          >
+            {floorplans.map((floorplan) => (
               <Tabs.Item 
                 key={floorplan.id} 
-                title={
-                  <div className="flex items-center gap-2 px-2">
-                    <span className="font-medium">{floorplan.name}</span>
-                    <Dropdown
-                      label=""
-                      dismissOnClick={true}
-                      placement="bottom"
-                      renderTrigger={() => (
-                        <button 
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-                          onClick={(e) => e.stopPropagation()}
-                          title="Floorplan options"
-                        >
-                          <HiDotsVertical className="h-4 w-4" />
-                        </button>
-                      )}
-                    >
-                      <Dropdown.Item onClick={() => openEditFloorplanModal(floorplan)}>
-                        <HiPencil className="mr-2 h-4 w-4" />
-                        Rename
-                      </Dropdown.Item>
-                      <Dropdown.Item 
-                        onClick={() => handleReorderFloorplans(floorplan.id, 'up')}
-                        disabled={index === 0}
-                      >
-                        <HiArrowUp className="mr-2 h-4 w-4" />
-                        Move Left
-                      </Dropdown.Item>
-                      <Dropdown.Item 
-                        onClick={() => handleReorderFloorplans(floorplan.id, 'down')}
-                        disabled={index === floorplans.length - 1}
-                      >
-                        <HiArrowDown className="mr-2 h-4 w-4" />
-                        Move Right
-                      </Dropdown.Item>
-                      <Dropdown.Divider />
-                      <Dropdown.Item 
-                        onClick={() => openDeleteFloorplanModal(floorplan)}
-                        className="text-red-600"
-                      >
-                        <HiTrash className="mr-2 h-4 w-4" />
-                        Delete
-                      </Dropdown.Item>
-                    </Dropdown>
-                  </div>
-                }
+                title={floorplan.name}
               >
                 <div className="p-4">
                   {/* Floorplan Canvas */}
