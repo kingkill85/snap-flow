@@ -19,19 +19,18 @@ export function Canvas({
   items,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  
   const { setNodeRef, isOver } = useDroppable({
     id: `canvas-${floorplan.id}`,
   });
 
   const handleImageClick = useCallback(
     (e: React.MouseEvent<HTMLImageElement>) => {
-      // Get click coordinates relative to the image
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       
       console.log('Clicked at:', { x, y, floorplanId: floorplan.id });
-      // For now, just log the click - actual item dropping will be handled by drag/drop
     },
     [floorplan.id]
   );
@@ -47,8 +46,9 @@ export function Canvas({
       {/* Droppable area wrapper */}
       <div
         ref={setNodeRef}
+        data-canvas-id={floorplan.id}
         className={`relative w-full h-full flex items-center justify-center transition-colors ${
-          isOver ? 'bg-blue-50' : ''
+          isOver ? 'bg-blue-50 border-blue-300' : ''
         }`}
       >
         {floorplan.image_path ? (
@@ -68,7 +68,6 @@ export function Canvas({
 
         {/* Placements overlay */}
         {placements.map((placement) => {
-          // Find item by item_id (included in placement)
           const item = items.find((i) => i.id === placement.item_id);
           const displayName = item?.name || 'Unknown';
 

@@ -193,36 +193,66 @@ const ProjectDashboard = () => {
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
+    const { active, over, collisions } = event;
+    
+    console.log('Drag end:', { active, over, collisions, delta: event.delta });
     
     if (!over || !activeFloorplan) return;
     
     // Check if dropped on canvas
-    if (over.id.toString().startsWith('canvas-')) {
+    const overId = over.id.toString();
+    if (overId.startsWith('canvas-')) {
       const itemData = active.data.current as { item: Item } | undefined;
       
       if (itemData?.item) {
-        // Fetch item with variants to get the first variant
         try {
+          // Get canvas element
+          const canvasElement = document.querySelector(`[data-canvas-id="${activeFloorplan.id}"]`);
+          if (!canvasElement) {
+            console.error('Canvas element not found');
+            return;
+          }
+          
+          const canvasRect = canvasElement.getBoundingClientRect();
+          
+          // Calculate drop position
+          // Use mouse event if available, otherwise calculate from delta
+          let dropX: number;
+          let dropY: number;
+          
+          // Try to get the final position from the drag event
+          const activeRect = active.rect.current?.translated;
+          if (activeRect) {
+            // Center of the dragged item
+            dropX = activeRect.left - canvasRect.left + activeRect.width / 2 - 50; // Center minus half of default size
+            dropY = activeRect.top - canvasRect.top + activeRect.height / 2 - 50;
+          } else {
+            // Fallback: use delta (this won't be accurate but at least places something)
+            dropX = event.delta.x;
+            dropY = event.delta.y;
+          }
+          
+          // Ensure coordinates are within bounds
+          dropX = Math.max(0, Math.min(dropX, canvasRect.width - 100));
+          dropY = Math.max(0, Math.min(dropY, canvasRect.height - 100));
+          
+          console.log('Dropping at:', { x: dropX, y: dropY, canvasRect });
+          
+          // Fetch item with variants to get the first variant
           const fullItem = await itemService.getById(itemData.item.id);
           const firstVariant = fullItem.variants?.[0];
           
           if (firstVariant) {
-            // Get drop coordinates from event (relative to the drop target)
-            const x = event.delta.x;
-            const y = event.delta.y;
-            
-            // Default size for new placements (100x100)
             handlePlacementCreate({
-              x: Math.max(0, x),
-              y: Math.max(0, y),
+              x: dropX,
+              y: dropY,
               width: 100,
               height: 100,
               item_variant_id: firstVariant.id,
             });
           }
         } catch (err) {
-          console.error('Failed to fetch item variants:', err);
+          console.error('Failed to create placement:', err);
         }
       }
     }

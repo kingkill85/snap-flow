@@ -20,6 +20,9 @@ function DraggableItem({ item }: DraggableItemProps) {
     },
   });
 
+  // Debug logging
+  console.log('DraggableItem render:', { itemId: item.id, isDragging, hasListeners: !!listeners, hasAttributes: !!attributes });
+
   const style = transform
     ? {
         transform: CSS.Translate.toString(transform),
