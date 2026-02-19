@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Spinner, Alert, Tabs } from 'flowbite-react';
-import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowUp, HiArrowDown, HiPhotograph } from 'react-icons/hi';
+import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowUp, HiArrowDown } from 'react-icons/hi';
+import { DndContext, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { projectService, type Project } from '../../services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '../../services/floorplan';
+import { placementService, type Placement, type CreatePlacementDTO } from '../../services/placement';
+import { itemService, type Item, type ItemVariant } from '../../services/item';
 import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
 import { FloorplanFormModal } from '../../components/floorplans/FloorplanFormModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
+import { Canvas } from '../../components/configurator/Canvas';
+import { ItemPalette } from '../../components/configurator/ItemPalette';
 import axios from 'axios';
 
 // Generate project number: YYYY-MM-DD_Customer Name_Address
@@ -26,6 +31,8 @@ const ProjectDashboard = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [floorplans, setFloorplans] = useState<Floorplan[]>([]);
   const [activeFloorplan, setActiveFloorplan] = useState<Floorplan | null>(null);
+  const [placements, setPlacements] = useState<Placement[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
@@ -37,14 +44,28 @@ const ProjectDashboard = () => {
   const [floorplanToEdit, setFloorplanToEdit] = useState<Floorplan | null>(null);
   const [floorplanToDelete, setFloorplanToDelete] = useState<Floorplan | null>(null);
 
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
   const fetchProjectData = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
-      const projectData = await projectService.getById(projectId, signal);
+      const [projectData, floorplansData, itemsResult] = await Promise.all([
+        projectService.getById(projectId, signal),
+        floorplanService.getAll(projectId, signal),
+        itemService.getAll({ include_inactive: false }),
+      ]);
+      
       setProject(projectData);
-
-      const floorplansData = await floorplanService.getAll(projectId, signal);
       setFloorplans(floorplansData);
+      setItems(itemsResult.items);
+      
       if (floorplansData.length > 0 && !activeFloorplan) {
         setActiveFloorplan(floorplansData[0]);
       }
@@ -58,6 +79,26 @@ const ProjectDashboard = () => {
       setIsLoading(false);
     }
   };
+
+  // Fetch placements for active floorplan
+  const fetchPlacements = async (floorplanId: number, signal?: AbortSignal) => {
+    try {
+      const placementsData = await placementService.getAll(floorplanId, signal);
+      setPlacements(placementsData);
+    } catch (err: any) {
+      if (!axios.isCancel(err) && err.name !== 'AbortError') {
+        console.error('Failed to load placements:', err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (activeFloorplan) {
+      const controller = new AbortController();
+      fetchPlacements(activeFloorplan.id, controller.signal);
+      return () => controller.abort();
+    }
+  }, [activeFloorplan?.id]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -106,15 +147,75 @@ const ProjectDashboard = () => {
     
     const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
     if (newIndex < 0 || newIndex >= floorplans.length) return;
-    
-    // Create new order
+
+    // Reorder logic...
     const newOrder = [...floorplans];
     const [moved] = newOrder.splice(currentIndex, 1);
     newOrder.splice(newIndex, 0, moved);
-    
-    // Update sort order via API
     await floorplanService.reorder(projectId, newOrder.map(fp => fp.id));
     await fetchProjectData();
+  };
+
+  // Placement handlers
+  const handlePlacementCreate = async (placement: { x: number; y: number; width: number; height: number; item_variant_id: number }) => {
+    if (!activeFloorplan) return;
+    
+    const createData: CreatePlacementDTO = {
+      floorplan_id: activeFloorplan.id,
+      item_variant_id: placement.item_variant_id,
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
+      height: placement.height,
+    };
+    
+    await placementService.create(createData);
+    await fetchPlacements(activeFloorplan.id);
+  };
+
+  const handlePlacementUpdate = async (id: number, placement: { x?: number; y?: number; width?: number; height?: number }) => {
+    await placementService.update(id, placement);
+    if (activeFloorplan) {
+      await fetchPlacements(activeFloorplan.id);
+    }
+  };
+
+  const handlePlacementDelete = async (id: number) => {
+    await placementService.delete(id);
+    if (activeFloorplan) {
+      await fetchPlacements(activeFloorplan.id);
+    }
+  };
+
+  // DnD handlers
+  const handleDragStart = (event: DragStartEvent) => {
+    console.log('Drag started:', event);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    if (!over || !activeFloorplan) return;
+    
+    // Check if dropped on canvas
+    if (over.id.toString().startsWith('canvas-')) {
+      const variantData = active.data.current as { variant: ItemVariant; item: Item } | undefined;
+      
+      if (variantData?.variant) {
+        // Get drop coordinates from event
+        const x = event.delta.x;
+        const y = event.delta.y;
+        
+        // Default size for new placements (100x100)
+        handlePlacementCreate({
+          x: Math.max(0, x),
+          y: Math.max(0, y),
+          width: 100,
+          height: 100,
+          item_variant_id: variantData.variant.id,
+        });
+      }
+    }
   };
 
   const openCreateFloorplanModal = () => {
@@ -288,27 +389,30 @@ const ProjectDashboard = () => {
                   </div>
                 }
               >
-                <div className="p-4">
-                  {/* Floorplan Canvas */}
-                  <div className="relative w-full" style={{ height: '70vh', minHeight: '500px' }}>
-                    {floorplan.image_path ? (
-                      <div className="w-full h-full bg-gray-50 rounded-lg border border-gray-200 overflow-hidden flex items-center justify-center">
-                        <img
-                          src={floorplanService.getImageUrl(floorplan.image_path)}
-                          alt={floorplan.name}
-                          className="w-full h-full object-contain"
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-full h-full bg-gray-100 rounded-lg flex items-center justify-center">
-                        <div className="text-center text-gray-400">
-                          <HiPhotograph className="mx-auto h-16 w-16 mb-4" />
-                          <p>No floorplan image</p>
-                        </div>
-                      </div>
-                    )}
+                <DndContext
+                  sensors={sensors}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                >
+                  <div className="flex gap-4" style={{ height: '70vh', minHeight: '500px' }}>
+                    {/* Item Palette Sidebar */}
+                    <div className="w-72 flex-shrink-0">
+                      <ItemPalette />
+                    </div>
+                    
+                    {/* Canvas Area */}
+                    <div className="flex-1 min-w-0">
+                      <Canvas
+                        floorplan={floorplan}
+                        placements={placements}
+                        itemVariants={items.flatMap(item => item.variants || [])}
+                        onPlacementCreate={handlePlacementCreate}
+                        onPlacementUpdate={handlePlacementUpdate}
+                        onPlacementDelete={handlePlacementDelete}
+                      />
+                    </div>
                   </div>
-                </div>
+                </DndContext>
               </Tabs.Item>
             ))}
             </Tabs>
