@@ -193,20 +193,54 @@ const ProjectDashboard = () => {
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over, collisions } = event;
+    const { active, over } = event;
     
-    console.log('Drag end:', { active, over, collisions, delta: event.delta });
+    console.log('Drag end:', { active: active.id, over: over?.id });
     
     if (!over || !activeFloorplan) return;
     
-    // Check if dropped on canvas
+    const activeId = active.id.toString();
     const overId = over.id.toString();
-    if (overId.startsWith('canvas-')) {
+    
+    // Handle moving existing placement
+    if (activeId.startsWith('placement-')) {
+      const placementId = parseInt(activeId.replace('placement-', ''));
+      const placement = placements.find(p => p.id === placementId);
+      
+      if (placement && overId.startsWith('canvas-')) {
+        // Get canvas element
+        const canvasElement = document.querySelector(`[data-canvas-id="${activeFloorplan.id}"]`);
+        if (!canvasElement) {
+          console.error('Canvas element not found');
+          return;
+        }
+        
+        const canvasRect = canvasElement.getBoundingClientRect();
+        const activeRect = active.rect.current?.translated;
+        
+        if (activeRect) {
+          // Calculate new position (top-left of placement)
+          const newX = Math.max(0, activeRect.left - canvasRect.left);
+          const newY = Math.max(0, activeRect.top - canvasRect.top);
+          
+          console.log('Moving placement:', { 
+            id: placementId, 
+            old: { x: placement.x, y: placement.y }, 
+            new: { x: newX, y: newY } 
+          });
+          
+          await handlePlacementUpdate(placementId, { x: newX, y: newY });
+        }
+      }
+      return;
+    }
+    
+    // Handle creating new placement from palette
+    if (activeId.startsWith('item-') && overId.startsWith('canvas-')) {
       const itemData = active.data.current as { item: Item } | undefined;
       
       if (itemData?.item) {
         try {
-          // Get canvas element
           const canvasElement = document.querySelector(`[data-canvas-id="${activeFloorplan.id}"]`);
           if (!canvasElement) {
             console.error('Canvas element not found');
@@ -214,36 +248,29 @@ const ProjectDashboard = () => {
           }
           
           const canvasRect = canvasElement.getBoundingClientRect();
+          const activeRect = active.rect.current?.translated;
           
-          // Calculate drop position
-          // Use mouse event if available, otherwise calculate from delta
           let dropX: number;
           let dropY: number;
           
-          // Try to get the final position from the drag event
-          const activeRect = active.rect.current?.translated;
           if (activeRect) {
-            // Center of the dragged item
-            dropX = activeRect.left - canvasRect.left + activeRect.width / 2 - 50; // Center minus half of default size
+            dropX = activeRect.left - canvasRect.left + activeRect.width / 2 - 50;
             dropY = activeRect.top - canvasRect.top + activeRect.height / 2 - 50;
           } else {
-            // Fallback: use delta (this won't be accurate but at least places something)
             dropX = event.delta.x;
             dropY = event.delta.y;
           }
           
-          // Ensure coordinates are within bounds
           dropX = Math.max(0, Math.min(dropX, canvasRect.width - 100));
           dropY = Math.max(0, Math.min(dropY, canvasRect.height - 100));
           
-          console.log('Dropping at:', { x: dropX, y: dropY, canvasRect });
+          console.log('Creating new placement at:', { x: dropX, y: dropY });
           
-          // Fetch item with variants to get the first variant
           const fullItem = await itemService.getById(itemData.item.id);
           const firstVariant = fullItem.variants?.[0];
           
           if (firstVariant) {
-            handlePlacementCreate({
+            await handlePlacementCreate({
               x: dropX,
               y: dropY,
               width: 100,
@@ -448,8 +475,8 @@ const ProjectDashboard = () => {
                         floorplan={floorplan}
                         placements={placements}
                         items={items}
-                        onPlacementCreate={handlePlacementCreate}
-                        onPlacementUpdate={handlePlacementUpdate}
+                        
+                        
                         onPlacementDelete={handlePlacementDelete}
                       />
                     </div>

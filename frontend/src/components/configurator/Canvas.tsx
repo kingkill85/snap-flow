@@ -1,5 +1,5 @@
 import { useRef, useCallback, useState } from 'react';
-import { useDroppable, useDraggable, DndContext, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
+import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { HiTrash } from 'react-icons/hi';
 import type { Floorplan } from '../../services/floorplan';
@@ -10,8 +10,6 @@ interface CanvasProps {
   floorplan: Floorplan;
   placements: Placement[];
   items: Item[];
-  onPlacementCreate: (placement: { x: number; y: number; width: number; height: number; item_variant_id: number }) => void;
-  onPlacementUpdate: (id: number, placement: { x?: number; y?: number; width?: number; height?: number }) => void;
   onPlacementDelete: (id: number) => void;
 }
 
@@ -93,62 +91,14 @@ export function Canvas({
   floorplan,
   placements,
   items,
-  onPlacementUpdate,
   onPlacementDelete,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedPlacementId, setSelectedPlacementId] = useState<number | null>(null);
-  
   const { setNodeRef, isOver } = useDroppable({
     id: `canvas-${floorplan.id}`,
   });
 
-  // Handle drag start
-  const handleDragStart = (event: DragStartEvent) => {
-    const { active } = event;
-    const activeId = active.id.toString();
-    
-    // If dragging a placement, select it
-    if (activeId.startsWith('placement-')) {
-      const placementId = parseInt(activeId.replace('placement-', ''));
-      setSelectedPlacementId(placementId);
-    }
-  };
-
-  // Handle drag end - move placement
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    
-    // If dragging a placement and dropped on canvas, update position
-    if (active.id.toString().startsWith('placement-')) {
-      const placementId = parseInt(active.id.toString().replace('placement-', ''));
-      const placement = placements.find(p => p.id === placementId);
-      
-      if (placement && over && containerRef.current) {
-        // Get the canvas rect
-        const canvasRect = containerRef.current.getBoundingClientRect();
-        
-        // Get the active (dragged) element's rect
-        const activeRect = active.rect.current.translated;
-        
-        if (activeRect) {
-          // Calculate position relative to canvas (center the placement)
-          const newX = Math.max(0, activeRect.left - canvasRect.left);
-          const newY = Math.max(0, activeRect.top - canvasRect.top);
-          
-          console.log('Moving placement:', { 
-            id: placementId, 
-            oldPos: { x: placement.x, y: placement.y }, 
-            newPos: { x: newX, y: newY },
-            canvasRect,
-            activeRect
-          });
-          
-          onPlacementUpdate(placementId, { x: newX, y: newY });
-        }
-      }
-    }
-  };
 
   // Deselect when clicking on canvas
   const handleCanvasClick = () => {
@@ -170,76 +120,74 @@ export function Canvas({
   const imageUrl = `/uploads/${floorplan.image_path}`;
 
   return (
-    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <div
+      ref={containerRef}
+      className="relative w-full h-full bg-gray-50 rounded-lg border-2 border-gray-200 overflow-hidden"
+      style={{ minHeight: '500px', touchAction: 'none' }}
+    >
+      {/* Droppable area wrapper */}
       <div
-        ref={containerRef}
-        className="relative w-full h-full bg-gray-50 rounded-lg border-2 border-gray-200 overflow-hidden"
-        style={{ minHeight: '500px', touchAction: 'none' }}
+        ref={setNodeRef}
+        data-canvas-id={floorplan.id}
+        onClick={handleCanvasClick}
+        className={`relative w-full h-full flex items-center justify-center transition-colors ${
+          isOver ? 'bg-blue-50 border-blue-300' : ''
+        }`}
+        style={{ touchAction: 'none' }}
       >
-        {/* Droppable area wrapper */}
-        <div
-          ref={setNodeRef}
-          data-canvas-id={floorplan.id}
-          onClick={handleCanvasClick}
-          className={`relative w-full h-full flex items-center justify-center transition-colors ${
-            isOver ? 'bg-blue-50 border-blue-300' : ''
-          }`}
-          style={{ touchAction: 'none' }}
-        >
-          {floorplan.image_path ? (
-            <img
-              src={imageUrl}
-              alt={floorplan.name}
-              className="max-w-full max-h-full object-contain cursor-crosshair select-none"
-              onClick={handleImageClick}
-              draggable={false}
-              onDragStart={(e) => e.preventDefault()}
-            />
-          ) : (
-            <div className="text-center text-gray-400 p-8">
-              <p className="text-lg mb-2">No floorplan image</p>
-              <p className="text-sm">Upload a floorplan to start configuring</p>
-            </div>
-          )}
-
-          {/* Placements overlay */}
-          {placements.map((placement) => {
-            const item = items.find((i) => i.id === placement.item_id);
-            const displayName = item?.name || 'Unknown';
-
-            return (
-              <DraggablePlacement
-                key={placement.id}
-                placement={placement}
-                displayName={displayName}
-                isSelected={selectedPlacementId === placement.id}
-                onSelect={() => setSelectedPlacementId(placement.id)}
-                onDelete={() => {
-                  onPlacementDelete(placement.id);
-                  setSelectedPlacementId(null);
-                }}
-              />
-            );
-          })}
-        </div>
-
-        {/* Instructions overlay */}
-        <div className="absolute top-4 left-4 bg-white bg-opacity-90 px-3 py-2 rounded shadow text-sm text-gray-600">
-          <p>Drag items to place • Click to select • Drag to move • Click 🗑 to delete</p>
-        </div>
-
-        {/* Deselect button (when something is selected) */}
-        {selectedPlacementId && (
-          <div className="absolute top-4 right-4">
-            <button
-              onClick={() => setSelectedPlacementId(null)}
-              className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
-            >
-              Done
-            </button>
+        {floorplan.image_path ? (
+          <img
+            src={imageUrl}
+            alt={floorplan.name}
+            className="max-w-full max-h-full object-contain cursor-crosshair select-none"
+            onClick={handleImageClick}
+            draggable={false}
+            onDragStart={(e) => e.preventDefault()}
+          />
+        ) : (
+          <div className="text-center text-gray-400 p-8">
+            <p className="text-lg mb-2">No floorplan image</p>
+            <p className="text-sm">Upload a floorplan to start configuring</p>
           </div>
         )}
+
+        {/* Placements overlay */}
+        {placements.map((placement) => {
+          const item = items.find((i) => i.id === placement.item_id);
+          const displayName = item?.name || 'Unknown';
+
+          return (
+            <DraggablePlacement
+              key={placement.id}
+              placement={placement}
+              displayName={displayName}
+              isSelected={selectedPlacementId === placement.id}
+              onSelect={() => setSelectedPlacementId(placement.id)}
+              onDelete={() => {
+                onPlacementDelete(placement.id);
+                setSelectedPlacementId(null);
+              }}
+            />
+          );
+        })}
       </div>
-    </DndContext>
+
+      {/* Instructions overlay */}
+      <div className="absolute top-4 left-4 bg-white bg-opacity-90 px-3 py-2 rounded shadow text-sm text-gray-600">
+        <p>Drag items to place • Click to select • Drag to move • Click 🗑 to delete</p>
+      </div>
+
+      {/* Deselect button (when something is selected) */}
+      {selectedPlacementId && (
+        <div className="absolute top-4 right-4">
+          <button
+            onClick={() => setSelectedPlacementId(null)}
+            className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
+          >
+            Done
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
