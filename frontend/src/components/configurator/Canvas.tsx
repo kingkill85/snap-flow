@@ -34,16 +34,18 @@ function DraggablePlacement({
   onResize,
   containerRef 
 }: DraggablePlacementProps) {
+  // State must be declared before hooks that use it
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0, placementX: 0, placementY: 0, corner: '' });
+  
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `placement-${placement.id}`,
     data: {
       placement,
       type: 'placement',
     },
+    disabled: isResizing, // Disable drag while resizing
   });
-
-  const [isResizing, setIsResizing] = useState(false);
-  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0, placementX: 0, placementY: 0, corner: '' });
 
   const style = transform
     ? {
