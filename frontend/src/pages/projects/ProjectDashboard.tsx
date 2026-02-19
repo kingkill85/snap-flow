@@ -303,8 +303,9 @@ const ProjectDashboard = () => {
           let screenY: number;
           
           if (activeRect) {
-            screenX = activeRect.left - canvasRect.left + activeRect.width / 2 - 50;
-            screenY = activeRect.top - canvasRect.top + activeRect.height / 2 - 50;
+            // Place at top-left corner of dragged item (not centered)
+            screenX = activeRect.left - canvasRect.left;
+            screenY = activeRect.top - canvasRect.top;
           } else {
             screenX = event.delta.x;
             screenY = event.delta.y;

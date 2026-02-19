@@ -381,18 +381,6 @@ export function Canvas({
         })}
       </div>
 
-      {/* Instructions overlay */}
-      <div className="absolute top-4 left-4 bg-white bg-opacity-90 px-3 py-2 rounded shadow text-sm text-gray-600 max-w-sm pointer-events-none">
-        <p className="font-medium mb-1">Controls:</p>
-        <ul className="text-xs space-y-1">
-          <li>• Drag items from palette to place</li>
-          <li>• Click placement to select (red border)</li>
-          <li>• Click outside placement to deselect</li>
-          <li>• Drag unselected placement to move</li>
-          <li>• Drag corner handles to resize (when selected)</li>
-          <li>• Click 🗑 to delete</li>
-        </ul>
-      </div>
     </div>
   );
 }
