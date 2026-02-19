@@ -356,6 +356,11 @@ export function Canvas({
           </div>
         )}
 
+        {/* Minimal controls hint */}
+        <div className="absolute bottom-2 left-2 text-xs text-gray-400 bg-white bg-opacity-75 px-2 py-1 rounded">
+          Click item to select • Drag corners to resize • Click 🗑 to delete
+        </div>
+
         {/* Placements overlay */}
         {placements.map((placement) => {
           const item = items.find((i) => i.id === placement.item_id);
