@@ -231,18 +231,36 @@ const ProjectDashboard = () => {
           return;
         }
         
+        // Get the floorplan image to calculate scale
+        const floorplanImage = canvasElement.querySelector('img');
+        if (!floorplanImage) {
+          console.error('Floorplan image not found');
+          return;
+        }
+        
         const canvasRect = canvasElement.getBoundingClientRect();
         const activeRect = active.rect.current?.translated;
         
         if (activeRect) {
-          // Calculate new position (top-left of placement)
-          const newX = Math.max(0, activeRect.left - canvasRect.left);
-          const newY = Math.max(0, activeRect.top - canvasRect.top);
+          // Calculate scale factors based on image natural vs displayed size
+          const scaleX = floorplanImage.naturalWidth > 0 
+            ? floorplanImage.clientWidth / floorplanImage.naturalWidth 
+            : 1;
+          const scaleY = floorplanImage.naturalHeight > 0 
+            ? floorplanImage.clientHeight / floorplanImage.naturalHeight 
+            : 1;
+          
+          // Calculate new position in screen pixels and convert to natural coordinates
+          const screenX = Math.max(0, activeRect.left - canvasRect.left);
+          const screenY = Math.max(0, activeRect.top - canvasRect.top);
+          const newX = screenX / scaleX;
+          const newY = screenY / scaleY;
           
           console.log('Moving placement:', { 
             id: placementId, 
             old: { x: placement.x, y: placement.y }, 
-            new: { x: newX, y: newY } 
+            new: { x: newX, y: newY },
+            scale: { x: scaleX, y: scaleY }
           });
           
           await handlePlacementUpdate(placementId, { x: newX, y: newY });
@@ -263,24 +281,43 @@ const ProjectDashboard = () => {
             return;
           }
           
+          // Get the floorplan image to calculate scale
+          const floorplanImage = canvasElement.querySelector('img');
+          if (!floorplanImage) {
+            console.error('Floorplan image not found');
+            return;
+          }
+          
           const canvasRect = canvasElement.getBoundingClientRect();
           const activeRect = active.rect.current?.translated;
           
-          let dropX: number;
-          let dropY: number;
+          // Calculate scale factors
+          const scaleX = floorplanImage.naturalWidth > 0 
+            ? floorplanImage.clientWidth / floorplanImage.naturalWidth 
+            : 1;
+          const scaleY = floorplanImage.naturalHeight > 0 
+            ? floorplanImage.clientHeight / floorplanImage.naturalHeight 
+            : 1;
+          
+          let screenX: number;
+          let screenY: number;
           
           if (activeRect) {
-            dropX = activeRect.left - canvasRect.left + activeRect.width / 2 - 50;
-            dropY = activeRect.top - canvasRect.top + activeRect.height / 2 - 50;
+            screenX = activeRect.left - canvasRect.left + activeRect.width / 2 - 50;
+            screenY = activeRect.top - canvasRect.top + activeRect.height / 2 - 50;
           } else {
-            dropX = event.delta.x;
-            dropY = event.delta.y;
+            screenX = event.delta.x;
+            screenY = event.delta.y;
           }
           
-          dropX = Math.max(0, Math.min(dropX, canvasRect.width - 100));
-          dropY = Math.max(0, Math.min(dropY, canvasRect.height - 100));
+          screenX = Math.max(0, Math.min(screenX, canvasRect.width - 100));
+          screenY = Math.max(0, Math.min(screenY, canvasRect.height - 100));
           
-          console.log('Creating new placement at:', { x: dropX, y: dropY });
+          // Convert to natural coordinates
+          const dropX = screenX / scaleX;
+          const dropY = screenY / scaleY;
+          
+          console.log('Creating new placement at:', { x: dropX, y: dropY, screen: { x: screenX, y: screenY }, scale: { x: scaleX, y: scaleY } });
           
           const fullItem = await itemService.getById(itemData.item.id);
           const firstVariant = fullItem.variants?.[0];

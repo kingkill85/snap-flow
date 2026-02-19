@@ -25,6 +25,8 @@ interface DraggablePlacementProps {
   onResize: (x: number, y: number, width: number, height: number) => void;
   containerRef: React.RefObject<HTMLDivElement>;
   parentIsResizingRef?: React.MutableRefObject<boolean>;
+  scaleX: number;
+  scaleY: number;
 }
 
 function DraggablePlacement({ 
@@ -36,6 +38,8 @@ function DraggablePlacement({
   onResize,
   containerRef,
   parentIsResizingRef,
+  scaleX,
+  scaleY,
 }: DraggablePlacementProps) {
   // State must be declared before hooks that use it
   const [isResizing, setIsResizing] = useState(false);
@@ -89,8 +93,9 @@ function DraggablePlacement({
 
     const handleMouseMove = (e: MouseEvent) => {
       const { x, y, width, height, placementX, placementY, corner } = resizeStartRef.current;
-      const deltaX = e.clientX - x;
-      const deltaY = e.clientY - y;
+      // Convert mouse deltas from screen pixels to natural coordinates
+      const deltaX = (e.clientX - x) / scaleX;
+      const deltaY = (e.clientY - y) / scaleY;
       
       let newX = placementX;
       let newY = placementY;
@@ -122,10 +127,13 @@ function DraggablePlacement({
       }
 
       // Ensure placement stays within canvas bounds
+      // Convert canvas dimensions to natural coordinates for comparison
       if (containerRef.current) {
         const canvasRect = containerRef.current.getBoundingClientRect();
-        newX = Math.max(0, Math.min(newX, canvasRect.width - newWidth));
-        newY = Math.max(0, Math.min(newY, canvasRect.height - newHeight));
+        const canvasWidthNatural = canvasRect.width / scaleX;
+        const canvasHeightNatural = canvasRect.height / scaleY;
+        newX = Math.max(0, Math.min(newX, canvasWidthNatural - newWidth));
+        newY = Math.max(0, Math.min(newY, canvasHeightNatural - newHeight));
       }
 
       onResize(newX, newY, newWidth, newHeight);
@@ -146,7 +154,7 @@ function DraggablePlacement({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, onResize, containerRef]);
+  }, [isResizing, onResize, containerRef, scaleX, scaleY]);
 
   const imageUrl = item?.preview_image ? `/uploads/${item.preview_image}` : null;
   const displayName = item?.name || 'Unknown';
@@ -160,10 +168,10 @@ function DraggablePlacement({
       style={{
         ...style,
         position: 'absolute',
-        left: placement.x,
-        top: placement.y,
-        width: placement.width,
-        height: placement.height,
+        left: placement.x * scaleX,
+        top: placement.y * scaleY,
+        width: placement.width * scaleX,
+        height: placement.height * scaleY,
       }}
       className={`rounded overflow-hidden select-none group ${
         isSelected
@@ -255,10 +263,43 @@ export function Canvas({
   isResizingRef,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const [selectedPlacementId, setSelectedPlacementId] = useState<number | null>(null);
   const { setNodeRef, isOver } = useDroppable({
     id: `canvas-${floorplan.id}`,
   });
+
+  // Track image natural and displayed size for scaling
+  const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
+  const [imageDisplaySize, setImageDisplaySize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const updateImageSize = () => {
+      if (imageRef.current) {
+        setImageDisplaySize({
+          width: imageRef.current.clientWidth,
+          height: imageRef.current.clientHeight,
+        });
+        if (imageRef.current.naturalWidth > 0) {
+          setImageNaturalSize({
+            width: imageRef.current.naturalWidth,
+            height: imageRef.current.naturalHeight,
+          });
+        }
+      }
+    };
+
+    // Initial size
+    updateImageSize();
+
+    // Update on resize
+    window.addEventListener('resize', updateImageSize);
+    return () => window.removeEventListener('resize', updateImageSize);
+  }, [floorplan.image_path]);
+
+  // Calculate scale factors
+  const scaleX = imageNaturalSize.width > 0 ? imageDisplaySize.width / imageNaturalSize.width : 1;
+  const scaleY = imageNaturalSize.height > 0 ? imageDisplaySize.height / imageNaturalSize.height : 1;
 
   const handleCanvasClick = () => {
     setSelectedPlacementId(null);
@@ -299,10 +340,14 @@ export function Canvas({
         style={{ touchAction: 'none' }}
       >
         {floorplan.image_path ? (
-          <div 
-            className="w-full h-full bg-contain bg-center bg-no-repeat cursor-crosshair"
-            style={{ backgroundImage: `url(${imageUrl})` }}
+          <img
+            ref={imageRef}
+            src={imageUrl}
+            alt={floorplan.name}
+            className="w-full h-full object-contain cursor-crosshair select-none"
             onClick={handleImageClick}
+            draggable={false}
+            onDragStart={(e) => e.preventDefault()}
           />
         ) : (
           <div className="text-center text-gray-400 p-8">
@@ -329,6 +374,8 @@ export function Canvas({
               onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
               containerRef={containerRef}
               parentIsResizingRef={isResizingRef}
+              scaleX={scaleX}
+              scaleY={scaleY}
             />
           );
         })}
