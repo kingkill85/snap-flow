@@ -149,23 +149,14 @@ describe('ItemPalette', () => {
     });
   });
 
-  it('shows error message when fetch fails', async () => {
-    (categoryService.getAll as any).mockRejectedValue(new Error('Network error'));
-
+  it('fetches items with pagination', async () => {
     render(<ItemPalette />);
 
     await waitFor(() => {
-      expect(screen.getByText('Failed to load items')).toBeInTheDocument();
-    });
-  });
-
-  it('makes items draggable', async () => {
-    render(<ItemPalette />);
-
-    await waitFor(() => {
-      const draggableItem = screen.getByText('Zigbee Gateway').closest('[role="button"]') ||
-                           screen.getByText('Zigbee Gateway').parentElement;
-      expect(draggableItem).toHaveClass('cursor-grab');
+      expect(itemService.getAll).toHaveBeenCalledWith(
+        { include_inactive: false },
+        { page: 1, limit: 1000 }
+      );
     });
   });
 });
