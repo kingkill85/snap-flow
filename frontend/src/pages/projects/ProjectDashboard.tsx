@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Card, Spinner, Alert, Tabs } from 'flowbite-react';
-import { HiArrowLeft, HiPlus, HiPencil, HiTrash } from 'react-icons/hi';
+import { Button, Card, Spinner, Alert, Tabs, Dropdown } from 'flowbite-react';
+import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiDotsVertical, HiArrowUp, HiArrowDown } from 'react-icons/hi';
 import { projectService, type Project } from '../../services/project';
-import { floorplanService, type Floorplan } from '../../services/floorplan';
+import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '../../services/floorplan';
 import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
+import { FloorplanFormModal } from '../../components/floorplans/FloorplanFormModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import axios from 'axios';
 
@@ -29,6 +30,12 @@ const ProjectDashboard = () => {
   const [error, setError] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  
+  // Floorplan management state
+  const [showFloorplanModal, setShowFloorplanModal] = useState(false);
+  const [showDeleteFloorplanModal, setShowDeleteFloorplanModal] = useState(false);
+  const [floorplanToEdit, setFloorplanToEdit] = useState<Floorplan | null>(null);
+  const [floorplanToDelete, setFloorplanToDelete] = useState<Floorplan | null>(null);
 
   const fetchProjectData = async (signal?: AbortSignal) => {
     try {
@@ -66,6 +73,63 @@ const ProjectDashboard = () => {
   const handleDeleteProject = async () => {
     await projectService.delete(projectId);
     navigate('/projects');
+  };
+
+  // Floorplan handlers
+  interface UpdateFloorDTO {
+    name?: string;
+    sort_order?: number;
+  }
+
+  const handleSubmitFloorplan = async (data: CreateFloorplanDTO | UpdateFloorDTO, image?: File) => {
+    if (floorplanToEdit) {
+      // Update mode
+      await floorplanService.update(floorplanToEdit.id, data);
+    } else {
+      // Create mode
+      if (!image) throw new Error('Image is required');
+      await floorplanService.create(data as CreateFloorplanDTO, image);
+    }
+    await fetchProjectData();
+  };
+
+  const handleDeleteFloorplan = async () => {
+    if (!floorplanToDelete) return;
+    await floorplanService.delete(floorplanToDelete.id);
+    setActiveFloorplan(null);
+    await fetchProjectData();
+  };
+
+  const handleReorderFloorplans = async (floorplanId: number, direction: 'up' | 'down') => {
+    const currentIndex = floorplans.findIndex(fp => fp.id === floorplanId);
+    if (currentIndex === -1) return;
+    
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex < 0 || newIndex >= floorplans.length) return;
+    
+    // Create new order
+    const newOrder = [...floorplans];
+    const [moved] = newOrder.splice(currentIndex, 1);
+    newOrder.splice(newIndex, 0, moved);
+    
+    // Update sort order via API
+    await floorplanService.reorder(projectId, newOrder.map(fp => fp.id));
+    await fetchProjectData();
+  };
+
+  const openCreateFloorplanModal = () => {
+    setFloorplanToEdit(null);
+    setShowFloorplanModal(true);
+  };
+
+  const openEditFloorplanModal = (floorplan: Floorplan) => {
+    setFloorplanToEdit(floorplan);
+    setShowFloorplanModal(true);
+  };
+
+  const openDeleteFloorplanModal = (floorplan: Floorplan) => {
+    setFloorplanToDelete(floorplan);
+    setShowDeleteFloorplanModal(true);
   };
 
   const getStatusColor = (status: string) => {
@@ -151,7 +215,7 @@ const ProjectDashboard = () => {
       <Card>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Floorplans</h2>
-          <Button size="sm">
+          <Button size="sm" onClick={openCreateFloorplanModal}>
             <HiPlus className="mr-2 h-4 w-4" />
             Add Floorplan
           </Button>
@@ -163,8 +227,54 @@ const ProjectDashboard = () => {
           </div>
         ) : (
           <Tabs>
-            {floorplans.map((floorplan) => (
-              <Tabs.Item key={floorplan.id} title={floorplan.name}>
+            {floorplans.map((floorplan, index) => (
+              <Tabs.Item 
+                key={floorplan.id} 
+                title={
+                  <div className="flex items-center gap-2">
+                    <span>{floorplan.name}</span>
+                    <Dropdown
+                      label=""
+                      dismissOnClick={true}
+                      renderTrigger={() => (
+                        <button 
+                          className="p-1 hover:bg-gray-200 rounded"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <HiDotsVertical className="h-4 w-4" />
+                        </button>
+                      )}
+                    >
+                      <Dropdown.Item onClick={() => openEditFloorplanModal(floorplan)}>
+                        <HiPencil className="mr-2 h-4 w-4" />
+                        Rename
+                      </Dropdown.Item>
+                      <Dropdown.Item 
+                        onClick={() => handleReorderFloorplans(floorplan.id, 'up')}
+                        disabled={index === 0}
+                      >
+                        <HiArrowUp className="mr-2 h-4 w-4" />
+                        Move Left
+                      </Dropdown.Item>
+                      <Dropdown.Item 
+                        onClick={() => handleReorderFloorplans(floorplan.id, 'down')}
+                        disabled={index === floorplans.length - 1}
+                      >
+                        <HiArrowDown className="mr-2 h-4 w-4" />
+                        Move Right
+                      </Dropdown.Item>
+                      <Dropdown.Divider />
+                      <Dropdown.Item 
+                        onClick={() => openDeleteFloorplanModal(floorplan)}
+                        className="text-red-600"
+                      >
+                        <HiTrash className="mr-2 h-4 w-4" />
+                        Delete
+                      </Dropdown.Item>
+                    </Dropdown>
+                  </div>
+                }
+              >
                 <div className="p-4">
                   {/* Configurator placeholder */}
                   <div className="aspect-video bg-gray-100 rounded-lg flex items-center justify-center">
@@ -211,6 +321,30 @@ const ProjectDashboard = () => {
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={handleDeleteProject}
+      />
+
+      {/* Floorplan Modals */}
+      <FloorplanFormModal
+        floorplan={floorplanToEdit}
+        projectId={projectId}
+        isOpen={showFloorplanModal}
+        onClose={() => {
+          setShowFloorplanModal(false);
+          setFloorplanToEdit(null);
+        }}
+        onSubmit={handleSubmitFloorplan}
+      />
+
+      <ConfirmDeleteModal
+        title="Delete Floorplan"
+        itemName={floorplanToDelete?.name || ''}
+        warningText="This will permanently delete the floorplan and all placements on it. This action cannot be undone."
+        isOpen={showDeleteFloorplanModal}
+        onClose={() => {
+          setShowDeleteFloorplanModal(false);
+          setFloorplanToDelete(null);
+        }}
+        onConfirm={handleDeleteFloorplan}
       />
     </div>
   );
