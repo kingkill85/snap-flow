@@ -80,7 +80,7 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
         setIsLoading(true);
         const [categoriesData, itemsResult] = await Promise.all([
           categoryService.getAll(),
-          itemService.getAll({ include_inactive: false }),
+          itemService.getAll({ include_inactive: false }, { page: 1, limit: 1000 }),
         ]);
         setCategories(categoriesData);
         // Show all active items (they all have preview_image from first variant)
