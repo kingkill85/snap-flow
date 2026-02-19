@@ -299,13 +299,10 @@ export function Canvas({
         style={{ touchAction: 'none' }}
       >
         {floorplan.image_path ? (
-          <img
-            src={imageUrl}
-            alt={floorplan.name}
-            className="max-w-full max-h-full w-auto h-auto object-contain cursor-crosshair select-none"
+          <div 
+            className="w-full h-full bg-contain bg-center bg-no-repeat cursor-crosshair"
+            style={{ backgroundImage: `url(${imageUrl})` }}
             onClick={handleImageClick}
-            draggable={false}
-            onDragStart={(e) => e.preventDefault()}
           />
         ) : (
           <div className="text-center text-gray-400 p-8">
