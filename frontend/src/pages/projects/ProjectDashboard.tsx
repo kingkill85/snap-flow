@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Spinner, Alert, Tabs, Dropdown } from 'flowbite-react';
-import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiDotsVertical, HiArrowUp, HiArrowDown } from 'react-icons/hi';
+import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiDotsVertical, HiArrowUp, HiArrowDown, HiPhotograph } from 'react-icons/hi';
 import { projectService, type Project } from '../../services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '../../services/floorplan';
 import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
@@ -231,15 +231,17 @@ const ProjectDashboard = () => {
               <Tabs.Item 
                 key={floorplan.id} 
                 title={
-                  <div className="flex items-center gap-2">
-                    <span>{floorplan.name}</span>
+                  <div className="flex items-center gap-2 px-2">
+                    <span className="font-medium">{floorplan.name}</span>
                     <Dropdown
                       label=""
                       dismissOnClick={true}
+                      placement="bottom"
                       renderTrigger={() => (
                         <button 
-                          className="p-1 hover:bg-gray-200 rounded"
+                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
                           onClick={(e) => e.stopPropagation()}
+                          title="Floorplan options"
                         >
                           <HiDotsVertical className="h-4 w-4" />
                         </button>
@@ -276,19 +278,24 @@ const ProjectDashboard = () => {
                 }
               >
                 <div className="p-4">
-                  {/* Configurator placeholder */}
-                  <div className="aspect-video bg-gray-100 rounded-lg flex items-center justify-center">
-                    <div className="text-center">
-                      <p className="text-gray-500 mb-2">Configurator coming soon</p>
-                      <p className="text-sm text-gray-400">Floorplan: {floorplan.name}</p>
-                      {floorplan.image_path && (
+                  {/* Floorplan Canvas */}
+                  <div className="relative w-full" style={{ height: '70vh', minHeight: '500px' }}>
+                    {floorplan.image_path ? (
+                      <div className="w-full h-full bg-gray-50 rounded-lg border border-gray-200 overflow-hidden flex items-center justify-center">
                         <img
                           src={floorplanService.getImageUrl(floorplan.image_path)}
                           alt={floorplan.name}
-                          className="mt-4 max-h-96 mx-auto rounded shadow"
+                          className="w-full h-full object-contain"
                         />
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="w-full h-full bg-gray-100 rounded-lg flex items-center justify-center">
+                        <div className="text-center text-gray-400">
+                          <HiPhotograph className="mx-auto h-16 w-16 mb-4" />
+                          <p>No floorplan image</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </Tabs.Item>
