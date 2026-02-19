@@ -11,18 +11,20 @@ interface CanvasProps {
   placements: Placement[];
   items: Item[];
   onPlacementDelete: (id: number) => void;
+  onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number }) => void;
 }
 
 // Draggable placement component
 interface DraggablePlacementProps {
   placement: Placement;
-  displayName: string;
+  item: Item | undefined;
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onResize: (width: number, height: number) => void;
 }
 
-function DraggablePlacement({ placement, displayName, isSelected, onSelect, onDelete }: DraggablePlacementProps) {
+function DraggablePlacement({ placement, item, isSelected, onSelect, onDelete, onResize }: DraggablePlacementProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `placement-${placement.id}`,
     data: {
@@ -44,6 +46,9 @@ function DraggablePlacement({ placement, displayName, isSelected, onSelect, onDe
     onSelect();
   };
 
+  const imageUrl = item?.preview_image ? `/uploads/${item.preview_image}` : null;
+  const displayName = item?.name || 'Unknown';
+
   return (
     <div
       ref={setNodeRef}
@@ -57,31 +62,72 @@ function DraggablePlacement({ placement, displayName, isSelected, onSelect, onDe
         width: placement.width,
         height: placement.height,
       }}
-      className={`border-2 rounded flex flex-col items-center justify-center select-none ${
+      className={`border-2 rounded overflow-hidden select-none group ${
         isSelected
-          ? 'border-red-500 bg-red-100 bg-opacity-50'
-          : 'border-blue-500 bg-blue-100 bg-opacity-30'
+          ? 'border-red-500 shadow-lg'
+          : 'border-blue-500'
       } ${isDragging ? 'cursor-grabbing' : 'cursor-move'}`}
       title={displayName}
       onClick={handleClick}
     >
-      <span className={`text-xs font-medium truncate px-1 ${isSelected ? 'text-red-800' : 'text-blue-800'}`}>
-        {displayName}
-      </span>
+      {/* Item Image */}
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={displayName}
+          className="w-full h-full object-contain"
+          draggable={false}
+        />
+      ) : (
+        <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+          <span className="text-xs text-gray-500">No image</span>
+        </div>
+      )}
+
+      {/* Selection overlay */}
       {isSelected && (
-        <span
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            console.log('Delete clicked for placement');
-            onDelete();
-          }}
-          className="mt-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-sm cursor-pointer inline-flex items-center justify-center"
-          title="Delete placement"
-          role="button"
-        >
-          <HiTrash className="w-3 h-3" />
-        </span>
+        <>
+          {/* Delete button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="absolute -top-2 -right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-sm z-10"
+            title="Delete placement"
+          >
+            <HiTrash className="w-3 h-3" />
+          </button>
+
+          {/* Resize controls */}
+          <div className="absolute bottom-0 right-0 p-1 flex gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onResize(Math.max(50, placement.width - 25), Math.max(50, placement.height - 25));
+              }}
+              className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600 shadow-sm"
+              title="Smaller"
+            >
+              <span className="text-xs">−</span>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onResize(Math.min(300, placement.width + 25), Math.min(300, placement.height + 25));
+              }}
+              className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600 shadow-sm"
+              title="Larger"
+            >
+              <span className="text-xs">+</span>
+            </button>
+          </div>
+
+          {/* Size indicator */}
+          <div className="absolute -bottom-5 left-0 bg-black bg-opacity-75 text-white text-xs px-1.5 py-0.5 rounded">
+            {placement.width}×{placement.height}
+          </div>
+        </>
       )}
     </div>
   );
@@ -92,6 +138,7 @@ export function Canvas({
   placements,
   items,
   onPlacementDelete,
+  onPlacementUpdate,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedPlacementId, setSelectedPlacementId] = useState<number | null>(null);
@@ -99,10 +146,13 @@ export function Canvas({
     id: `canvas-${floorplan.id}`,
   });
 
-
   // Deselect when clicking on canvas
   const handleCanvasClick = () => {
     setSelectedPlacementId(null);
+  };
+
+  const handleResize = (placementId: number, width: number, height: number) => {
+    onPlacementUpdate(placementId, { width, height });
   };
 
   const handleImageClick = useCallback(
@@ -154,27 +204,34 @@ export function Canvas({
         {/* Placements overlay */}
         {placements.map((placement) => {
           const item = items.find((i) => i.id === placement.item_id);
-          const displayName = item?.name || 'Unknown';
 
           return (
             <DraggablePlacement
               key={placement.id}
               placement={placement}
-              displayName={displayName}
+              item={item}
               isSelected={selectedPlacementId === placement.id}
               onSelect={() => setSelectedPlacementId(placement.id)}
               onDelete={() => {
                 onPlacementDelete(placement.id);
                 setSelectedPlacementId(null);
               }}
+              onResize={(width, height) => handleResize(placement.id, width, height)}
             />
           );
         })}
       </div>
 
       {/* Instructions overlay */}
-      <div className="absolute top-4 left-4 bg-white bg-opacity-90 px-3 py-2 rounded shadow text-sm text-gray-600">
-        <p>Drag items to place • Click to select • Drag to move • Click 🗑 to delete</p>
+      <div className="absolute top-4 left-4 bg-white bg-opacity-90 px-3 py-2 rounded shadow text-sm text-gray-600 max-w-sm">
+        <p className="font-medium mb-1">Controls:</p>
+        <ul className="text-xs space-y-1">
+          <li>• Drag items from palette to place</li>
+          <li>• Click placement to select</li>
+          <li>• Drag placement to move</li>
+          <li>• Use +/− buttons to resize when selected</li>
+          <li>• Click 🗑 to delete</li>
+        </ul>
       </div>
 
       {/* Deselect button (when something is selected) */}

@@ -475,8 +475,7 @@ const ProjectDashboard = () => {
                         floorplan={floorplan}
                         placements={placements}
                         items={items}
-                        
-                        
+                        onPlacementUpdate={handlePlacementUpdate}
                         onPlacementDelete={handlePlacementDelete}
                       />
                     </div>
