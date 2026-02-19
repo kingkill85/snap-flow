@@ -131,7 +131,7 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
 
   return (
     <Card className={`h-full flex flex-col ${className}`}>
-      <div className="flex-1 space-y-2 overflow-y-auto">
+      <div className="flex-1 space-y-2 overflow-y-auto overflow-x-hidden">
         {categories.map((category) => {
           const categoryItems = items.filter((item) => item.category_id === category.id);
           if (categoryItems.length === 0) return null;

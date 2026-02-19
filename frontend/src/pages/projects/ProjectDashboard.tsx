@@ -544,27 +544,21 @@ const ProjectDashboard = () => {
                     </div>
                   </div>
                   
-                  {/* Drag overlay - shows item being dragged */}
+                  {/* Drag overlay - shows just the item image (like it will appear on canvas) */}
                   <DragOverlay>
                     {activeDragItem && (
-                      <div className="p-2 border-2 border-blue-500 rounded bg-white shadow-lg cursor-grabbing">
-                        <div className="flex items-center gap-2">
-                          {activeDragItem.preview_image ? (
-                            <img
-                              src={`/uploads/${activeDragItem.preview_image}`}
-                              alt={activeDragItem.name}
-                              className="w-10 h-10 object-contain rounded bg-gray-100"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
-                              No img
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{activeDragItem.name}</p>
-                            <p className="text-xs text-gray-500 truncate">{activeDragItem.base_model_number || 'No model #'}</p>
+                      <div className="border-2 border-blue-500 rounded bg-white shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
+                        {activeDragItem.preview_image ? (
+                          <img
+                            src={`/uploads/${activeDragItem.preview_image}`}
+                            alt={activeDragItem.name}
+                            className="w-full h-full object-contain bg-gray-100"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">
+                            No img
                           </div>
-                        </div>
+                        )}
                       </div>
                     )}
                   </DragOverlay>
