@@ -68,10 +68,8 @@ export function Canvas({
 
         {/* Placements overlay */}
         {placements.map((placement) => {
-          // Find item that has this variant
-          const item = items.find((i) => 
-            i.variants?.some((v) => v.id === placement.item_variant_id)
-          );
+          // Find item by item_id (included in placement)
+          const item = items.find((i) => i.id === placement.item_id);
           const displayName = item?.name || 'Unknown';
 
           return (
