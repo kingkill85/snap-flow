@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, Spinner, Alert } from 'flowbite-react';
-import { useDraggable, DragOverlay } from '@dnd-kit/core';
+import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import type { Item } from '../../services/item';
 import { itemService } from '../../services/item';
@@ -11,7 +11,7 @@ interface DraggableItemProps {
   item: Item;
 }
 
-function DraggableItem({ item, onDragStart, onDragEnd }: DraggableItemProps & { onDragStart?: (item: Item) => void; onDragEnd?: () => void }) {
+function DraggableItem({ item }: DraggableItemProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `item-${item.id}`,
     data: {
@@ -19,15 +19,6 @@ function DraggableItem({ item, onDragStart, onDragEnd }: DraggableItemProps & { 
       type: 'item',
     },
   });
-
-  // Notify parent when drag starts/ends
-  useEffect(() => {
-    if (isDragging && onDragStart) {
-      onDragStart(item);
-    } else if (!isDragging && onDragEnd) {
-      onDragEnd();
-    }
-  }, [isDragging, item, onDragStart, onDragEnd]);
 
   const style = transform
     ? {
@@ -69,33 +60,6 @@ function DraggableItem({ item, onDragStart, onDragEnd }: DraggableItemProps & { 
   );
 }
 
-// Drag preview component for the overlay
-function DragPreview({ item }: { item: Item }) {
-  const imageUrl = item.preview_image ? `/uploads/${item.preview_image}` : null;
-  
-  return (
-    <div className="p-2 border-2 border-blue-500 rounded bg-white shadow-lg cursor-grabbing">
-      <div className="flex items-center gap-2">
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={item.name}
-            className="w-10 h-10 object-contain rounded bg-gray-100"
-          />
-        ) : (
-          <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
-            No img
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{item.name}</p>
-          <p className="text-xs text-gray-500 truncate">{item.base_model_number || 'No model #'}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 interface ItemPaletteProps {
   className?: string;
 }
@@ -106,7 +70,6 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeItem, setActiveItem] = useState<Item | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -192,8 +155,6 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
                     <DraggableItem
                       key={item.id}
                       item={item}
-                      onDragStart={(item) => setActiveItem(item)}
-                      onDragEnd={() => setActiveItem(null)}
                     />
                   ))}
                 </div>
@@ -202,11 +163,6 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
           );
         })}
       </div>
-      
-      {/* Drag overlay - shows the item being dragged */}
-      <DragOverlay>
-        {activeItem ? <DragPreview item={activeItem} /> : null}
-      </DragOverlay>
     </Card>
   );
 }

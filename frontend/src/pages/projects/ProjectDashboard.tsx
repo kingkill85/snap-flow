@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Spinner, Alert, Tabs } from 'flowbite-react';
 import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowUp, HiArrowDown } from 'react-icons/hi';
-import { DndContext, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { projectService, type Project } from '../../services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '../../services/floorplan';
 import { placementService, type Placement, type CreatePlacementDTO } from '../../services/placement';
@@ -43,6 +43,8 @@ const ProjectDashboard = () => {
   const [showDeleteFloorplanModal, setShowDeleteFloorplanModal] = useState(false);
   const [floorplanToEdit, setFloorplanToEdit] = useState<Floorplan | null>(null);
   const [floorplanToDelete, setFloorplanToDelete] = useState<Floorplan | null>(null);
+  // Track active drag item for overlay
+  const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
 
   // DnD sensors - with custom activation to skip resize handles
   const sensors = useSensors(
@@ -193,11 +195,14 @@ const ProjectDashboard = () => {
   // DnD handlers
   const handleDragStart = (event: DragStartEvent) => {
     console.log('Drag started:', event);
-    // Check if this is a resize operation by looking at the active element
     const activeId = event.active.id.toString();
-    if (activeId.startsWith('placement-')) {
-      // Check if the mousedown was on a resize handle
-      // We can't easily detect this here, so we'll use a ref set by the Canvas component
+    
+    // Track item being dragged from palette
+    if (activeId.startsWith('item-')) {
+      const itemData = event.active.data.current as { item: Item } | undefined;
+      if (itemData?.item) {
+        setActiveDragItem(itemData.item);
+      }
     }
   };
 
@@ -337,6 +342,9 @@ const ProjectDashboard = () => {
         }
       }
     }
+    
+    // Clear active drag item
+    setActiveDragItem(null);
   };
 
   const openCreateFloorplanModal = () => {
@@ -535,6 +543,31 @@ const ProjectDashboard = () => {
                       />
                     </div>
                   </div>
+                  
+                  {/* Drag overlay - shows item being dragged */}
+                  <DragOverlay>
+                    {activeDragItem && (
+                      <div className="p-2 border-2 border-blue-500 rounded bg-white shadow-lg cursor-grabbing">
+                        <div className="flex items-center gap-2">
+                          {activeDragItem.preview_image ? (
+                            <img
+                              src={`/uploads/${activeDragItem.preview_image}`}
+                              alt={activeDragItem.name}
+                              className="w-10 h-10 object-contain rounded bg-gray-100"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
+                              No img
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{activeDragItem.name}</p>
+                            <p className="text-xs text-gray-500 truncate">{activeDragItem.base_model_number || 'No model #'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </DragOverlay>
                 </DndContext>
               </Tabs.Item>
             ))}
