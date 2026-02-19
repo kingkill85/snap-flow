@@ -293,7 +293,7 @@ export function Canvas({
         ref={setNodeRef}
         data-canvas-id={floorplan.id}
         onClick={handleCanvasClick}
-        className={`relative w-full h-full flex items-center justify-center transition-colors ${
+        className={`relative w-full h-full flex items-start justify-start overflow-auto transition-colors ${
           isOver ? 'bg-blue-50 border-blue-300' : ''
         }`}
         style={{ touchAction: 'none' }}
@@ -302,7 +302,7 @@ export function Canvas({
           <img
             src={imageUrl}
             alt={floorplan.name}
-            className="w-full h-full object-cover cursor-crosshair select-none"
+            className="max-w-full max-h-full w-auto h-auto object-contain cursor-crosshair select-none"
             onClick={handleImageClick}
             draggable={false}
             onDragStart={(e) => e.preventDefault()}
