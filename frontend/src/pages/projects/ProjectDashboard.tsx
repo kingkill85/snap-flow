@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Card, Spinner, Alert, Tabs, Dropdown } from 'flowbite-react';
+import { Button, Card, Spinner, Alert, Tabs } from 'flowbite-react';
 import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowUp, HiArrowDown, HiPhotograph } from 'react-icons/hi';
 import { projectService, type Project } from '../../services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '../../services/floorplan';
@@ -215,52 +215,10 @@ const ProjectDashboard = () => {
       <Card>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Floorplans</h2>
-          <div className="flex gap-2">
-            {floorplans.length > 0 && activeFloorplan && (
-              <Dropdown
-                label="Manage"
-                dismissOnClick={true}
-                placement="bottom-end"
-              >
-                <Dropdown.Item onClick={() => openEditFloorplanModal(activeFloorplan)}>
-                  <HiPencil className="mr-2 h-4 w-4" />
-                  Rename
-                </Dropdown.Item>
-                <Dropdown.Item 
-                  onClick={() => {
-                    const index = floorplans.findIndex(fp => fp.id === activeFloorplan.id);
-                    if (index > 0) handleReorderFloorplans(activeFloorplan.id, 'up');
-                  }}
-                  disabled={floorplans.findIndex(fp => fp.id === activeFloorplan.id) === 0}
-                >
-                  <HiArrowUp className="mr-2 h-4 w-4" />
-                  Move Left
-                </Dropdown.Item>
-                <Dropdown.Item 
-                  onClick={() => {
-                    const index = floorplans.findIndex(fp => fp.id === activeFloorplan.id);
-                    if (index < floorplans.length - 1) handleReorderFloorplans(activeFloorplan.id, 'down');
-                  }}
-                  disabled={floorplans.findIndex(fp => fp.id === activeFloorplan.id) === floorplans.length - 1}
-                >
-                  <HiArrowDown className="mr-2 h-4 w-4" />
-                  Move Right
-                </Dropdown.Item>
-                <Dropdown.Divider />
-                <Dropdown.Item 
-                  onClick={() => openDeleteFloorplanModal(activeFloorplan)}
-                  className="text-red-600"
-                >
-                  <HiTrash className="mr-2 h-4 w-4" />
-                  Delete
-                </Dropdown.Item>
-              </Dropdown>
-            )}
-            <Button size="sm" onClick={openCreateFloorplanModal}>
-              <HiPlus className="mr-2 h-4 w-4" />
-              Add Floorplan
-            </Button>
-          </div>
+          <Button size="sm" onClick={openCreateFloorplanModal}>
+            <HiPlus className="mr-2 h-4 w-4" />
+            Add Floorplan
+          </Button>
         </div>
 
         {floorplans.length === 0 ? (
@@ -271,10 +229,63 @@ const ProjectDashboard = () => {
           <Tabs 
             onActiveTabChange={(index) => setActiveFloorplan(floorplans[index] || null)}
           >
-            {floorplans.map((floorplan) => (
+            {floorplans.map((floorplan, index) => (
               <Tabs.Item 
-                key={floorplan.id} 
-                title={floorplan.name}
+                key={floorplan.id}
+                active={activeFloorplan?.id === floorplan.id}
+                title={
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium">{floorplan.name}</span>
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          openEditFloorplanModal(floorplan);
+                        }}
+                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                        title="Rename"
+                      >
+                        <HiPencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
+                        }}
+                        disabled={index === 0}
+                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Move Left"
+                      >
+                        <HiArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
+                        }}
+                        disabled={index === floorplans.length - 1}
+                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Move Right"
+                      >
+                        <HiArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          openDeleteFloorplanModal(floorplan);
+                        }}
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title="Delete"
+                      >
+                        <HiTrash className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                }
               >
                 <div className="p-4">
                   {/* Floorplan Canvas */}
