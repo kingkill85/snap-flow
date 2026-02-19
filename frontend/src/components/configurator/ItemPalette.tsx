@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, Spinner, Alert } from 'flowbite-react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
@@ -9,9 +9,11 @@ import { categoryService } from '../../services/category';
 
 interface DraggableItemProps {
   item: Item;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }
 
-function DraggableItem({ item }: DraggableItemProps) {
+function DraggableItem({ item, onDragStart, onDragEnd }: DraggableItemProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `item-${item.id}`,
     data: {
@@ -19,6 +21,15 @@ function DraggableItem({ item }: DraggableItemProps) {
       type: 'item',
     },
   });
+
+  // Notify parent of drag state changes
+  useEffect(() => {
+    if (isDragging && onDragStart) {
+      onDragStart();
+    } else if (!isDragging && onDragEnd) {
+      onDragEnd();
+    }
+  }, [isDragging, onDragStart, onDragEnd]);
 
   const style = transform
     ? {
@@ -72,6 +83,8 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isDraggingFromPalette, setIsDraggingFromPalette] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -133,7 +146,14 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
 
   return (
     <Card className={`h-full flex flex-col ${className}`}>
-      <div className="flex-1 space-y-2 overflow-y-auto overflow-x-hidden" style={{ touchAction: 'none' }}>
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 space-y-2 overflow-x-hidden"
+        style={{ 
+          overflowY: isDraggingFromPalette ? 'hidden' : 'auto',
+          touchAction: isDraggingFromPalette ? 'none' : 'pan-y'
+        }}
+      >
         {categories.map((category) => {
           const categoryItems = items.filter((item) => item.category_id === category.id);
           if (categoryItems.length === 0) return null;
@@ -157,6 +177,8 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
                     <DraggableItem
                       key={item.id}
                       item={item}
+                      onDragStart={() => setIsDraggingFromPalette(true)}
+                      onDragEnd={() => setIsDraggingFromPalette(false)}
                     />
                   ))}
                 </div>
