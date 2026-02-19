@@ -226,10 +226,11 @@ const ProjectDashboard = () => {
             <p>No floorplans yet. Add your first floorplan to start configuring.</p>
           </div>
         ) : (
-          <Tabs 
-            onActiveTabChange={(index) => setActiveFloorplan(floorplans[index] || null)}
-          >
-            {floorplans.map((floorplan, index) => (
+          <div className="floorplan-tabs">
+            <Tabs 
+              onActiveTabChange={(index) => setActiveFloorplan(floorplans[index] || null)}
+            >
+              {floorplans.map((floorplan, index) => (
               <Tabs.Item 
                 key={floorplan.id}
                 active={activeFloorplan?.id === floorplan.id}
@@ -310,9 +311,39 @@ const ProjectDashboard = () => {
                 </div>
               </Tabs.Item>
             ))}
-          </Tabs>
+            </Tabs>
+          </div>
         )}
       </Card>
+
+      {/* Custom styles for floorplan tabs - higher contrast */}
+      <style>{`
+        .floorplan-tabs [role="tablist"] {
+          background-color: #f3f4f6;
+          border-radius: 0.5rem;
+          padding: 0.25rem;
+          gap: 0.25rem;
+        }
+        .floorplan-tabs [role="tab"] {
+          background-color: #e5e7eb;
+          border-radius: 0.375rem;
+          font-weight: 500;
+          color: #374151;
+          padding: 0.75rem 1rem;
+        }
+        .floorplan-tabs [role="tab"]:hover {
+          background-color: #d1d5db;
+          color: #111827;
+        }
+        .floorplan-tabs [role="tab"][aria-selected="true"] {
+          background-color: #ffffff;
+          color: #111827;
+          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        .floorplan-tabs [role="tab"][aria-selected="true"]:hover {
+          background-color: #ffffff;
+        }
+      `}</style>
 
       {/* Summary Panel Placeholder */}
       <Card>
