@@ -34,48 +34,30 @@ function DraggableItem({ item }: DraggableItemProps) {
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      style={style}
-      className={`border rounded cursor-grab hover:bg-gray-50 transition-colors overflow-hidden ${
-        isDragging 
-          ? 'opacity-30 cursor-grabbing w-[100px] h-[100px] p-0' 
-          : 'p-2'
-      }`}
+      style={{
+        ...style,
+        // Hide original element completely when dragging - DragOverlay shows the preview
+        visibility: isDragging ? 'hidden' : 'visible',
+      }}
+      className="p-2 border rounded cursor-grab hover:bg-gray-50 transition-colors overflow-hidden"
     >
-      {isDragging ? (
-        // Show just the image when dragging (matches what will appear on canvas)
-        <div className="w-full h-full">
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={item.name}
-              className="w-full h-full object-contain bg-gray-100"
-            />
-          ) : (
-            <div className="w-full h-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">
-              No img
-            </div>
-          )}
-        </div>
-      ) : (
-        // Show full content when not dragging
-        <div className="flex items-center gap-2">
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={item.name}
-              className="w-10 h-10 object-contain rounded bg-gray-100"
-            />
-          ) : (
-            <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
-              No img
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{item.name}</p>
-            <p className="text-xs text-gray-500 truncate">{item.base_model_number || 'No model #'}</p>
+      <div className="flex items-center gap-2">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={item.name}
+            className="w-10 h-10 object-contain rounded bg-gray-100"
+          />
+        ) : (
+          <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
+            No img
           </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">{item.name}</p>
+          <p className="text-xs text-gray-500 truncate">{item.base_model_number || 'No model #'}</p>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -151,7 +133,7 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
 
   return (
     <Card className={`h-full flex flex-col ${className}`}>
-      <div className="flex-1 space-y-2 overflow-y-auto overflow-x-hidden">
+      <div className="flex-1 space-y-2 overflow-y-auto overflow-x-hidden" style={{ touchAction: 'none' }}>
         {categories.map((category) => {
           const categoryItems = items.filter((item) => item.category_id === category.id);
           if (categoryItems.length === 0) return null;
