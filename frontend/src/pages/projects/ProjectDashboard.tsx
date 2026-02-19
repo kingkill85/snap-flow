@@ -339,52 +339,54 @@ const ProjectDashboard = () => {
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{floorplan.name}</span>
                     <div className="flex items-center gap-1 ml-2">
-                      <button
+                      <span
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           openEditFloorplanModal(floorplan);
                         }}
-                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded transition-colors cursor-pointer"
                         title="Rename"
+                        role="button"
                       >
                         <HiPencil className="h-4 w-4" />
-                      </button>
-                      <button
+                      </span>
+                      <span
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
                         }}
-                        disabled={index === 0}
-                        className="p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        className={`p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
                         title="Move Left"
+                        role="button"
                       >
                         <HiArrowUp className="h-4 w-4" />
-                      </button>
-                      <button
+                      </span>
+                      <span
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
                         }}
-                        disabled={index === floorplans.length - 1}
-                        className="p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        className={`p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === floorplans.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
                         title="Move Right"
+                        role="button"
                       >
                         <HiArrowDown className="h-4 w-4" />
-                      </button>
-                      <button
+                      </span>
+                      <span
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           openDeleteFloorplanModal(floorplan);
                         }}
-                        className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors"
+                        className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors cursor-pointer"
                         title="Delete"
+                        role="button"
                       >
                         <HiTrash className="h-4 w-4" />
-                      </button>
+                      </span>
                     </div>
                   </div>
                 }
