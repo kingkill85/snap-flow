@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Spinner, Alert, Tabs } from 'flowbite-react';
 import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowUp, HiArrowDown } from 'react-icons/hi';
@@ -187,15 +187,31 @@ const ProjectDashboard = () => {
     }
   };
 
+  // Track if we're currently resizing (to skip move logic)
+  const isResizingRef = useRef(false);
+
   // DnD handlers
   const handleDragStart = (event: DragStartEvent) => {
     console.log('Drag started:', event);
+    // Check if this is a resize operation by looking at the active element
+    const activeId = event.active.id.toString();
+    if (activeId.startsWith('placement-')) {
+      // Check if the mousedown was on a resize handle
+      // We can't easily detect this here, so we'll use a ref set by the Canvas component
+    }
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     
     console.log('Drag end:', { active: active.id, over: over?.id });
+    
+    // Skip if we're resizing - the Canvas component handles resize
+    if (isResizingRef.current) {
+      console.log('Skipping move - was resizing');
+      isResizingRef.current = false;
+      return;
+    }
     
     if (!over || !activeFloorplan) return;
     
@@ -477,6 +493,7 @@ const ProjectDashboard = () => {
                         items={items}
                         onPlacementUpdate={handlePlacementUpdate}
                         onPlacementDelete={handlePlacementDelete}
+                        isResizingRef={isResizingRef}
                       />
                     </div>
                   </div>

@@ -12,6 +12,7 @@ interface CanvasProps {
   items: Item[];
   onPlacementDelete: (id: number) => void;
   onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number }) => void;
+  isResizingRef?: React.MutableRefObject<boolean>;
 }
 
 // Draggable placement component with resize handles
@@ -23,6 +24,7 @@ interface DraggablePlacementProps {
   onDelete: () => void;
   onResize: (x: number, y: number, width: number, height: number) => void;
   containerRef: React.RefObject<HTMLDivElement>;
+  parentIsResizingRef?: React.MutableRefObject<boolean>;
 }
 
 function DraggablePlacement({ 
@@ -32,7 +34,8 @@ function DraggablePlacement({
   onSelect, 
   onDelete, 
   onResize,
-  containerRef 
+  containerRef,
+  parentIsResizingRef,
 }: DraggablePlacementProps) {
   // State must be declared before hooks that use it
   const [isResizing, setIsResizing] = useState(false);
@@ -64,6 +67,11 @@ function DraggablePlacement({
     e.stopPropagation();
     e.preventDefault();
     setIsResizing(true);
+    
+    // Notify parent that we're resizing
+    if (parentIsResizingRef) {
+      parentIsResizingRef.current = true;
+    }
     
     resizeStartRef.current = {
       x: e.clientX,
@@ -125,6 +133,10 @@ function DraggablePlacement({
 
     const handleMouseUp = () => {
       setIsResizing(false);
+      // Clear the resizing flag in parent
+      if (parentIsResizingRef) {
+        parentIsResizingRef.current = false;
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -231,6 +243,7 @@ export function Canvas({
   items,
   onPlacementDelete,
   onPlacementUpdate,
+  isResizingRef,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedPlacementId, setSelectedPlacementId] = useState<number | null>(null);
@@ -309,6 +322,7 @@ export function Canvas({
               }}
               onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
               containerRef={containerRef}
+              parentIsResizingRef={isResizingRef}
             />
           );
         })}
