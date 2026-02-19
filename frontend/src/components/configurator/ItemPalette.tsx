@@ -2,23 +2,21 @@ import { useState, useEffect } from 'react';
 import { Card, Spinner, Alert } from 'flowbite-react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import type { Item, ItemVariant } from '../../services/item';
+import type { Item } from '../../services/item';
 import { itemService } from '../../services/item';
 import type { Category } from '../../services/category';
 import { categoryService } from '../../services/category';
 
 interface DraggableItemProps {
-  variant: ItemVariant;
   item: Item;
 }
 
-function DraggableItem({ variant, item }: DraggableItemProps) {
+function DraggableItem({ item }: DraggableItemProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `variant-${variant.id}`,
+    id: `item-${item.id}`,
     data: {
-      variant,
       item,
-      type: 'item-variant',
+      type: 'item',
     },
   });
 
@@ -28,7 +26,8 @@ function DraggableItem({ variant, item }: DraggableItemProps) {
       }
     : undefined;
 
-  const imageUrl = variant.image_path ? `/uploads/${variant.image_path}` : null;
+  // Use preview image from first variant
+  const imageUrl = item.preview_image ? `/uploads/${item.preview_image}` : null;
 
   return (
     <div
@@ -44,7 +43,7 @@ function DraggableItem({ variant, item }: DraggableItemProps) {
         {imageUrl ? (
           <img
             src={imageUrl}
-            alt={variant.style_name}
+            alt={item.name}
             className="w-10 h-10 object-cover rounded"
           />
         ) : (
@@ -54,8 +53,7 @@ function DraggableItem({ variant, item }: DraggableItemProps) {
         )}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{item.name}</p>
-          <p className="text-xs text-gray-500 truncate">{variant.style_name}</p>
-          <p className="text-xs font-semibold text-green-600">${variant.price.toFixed(2)}</p>
+          <p className="text-xs text-gray-500 truncate">{item.base_model_number || 'No model #'}</p>
         </div>
       </div>
     </div>
@@ -82,11 +80,8 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
           itemService.getAll({ include_inactive: false }),
         ]);
         setCategories(categoriesData);
-        // Filter to only items with variants
-        const itemsWithVariants = itemsResult.items.filter(
-          (item: Item) => item.variants && item.variants.length > 0
-        );
-        setItems(itemsWithVariants);
+        // Show all active items (they all have preview_image from first variant)
+        setItems(itemsResult.items);
         
         // Expand first category by default
         if (categoriesData.length > 0) {
@@ -157,15 +152,12 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
               </button>
               {isExpanded && (
                 <div className="p-2 space-y-2">
-                  {categoryItems.map((item) =>
-                    item.variants?.map((variant) => (
-                      <DraggableItem
-                        key={variant.id}
-                        variant={variant}
-                        item={item}
-                      />
-                    ))
-                  )}
+                  {categoryItems.map((item) => (
+                    <DraggableItem
+                      key={item.id}
+                      item={item}
+                    />
+                  ))}
                 </div>
               )}
             </div>

@@ -2,12 +2,12 @@ import { useRef, useCallback } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import type { Floorplan } from '../../services/floorplan';
 import type { Placement } from '../../services/placement';
-import type { ItemVariant } from '../../services/item';
+import type { Item } from '../../services/item';
 
 interface CanvasProps {
   floorplan: Floorplan;
   placements: Placement[];
-  itemVariants: ItemVariant[];
+  items: Item[];
   onPlacementCreate: (placement: { x: number; y: number; width: number; height: number; item_variant_id: number }) => void;
   onPlacementUpdate: (id: number, placement: { x?: number; y?: number; width?: number; height?: number }) => void;
   onPlacementDelete: (id: number) => void;
@@ -16,10 +16,7 @@ interface CanvasProps {
 export function Canvas({
   floorplan,
   placements,
-  itemVariants,
-  onPlacementCreate: _onPlacementCreate,
-  onPlacementUpdate: _onPlacementUpdate,
-  onPlacementDelete: _onPlacementDelete,
+  items,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { setNodeRef, isOver } = useDroppable({
@@ -71,8 +68,11 @@ export function Canvas({
 
         {/* Placements overlay */}
         {placements.map((placement) => {
-          const variant = itemVariants.find((v) => v.id === placement.item_variant_id);
-          if (!variant) return null;
+          // Find item that has this variant
+          const item = items.find((i) => 
+            i.variants?.some((v) => v.id === placement.item_variant_id)
+          );
+          const displayName = item?.name || 'Unknown';
 
           return (
             <div
@@ -84,10 +84,10 @@ export function Canvas({
                 width: placement.width,
                 height: placement.height,
               }}
-              title={variant.style_name}
+              title={displayName}
             >
               <span className="text-xs font-medium text-blue-800 truncate px-1">
-                {variant.style_name}
+                {displayName}
               </span>
             </div>
           );

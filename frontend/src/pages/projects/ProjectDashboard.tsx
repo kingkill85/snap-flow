@@ -6,7 +6,7 @@ import { DndContext, type DragEndEvent, type DragStartEvent, PointerSensor, useS
 import { projectService, type Project } from '../../services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '../../services/floorplan';
 import { placementService, type Placement, type CreatePlacementDTO } from '../../services/placement';
-import { itemService, type Item, type ItemVariant } from '../../services/item';
+import { itemService, type Item } from '../../services/item';
 import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
 import { FloorplanFormModal } from '../../components/floorplans/FloorplanFormModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
@@ -192,28 +192,38 @@ const ProjectDashboard = () => {
     console.log('Drag started:', event);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     
     if (!over || !activeFloorplan) return;
     
     // Check if dropped on canvas
     if (over.id.toString().startsWith('canvas-')) {
-      const variantData = active.data.current as { variant: ItemVariant; item: Item } | undefined;
+      const itemData = active.data.current as { item: Item } | undefined;
       
-      if (variantData?.variant) {
-        // Get drop coordinates from event
-        const x = event.delta.x;
-        const y = event.delta.y;
-        
-        // Default size for new placements (100x100)
-        handlePlacementCreate({
-          x: Math.max(0, x),
-          y: Math.max(0, y),
-          width: 100,
-          height: 100,
-          item_variant_id: variantData.variant.id,
-        });
+      if (itemData?.item) {
+        // Fetch item with variants to get the first variant
+        try {
+          const fullItem = await itemService.getById(itemData.item.id);
+          const firstVariant = fullItem.variants?.[0];
+          
+          if (firstVariant) {
+            // Get drop coordinates from event (relative to the drop target)
+            const x = event.delta.x;
+            const y = event.delta.y;
+            
+            // Default size for new placements (100x100)
+            handlePlacementCreate({
+              x: Math.max(0, x),
+              y: Math.max(0, y),
+              width: 100,
+              height: 100,
+              item_variant_id: firstVariant.id,
+            });
+          }
+        } catch (err) {
+          console.error('Failed to fetch item variants:', err);
+        }
       }
     }
   };
@@ -407,7 +417,7 @@ const ProjectDashboard = () => {
                       <Canvas
                         floorplan={floorplan}
                         placements={placements}
-                        itemVariants={items.flatMap(item => item.variants || [])}
+                        items={items}
                         onPlacementCreate={handlePlacementCreate}
                         onPlacementUpdate={handlePlacementUpdate}
                         onPlacementDelete={handlePlacementDelete}
