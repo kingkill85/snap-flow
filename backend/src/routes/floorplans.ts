@@ -7,6 +7,14 @@ import { authMiddleware } from '../middleware/auth.ts';
 import { uploadMiddleware } from '../middleware/upload.ts';
 import { fileStorageService } from '../services/file-storage.ts';
 
+// Extend Hono context types
+declare module 'hono' {
+  interface ContextVariableMap {
+    uploadResult: { success: boolean; filePath?: string; error?: string; originalName?: string };
+    formData: FormData;
+  }
+}
+
 const floorplanRoutes = new Hono();
 
 // Validation schemas
@@ -62,12 +70,26 @@ floorplanRoutes.get('/:id', authMiddleware, async (c) => {
 // POST /floorplans - Create floorplan with image upload
 floorplanRoutes.post('/', authMiddleware, uploadMiddleware('floorplans'), async (c) => {
   try {
-    const { project_id, name } = await c.req.json();
     const uploadResult = c.get('uploadResult');
+    const formData = c.get('formData');
 
     if (!uploadResult || !uploadResult.success) {
       return c.json({ error: uploadResult?.error || 'Image upload failed' }, 400);
     }
+
+    if (!formData) {
+      return c.json({ error: 'No form data provided' }, 400);
+    }
+
+    const projectIdStr = formData.get('project_id')?.toString();
+    const name = formData.get('name')?.toString();
+
+    if (!projectIdStr || !name) {
+      await fileStorageService.deleteFile(uploadResult.filePath!);
+      return c.json({ error: 'Missing required fields: project_id, name' }, 400);
+    }
+
+    const project_id = parseInt(projectIdStr);
 
     // Check if project exists
     const project = await projectRepository.findById(project_id);
