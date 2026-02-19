@@ -59,7 +59,7 @@ const ProjectDashboard = () => {
       const [projectData, floorplansData, itemsResult] = await Promise.all([
         projectService.getById(projectId, signal),
         floorplanService.getAll(projectId, signal),
-        itemService.getAll({ include_inactive: false }),
+        itemService.getAll({ include_inactive: false }, { page: 1, limit: 1000 }),
       ]);
       
       setProject(projectData);
