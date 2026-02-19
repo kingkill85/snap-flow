@@ -47,7 +47,7 @@ function DraggablePlacement({
       placement,
       type: 'placement',
     },
-    disabled: isResizing, // Disable drag while resizing
+    disabled: isResizing || isSelected, // Disable drag while resizing OR when selected
   });
 
   const style = transform
@@ -154,7 +154,8 @@ function DraggablePlacement({
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
+      // Only apply drag listeners when not selected
+      {...(isSelected ? {} : listeners)}
       {...attributes}
       style={{
         ...style,
@@ -206,24 +207,32 @@ function DraggablePlacement({
           <div
             className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-nw-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
             onMouseDown={(e) => startResize(e, 'nw')}
+            onPointerDown={(e) => { e.stopPropagation(); }}
+            data-no-drag="true"
             title="Resize from top-left"
           />
           {/* Top-right */}
           <div
             className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-ne-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
             onMouseDown={(e) => startResize(e, 'ne')}
+            onPointerDown={(e) => { e.stopPropagation(); }}
+            data-no-drag="true"
             title="Resize from top-right"
           />
           {/* Bottom-left */}
           <div
             className="absolute -bottom-1.5 -left-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-sw-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
             onMouseDown={(e) => startResize(e, 'sw')}
+            onPointerDown={(e) => { e.stopPropagation(); }}
+            data-no-drag="true"
             title="Resize from bottom-left"
           />
           {/* Bottom-right */}
           <div
             className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-se-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
             onMouseDown={(e) => startResize(e, 'se')}
+            onPointerDown={(e) => { e.stopPropagation(); }}
+            data-no-drag="true"
             title="Resize from bottom-right"
           />
 

@@ -44,7 +44,7 @@ const ProjectDashboard = () => {
   const [floorplanToEdit, setFloorplanToEdit] = useState<Floorplan | null>(null);
   const [floorplanToDelete, setFloorplanToDelete] = useState<Floorplan | null>(null);
 
-  // DnD sensors
+  // DnD sensors - with custom activation to skip resize handles
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
