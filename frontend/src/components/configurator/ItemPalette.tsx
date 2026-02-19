@@ -47,7 +47,7 @@ function DraggableItem({ item }: DraggableItemProps) {
           <img
             src={imageUrl}
             alt={item.name}
-            className="w-10 h-10 object-cover rounded"
+            className="w-10 h-10 object-contain rounded bg-gray-100"
           />
         ) : (
           <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
@@ -134,7 +134,6 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
 
   return (
     <Card className={`h-full ${className}`}>
-      <h3 className="text-lg font-semibold mb-4">Item Palette</h3>
       <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 300px)' }}>
         {categories.map((category) => {
           const categoryItems = items.filter((item) => item.category_id === category.id);
