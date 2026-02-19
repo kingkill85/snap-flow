@@ -1,5 +1,16 @@
 # AGENTS.md - Project Context for AI Assistants
 
+## ⚠️ CRITICAL: ALWAYS USE FEATURE BRANCHES
+
+**BEFORE starting ANY work:**
+1. Check: `git branch`
+2. If on `main` → **STOP** and create feature branch: `git checkout -b feature/description`
+3. Only then start working
+
+**Never commit directly to main - even for small changes!**
+
+---
+
 ## Project Overview
 
 **SnapFlow** - A web application for smart home automation companies to create project proposals.
