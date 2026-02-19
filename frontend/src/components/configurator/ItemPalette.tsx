@@ -35,27 +35,47 @@ function DraggableItem({ item }: DraggableItemProps) {
       {...listeners}
       {...attributes}
       style={style}
-      className={`p-2 border rounded cursor-grab hover:bg-gray-50 transition-colors ${
-        isDragging ? 'opacity-30 cursor-grabbing' : ''
+      className={`border rounded cursor-grab hover:bg-gray-50 transition-colors overflow-hidden ${
+        isDragging 
+          ? 'opacity-30 cursor-grabbing w-[100px] h-[100px] p-0' 
+          : 'p-2'
       }`}
     >
-      <div className="flex items-center gap-2">
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={item.name}
-            className="w-10 h-10 object-contain rounded bg-gray-100"
-          />
-        ) : (
-          <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
-            No img
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{item.name}</p>
-          <p className="text-xs text-gray-500 truncate">{item.base_model_number || 'No model #'}</p>
+      {isDragging ? (
+        // Show just the image when dragging (matches what will appear on canvas)
+        <div className="w-full h-full">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={item.name}
+              className="w-full h-full object-contain bg-gray-100"
+            />
+          ) : (
+            <div className="w-full h-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">
+              No img
+            </div>
+          )}
         </div>
-      </div>
+      ) : (
+        // Show full content when not dragging
+        <div className="flex items-center gap-2">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={item.name}
+              className="w-10 h-10 object-contain rounded bg-gray-100"
+            />
+          ) : (
+            <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
+              No img
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{item.name}</p>
+            <p className="text-xs text-gray-500 truncate">{item.base_model_number || 'No model #'}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
