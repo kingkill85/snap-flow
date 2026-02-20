@@ -126,8 +126,8 @@ const ProjectDashboard = () => {
 
   const handleSubmitFloorplan = async (data: CreateFloorplanDTO | UpdateFloorDTO, image?: File) => {
     if (floorplanToEdit) {
-      // Update mode
-      await floorplanService.update(floorplanToEdit.id, data);
+      // Update mode - pass image if provided
+      await floorplanService.update(floorplanToEdit.id, data, image);
     } else {
       // Create mode
       if (!image) throw new Error('Image is required');
@@ -176,10 +176,13 @@ const ProjectDashboard = () => {
   };
 
   const handlePlacementUpdate = async (id: number, placement: { x?: number; y?: number; width?: number; height?: number }) => {
+    // Optimistically update local state first for instant feedback
+    setPlacements(prev => prev.map(p => 
+      p.id === id ? { ...p, ...placement } : p
+    ));
+    
+    // Update server in the background
     await placementService.update(id, placement);
-    if (activeFloorplan) {
-      await fetchPlacements(activeFloorplan.id);
-    }
   };
 
   const handlePlacementDelete = async (id: number) => {
@@ -243,7 +246,7 @@ const ProjectDashboard = () => {
           return;
         }
         
-        const canvasRect = canvasElement.getBoundingClientRect();
+        const imageRect = floorplanImage.getBoundingClientRect();
         const activeRect = active.rect.current?.translated;
         
         if (activeRect) {
@@ -255,9 +258,9 @@ const ProjectDashboard = () => {
             ? floorplanImage.clientHeight / floorplanImage.naturalHeight 
             : 1;
           
-          // Calculate new position in screen pixels and convert to natural coordinates
-          const screenX = Math.max(0, activeRect.left - canvasRect.left);
-          const screenY = Math.max(0, activeRect.top - canvasRect.top);
+          // Calculate new position relative to the image (not the canvas)
+          const screenX = Math.max(0, activeRect.left - imageRect.left);
+          const screenY = Math.max(0, activeRect.top - imageRect.top);
           const newX = screenX / scaleX;
           const newY = screenY / scaleY;
           
@@ -265,10 +268,12 @@ const ProjectDashboard = () => {
             id: placementId, 
             old: { x: placement.x, y: placement.y }, 
             new: { x: newX, y: newY },
-            scale: { x: scaleX, y: scaleY }
+            scale: { x: scaleX, y: scaleY },
+            imageRect: { left: imageRect.left, top: imageRect.top }
           });
           
-          await handlePlacementUpdate(placementId, { x: newX, y: newY });
+          // Update state immediately (don't await) to prevent flicker
+          handlePlacementUpdate(placementId, { x: newX, y: newY });
         }
       }
       return;
@@ -293,7 +298,7 @@ const ProjectDashboard = () => {
             return;
           }
           
-          const canvasRect = canvasElement.getBoundingClientRect();
+          const imageRect = floorplanImage.getBoundingClientRect();
           const activeRect = active.rect.current?.translated;
           
           // Calculate scale factors
@@ -308,16 +313,17 @@ const ProjectDashboard = () => {
           let screenY: number;
           
           if (activeRect) {
-            // Place at top-left corner of dragged item (not centered)
-            screenX = activeRect.left - canvasRect.left;
-            screenY = activeRect.top - canvasRect.top;
+            // Place at top-left corner of dragged item relative to the image
+            screenX = activeRect.left - imageRect.left;
+            screenY = activeRect.top - imageRect.top;
           } else {
             screenX = event.delta.x;
             screenY = event.delta.y;
           }
           
-          screenX = Math.max(0, Math.min(screenX, canvasRect.width - 100));
-          screenY = Math.max(0, Math.min(screenY, canvasRect.height - 100));
+          // Clamp to image bounds
+          screenX = Math.max(0, Math.min(screenX, imageRect.width - 100));
+          screenY = Math.max(0, Math.min(screenY, imageRect.height - 100));
           
           // Convert to natural coordinates
           const dropX = screenX / scaleX;
@@ -332,8 +338,8 @@ const ProjectDashboard = () => {
             await handlePlacementCreate({
               x: dropX,
               y: dropY,
-              width: 100,
-              height: 100,
+              width: 60,
+              height: 60,
               item_variant_id: firstVariant.id,
             });
           }

@@ -115,20 +115,56 @@ floorplanRoutes.post('/', authMiddleware, uploadMiddleware('floorplans'), async 
   }
 });
 
-// PUT /floorplans/:id - Update floorplan
-floorplanRoutes.put('/:id', authMiddleware, zValidator('json', updateFloorplanSchema), async (c) => {
+// PUT /floorplans/:id - Update floorplan (with optional image upload)
+floorplanRoutes.put('/:id', authMiddleware, uploadMiddleware('floorplans'), async (c) => {
   const id = parseInt(c.req.param('id'));
-  const { name, sort_order } = c.req.valid('json');
+  const uploadResult = c.get('uploadResult');
+  const formData = c.get('formData');
 
   try {
     const existingFloorplan = await floorplanRepository.findById(id);
     if (!existingFloorplan) {
+      // Clean up uploaded file if floorplan doesn't exist
+      if (uploadResult?.success && uploadResult.filePath) {
+        await fileStorageService.deleteFile(uploadResult.filePath);
+      }
       return c.json({ error: 'Floorplan not found' }, 404);
     }
 
-    const updateData: { name?: string; sort_order?: number } = {};
-    if (name !== undefined) updateData.name = name;
-    if (sort_order !== undefined) updateData.sort_order = sort_order;
+    const updateData: { name?: string; sort_order?: number; image_path?: string } = {};
+
+    // Handle form data fields
+    if (formData) {
+      const name = formData.get('name')?.toString();
+      const sortOrderStr = formData.get('sort_order')?.toString();
+
+      if (name !== undefined && name !== '') {
+        updateData.name = name;
+      }
+      if (sortOrderStr !== undefined) {
+        const sortOrder = parseInt(sortOrderStr);
+        if (!isNaN(sortOrder)) {
+          updateData.sort_order = sortOrder;
+        }
+      }
+
+      // Handle new image upload
+      if (uploadResult?.success && uploadResult.filePath) {
+        // Delete old image file
+        if (existingFloorplan.image_path) {
+          await fileStorageService.deleteFile(existingFloorplan.image_path);
+        }
+        updateData.image_path = uploadResult.filePath;
+      }
+    }
+
+    // Only update if there's data to update
+    if (Object.keys(updateData).length === 0) {
+      if (uploadResult?.success && uploadResult.filePath) {
+        await fileStorageService.deleteFile(uploadResult.filePath);
+      }
+      return c.json({ error: 'No fields to update' }, 400);
+    }
 
     const floorplan = await floorplanRepository.update(id, updateData);
 
@@ -137,6 +173,10 @@ floorplanRoutes.put('/:id', authMiddleware, zValidator('json', updateFloorplanSc
       message: 'Floorplan updated successfully',
     });
   } catch (error) {
+    // Clean up uploaded file on error
+    if (uploadResult?.success && uploadResult.filePath) {
+      await fileStorageService.deleteFile(uploadResult.filePath);
+    }
     console.error('Update floorplan error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }

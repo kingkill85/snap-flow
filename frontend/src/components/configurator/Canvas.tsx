@@ -27,6 +27,7 @@ interface DraggablePlacementProps {
   parentIsResizingRef?: React.MutableRefObject<boolean>;
   scaleX: number;
   scaleY: number;
+  imageOffset: { left: number; top: number };
 }
 
 function DraggablePlacement({ 
@@ -40,6 +41,7 @@ function DraggablePlacement({
   parentIsResizingRef,
   scaleX,
   scaleY,
+  imageOffset,
 }: DraggablePlacementProps) {
   // State must be declared before hooks that use it
   const [isResizing, setIsResizing] = useState(false);
@@ -103,24 +105,25 @@ function DraggablePlacement({
       let newHeight = height;
 
       // Calculate based on which corner is being dragged
+      // Min size 30, max size 300 (in natural coordinates)
       switch (corner) {
         case 'se': // Bottom-right
-          newWidth = Math.max(50, Math.min(400, width + deltaX));
-          newHeight = Math.max(50, Math.min(400, height + deltaY));
+          newWidth = Math.max(30, Math.min(300, width + deltaX));
+          newHeight = Math.max(30, Math.min(300, height + deltaY));
           break;
         case 'sw': // Bottom-left
-          newWidth = Math.max(50, Math.min(400, width - deltaX));
-          newHeight = Math.max(50, Math.min(400, height + deltaY));
+          newWidth = Math.max(30, Math.min(300, width - deltaX));
+          newHeight = Math.max(30, Math.min(300, height + deltaY));
           newX = placementX + (width - newWidth);
           break;
         case 'ne': // Top-right
-          newWidth = Math.max(50, Math.min(400, width + deltaX));
-          newHeight = Math.max(50, Math.min(400, height - deltaY));
+          newWidth = Math.max(30, Math.min(300, width + deltaX));
+          newHeight = Math.max(30, Math.min(300, height - deltaY));
           newY = placementY + (height - newHeight);
           break;
         case 'nw': // Top-left
-          newWidth = Math.max(50, Math.min(400, width - deltaX));
-          newHeight = Math.max(50, Math.min(400, height - deltaY));
+          newWidth = Math.max(30, Math.min(300, width - deltaX));
+          newHeight = Math.max(30, Math.min(300, height - deltaY));
           newX = placementX + (width - newWidth);
           newY = placementY + (height - newHeight);
           break;
@@ -168,8 +171,8 @@ function DraggablePlacement({
       style={{
         ...style,
         position: 'absolute',
-        left: placement.x * scaleX,
-        top: placement.y * scaleY,
+        left: imageOffset.left + placement.x * scaleX,
+        top: imageOffset.top + placement.y * scaleY,
         width: placement.width * scaleX,
         height: placement.height * scaleY,
       }}
@@ -272,30 +275,51 @@ export function Canvas({
   // Track image natural and displayed size for scaling
   const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
   const [imageDisplaySize, setImageDisplaySize] = useState({ width: 0, height: 0 });
+  const [imageOffset, setImageOffset] = useState({ left: 0, top: 0 });
+
+  // Update image dimensions when loaded or resized
+  const updateImageSize = useCallback(() => {
+    if (imageRef.current && containerRef.current) {
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const imageRect = imageRef.current.getBoundingClientRect();
+      
+      setImageDisplaySize({
+        width: imageRef.current.clientWidth,
+        height: imageRef.current.clientHeight,
+      });
+      if (imageRef.current.naturalWidth > 0) {
+        setImageNaturalSize({
+          width: imageRef.current.naturalWidth,
+          height: imageRef.current.naturalHeight,
+        });
+      }
+      
+      // Calculate image offset within the container
+      setImageOffset({
+        left: imageRect.left - containerRect.left,
+        top: imageRect.top - containerRect.top,
+      });
+    }
+  }, []);
 
   useEffect(() => {
-    const updateImageSize = () => {
-      if (imageRef.current) {
-        setImageDisplaySize({
-          width: imageRef.current.clientWidth,
-          height: imageRef.current.clientHeight,
-        });
-        if (imageRef.current.naturalWidth > 0) {
-          setImageNaturalSize({
-            width: imageRef.current.naturalWidth,
-            height: imageRef.current.naturalHeight,
-          });
-        }
-      }
-    };
-
-    // Initial size
-    updateImageSize();
-
-    // Update on resize
+    // Update on window resize
     window.addEventListener('resize', updateImageSize);
     return () => window.removeEventListener('resize', updateImageSize);
-  }, [floorplan.image_path]);
+  }, [updateImageSize]);
+
+  useEffect(() => {
+    // Use ResizeObserver to track container and image size changes
+    if (!containerRef.current) return;
+    
+    const resizeObserver = new ResizeObserver(() => {
+      // Small delay to let the image settle into its new size
+      setTimeout(updateImageSize, 0);
+    });
+    
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, [floorplan.image_path, updateImageSize]);
 
   // Calculate scale factors
   const scaleX = imageNaturalSize.width > 0 ? imageDisplaySize.width / imageNaturalSize.width : 1;
@@ -334,7 +358,7 @@ export function Canvas({
         ref={setNodeRef}
         data-canvas-id={floorplan.id}
         onClick={handleCanvasClick}
-        className={`relative w-full h-full flex items-start justify-start overflow-auto transition-colors ${
+        className={`relative w-full h-full flex items-center justify-center overflow-auto transition-colors ${
           isOver ? 'bg-blue-50 border-blue-300' : ''
         }`}
         style={{ touchAction: 'none' }}
@@ -344,8 +368,9 @@ export function Canvas({
             ref={imageRef}
             src={imageUrl}
             alt={floorplan.name}
-            className="w-full h-full object-contain cursor-crosshair select-none"
+            className="max-w-full max-h-full w-auto h-auto object-contain cursor-crosshair select-none"
             onClick={handleImageClick}
+            onLoad={updateImageSize}
             draggable={false}
             onDragStart={(e) => e.preventDefault()}
           />
@@ -381,6 +406,7 @@ export function Canvas({
               parentIsResizingRef={isResizingRef}
               scaleX={scaleX}
               scaleY={scaleY}
+              imageOffset={imageOffset}
             />
           );
         })}

@@ -58,8 +58,25 @@ export const floorplanService = {
     return response.data.data;
   },
 
-  async update(id: number, data: UpdateFloorplanDTO, signal?: AbortSignal): Promise<Floorplan> {
-    const response = await api.put(`/floorplans/${id}`, data, { signal });
+  async update(id: number, data: UpdateFloorplanDTO, image?: File, signal?: AbortSignal): Promise<Floorplan> {
+    const formData = new FormData();
+    
+    if (data.name !== undefined) {
+      formData.append('name', data.name);
+    }
+    if (data.sort_order !== undefined) {
+      formData.append('sort_order', data.sort_order.toString());
+    }
+    if (image) {
+      formData.append('image', image);
+    }
+
+    const response = await api.put(`/floorplans/${id}`, formData, {
+      signal,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     return response.data.data;
   },
 
