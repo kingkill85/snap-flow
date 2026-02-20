@@ -318,6 +318,12 @@ export function Canvas({
     });
     
     resizeObserver.observe(containerRef.current);
+    
+    // Also observe the image element to catch flexbox centering
+    if (imageRef.current) {
+      resizeObserver.observe(imageRef.current);
+    }
+    
     return () => resizeObserver.disconnect();
   }, [floorplan.image_path, updateImageSize]);
 
