@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Layout from './components/layout/Layout';
+import MinimalLayout from './components/layout/MinimalLayout';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -48,12 +49,15 @@ function App() {
               <ProjectList />
             </ProtectedRoute>
           } />
-          <Route path="projects/:id" element={
-            <ProtectedRoute>
-              <ProjectDashboard />
-            </ProtectedRoute>
-          } />
           <Route path="*" element={<NotFound />} />
+        </Route>
+        {/* Project Dashboard uses MinimalLayout for full-width configurator */}
+        <Route path="/projects/:id" element={
+          <ProtectedRoute>
+            <MinimalLayout />
+          </ProtectedRoute>
+        }>
+          <Route index element={<ProjectDashboard />} />
         </Route>
       </Routes>
     </AuthProvider>

@@ -342,8 +342,8 @@ export function Canvas({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-gray-50 rounded-lg border-2 border-gray-200 overflow-hidden"
-      style={{ minHeight: '500px', touchAction: 'none' }}
+      className="relative w-full h-full bg-gray-50 overflow-hidden"
+      style={{ touchAction: 'none' }}
     >
       {/* Droppable area wrapper */}
       <div
@@ -356,7 +356,7 @@ export function Canvas({
         style={{ touchAction: 'none' }}
       >
         {floorplan.image_path ? (
-          <div className="flex h-full w-full items-start justify-center overflow-hidden">
+          <div className="flex h-full w-full items-center justify-center overflow-hidden">
             <div className="relative" style={imageWrapperStyle}>
                 <img
                   ref={imageRef}

@@ -388,7 +388,7 @@ const ProjectDashboard = () => {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col">
+    <div className="h-full flex flex-col">
       {/* Compact Project Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-4">
@@ -463,7 +463,7 @@ const ProjectDashboard = () => {
             <div className="flex-1 overflow-hidden floorplan-tabs">
               <Tabs 
                 onActiveTabChange={(index) => setActiveFloorplan(floorplans[index] || null)}
-                className="h-full flex flex-col"
+                className="h-full flex flex-col overflow-hidden"
               >
                 {floorplans.map((floorplan, index) => (
                   <Tabs.Item 
@@ -530,7 +530,7 @@ const ProjectDashboard = () => {
                       onDragStart={handleDragStart}
                       onDragEnd={handleDragEnd}
                     >
-                      <div className="h-full p-4 overflow-hidden">
+                      <div className="h-full overflow-hidden">
                         <Canvas
                           floorplan={floorplan}
                           placements={placements}
@@ -575,18 +575,24 @@ const ProjectDashboard = () => {
       <style>{`
         .floorplan-tabs {
           height: 100%;
+          display: flex;
+          flex-direction: column;
         }
         .floorplan-tabs [role="tablist"] {
           background-color: #f3f4f6;
           border-radius: 0.5rem;
           padding: 0.25rem;
           gap: 0.25rem;
-          margin: 0.5rem 1rem 0 1rem;
+          margin: 0.5rem 1rem 0.5rem 1rem;
           flex-shrink: 0;
         }
         .floorplan-tabs [role="tabpanel"] {
           flex: 1;
           overflow: hidden;
+          padding: 0 !important;
+        }
+        .floorplan-tabs [role="tabpanel"] > div {
+          height: 100%;
         }
         .floorplan-tabs [role="tab"] {
           background-color: #e5e7eb;
@@ -607,6 +613,10 @@ const ProjectDashboard = () => {
         }
         .floorplan-tabs [role="tab"][aria-selected="true"]:hover {
           background-color: #ffffff;
+        }
+        /* Remove default Flowbite tab panel padding */
+        .floorplan-tabs .p-4 {
+          padding: 0 !important;
         }
       `}</style>
 
