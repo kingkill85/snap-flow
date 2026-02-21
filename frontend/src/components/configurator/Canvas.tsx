@@ -172,10 +172,10 @@ function DraggablePlacement({
         width: placement.width * scaleX,
         height: placement.height * scaleY,
       }}
-      className={`rounded overflow-hidden select-none group ${
+      className={`rounded select-none group ${
         isSelected
           ? 'ring-2 ring-red-500 shadow-lg'
-          : 'border-2 border-blue-500'
+          : 'border-2 border-blue-500 overflow-hidden'
       } ${isDragging ? 'cursor-grabbing' : isResizing ? 'cursor-nwse-resize' : 'cursor-move'}`}
       title={displayName}
       onClick={handleClick}
