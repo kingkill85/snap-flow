@@ -450,7 +450,7 @@ const ProjectDashboard = () => {
                       <span className="font-medium text-sm text-gray-900">Configurator</span>
                     </div>
                     <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 cursor-pointer transition-colors">
-                      <span className="font-medium text-sm text-gray-600">BOM View</span>
+                      <span className="font-medium text-sm text-gray-600">bill of materials</span>
                     </div>
                     
                     {/* Divider */}
