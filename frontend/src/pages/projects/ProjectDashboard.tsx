@@ -589,7 +589,6 @@ const ProjectDashboard = () => {
       <ConfirmDeleteModal
         title="Delete Project"
         itemName={project.name}
-        warningText="This will permanently delete the project and all associated floorplans and placements."
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={handleDeleteProject}
