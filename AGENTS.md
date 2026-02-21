@@ -1,13 +1,35 @@
 # AGENTS.md - Project Context for AI Assistants
 
-## ⚠️ CRITICAL: ALWAYS USE FEATURE BRANCHES
+## 🛑 STOP - FEATURE BRANCH CHECK REQUIRED 🛑
 
-**BEFORE starting ANY work:**
-1. Check: `git branch`
-2. If on `main` → **STOP** and create feature branch: `git checkout -b feature/description`
-3. Only then start working
+### BEFORE ANY EDIT OR COMMAND:
 
-**Never commit directly to main - even for small changes!**
+**STEP 1:** Run `git branch`  
+**STEP 2:** If you see `* main` → **STOP AND CREATE BRANCH FIRST**  
+```bash
+git checkout -b feature/description
+```
+**STEP 3:** Only then start working
+
+### ⚠️ THIS IS THE #1 RULE - NEVER COMMIT TO MAIN ⚠️
+
+**NO EXCEPTIONS:**
+- ❌ Not for "small changes"
+- ❌ Not for "quick fixes"  
+- ❌ Not for "just documentation"
+- ❌ NEVER EVER
+
+**Branch naming:**
+- `feature/description` - New features
+- `fix/description` - Bug fixes
+- `refactor/description` - Refactoring
+- `docs/description` - Documentation
+
+---
+
+## 🔴 REMINDER FOR AI: CHECK BRANCH STATUS NOW 🔴
+
+**Current branch must NOT be `main` before proceeding.**
 
 ---
 
