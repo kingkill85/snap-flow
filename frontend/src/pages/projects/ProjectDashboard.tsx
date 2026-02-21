@@ -12,6 +12,7 @@ import { FloorplanFormModal } from '../../components/floorplans/FloorplanFormMod
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import { Canvas } from '../../components/configurator/Canvas';
 import { ProductPanel } from '../../components/configurator/ProductPanel';
+import { BomPanel } from '../../components/configurator/BomPanel';
 import axios from 'axios';
 
 // Generate project number: YYYY-MM-DD_Customer Name_Address
@@ -45,6 +46,9 @@ const ProjectDashboard = () => {
   const [floorplanToDelete, setFloorplanToDelete] = useState<Floorplan | null>(null);
   // Track active drag item for overlay
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
+  
+  // View toggle: 'configurator' | 'bom'
+  const [activeView, setActiveView] = useState<'configurator' | 'bom'>('configurator');
 
   // DnD sensors - with custom activation to skip resize handles
   const sensors = useSensors(
@@ -435,12 +439,30 @@ const ProjectDashboard = () => {
                 <div className="bg-white border-b border-gray-200 px-4 py-2 flex-shrink-0">
                   <div className="flex gap-1 items-center">
                     {/* View Toggle Tabs */}
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-white shadow-sm border border-gray-200">
-                      <span className="font-medium text-sm text-gray-900">Configurator</span>
-                    </div>
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 cursor-pointer transition-colors">
-                      <span className="font-medium text-sm text-gray-600">Bill of Materials</span>
-                    </div>
+                    <button
+                      onClick={() => setActiveView('configurator')}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
+                        activeView === 'configurator'
+                          ? 'bg-white shadow-sm border border-gray-200'
+                          : 'bg-gray-100 hover:bg-gray-200'
+                      }`}
+                    >
+                      <span className={`font-medium text-sm ${
+                        activeView === 'configurator' ? 'text-gray-900' : 'text-gray-600'
+                      }`}>Configurator</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveView('bom')}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
+                        activeView === 'bom'
+                          ? 'bg-white shadow-sm border border-gray-200'
+                          : 'bg-gray-100 hover:bg-gray-200'
+                      }`}
+                    >
+                      <span className={`font-medium text-sm ${
+                        activeView === 'bom' ? 'text-gray-900' : 'text-gray-600'
+                      }`}>Bill of Materials</span>
+                    </button>
                     
                     {/* Divider */}
                     <div className="h-6 w-px bg-gray-300 mx-2"></div>
@@ -539,8 +561,12 @@ const ProjectDashboard = () => {
             )}
           </div>
 
-          {/* Right Side - Product Panel */}
-          <ProductPanel placements={placements} />
+          {/* Right Side - Product Panel or BOM Panel */}
+          {activeView === 'configurator' ? (
+            <ProductPanel placements={placements} />
+          ) : (
+            activeFloorplan && <BomPanel floorplanId={activeFloorplan.id} />
+          )}
         </div>
         
         {/* Drag overlay - shows just the item image (like it will appear on canvas) */}
