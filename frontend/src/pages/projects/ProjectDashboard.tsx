@@ -197,7 +197,6 @@ const ProjectDashboard = () => {
 
   // DnD handlers
   const handleDragStart = (event: DragStartEvent) => {
-    console.log('Drag started:', event);
     const activeId = event.active.id.toString();
     
     // Track item being dragged from palette
@@ -212,11 +211,8 @@ const ProjectDashboard = () => {
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     
-    console.log('Drag end:', { active: active.id, over: over?.id });
-    
     // Skip if we're resizing - the Canvas component handles resize
     if (isResizingRef.current) {
-      console.log('Skipping move - was resizing');
       isResizingRef.current = false;
       return;
     }
@@ -240,7 +236,7 @@ const ProjectDashboard = () => {
         }
         
         // Get the floorplan image to calculate scale
-        const floorplanImage = canvasElement.querySelector('img');
+        const floorplanImage = canvasElement.querySelector('img[data-floorplan-image="true"]') as HTMLImageElement | null;
         if (!floorplanImage) {
           console.error('Floorplan image not found');
           return;
@@ -250,12 +246,11 @@ const ProjectDashboard = () => {
         const activeRect = active.rect.current?.translated;
         
         if (activeRect) {
-          // Calculate scale factors based on image natural vs displayed size
-          const scaleX = floorplanImage.naturalWidth > 0 
-            ? floorplanImage.clientWidth / floorplanImage.naturalWidth 
+          const scaleX = floorplanImage.naturalWidth > 0
+            ? floorplanImage.clientWidth / floorplanImage.naturalWidth
             : 1;
-          const scaleY = floorplanImage.naturalHeight > 0 
-            ? floorplanImage.clientHeight / floorplanImage.naturalHeight 
+          const scaleY = floorplanImage.naturalHeight > 0
+            ? floorplanImage.clientHeight / floorplanImage.naturalHeight
             : 1;
           
           // Calculate new position relative to the image (not the canvas)
@@ -263,14 +258,6 @@ const ProjectDashboard = () => {
           const screenY = Math.max(0, activeRect.top - imageRect.top);
           const newX = screenX / scaleX;
           const newY = screenY / scaleY;
-          
-          console.log('Moving placement:', { 
-            id: placementId, 
-            old: { x: placement.x, y: placement.y }, 
-            new: { x: newX, y: newY },
-            scale: { x: scaleX, y: scaleY },
-            imageRect: { left: imageRect.left, top: imageRect.top }
-          });
           
           // Update state immediately (don't await) to prevent flicker
           handlePlacementUpdate(placementId, { x: newX, y: newY });
@@ -292,7 +279,7 @@ const ProjectDashboard = () => {
           }
           
           // Get the floorplan image to calculate scale
-          const floorplanImage = canvasElement.querySelector('img');
+          const floorplanImage = canvasElement.querySelector('img[data-floorplan-image="true"]') as HTMLImageElement | null;
           if (!floorplanImage) {
             console.error('Floorplan image not found');
             return;
@@ -301,12 +288,11 @@ const ProjectDashboard = () => {
           const imageRect = floorplanImage.getBoundingClientRect();
           const activeRect = active.rect.current?.translated;
           
-          // Calculate scale factors
-          const scaleX = floorplanImage.naturalWidth > 0 
-            ? floorplanImage.clientWidth / floorplanImage.naturalWidth 
+          const scaleX = floorplanImage.naturalWidth > 0
+            ? floorplanImage.clientWidth / floorplanImage.naturalWidth
             : 1;
-          const scaleY = floorplanImage.naturalHeight > 0 
-            ? floorplanImage.clientHeight / floorplanImage.naturalHeight 
+          const scaleY = floorplanImage.naturalHeight > 0
+            ? floorplanImage.clientHeight / floorplanImage.naturalHeight
             : 1;
           
           let screenX: number;
@@ -328,8 +314,6 @@ const ProjectDashboard = () => {
           // Convert to natural coordinates
           const dropX = screenX / scaleX;
           const dropY = screenY / scaleY;
-          
-          console.log('Creating new placement at:', { x: dropX, y: dropY, screen: { x: screenX, y: screenY }, scale: { x: scaleX, y: scaleY } });
           
           const fullItem = await itemService.getById(itemData.item.id);
           const firstVariant = fullItem.variants?.[0];

@@ -23,10 +23,11 @@ interface DraggablePlacementProps {
   onSelect: () => void;
   onDelete: () => void;
   onResize: (x: number, y: number, width: number, height: number) => void;
-  containerRef: React.RefObject<HTMLDivElement>;
   parentIsResizingRef?: React.MutableRefObject<boolean>;
-  scale: number;
-  imageOffset: { left: number; top: number };
+  scaleX: number;
+  scaleY: number;
+  maxNaturalWidth: number;
+  maxNaturalHeight: number;
 }
 
 function DraggablePlacement({ 
@@ -36,10 +37,11 @@ function DraggablePlacement({
   onSelect, 
   onDelete, 
   onResize,
-  containerRef,
   parentIsResizingRef,
-  scale,
-  imageOffset,
+  scaleX,
+  scaleY,
+  maxNaturalWidth,
+  maxNaturalHeight,
 }: DraggablePlacementProps) {
   // State must be declared before hooks that use it
   const [isResizing, setIsResizing] = useState(false);
@@ -94,8 +96,8 @@ function DraggablePlacement({
     const handleMouseMove = (e: MouseEvent) => {
       const { x, y, width, height, placementX, placementY, corner } = resizeStartRef.current;
       // Convert mouse deltas from screen pixels to natural coordinates
-      const deltaX = (e.clientX - x) / scale;
-      const deltaY = (e.clientY - y) / scale;
+      const deltaX = (e.clientX - x) / scaleX;
+      const deltaY = (e.clientY - y) / scaleY;
       
       let newX = placementX;
       let newY = placementY;
@@ -127,14 +129,10 @@ function DraggablePlacement({
           break;
       }
 
-      // Ensure placement stays within canvas bounds
-      // Convert canvas dimensions to natural coordinates for comparison
-      if (containerRef.current) {
-        const canvasRect = containerRef.current.getBoundingClientRect();
-        const canvasWidthNatural = canvasRect.width / scale;
-        const canvasHeightNatural = canvasRect.height / scale;
-        newX = Math.max(0, Math.min(newX, canvasWidthNatural - newWidth));
-        newY = Math.max(0, Math.min(newY, canvasHeightNatural - newHeight));
+      // Ensure placement stays within floorplan natural bounds
+      if (maxNaturalWidth > 0 && maxNaturalHeight > 0) {
+        newX = Math.max(0, Math.min(newX, maxNaturalWidth - newWidth));
+        newY = Math.max(0, Math.min(newY, maxNaturalHeight - newHeight));
       }
 
       onResize(newX, newY, newWidth, newHeight);
@@ -155,7 +153,7 @@ function DraggablePlacement({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, onResize, containerRef, scale]);
+  }, [isResizing, onResize, scaleX, scaleY, maxNaturalWidth, maxNaturalHeight]);
 
   const imageUrl = item?.preview_image ? `/uploads/${item.preview_image}` : null;
   const displayName = item?.name || 'Unknown';
@@ -169,10 +167,10 @@ function DraggablePlacement({
       style={{
         ...style,
         position: 'absolute',
-        left: imageOffset.left + placement.x * scale,
-        top: imageOffset.top + placement.y * scale,
-        width: placement.width * scale,
-        height: placement.height * scale,
+        left: placement.x * scaleX,
+        top: placement.y * scaleY,
+        width: placement.width * scaleX,
+        height: placement.height * scaleY,
       }}
       className={`rounded overflow-hidden select-none group ${
         isSelected
@@ -273,29 +271,26 @@ export function Canvas({
   // Track image natural and displayed size for scaling
   const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
   const [imageDisplaySize, setImageDisplaySize] = useState({ width: 0, height: 0 });
-  const [imageOffset, setImageOffset] = useState({ left: 0, top: 0 });
 
   // Update image dimensions when loaded or resized
   const updateImageSize = useCallback(() => {
     if (imageRef.current && containerRef.current) {
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const imageRect = imageRef.current.getBoundingClientRect();
-      
-      setImageDisplaySize({
-        width: imageRef.current.clientWidth,
-        height: imageRef.current.clientHeight,
+      const naturalWidth = imageRef.current.naturalWidth;
+      const naturalHeight = imageRef.current.naturalHeight;
+      if (naturalWidth <= 0 || naturalHeight <= 0) return;
+
+      const containerWidth = containerRef.current.clientWidth;
+      const containerHeight = containerRef.current.clientHeight;
+      const fittedScale = Math.min(containerWidth / naturalWidth, containerHeight / naturalHeight);
+
+      setImageNaturalSize({
+        width: naturalWidth,
+        height: naturalHeight,
       });
-      if (imageRef.current.naturalWidth > 0) {
-        setImageNaturalSize({
-          width: imageRef.current.naturalWidth,
-          height: imageRef.current.naturalHeight,
-        });
-      }
-      
-      // Calculate image offset within the container
-      setImageOffset({
-        left: imageRect.left - containerRect.left,
-        top: imageRect.top - containerRect.top,
+
+      setImageDisplaySize({
+        width: naturalWidth * fittedScale,
+        height: naturalHeight * fittedScale,
       });
     }
   }, []);
@@ -325,8 +320,8 @@ export function Canvas({
     return () => resizeObserver.disconnect();
   }, [floorplan.image_path, updateImageSize]);
 
-  // Calculate scale factor (single scale since aspect ratio is maintained)
-  const scale = imageNaturalSize.width > 0 ? imageDisplaySize.width / imageNaturalSize.width : 1;
+  const scaleX = imageNaturalSize.width > 0 ? imageDisplaySize.width / imageNaturalSize.width : 1;
+  const scaleY = imageNaturalSize.height > 0 ? imageDisplaySize.height / imageNaturalSize.height : 1;
 
   const handleCanvasClick = () => {
     setSelectedPlacementId(null);
@@ -336,19 +331,13 @@ export function Canvas({
     onPlacementUpdate(placementId, { x, y, width, height });
   };
 
-  const handleImageClick = useCallback(
-    (e: React.MouseEvent<HTMLImageElement>) => {
-      // Don't stop propagation - let it bubble up to deselect
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      
-      console.log('Clicked at:', { x, y, floorplanId: floorplan.id });
-    },
-    [floorplan.id]
-  );
+  const handleImageClick = useCallback(() => {}, []);
 
   const imageUrl = `/uploads/${floorplan.image_path}`;
+  const imageWrapperStyle = {
+    width: `${imageDisplaySize.width}px`,
+    height: `${imageDisplaySize.height}px`,
+  };
 
   return (
     <div
@@ -361,55 +350,58 @@ export function Canvas({
         ref={setNodeRef}
         data-canvas-id={floorplan.id}
         onClick={handleCanvasClick}
-        className={`relative w-full h-full flex items-center justify-center overflow-auto transition-colors ${
+        className={`relative w-full h-full flex items-start justify-center transition-colors ${
           isOver ? 'bg-blue-50 border-blue-300' : ''
         }`}
         style={{ touchAction: 'none' }}
       >
-        {/* Floorplan wrapper - flexbox positions this, items follow naturally */}
-        <div className="relative inline-block">
-          {floorplan.image_path ? (
-            <img
-              ref={imageRef}
-              src={imageUrl}
-              alt={floorplan.name}
-              className="h-full w-auto object-contain cursor-crosshair select-none"
-              onClick={handleImageClick}
-              onLoad={updateImageSize}
-              draggable={false}
-              onDragStart={(e) => e.preventDefault()}
-            />
-          ) : (
-            <div className="text-center text-gray-400 p-8">
-              <p className="text-lg mb-2">No floorplan image</p>
-              <p className="text-sm">Upload a floorplan to start configuring</p>
+        {floorplan.image_path ? (
+          <div className="flex h-full w-full items-start justify-center overflow-hidden">
+            <div className="relative" style={imageWrapperStyle}>
+                <img
+                  ref={imageRef}
+                  src={imageUrl}
+                  alt={floorplan.name}
+                  data-floorplan-image="true"
+                  className="block h-full w-full object-contain cursor-crosshair select-none"
+                  onClick={handleImageClick}
+                  onLoad={updateImageSize}
+                  draggable={false}
+                  onDragStart={(e) => e.preventDefault()}
+                />
+
+                {/* Placements overlay */}
+              {placements.map((placement) => {
+                const item = items.find((i) => i.id === placement.item_id);
+
+                return (
+                  <DraggablePlacement
+                    key={placement.id}
+                    placement={placement}
+                    item={item}
+                    isSelected={selectedPlacementId === placement.id}
+                    onSelect={() => setSelectedPlacementId(placement.id)}
+                    onDelete={() => {
+                      onPlacementDelete(placement.id);
+                      setSelectedPlacementId(null);
+                    }}
+                    onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
+                    parentIsResizingRef={isResizingRef}
+                    scaleX={scaleX}
+                    scaleY={scaleY}
+                    maxNaturalWidth={imageNaturalSize.width}
+                    maxNaturalHeight={imageNaturalSize.height}
+                  />
+                );
+              })}
             </div>
-          )}
-
-          {/* Placements overlay - positioned relative to wrapper */}
-          {floorplan.image_path && placements.map((placement) => {
-            const item = items.find((i) => i.id === placement.item_id);
-
-            return (
-              <DraggablePlacement
-                key={placement.id}
-                placement={placement}
-                item={item}
-                isSelected={selectedPlacementId === placement.id}
-                onSelect={() => setSelectedPlacementId(placement.id)}
-                onDelete={() => {
-                  onPlacementDelete(placement.id);
-                  setSelectedPlacementId(null);
-                }}
-                onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
-                containerRef={containerRef}
-                parentIsResizingRef={isResizingRef}
-                scale={scale}
-                imageOffset={{ left: 0, top: 0 }}
-              />
-            );
-          })}
-        </div>
+          </div>
+        ) : (
+          <div className="text-center text-gray-400 p-8">
+            <p className="text-lg mb-2">No floorplan image</p>
+            <p className="text-sm">Upload a floorplan to start configuring</p>
+          </div>
+        )}
 
         {/* Minimal controls hint */}
         <div className="absolute bottom-2 left-2 text-xs text-gray-400 bg-white bg-opacity-75 px-2 py-1 rounded">
