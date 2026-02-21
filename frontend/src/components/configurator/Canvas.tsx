@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { HiTrash } from 'react-icons/hi';
+import { HiX } from 'react-icons/hi';
 import type { Floorplan } from '../../services/floorplan';
 import type { Placement } from '../../services/placement';
 import type { Item } from '../../services/item';
@@ -197,16 +197,16 @@ function DraggablePlacement({
       {/* Selection overlay with resize handles */}
       {isSelected && (
         <>
-          {/* Delete button - positioned inside top-right corner of placement */}
+          {/* Delete button - positioned outside top-right corner like app close button */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute top-1 right-1 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-md z-20 transition-transform hover:scale-110"
+            className="absolute -top-3 -right-3 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white"
             title="Delete placement"
           >
-            <HiTrash className="w-3 h-3" />
+            <HiX className="w-3 h-3" />
           </button>
 
           {/* Resize handles - corners only */}
