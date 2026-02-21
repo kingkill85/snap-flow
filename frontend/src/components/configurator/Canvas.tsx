@@ -203,10 +203,10 @@ function DraggablePlacement({
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute -top-3 -right-3 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white"
+            className="absolute -top-4 -right-4 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white"
             title="Delete placement"
           >
-            <HiX className="w-3 h-3" />
+            <HiX className="w-4 h-4" />
           </button>
 
           {/* Resize handles - corners only */}
