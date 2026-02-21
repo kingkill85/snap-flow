@@ -25,8 +25,7 @@ interface DraggablePlacementProps {
   onResize: (x: number, y: number, width: number, height: number) => void;
   containerRef: React.RefObject<HTMLDivElement>;
   parentIsResizingRef?: React.MutableRefObject<boolean>;
-  scaleX: number;
-  scaleY: number;
+  scale: number;
   imageOffset: { left: number; top: number };
 }
 
@@ -39,8 +38,7 @@ function DraggablePlacement({
   onResize,
   containerRef,
   parentIsResizingRef,
-  scaleX,
-  scaleY,
+  scale,
   imageOffset,
 }: DraggablePlacementProps) {
   // State must be declared before hooks that use it
@@ -96,8 +94,8 @@ function DraggablePlacement({
     const handleMouseMove = (e: MouseEvent) => {
       const { x, y, width, height, placementX, placementY, corner } = resizeStartRef.current;
       // Convert mouse deltas from screen pixels to natural coordinates
-      const deltaX = (e.clientX - x) / scaleX;
-      const deltaY = (e.clientY - y) / scaleY;
+      const deltaX = (e.clientX - x) / scale;
+      const deltaY = (e.clientY - y) / scale;
       
       let newX = placementX;
       let newY = placementY;
@@ -133,8 +131,8 @@ function DraggablePlacement({
       // Convert canvas dimensions to natural coordinates for comparison
       if (containerRef.current) {
         const canvasRect = containerRef.current.getBoundingClientRect();
-        const canvasWidthNatural = canvasRect.width / scaleX;
-        const canvasHeightNatural = canvasRect.height / scaleY;
+        const canvasWidthNatural = canvasRect.width / scale;
+        const canvasHeightNatural = canvasRect.height / scale;
         newX = Math.max(0, Math.min(newX, canvasWidthNatural - newWidth));
         newY = Math.max(0, Math.min(newY, canvasHeightNatural - newHeight));
       }
@@ -157,7 +155,7 @@ function DraggablePlacement({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, onResize, containerRef, scaleX, scaleY]);
+  }, [isResizing, onResize, containerRef, scale]);
 
   const imageUrl = item?.preview_image ? `/uploads/${item.preview_image}` : null;
   const displayName = item?.name || 'Unknown';
@@ -171,10 +169,10 @@ function DraggablePlacement({
       style={{
         ...style,
         position: 'absolute',
-        left: imageOffset.left + placement.x * scaleX,
-        top: imageOffset.top + placement.y * scaleY,
-        width: placement.width * scaleX,
-        height: placement.height * scaleY,
+        left: imageOffset.left + placement.x * scale,
+        top: imageOffset.top + placement.y * scale,
+        width: placement.width * scale,
+        height: placement.height * scale,
       }}
       className={`rounded overflow-hidden select-none group ${
         isSelected
@@ -327,9 +325,8 @@ export function Canvas({
     return () => resizeObserver.disconnect();
   }, [floorplan.image_path, updateImageSize]);
 
-  // Calculate scale factors
-  const scaleX = imageNaturalSize.width > 0 ? imageDisplaySize.width / imageNaturalSize.width : 1;
-  const scaleY = imageNaturalSize.height > 0 ? imageDisplaySize.height / imageNaturalSize.height : 1;
+  // Calculate scale factor (single scale since aspect ratio is maintained)
+  const scale = imageNaturalSize.width > 0 ? imageDisplaySize.width / imageNaturalSize.width : 1;
 
   const handleCanvasClick = () => {
     setSelectedPlacementId(null);
@@ -369,53 +366,55 @@ export function Canvas({
         }`}
         style={{ touchAction: 'none' }}
       >
-        {floorplan.image_path ? (
-          <img
-            ref={imageRef}
-            src={imageUrl}
-            alt={floorplan.name}
-            className="max-w-full max-h-full w-auto h-auto object-contain cursor-crosshair select-none"
-            onClick={handleImageClick}
-            onLoad={updateImageSize}
-            draggable={false}
-            onDragStart={(e) => e.preventDefault()}
-          />
-        ) : (
-          <div className="text-center text-gray-400 p-8">
-            <p className="text-lg mb-2">No floorplan image</p>
-            <p className="text-sm">Upload a floorplan to start configuring</p>
-          </div>
-        )}
+        {/* Floorplan wrapper - flexbox positions this, items follow naturally */}
+        <div className="relative inline-block">
+          {floorplan.image_path ? (
+            <img
+              ref={imageRef}
+              src={imageUrl}
+              alt={floorplan.name}
+              className="h-full w-auto object-contain cursor-crosshair select-none"
+              onClick={handleImageClick}
+              onLoad={updateImageSize}
+              draggable={false}
+              onDragStart={(e) => e.preventDefault()}
+            />
+          ) : (
+            <div className="text-center text-gray-400 p-8">
+              <p className="text-lg mb-2">No floorplan image</p>
+              <p className="text-sm">Upload a floorplan to start configuring</p>
+            </div>
+          )}
+
+          {/* Placements overlay - positioned relative to wrapper */}
+          {floorplan.image_path && placements.map((placement) => {
+            const item = items.find((i) => i.id === placement.item_id);
+
+            return (
+              <DraggablePlacement
+                key={placement.id}
+                placement={placement}
+                item={item}
+                isSelected={selectedPlacementId === placement.id}
+                onSelect={() => setSelectedPlacementId(placement.id)}
+                onDelete={() => {
+                  onPlacementDelete(placement.id);
+                  setSelectedPlacementId(null);
+                }}
+                onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
+                containerRef={containerRef}
+                parentIsResizingRef={isResizingRef}
+                scale={scale}
+                imageOffset={{ left: 0, top: 0 }}
+              />
+            );
+          })}
+        </div>
 
         {/* Minimal controls hint */}
         <div className="absolute bottom-2 left-2 text-xs text-gray-400 bg-white bg-opacity-75 px-2 py-1 rounded">
           Click item to select • Drag corners to resize • Click 🗑 to delete
         </div>
-
-        {/* Placements overlay */}
-        {placements.map((placement) => {
-          const item = items.find((i) => i.id === placement.item_id);
-
-          return (
-            <DraggablePlacement
-              key={placement.id}
-              placement={placement}
-              item={item}
-              isSelected={selectedPlacementId === placement.id}
-              onSelect={() => setSelectedPlacementId(placement.id)}
-              onDelete={() => {
-                onPlacementDelete(placement.id);
-                setSelectedPlacementId(null);
-              }}
-              onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
-              containerRef={containerRef}
-              parentIsResizingRef={isResizingRef}
-              scaleX={scaleX}
-              scaleY={scaleY}
-              imageOffset={imageOffset}
-            />
-          );
-        })}
       </div>
 
     </div>
