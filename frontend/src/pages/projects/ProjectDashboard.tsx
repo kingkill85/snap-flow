@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Card, Spinner, Alert, Tabs } from 'flowbite-react';
+import { Button, Spinner, Alert, Tabs } from 'flowbite-react';
 import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowUp, HiArrowDown } from 'react-icons/hi';
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { projectService, type Project } from '../../services/project';
@@ -11,7 +11,7 @@ import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
 import { FloorplanFormModal } from '../../components/floorplans/FloorplanFormModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import { Canvas } from '../../components/configurator/Canvas';
-import { ItemPalette } from '../../components/configurator/ItemPalette';
+import { ProductPanel } from '../../components/configurator/ProductPanel';
 import axios from 'axios';
 
 // Generate project number: YYYY-MM-DD_Customer Name_Address
@@ -388,192 +388,213 @@ const ProjectDashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-start">
-        <div>
-          <Button color="light" size="sm" onClick={() => navigate('/projects')} className="mb-4">
-            <HiArrowLeft className="mr-2 h-4 w-4" />
-            Back to Projects
+    <div className="h-[calc(100vh-4rem)] flex flex-col">
+      {/* Compact Project Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <Button color="light" size="xs" onClick={() => navigate('/projects')}>
+            <HiArrowLeft className="mr-1 h-4 w-4" />
+            Back
           </Button>
-          <div className="text-sm text-gray-500 mb-2">
+          <div className="h-6 w-px bg-gray-300"></div>
+          <div className="text-sm text-gray-500 font-mono">
             {generateProjectNumber(project)}
           </div>
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{project.name}</h1>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(project.status)}`}>
-              {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-            </span>
-          </div>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Customer: {project.customer_name}
-          </p>
-          {project.customer_email && (
-            <p className="text-gray-500 text-sm mt-1">
-              Email: {project.customer_email}
-            </p>
-          )}
-          {project.customer_phone && (
-            <p className="text-gray-500 text-sm mt-1">
-              Phone: {project.customer_phone}
-            </p>
-          )}
+          <div className="h-6 w-px bg-gray-300"></div>
+          <h1 className="text-lg font-semibold text-gray-900">{project.name}</h1>
+          <div className="h-6 w-px bg-gray-300"></div>
+          <span className="text-sm text-gray-600">{project.customer_name}</span>
+          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
+            {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+          </span>
         </div>
         <div className="flex gap-2">
-          <Button color="light" onClick={() => setShowEditModal(true)}>
-            <HiPencil className="mr-2 h-5 w-5" />
+          <Button color="light" size="xs" onClick={() => setShowEditModal(true)}>
+            <HiPencil className="mr-1 h-4 w-4" />
             Edit
           </Button>
-          <Button color="failure" onClick={() => setShowDeleteModal(true)}>
-            <HiTrash className="mr-2 h-5 w-5" />
+          <Button color="failure" size="xs" onClick={() => setShowDeleteModal(true)}>
+            <HiTrash className="mr-1 h-4 w-4" />
             Delete
           </Button>
         </div>
       </div>
 
-      {/* Floorplan Tabs */}
-      <Card>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Floorplans</h2>
-          <Button size="sm" onClick={openCreateFloorplanModal}>
-            <HiPlus className="mr-2 h-4 w-4" />
-            Add Floorplan
-          </Button>
-        </div>
-
-        {floorplans.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            <p>No floorplans yet. Add your first floorplan to start configuring.</p>
-          </div>
-        ) : (
-          <div className="floorplan-tabs">
-            <Tabs 
-              onActiveTabChange={(index) => setActiveFloorplan(floorplans[index] || null)}
-            >
-              {floorplans.map((floorplan, index) => (
-              <Tabs.Item 
-                key={floorplan.id}
-                active={activeFloorplan?.id === floorplan.id}
-                title={
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{floorplan.name}</span>
-                    <div className="flex items-center gap-1 ml-2">
-                      <span
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          openEditFloorplanModal(floorplan);
-                        }}
-                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded transition-colors cursor-pointer"
-                        title="Rename"
-                        role="button"
-                      >
-                        <HiPencil className="h-4 w-4" />
-                      </span>
-                      <span
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
-                        }}
-                        className={`p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                        title="Move Left"
-                        role="button"
-                      >
-                        <HiArrowUp className="h-4 w-4" />
-                      </span>
-                      <span
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
-                        }}
-                        className={`p-1.5 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === floorplans.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                        title="Move Right"
-                        role="button"
-                      >
-                        <HiArrowDown className="h-4 w-4" />
-                      </span>
-                      <span
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          openDeleteFloorplanModal(floorplan);
-                        }}
-                        className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors cursor-pointer"
-                        title="Delete"
-                        role="button"
-                      >
-                        <HiTrash className="h-4 w-4" />
-                      </span>
-                    </div>
-                  </div>
-                }
+      {/* Configurator Area - Two Column Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Side - Canvas Area */}
+        <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
+          {/* View Toggle (Future: Configurator/BOM) */}
+          <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
+            <div className="flex gap-1">
+              <Button 
+                color="light" 
+                size="xs"
+                className="bg-gray-100 text-gray-900"
               >
-                <DndContext
-                  sensors={sensors}
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
-                >
-                  <div className="flex gap-4" style={{ height: '70vh', minHeight: '500px' }}>
-                    {/* Item Palette Sidebar */}
-                    <div className="w-72 flex-shrink-0 h-full overflow-hidden">
-                      <ItemPalette />
-                    </div>
-                    
-                    {/* Canvas Area */}
-                    <div className="flex-1 min-w-0">
-                      <Canvas
-                        floorplan={floorplan}
-                        placements={placements}
-                        items={items}
-                        onPlacementUpdate={handlePlacementUpdate}
-                        onPlacementDelete={handlePlacementDelete}
-                        isResizingRef={isResizingRef}
-                      />
-                    </div>
-                  </div>
-                  
-                  {/* Drag overlay - shows just the item image (like it will appear on canvas) */}
-                  <DragOverlay>
-                    {activeDragItem && (
-                      <div className="border-2 border-blue-500 rounded bg-white shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
-                        {activeDragItem.preview_image ? (
-                          <img
-                            src={`/uploads/${activeDragItem.preview_image}`}
-                            alt={activeDragItem.name}
-                            className="w-full h-full object-contain bg-gray-100"
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">
-                            No img
+                Configurator
+              </Button>
+              <Button 
+                color="light" 
+                size="xs"
+                disabled
+              >
+                BOM View
+              </Button>
+            </div>
+            <Button size="xs" onClick={openCreateFloorplanModal}>
+              <HiPlus className="mr-1 h-4 w-4" />
+              Add Floorplan
+            </Button>
+          </div>
+
+          {/* Floorplan Tabs & Canvas */}
+          {floorplans.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-gray-500">
+              <div className="text-center">
+                <p className="mb-2">No floorplans yet.</p>
+                <Button size="sm" onClick={openCreateFloorplanModal}>
+                  <HiPlus className="mr-2 h-4 w-4" />
+                  Add Your First Floorplan
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-hidden floorplan-tabs">
+              <Tabs 
+                onActiveTabChange={(index) => setActiveFloorplan(floorplans[index] || null)}
+                className="h-full flex flex-col"
+              >
+                {floorplans.map((floorplan, index) => (
+                  <Tabs.Item 
+                    key={floorplan.id}
+                    active={activeFloorplan?.id === floorplan.id}
+                    title={
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">{floorplan.name}</span>
+                        <div className="flex items-center gap-0.5 ml-1">
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              openEditFloorplanModal(floorplan);
+                            }}
+                            className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors cursor-pointer"
+                            title="Rename"
+                            role="button"
+                          >
+                            <HiPencil className="h-3 w-3" />
+                          </span>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
+                            }}
+                            className={`p-1 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                            title="Move Left"
+                            role="button"
+                          >
+                            <HiArrowUp className="h-3 w-3" />
+                          </span>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
+                            }}
+                            className={`p-1 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === floorplans.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                            title="Move Right"
+                            role="button"
+                          >
+                            <HiArrowDown className="h-3 w-3" />
+                          </span>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              openDeleteFloorplanModal(floorplan);
+                            }}
+                            className="p-1 text-red-500 hover:bg-red-100 rounded transition-colors cursor-pointer"
+                            title="Delete"
+                            role="button"
+                          >
+                            <HiTrash className="h-3 w-3" />
+                          </span>
+                        </div>
+                      </div>
+                    }
+                  >
+                    <DndContext
+                      sensors={sensors}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <div className="h-full p-4 overflow-hidden">
+                        <Canvas
+                          floorplan={floorplan}
+                          placements={placements}
+                          items={items}
+                          onPlacementUpdate={handlePlacementUpdate}
+                          onPlacementDelete={handlePlacementDelete}
+                          isResizingRef={isResizingRef}
+                        />
+                      </div>
+                      
+                      {/* Drag overlay - shows just the item image (like it will appear on canvas) */}
+                      <DragOverlay>
+                        {activeDragItem && (
+                          <div className="border-2 border-blue-500 rounded bg-white shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
+                            {activeDragItem.preview_image ? (
+                              <img
+                                src={`/uploads/${activeDragItem.preview_image}`}
+                                alt={activeDragItem.name}
+                                className="w-full h-full object-contain bg-gray-100"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">
+                                No img
+                              </div>
+                            )}
                           </div>
                         )}
-                      </div>
-                    )}
-                  </DragOverlay>
-                </DndContext>
-              </Tabs.Item>
-            ))}
-            </Tabs>
-          </div>
-        )}
-      </Card>
+                      </DragOverlay>
+                    </DndContext>
+                  </Tabs.Item>
+                ))}
+              </Tabs>
+            </div>
+          )}
+        </div>
+
+        {/* Right Side - Product Panel */}
+        <ProductPanel placements={placements} />
+      </div>
 
       {/* Custom styles for floorplan tabs - higher contrast */}
       <style>{`
+        .floorplan-tabs {
+          height: 100%;
+        }
         .floorplan-tabs [role="tablist"] {
           background-color: #f3f4f6;
           border-radius: 0.5rem;
           padding: 0.25rem;
           gap: 0.25rem;
+          margin: 0.5rem 1rem 0 1rem;
+          flex-shrink: 0;
+        }
+        .floorplan-tabs [role="tabpanel"] {
+          flex: 1;
+          overflow: hidden;
         }
         .floorplan-tabs [role="tab"] {
           background-color: #e5e7eb;
           border-radius: 0.375rem;
           font-weight: 500;
           color: #374151;
-          padding: 0.75rem 1rem;
+          padding: 0.5rem 0.75rem;
+          font-size: 0.875rem;
         }
         .floorplan-tabs [role="tab"]:hover {
           background-color: #d1d5db;
@@ -588,15 +609,6 @@ const ProjectDashboard = () => {
           background-color: #ffffff;
         }
       `}</style>
-
-      {/* Summary Panel Placeholder */}
-      <Card>
-        <h2 className="text-xl font-semibold mb-4">Project Summary</h2>
-        <div className="text-center py-8 text-gray-500">
-          <p>Summary panel coming soon</p>
-          <p className="text-sm mt-2">This will show item quantities and pricing</p>
-        </div>
-      </Card>
 
       {/* Modals */}
       <ProjectFormModal

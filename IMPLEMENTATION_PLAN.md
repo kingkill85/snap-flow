@@ -69,27 +69,27 @@
 ```
 
 **Tasks:**
-- [ ] Create `ProductPanel` component (replaces ItemPalette)
-  - [ ] Right-side position (350px fixed width)
-  - [ ] Light theme (current white/gray)
-  - [ ] Categories in ALL CAPS headers
-  - [ ] 2-column grid for product cards
-  - [ ] Each card: image, name, price
-  - [ ] Scrollable product area
-  - [ ] Fixed totals section at bottom
-  - [ ] Simple total calculation (sum of item prices × quantity)
-  - [ ] "Generate Presentation (PDF)" button (placeholder)
-  - [ ] "Create Invoice (PDF)" button (placeholder)
-- [ ] Update `ProjectDashboard` layout
-  - [ ] Compact project header (single row)
-  - [ ] Remove large project info header
-  - [ ] Two-column layout: Canvas (flex) | ProductPanel (350px)
-  - [ ] Floorplan tabs at top of canvas area
-  - [ ] Full-width/height configurator (minus top menu)
-- [ ] Prepare for BOM view toggle (future Phase 7)
-  - [ ] Structure panel to allow view switcher
-  - [ ] Configurator view (canvas + products)
-  - [ ] BOM view (list of placed items with details)
+- [x] Create `ProductPanel` component (replaces ItemPalette)
+  - [x] Right-side position (350px fixed width)
+  - [x] Light theme (current white/gray)
+  - [x] Categories in ALL CAPS headers
+  - [x] 2-column grid for product cards
+  - [x] Each card: image, name, price
+  - [x] Scrollable product area
+  - [x] Fixed totals section at bottom
+  - [x] Simple total calculation (sum of item prices × quantity)
+  - [x] "Generate Presentation (PDF)" button (placeholder)
+  - [x] "Create Invoice (PDF)" button (placeholder)
+- [x] Update `ProjectDashboard` layout
+  - [x] Compact project header (single row)
+  - [x] Remove large project info header
+  - [x] Two-column layout: Canvas (flex) | ProductPanel (350px)
+  - [x] Floorplan tabs at top of canvas area
+  - [x] Full-width/height configurator (minus top menu)
+- [x] Prepare for BOM view toggle (future Phase 7)
+  - [x] Structure panel to allow view switcher
+  - [x] Configurator view (canvas + products)
+  - [x] BOM view (list of placed items with details)
 
 ---
 
