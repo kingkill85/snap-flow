@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button, Spinner, Alert, Card, Badge } from 'flowbite-react';
-import { HiChevronDown, HiChevronRight, HiRefresh, HiTrash } from 'react-icons/hi';
+import { HiChevronDown, HiChevronRight, HiRefresh } from 'react-icons/hi';
 import type { FloorplanBom, BomGroup, ChangeReport } from '../../services/bom';
 import { bomService } from '../../services/bom';
 
@@ -19,6 +19,11 @@ export function BomPanel({ floorplanId, className = '' }: BomPanelProps) {
 
   useEffect(() => {
     fetchBom();
+    
+    // Auto-refresh every 2 seconds to sync with canvas changes
+    const interval = setInterval(fetchBom, 2000);
+    
+    return () => clearInterval(interval);
   }, [floorplanId]);
 
   const fetchBom = async () => {
@@ -62,19 +67,6 @@ export function BomPanel({ floorplanId, className = '' }: BomPanelProps) {
       setError(err.response?.data?.error || 'Failed to update from catalog');
     } finally {
       setIsUpdating(false);
-    }
-  };
-
-  const handleDeleteGroup = async (group: BomGroup) => {
-    if (!confirm(`Delete "${group.mainEntry.name_snapshot}" and all its placements?`)) {
-      return;
-    }
-    
-    try {
-      await bomService.deleteBomEntry(floorplanId, group.mainEntry.id);
-      await fetchBom(); // Refresh after delete
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to delete BOM entry');
     }
   };
 
@@ -240,15 +232,6 @@ export function BomPanel({ floorplanId, className = '' }: BomPanelProps) {
                   <p className="font-semibold text-sm">
                     ${(group.mainEntry.price_snapshot * group.quantity).toFixed(2)}
                   </p>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteGroup(group);
-                    }}
-                    className="text-red-500 hover:text-red-700 text-xs mt-1"
-                  >
-                    <HiTrash />
-                  </button>
                 </div>
               </div>
               
