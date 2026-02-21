@@ -429,31 +429,7 @@ const ProjectDashboard = () => {
         <div className="flex-1 flex overflow-hidden">
           {/* Left Side - Canvas Area */}
           <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
-            {/* View Toggle (Future: Configurator/BOM) */}
-            <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
-              <div className="flex gap-1">
-                <Button 
-                  color="light" 
-                  size="xs"
-                  className="bg-gray-100 text-gray-900"
-                >
-                  Configurator
-                </Button>
-                <Button 
-                  color="light" 
-                  size="xs"
-                  disabled
-                >
-                  BOM View
-                </Button>
-              </div>
-              <Button size="xs" onClick={openCreateFloorplanModal}>
-                <HiPlus className="mr-1 h-4 w-4" />
-                Add Floorplan
-              </Button>
-            </div>
-
-            {/* Floorplan Tabs & Canvas */}
+            {/* Combined View Toggle and Floorplan Tabs */}
             {floorplans.length === 0 ? (
               <div className="flex-1 flex items-center justify-center text-gray-500">
                 <div className="text-center">
@@ -466,72 +442,92 @@ const ProjectDashboard = () => {
               </div>
             ) : (
               <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Custom Floorplan Tabs */}
+                {/* Combined Tabs Row: View Toggle + Floorplan Tabs + Add Button */}
                 <div className="bg-white border-b border-gray-200 px-4 py-2 flex-shrink-0">
-                  <div className="flex gap-1">
-                    {floorplans.map((floorplan, index) => (
-                      <div
-                        key={floorplan.id}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors ${
-                          activeFloorplan?.id === floorplan.id
-                            ? 'bg-white shadow-sm border border-gray-200'
-                            : 'bg-gray-100 hover:bg-gray-200'
-                        }`}
-                        onClick={() => setActiveFloorplan(floorplan)}
-                      >
-                        <span className="font-medium text-sm">{floorplan.name}</span>
-                        <div className="flex items-center gap-0.5 ml-1">
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              openEditFloorplanModal(floorplan);
-                            }}
-                            className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors cursor-pointer"
-                            title="Rename"
-                            role="button"
-                          >
-                            <HiPencil className="h-3 w-3" />
-                          </span>
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
-                            }}
-                            className={`p-1 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                            title="Move Left"
-                            role="button"
-                          >
-                            <HiArrowUp className="h-3 w-3" />
-                          </span>
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
-                            }}
-                            className={`p-1 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === floorplans.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                            title="Move Right"
-                            role="button"
-                          >
-                            <HiArrowDown className="h-3 w-3" />
-                          </span>
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              openDeleteFloorplanModal(floorplan);
-                            }}
-                            className="p-1 text-red-500 hover:bg-red-100 rounded transition-colors cursor-pointer"
-                            title="Delete"
-                            role="button"
-                          >
-                            <HiTrash className="h-3 w-3" />
-                          </span>
+                  <div className="flex gap-1 items-center">
+                    {/* View Toggle Tabs */}
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-white shadow-sm border border-gray-200">
+                      <span className="font-medium text-sm text-gray-900">Configurator</span>
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 cursor-pointer transition-colors">
+                      <span className="font-medium text-sm text-gray-600">BOM View</span>
+                    </div>
+                    
+                    {/* Divider */}
+                    <div className="h-6 w-px bg-gray-300 mx-2"></div>
+                    
+                    {/* Floorplan Tabs */}
+                    <div className="flex gap-1 flex-1">
+                      {floorplans.map((floorplan, index) => (
+                        <div
+                          key={floorplan.id}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors ${
+                            activeFloorplan?.id === floorplan.id
+                              ? 'bg-white shadow-sm border border-gray-200'
+                              : 'bg-gray-100 hover:bg-gray-200'
+                          }`}
+                          onClick={() => setActiveFloorplan(floorplan)}
+                        >
+                          <span className="font-medium text-sm">{floorplan.name}</span>
+                          <div className="flex items-center gap-0.5 ml-1">
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                openEditFloorplanModal(floorplan);
+                              }}
+                              className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors cursor-pointer"
+                              title="Rename"
+                              role="button"
+                            >
+                              <HiPencil className="h-3 w-3" />
+                            </span>
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
+                              }}
+                              className={`p-1 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                              title="Move Left"
+                              role="button"
+                            >
+                              <HiArrowUp className="h-3 w-3" />
+                            </span>
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
+                              }}
+                              className={`p-1 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === floorplans.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                              title="Move Right"
+                              role="button"
+                            >
+                              <HiArrowDown className="h-3 w-3" />
+                            </span>
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                openDeleteFloorplanModal(floorplan);
+                              }}
+                              className="p-1 text-red-500 hover:bg-red-100 rounded transition-colors cursor-pointer"
+                              title="Delete"
+                              role="button"
+                            >
+                              <HiTrash className="h-3 w-3" />
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                    
+                    {/* Add Floorplan Button */}
+                    <Button size="xs" onClick={openCreateFloorplanModal} className="ml-2">
+                      <HiPlus className="mr-1 h-4 w-4" />
+                      Add Floorplan
+                    </Button>
                   </div>
                 </div>
 
