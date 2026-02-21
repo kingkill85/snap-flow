@@ -23,7 +23,7 @@ const Header = () => {
       <Navbar.Brand as={Link} to="/">
         <div className="flex flex-col items-start">
           <span className="whitespace-nowrap text-3xl font-black tracking-tight" style={{ color: '#6D28D9' }}>
-            SnapFlow<sup className="text-xs">®</sup>
+            SnapFlow
           </span>
         </div>
       </Navbar.Brand>
