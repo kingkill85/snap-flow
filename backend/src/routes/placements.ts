@@ -7,6 +7,15 @@ import { bomService } from '../services/bom.ts';
 import { floorplanRepository } from '../repositories/floorplan.ts';
 import { authMiddleware } from '../middleware/auth.ts';
 
+// Helper function to clean up empty BOM entries
+async function cleanupEmptyBomEntry(bomEntryId: number): Promise<void> {
+  const count = await placementRepository.countByBomEntry(bomEntryId);
+  if (count === 0) {
+    // No more placements, delete the BOM entry (cascade will handle children)
+    await bomEntryRepository.delete(bomEntryId);
+  }
+}
+
 const placementRoutes = new Hono();
 
 // Validation schemas
@@ -157,6 +166,7 @@ placementRoutes.put('/:id/variant', authMiddleware, zValidator('json', switchVar
 });
 
 // DELETE /placements/:id - Delete placement
+// Also deletes BOM entry if no more placements reference it
 placementRoutes.delete('/:id', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
 
@@ -166,7 +176,13 @@ placementRoutes.delete('/:id', authMiddleware, async (c) => {
       return c.json({ error: 'Placement not found' }, 404);
     }
 
+    const bomEntryId = placement.bom_entry_id;
+    
+    // Delete the placement
     await placementRepository.delete(id);
+    
+    // Clean up BOM entry if no more placements
+    await cleanupEmptyBomEntry(bomEntryId);
     
     return c.json({
       message: 'Placement deleted successfully',
