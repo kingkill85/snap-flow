@@ -42,24 +42,24 @@ function DraggableProductCard({ item }: DraggableProductCardProps) {
       }}
       className="cursor-grab hover:shadow-md transition-shadow bg-white border border-gray-200 rounded-lg overflow-hidden"
     >
-      {/* Product Image - smaller aspect ratio */}
-      <div className="h-16 bg-gray-100 relative">
+      {/* Product Image - compact for 3-column layout */}
+      <div className="h-12 bg-gray-100 relative">
         {imageUrl ? (
           <img
             src={imageUrl}
             alt={item.name}
-            className="w-full h-full object-contain p-1"
+            className="w-full h-full object-contain p-0.5"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
+          <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-400">
             No Image
           </div>
         )}
       </div>
       
       {/* Product Info - no price */}
-      <div className="px-1.5 py-1">
-        <p className="text-xs font-medium text-gray-900 truncate" title={item.name}>
+      <div className="px-1 py-0.5">
+        <p className="text-[10px] font-medium text-gray-900 truncate leading-tight" title={item.name}>
           {item.name}
         </p>
       </div>
@@ -149,8 +149,8 @@ export function ProductPanel({ className = '', placements = [] }: ProductPanelPr
                 {category.name}
               </h3>
               
-              {/* 2-Column Product Grid */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* 3-Column Product Grid */}
+              <div className="grid grid-cols-3 gap-2">
                 {categoryItems.map((item) => (
                   <DraggableProductCard
                     key={item.id}
