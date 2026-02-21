@@ -30,9 +30,6 @@ function DraggableProductCard({ item }: DraggableProductCardProps) {
 
   // Use preview image from first variant
   const imageUrl = item.preview_image ? `/uploads/${item.preview_image}` : null;
-  
-  // Get price from first variant
-  const price = item.variants?.[0]?.price || 0;
 
   return (
     <div
@@ -45,13 +42,13 @@ function DraggableProductCard({ item }: DraggableProductCardProps) {
       }}
       className="cursor-grab hover:shadow-md transition-shadow bg-white border border-gray-200 rounded-lg overflow-hidden"
     >
-      {/* Product Image */}
-      <div className="aspect-square bg-gray-100 relative">
+      {/* Product Image - smaller aspect ratio */}
+      <div className="h-16 bg-gray-100 relative">
         {imageUrl ? (
           <img
             src={imageUrl}
             alt={item.name}
-            className="w-full h-full object-contain p-2"
+            className="w-full h-full object-contain p-1"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
@@ -60,13 +57,10 @@ function DraggableProductCard({ item }: DraggableProductCardProps) {
         )}
       </div>
       
-      {/* Product Info */}
-      <div className="p-2">
-        <p className="text-sm font-medium text-gray-900 truncate" title={item.name}>
+      {/* Product Info - no price */}
+      <div className="px-1.5 py-1">
+        <p className="text-xs font-medium text-gray-900 truncate" title={item.name}>
           {item.name}
-        </p>
-        <p className="text-sm font-semibold text-gray-700 mt-1">
-          ${price.toFixed(2)}
         </p>
       </div>
     </div>
