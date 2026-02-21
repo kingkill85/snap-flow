@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Spinner, Alert } from 'flowbite-react';
-import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowUp, HiArrowDown } from 'react-icons/hi';
+import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowSmLeft, HiArrowSmRight } from 'react-icons/hi';
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { projectService, type Project } from '../../services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '../../services/floorplan';
@@ -450,7 +450,7 @@ const ProjectDashboard = () => {
                       <span className="font-medium text-sm text-gray-900">Configurator</span>
                     </div>
                     <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 cursor-pointer transition-colors">
-                      <span className="font-medium text-sm text-gray-600">bill of materials</span>
+                      <span className="font-medium text-sm text-gray-600">Bill of Materials</span>
                     </div>
                     
                     {/* Divider */}
@@ -492,7 +492,7 @@ const ProjectDashboard = () => {
                               title="Move Left"
                               role="button"
                             >
-                              <HiArrowUp className="h-3 w-3" />
+                              <HiArrowSmLeft className="h-3 w-3" />
                             </span>
                             <span
                               onClick={(e) => {
@@ -504,7 +504,7 @@ const ProjectDashboard = () => {
                               title="Move Right"
                               role="button"
                             >
-                              <HiArrowDown className="h-3 w-3" />
+                              <HiArrowSmRight className="h-3 w-3" />
                             </span>
                             <span
                               onClick={(e) => {
