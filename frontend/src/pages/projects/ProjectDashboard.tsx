@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Spinner, Alert, Tabs } from 'flowbite-react';
+import { Button, Spinner, Alert } from 'flowbite-react';
 import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowUp, HiArrowDown } from 'react-icons/hi';
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { projectService, type Project } from '../../services/project';
@@ -460,109 +460,116 @@ const ProjectDashboard = () => {
               </div>
             </div>
           ) : (
-            <div className="flex-1 overflow-hidden floorplan-tabs">
-              <Tabs 
-                onActiveTabChange={(index) => setActiveFloorplan(floorplans[index] || null)}
-                className="h-full flex flex-col overflow-hidden"
-              >
-                {floorplans.map((floorplan, index) => (
-                  <Tabs.Item 
-                    key={floorplan.id}
-                    active={activeFloorplan?.id === floorplan.id}
-                    title={
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">{floorplan.name}</span>
-                        <div className="flex items-center gap-0.5 ml-1">
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              openEditFloorplanModal(floorplan);
-                            }}
-                            className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors cursor-pointer"
-                            title="Rename"
-                            role="button"
-                          >
-                            <HiPencil className="h-3 w-3" />
-                          </span>
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
-                            }}
-                            className={`p-1 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                            title="Move Left"
-                            role="button"
-                          >
-                            <HiArrowUp className="h-3 w-3" />
-                          </span>
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
-                            }}
-                            className={`p-1 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === floorplans.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                            title="Move Right"
-                            role="button"
-                          >
-                            <HiArrowDown className="h-3 w-3" />
-                          </span>
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              openDeleteFloorplanModal(floorplan);
-                            }}
-                            className="p-1 text-red-500 hover:bg-red-100 rounded transition-colors cursor-pointer"
-                            title="Delete"
-                            role="button"
-                          >
-                            <HiTrash className="h-3 w-3" />
-                          </span>
-                        </div>
-                      </div>
-                    }
-                  >
-                    <DndContext
-                      sensors={sensors}
-                      onDragStart={handleDragStart}
-                      onDragEnd={handleDragEnd}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Custom Floorplan Tabs */}
+              <div className="bg-white border-b border-gray-200 px-4 py-2 flex-shrink-0">
+                <div className="flex gap-1">
+                  {floorplans.map((floorplan, index) => (
+                    <div
+                      key={floorplan.id}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors ${
+                        activeFloorplan?.id === floorplan.id
+                          ? 'bg-white shadow-sm border border-gray-200'
+                          : 'bg-gray-100 hover:bg-gray-200'
+                      }`}
+                      onClick={() => setActiveFloorplan(floorplan)}
                     >
-                      <div className="h-full overflow-hidden">
-                        <Canvas
-                          floorplan={floorplan}
-                          placements={placements}
-                          items={items}
-                          onPlacementUpdate={handlePlacementUpdate}
-                          onPlacementDelete={handlePlacementDelete}
-                          isResizingRef={isResizingRef}
-                        />
+                      <span className="font-medium text-sm">{floorplan.name}</span>
+                      <div className="flex items-center gap-0.5 ml-1">
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            openEditFloorplanModal(floorplan);
+                          }}
+                          className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors cursor-pointer"
+                          title="Rename"
+                          role="button"
+                        >
+                          <HiPencil className="h-3 w-3" />
+                        </span>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
+                          }}
+                          className={`p-1 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                          title="Move Left"
+                          role="button"
+                        >
+                          <HiArrowUp className="h-3 w-3" />
+                        </span>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
+                          }}
+                          className={`p-1 text-gray-600 hover:bg-gray-200 rounded transition-colors cursor-pointer ${index === floorplans.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                          title="Move Right"
+                          role="button"
+                        >
+                          <HiArrowDown className="h-3 w-3" />
+                        </span>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            openDeleteFloorplanModal(floorplan);
+                          }}
+                          className="p-1 text-red-500 hover:bg-red-100 rounded transition-colors cursor-pointer"
+                          title="Delete"
+                          role="button"
+                        >
+                          <HiTrash className="h-3 w-3" />
+                        </span>
                       </div>
-                      
-                      {/* Drag overlay - shows just the item image (like it will appear on canvas) */}
-                      <DragOverlay>
-                        {activeDragItem && (
-                          <div className="border-2 border-blue-500 rounded bg-white shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
-                            {activeDragItem.preview_image ? (
-                              <img
-                                src={`/uploads/${activeDragItem.preview_image}`}
-                                alt={activeDragItem.name}
-                                className="w-full h-full object-contain bg-gray-100"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">
-                                No img
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </DragOverlay>
-                    </DndContext>
-                  </Tabs.Item>
-                ))}
-              </Tabs>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Canvas Area - Only render active floorplan */}
+              {activeFloorplan && (
+                <div className="flex-1 overflow-hidden">
+                  <DndContext
+                    sensors={sensors}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <div className="h-full">
+                      <Canvas
+                        floorplan={activeFloorplan}
+                        placements={placements}
+                        items={items}
+                        onPlacementUpdate={handlePlacementUpdate}
+                        onPlacementDelete={handlePlacementDelete}
+                        isResizingRef={isResizingRef}
+                      />
+                    </div>
+                    
+                    {/* Drag overlay */}
+                    <DragOverlay>
+                      {activeDragItem && (
+                        <div className="border-2 border-blue-500 rounded bg-white shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
+                          {activeDragItem.preview_image ? (
+                            <img
+                              src={`/uploads/${activeDragItem.preview_image}`}
+                              alt={activeDragItem.name}
+                              className="w-full h-full object-contain bg-gray-100"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">
+                              No img
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </DragOverlay>
+                  </DndContext>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -570,55 +577,6 @@ const ProjectDashboard = () => {
         {/* Right Side - Product Panel */}
         <ProductPanel placements={placements} />
       </div>
-
-      {/* Custom styles for floorplan tabs - higher contrast */}
-      <style>{`
-        .floorplan-tabs {
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-        }
-        .floorplan-tabs [role="tablist"] {
-          background-color: #f3f4f6;
-          border-radius: 0.5rem;
-          padding: 0.25rem;
-          gap: 0.25rem;
-          margin: 0.5rem 1rem 0.5rem 1rem;
-          flex-shrink: 0;
-        }
-        .floorplan-tabs [role="tabpanel"] {
-          flex: 1;
-          overflow: hidden;
-          padding: 0 !important;
-        }
-        .floorplan-tabs [role="tabpanel"] > div {
-          height: 100%;
-        }
-        .floorplan-tabs [role="tab"] {
-          background-color: #e5e7eb;
-          border-radius: 0.375rem;
-          font-weight: 500;
-          color: #374151;
-          padding: 0.5rem 0.75rem;
-          font-size: 0.875rem;
-        }
-        .floorplan-tabs [role="tab"]:hover {
-          background-color: #d1d5db;
-          color: #111827;
-        }
-        .floorplan-tabs [role="tab"][aria-selected="true"] {
-          background-color: #ffffff;
-          color: #111827;
-          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-        }
-        .floorplan-tabs [role="tab"][aria-selected="true"]:hover {
-          background-color: #ffffff;
-        }
-        /* Remove default Flowbite tab panel padding */
-        .floorplan-tabs .p-4 {
-          padding: 0 !important;
-        }
-      `}</style>
 
       {/* Modals */}
       <ProjectFormModal
