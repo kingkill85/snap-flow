@@ -343,6 +343,40 @@ export async function runMigrations(): Promise<void> {
         -- Create unique index for project name + customer_name combination
         CREATE UNIQUE INDEX idx_projects_unique_name_customer ON projects(name, customer_name);
       `
+    },
+    {
+      name: '020_create_floorplan_bom_entries',
+      sql: `
+        -- BOM entries table for per-floorplan bill of materials
+        CREATE TABLE floorplan_bom_entries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          floorplan_id INTEGER NOT NULL REFERENCES floorplans(id) ON DELETE CASCADE,
+          item_id INTEGER NOT NULL REFERENCES items(id),
+          variant_id INTEGER NOT NULL REFERENCES item_variants(id),
+          parent_bom_entry_id INTEGER REFERENCES floorplan_bom_entries(id) ON DELETE CASCADE,
+          name_snapshot TEXT NOT NULL,
+          model_number_snapshot TEXT,
+          price_snapshot REAL NOT NULL,
+          picture_path TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        CREATE INDEX idx_bom_floorplan ON floorplan_bom_entries(floorplan_id);
+        CREATE INDEX idx_bom_parent ON floorplan_bom_entries(parent_bom_entry_id);
+        CREATE INDEX idx_bom_item ON floorplan_bom_entries(item_id);
+        CREATE INDEX idx_bom_variant ON floorplan_bom_entries(variant_id);
+        CREATE UNIQUE INDEX idx_bom_main_unique ON floorplan_bom_entries(floorplan_id, variant_id) 
+          WHERE parent_bom_entry_id IS NULL;
+      `
+    },
+    {
+      name: '021_update_placements_for_bom',
+      sql: `
+        -- Add bom_entry_id to placements
+        ALTER TABLE placements ADD COLUMN bom_entry_id INTEGER REFERENCES floorplan_bom_entries(id);
+        CREATE INDEX idx_placements_bom ON placements(bom_entry_id);
+      `
     }
   ];
 
