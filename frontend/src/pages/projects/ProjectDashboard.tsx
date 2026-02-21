@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Spinner, Alert } from 'flowbite-react';
-import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowSmLeft, HiArrowSmRight } from 'react-icons/hi';
+import { HiArrowLeft, HiPlus, HiPencil, HiTrash, HiArrowSmLeft, HiArrowSmRight, HiCheckCircle, HiXCircle } from 'react-icons/hi';
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { projectService, type Project } from '../../services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '../../services/floorplan';
@@ -352,19 +352,6 @@ const ProjectDashboard = () => {
     setShowDeleteFloorplanModal(true);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active':
-        return 'bg-green-100 text-green-800';
-      case 'completed':
-        return 'bg-blue-100 text-blue-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -404,9 +391,22 @@ const ProjectDashboard = () => {
         <div className="h-6 w-px bg-gray-300"></div>
         <div className="text-sm text-gray-600">{project.customer_name}</div>
         <div className="h-6 w-px bg-gray-300"></div>
-        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
-          {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-        </span>
+        {project.status === 'active' ? (
+          <span className="inline-flex items-center text-green-600 text-sm">
+            <HiCheckCircle className="w-5 h-5 mr-1" />
+            Active
+          </span>
+        ) : project.status === 'completed' ? (
+          <span className="inline-flex items-center text-blue-600 text-sm">
+            <HiCheckCircle className="w-5 h-5 mr-1" />
+            Completed
+          </span>
+        ) : (
+          <span className="inline-flex items-center text-red-600 text-sm">
+            <HiXCircle className="w-5 h-5 mr-1" />
+            Cancelled
+          </span>
+        )}
       </div>
 
       {/* Configurator Area - Two Column Layout with DndContext wrapping everything */}
