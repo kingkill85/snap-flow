@@ -21,9 +21,11 @@ const Header = () => {
   return (
     <Navbar fluid className="bg-white border-b shadow-sm">
       <Navbar.Brand as={Link} to="/">
-        <span className="self-center whitespace-nowrap text-2xl font-bold text-blue-600">
-          SnapFlow
-        </span>
+        <div className="flex flex-col items-start">
+          <span className="whitespace-nowrap text-3xl font-black tracking-tight" style={{ color: '#6D28D9' }}>
+            SnapFlow<sup className="text-xs">®</sup>
+          </span>
+        </div>
       </Navbar.Brand>
       
       <div className="flex md:order-2 gap-3 items-center">
