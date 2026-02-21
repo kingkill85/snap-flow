@@ -389,35 +389,24 @@ const ProjectDashboard = () => {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Compact Project Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <Button color="light" size="xs" onClick={() => navigate('/projects')}>
-            <HiArrowLeft className="mr-1 h-4 w-4" />
-            Back
-          </Button>
-          <div className="h-6 w-px bg-gray-300"></div>
-          <div className="text-sm text-gray-500 font-mono">
-            {generateProjectNumber(project)}
-          </div>
-          <div className="h-6 w-px bg-gray-300"></div>
-          <h1 className="text-lg font-semibold text-gray-900">{project.name}</h1>
-          <div className="h-6 w-px bg-gray-300"></div>
-          <span className="text-sm text-gray-600">{project.customer_name}</span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
-            {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-          </span>
+      {/* Compact Project Header - Table Style */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-4 flex-shrink-0">
+        <Button color="light" size="xs" onClick={() => navigate('/projects')}>
+          <HiArrowLeft className="mr-1 h-4 w-4" />
+          Back
+        </Button>
+        <div className="h-6 w-px bg-gray-300"></div>
+        <div className="text-sm text-gray-600">
+          {generateProjectNumber(project)}
         </div>
-        <div className="flex gap-2">
-          <Button color="light" size="xs" onClick={() => setShowEditModal(true)}>
-            <HiPencil className="mr-1 h-4 w-4" />
-            Edit
-          </Button>
-          <Button color="failure" size="xs" onClick={() => setShowDeleteModal(true)}>
-            <HiTrash className="mr-1 h-4 w-4" />
-            Delete
-          </Button>
-        </div>
+        <div className="h-6 w-px bg-gray-300"></div>
+        <div className="font-medium text-gray-900">{project.name}</div>
+        <div className="h-6 w-px bg-gray-300"></div>
+        <div className="text-sm text-gray-600">{project.customer_name}</div>
+        <div className="h-6 w-px bg-gray-300"></div>
+        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
+          {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+        </span>
       </div>
 
       {/* Configurator Area - Two Column Layout with DndContext wrapping everything */}
