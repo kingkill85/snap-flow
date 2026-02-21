@@ -3,6 +3,8 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { floorplanRepository } from '../repositories/floorplan.ts';
 import { projectRepository } from '../repositories/project.ts';
+import { bomEntryRepository } from '../repositories/bom-entry.ts';
+import { bomService } from '../services/bom.ts';
 import { authMiddleware } from '../middleware/auth.ts';
 import { uploadMiddleware } from '../middleware/upload.ts';
 import { fileStorageService } from '../services/file-storage.ts';
@@ -225,6 +227,108 @@ floorplanRoutes.patch('/reorder', authMiddleware, zValidator('json', reorderSche
     });
   } catch (error) {
     console.error('Reorder floorplans error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// BOM Routes
+// GET /floorplans/:id/bom - Get BOM for floorplan
+floorplanRoutes.get('/:id/bom', authMiddleware, async (c) => {
+  const id = parseInt(c.req.param('id'));
+  
+  try {
+    const floorplan = await floorplanRepository.findById(id);
+    if (!floorplan) {
+      return c.json({ error: 'Floorplan not found' }, 404);
+    }
+    
+    const bom = await bomService.getBomForFloorplan(id);
+    return c.json({ data: bom });
+  } catch (error) {
+    console.error('Get BOM error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// POST /floorplans/:id/bom-entries - Create BOM entry
+const createBomEntrySchema = z.object({
+  variant_id: z.number().int().positive(),
+});
+
+floorplanRoutes.post('/:id/bom-entries', authMiddleware, zValidator('json', createBomEntrySchema), async (c) => {
+  const floorplanId = parseInt(c.req.param('id'));
+  const { variant_id } = c.req.valid('json');
+  
+  try {
+    const floorplan = await floorplanRepository.findById(floorplanId);
+    if (!floorplan) {
+      return c.json({ error: 'Floorplan not found' }, 404);
+    }
+    
+    const bomEntry = await bomService.createBomEntry(floorplanId, variant_id);
+    return c.json({
+      data: bomEntry,
+      message: 'BOM entry created successfully',
+    }, 201);
+  } catch (error) {
+    console.error('Create BOM entry error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// PUT /floorplans/:id/bom-entries/:entryId/variant - Switch variant
+const switchVariantSchema = z.object({
+  variant_id: z.number().int().positive(),
+});
+
+floorplanRoutes.put('/:id/bom-entries/:entryId/variant', authMiddleware, zValidator('json', switchVariantSchema), async (c) => {
+  const entryId = parseInt(c.req.param('entryId'));
+  const { variant_id } = c.req.valid('json');
+  
+  try {
+    const bomEntry = await bomService.switchVariant(entryId, variant_id);
+    return c.json({
+      data: bomEntry,
+      message: 'Variant switched successfully',
+    });
+  } catch (error) {
+    console.error('Switch variant error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// DELETE /floorplans/:id/bom-entries/:entryId - Delete BOM entry
+floorplanRoutes.delete('/:id/bom-entries/:entryId', authMiddleware, async (c) => {
+  const entryId = parseInt(c.req.param('entryId'));
+  
+  try {
+    await bomService.deleteBomEntry(entryId);
+    return c.json({
+      message: 'BOM entry deleted successfully',
+    });
+  } catch (error) {
+    console.error('Delete BOM entry error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// POST /floorplans/:id/bom/update-from-catalog - Update from catalog
+floorplanRoutes.post('/:id/bom/update-from-catalog', authMiddleware, async (c) => {
+  const id = parseInt(c.req.param('id'));
+  
+  try {
+    const floorplan = await floorplanRepository.findById(id);
+    if (!floorplan) {
+      return c.json({ error: 'Floorplan not found' }, 404);
+    }
+    
+    const report = await bomService.updateFromCatalog(id);
+    return c.json({
+      data: report,
+      message: 'BOM updated from catalog',
+    });
+  } catch (error) {
+    console.error('Update BOM from catalog error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

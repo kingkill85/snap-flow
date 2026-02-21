@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { placementRepository } from '../repositories/placement.ts';
+import { bomEntryRepository } from '../repositories/bom-entry.ts';
+import { bomService } from '../services/bom.ts';
 import { floorplanRepository } from '../repositories/floorplan.ts';
 import { authMiddleware } from '../middleware/auth.ts';
 
@@ -15,7 +17,6 @@ const createPlacementSchema = z.object({
   y: z.number(),
   width: z.number().positive(),
   height: z.number().positive(),
-  selected_addons: z.string().optional(), // JSON array of addon IDs
 });
 
 const updatePlacementSchema = z.object({
@@ -23,8 +24,6 @@ const updatePlacementSchema = z.object({
   y: z.number().optional(),
   width: z.number().positive().optional(),
   height: z.number().positive().optional(),
-  item_variant_id: z.number().int().positive().optional(),
-  selected_addons: z.string().optional(),
 });
 
 const bulkUpdateSchema = z.object({
@@ -68,6 +67,7 @@ placementRoutes.get('/:id', authMiddleware, async (c) => {
 });
 
 // POST /placements - Create placement
+// Creates BOM entry if needed, then creates placement
 placementRoutes.post('/', authMiddleware, zValidator('json', createPlacementSchema), async (c) => {
   const data = c.req.valid('json');
 
@@ -78,7 +78,16 @@ placementRoutes.post('/', authMiddleware, zValidator('json', createPlacementSche
       return c.json({ error: 'Floorplan not found' }, 404);
     }
 
-    const placement = await placementRepository.create(data);
+    // Get or create BOM entry for this variant
+    const bomEntry = await bomService.createBomEntry(data.floorplan_id, data.item_variant_id);
+    
+    // Create placement referencing BOM entry
+    const placement = await placementRepository.createWithBomEntry(bomEntry.id, {
+      x: data.x,
+      y: data.y,
+      width: data.width,
+      height: data.height,
+    });
 
     return c.json({
       data: placement,
@@ -90,7 +99,7 @@ placementRoutes.post('/', authMiddleware, zValidator('json', createPlacementSche
   }
 });
 
-// PUT /placements/:id - Update placement
+// PUT /placements/:id - Update placement (position/size only)
 placementRoutes.put('/:id', authMiddleware, zValidator('json', updatePlacementSchema), async (c) => {
   const id = parseInt(c.req.param('id'));
   const data = c.req.valid('json');
@@ -109,6 +118,40 @@ placementRoutes.put('/:id', authMiddleware, zValidator('json', updatePlacementSc
     });
   } catch (error) {
     console.error('Update placement error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// PUT /placements/:id/variant - Switch variant for placement
+const switchVariantSchema = z.object({
+  variant_id: z.number().int().positive(),
+});
+
+placementRoutes.put('/:id/variant', authMiddleware, zValidator('json', switchVariantSchema), async (c) => {
+  const id = parseInt(c.req.param('id'));
+  const { variant_id } = c.req.valid('json');
+
+  try {
+    const placement = await placementRepository.findById(id);
+    if (!placement) {
+      return c.json({ error: 'Placement not found' }, 404);
+    }
+
+    // Switch variant in BOM entry (same placement, different BOM entry reference)
+    const updatedBomEntry = await bomService.switchVariant(placement.bom_entry_id, variant_id);
+    
+    // Get placement with updated data
+    const updatedPlacement = await placementRepository.findById(id);
+
+    return c.json({
+      data: {
+        placement: updatedPlacement,
+        bomEntry: updatedBomEntry,
+      },
+      message: 'Variant switched successfully',
+    });
+  } catch (error) {
+    console.error('Switch variant error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
