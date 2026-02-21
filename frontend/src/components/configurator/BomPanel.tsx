@@ -183,9 +183,9 @@ export function BomPanel({ floorplanId, className = '' }: BomPanelProps) {
         </div>
       )}
 
-      {/* BOM Groups List */}
+      {/* BOM Groups List - filter out entries with 0 quantity */}
       <div className="flex-1 overflow-y-auto p-2">
-        {bom.groups.map((group) => {
+        {bom.groups.filter(group => group.quantity > 0).map((group) => {
           const isExpanded = expandedGroups.has(group.mainEntry.id);
           const hasChildren = group.children.length > 0;
           
