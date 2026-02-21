@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button, Spinner, Alert, Card, Badge } from 'flowbite-react';
 import { HiChevronDown, HiChevronRight, HiRefresh } from 'react-icons/hi';
-import type { FloorplanBom, BomGroup, ChangeReport } from '../../services/bom';
+import type { FloorplanBom, ChangeReport } from '../../services/bom';
 import { bomService } from '../../services/bom';
 
 interface BomPanelProps {
@@ -18,26 +18,28 @@ export function BomPanel({ floorplanId, className = '' }: BomPanelProps) {
   const [changeReport, setChangeReport] = useState<ChangeReport | null>(null);
 
   useEffect(() => {
-    fetchBom();
+    fetchBom(true); // Show loading on initial fetch
     
     // Auto-refresh every 2 seconds to sync with canvas changes
-    const interval = setInterval(fetchBom, 2000);
+    const interval = setInterval(() => fetchBom(false), 2000);
     
     return () => clearInterval(interval);
   }, [floorplanId]);
 
-  const fetchBom = async () => {
+  const fetchBom = async (showLoading = false) => {
     try {
-      setIsLoading(true);
+      if (showLoading) setIsLoading(true);
       const data = await bomService.getBomForFloorplan(floorplanId);
       setBom(data);
-      // Auto-expand all groups initially
-      setExpandedGroups(new Set(data.groups.map(g => g.mainEntry.id)));
+      // Auto-expand all groups initially (only on first load)
+      if (!bom) {
+        setExpandedGroups(new Set(data.groups.map(g => g.mainEntry.id)));
+      }
       setError('');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load BOM');
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
 
@@ -62,7 +64,7 @@ export function BomPanel({ floorplanId, className = '' }: BomPanelProps) {
       setIsUpdating(true);
       const report = await bomService.updateFromCatalog(floorplanId);
       setChangeReport(report);
-      await fetchBom(); // Refresh BOM after update
+      await fetchBom(true); // Refresh BOM after update
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to update from catalog');
     } finally {
@@ -85,7 +87,7 @@ export function BomPanel({ floorplanId, className = '' }: BomPanelProps) {
       <div className={`w-[400px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col ${className}`}>
         <div className="p-4">
           <Alert color="failure">{error}</Alert>
-          <Button color="light" size="sm" onClick={fetchBom} className="mt-2">
+          <Button color="light" size="sm" onClick={() => fetchBom(true)} className="mt-2">
             Retry
           </Button>
         </div>
