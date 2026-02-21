@@ -51,13 +51,12 @@ export function ConfirmDeleteModal({
           </Alert>
         )}
         <p className="text-gray-600 dark:text-gray-400">
-          Are you sure you want to delete &quot;{itemName}&quot;? 
-          This action cannot be undone.
+          Are you sure you want to delete &quot;{itemName}&quot;?
         </p>
         {warningText && (
-          <p className="text-sm text-red-600 mt-2">
+          <Alert color="warning" className="mt-3 text-sm">
             {warningText}
-          </p>
+          </Alert>
         )}
       </Modal.Body>
       <Modal.Footer>

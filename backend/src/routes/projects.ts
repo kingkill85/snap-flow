@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { projectRepository } from '../repositories/project.ts';
+import { floorplanRepository } from '../repositories/floorplan.ts';
 import { authMiddleware } from '../middleware/auth.ts';
 import type { CreateProjectDTO } from '../models/index.ts';
 
@@ -154,6 +155,14 @@ projectRoutes.delete('/:id', authMiddleware, async (c) => {
     const project = await projectRepository.findById(id);
     if (!project) {
       return c.json({ error: 'Project not found' }, 404);
+    }
+
+    // Check if project has floorplans
+    const floorplans = await floorplanRepository.findByProject(id);
+    if (floorplans.length > 0) {
+      return c.json({ 
+        error: `Cannot delete project with ${floorplans.length} floorplan(s). Please delete all floorplans first.` 
+      }, 400);
     }
 
     await projectRepository.delete(id);
