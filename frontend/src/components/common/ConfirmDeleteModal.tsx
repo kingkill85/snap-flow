@@ -45,22 +45,25 @@ export function ConfirmDeleteModal({
     <Modal show={isOpen} onClose={handleClose} size="md">
       <Modal.Header>{title}</Modal.Header>
       <Modal.Body>
-        {error && (
-          <Alert color="failure" className="mb-4">
+        {error ? (
+          <Alert color="failure" className="mb-2">
             {error}
           </Alert>
-        )}
-        <p className="text-gray-600 dark:text-gray-400">
-          Are you sure you want to delete &quot;{itemName}&quot;?
-        </p>
-        {warningText && (
-          <Alert color="warning" className="mt-3 text-sm">
-            {warningText}
-          </Alert>
+        ) : (
+          <>
+            <p className="text-gray-600 dark:text-gray-400">
+              Are you sure you want to delete &quot;{itemName}&quot;?
+            </p>
+            {warningText && (
+              <Alert color="warning" className="mt-3 text-sm">
+                {warningText}
+              </Alert>
+            )}
+          </>
         )}
       </Modal.Body>
       <Modal.Footer>
-        <Button color="failure" onClick={handleDelete} disabled={isDeleting}>
+        <Button color="failure" onClick={handleDelete} disabled={isDeleting || !!error}>
           {isDeleting ? (
             <>
               <Spinner size="sm" className="mr-2" />
