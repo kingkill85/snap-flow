@@ -387,7 +387,7 @@ const ProjectDashboard = () => {
           {generateProjectNumber(project)}
         </div>
         <div className="h-6 w-px bg-gray-300"></div>
-        <div className="font-medium text-gray-900">{project.name}</div>
+        <div className="font-medium">{project.name}</div>
         <div className="h-6 w-px bg-gray-300"></div>
         <div className="text-sm text-gray-600">{project.customer_name}</div>
         <div className="h-6 w-px bg-gray-300"></div>
