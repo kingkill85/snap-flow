@@ -137,7 +137,6 @@ export interface UpdatePlacementDTO {
   y?: number | undefined;
   width?: number | undefined;
   height?: number | undefined;
-  selected_addons?: string | undefined; // JSON array of addon IDs
 }
 
 // Project (includes customer information directly)
@@ -204,7 +203,6 @@ export interface Placement {
   y: number;
   width: number;
   height: number;
-  selected_addons: string | null; // Joined from bom_entry
   created_at: string;
   // Joined data
   item_variant?: ItemVariant;
@@ -217,7 +215,6 @@ export interface CreatePlacementDTO {
   y: number;
   width: number;
   height: number;
-  selected_addons?: string | undefined;
 }
 
 // Floorplan BOM Entry

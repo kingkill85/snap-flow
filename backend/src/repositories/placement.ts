@@ -10,7 +10,7 @@ export class PlacementRepository {
   async findAll(): Promise<Placement[]> {
     const result = getDb().queryEntries(`
       SELECT p.id, p.bom_entry_id, p.x, p.y, p.width, p.height, p.created_at,
-             b.floorplan_id, b.item_id, b.variant_id as item_variant_id, b.selected_addons
+             b.floorplan_id, b.item_id, b.variant_id as item_variant_id
       FROM placements p
       JOIN floorplan_bom_entries b ON p.bom_entry_id = b.id
       ORDER BY p.created_at DESC
@@ -21,7 +21,7 @@ export class PlacementRepository {
   async findByFloorplan(floorplanId: number): Promise<Placement[]> {
     const result = getDb().queryEntries(`
       SELECT p.id, p.bom_entry_id, p.x, p.y, p.width, p.height, p.created_at,
-             b.floorplan_id, b.item_id, b.variant_id as item_variant_id, b.selected_addons
+             b.floorplan_id, b.item_id, b.variant_id as item_variant_id
       FROM placements p
       JOIN floorplan_bom_entries b ON p.bom_entry_id = b.id
       WHERE b.floorplan_id = ?
@@ -33,7 +33,7 @@ export class PlacementRepository {
   async findById(id: number): Promise<Placement | null> {
     const result = getDb().queryEntries(`
       SELECT p.id, p.bom_entry_id, p.x, p.y, p.width, p.height, p.created_at,
-             b.floorplan_id, b.item_id, b.variant_id as item_variant_id, b.selected_addons
+             b.floorplan_id, b.item_id, b.variant_id as item_variant_id
       FROM placements p
       JOIN floorplan_bom_entries b ON p.bom_entry_id = b.id
       WHERE p.id = ?
@@ -44,7 +44,7 @@ export class PlacementRepository {
   async findByBomEntry(bomEntryId: number): Promise<Placement[]> {
     const result = getDb().queryEntries(`
       SELECT p.id, p.bom_entry_id, p.x, p.y, p.width, p.height, p.created_at,
-             b.floorplan_id, b.item_id, b.variant_id as item_variant_id, b.selected_addons
+             b.floorplan_id, b.item_id, b.variant_id as item_variant_id
       FROM placements p
       JOIN floorplan_bom_entries b ON p.bom_entry_id = b.id
       WHERE p.bom_entry_id = ?
