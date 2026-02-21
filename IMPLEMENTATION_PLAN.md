@@ -7,8 +7,8 @@
 - [x] Phase 3: Catalog Management (categories/items/variants/add-ons)
 - [x] Phase 4: Excel Catalog Import + Sync
 - [x] Phase 5: Customers + Projects
-- [~] Phase 6: Configurator Core (floorplans, canvas, placements)
-- [ ] Phase 7: Floorplan BOM (NEW - Updated Architecture)
+- [x] Phase 6: Configurator Core (floorplans, canvas, placements)
+- [~] Phase 7: Floorplan BOM (Backend complete, Frontend pending)
 - [ ] Phase 8: Proposal Generation
 - [~] Phase 9: Testing, QA, and Polish
 - [x] Phase 10: Deployment (Docker + CI/CD)
@@ -99,18 +99,18 @@ CREATE UNIQUE INDEX idx_bom_main_unique ON floorplan_bom_entries(floorplan_id, v
   WHERE parent_bom_entry_id IS NULL;
 ```
 
-### 7.1 Database + Backend Foundations
+### 7.1 Database + Backend Foundations ✓ COMPLETE
 
-- [ ] Migration: create `floorplan_bom_entries` table
-- [ ] Migration: update `placements` table
+- [x] Migration: create `floorplan_bom_entries` table
+- [x] Migration: update `placements` table
   - Add `bom_entry_id` column (references BOM entry)
   - Remove `item_variant_id`, `item_id`, `selected_addons` (moved to BOM)
   - Add cascade delete: `ON DELETE CASCADE`
-- [ ] Migration: backfill existing placements
+- [x] Migration: backfill existing placements
   - Create BOM entries from existing placements
   - Assign required addons as children
   - Update placement references
-- [ ] Add BOM repository
+- [x] Add BOM repository
   - `create(data)` - create main entry + required addon children
   - `findByFloorplan(floorplanId)` - get all entries for floorplan
   - `findByVariantAddons(floorplanId, variantId, addons)` - check if exists
@@ -118,35 +118,34 @@ CREATE UNIQUE INDEX idx_bom_main_unique ON floorplan_bom_entries(floorplan_id, v
   - `updateVariant(id, newVariantId)` - switch variant, update snapshots
   - `delete(id)` - cascade delete children + placements
   - `getChildren(parentId)` - get addon entries
-- [ ] Add BOM service
+- [x] Add BOM service
   - `createBomEntry(floorplanId, variantId)` - create main + required addons
   - `switchVariant(bomEntryId, newVariantId)` - change variant, refresh addons
   - `updateSnapshotsFromCatalog(bomEntryId)` - refresh from catalog
   - `getBomForFloorplan(floorplanId)` - get hierarchical BOM with totals
-- [ ] Add API endpoints
+- [x] Add API endpoints
   - `GET /floorplans/:id/bom` - get hierarchical BOM
   - `POST /floorplans/:id/bom-entries` - create new BOM entry
   - `PUT /floorplans/:id/bom-entries/:id/variant` - switch variant
-  - `POST /floorplans/:id/bom-entries/:id/picture` - upload custom picture
   - `DELETE /floorplans/:id/bom-entries/:id` - delete BOM + placements
   - `POST /floorplans/:id/bom/update-from-catalog` - refresh all snapshots
 
-### 7.2 Auto-Sync: Placement Creation → BOM Entry
+### 7.2 Auto-Sync: Placement Creation → BOM Entry ✓ COMPLETE
 
-**Flow when user drags item to canvas:**
+**Flow when user drags item to canvas:** ✓ Implemented in POST /placements
 1. Check if BOM entry exists for (floorplan_id + variant_id) where parent is NULL
 2. If NOT exists:
    - Create main BOM entry with variant snapshots
    - Create child BOM entries for required addons
 3. Create placement referencing main BOM entry_id
 
-**Flow when user changes variant (same item):**
+**Flow when user changes variant (same item):** ✓ Implemented in PUT /placements/:id/variant
 1. Update main BOM entry: new variant_id, refresh snapshots
 2. Delete all existing child BOM entries (old addons)
 3. Create new child BOM entries for new variant's required addons
 4. Placement stays same (same bom_entry_id reference)
 
-**Flow when user deletes BOM entry:**
+**Flow when user deletes BOM entry:** ✓ Implemented via CASCADE DELETE
 1. Cascade delete all child addon BOM entries
 2. Cascade delete all placements referencing this BOM entry
 
@@ -198,8 +197,9 @@ Example:
    - Total before/after
    - Timestamp
 
-### 7.5 Frontend BOM Panel
+### 7.5 Frontend BOM Panel [PENDING]
 
+**Next priority after backend testing:**
 - [ ] BOM table showing hierarchical structure
 - [ ] Columns: Picture, Name, Model #, Qty, Unit Price, Line Total
 - [ ] Expandable/collapsible addon rows under parent
@@ -210,25 +210,24 @@ Example:
 - [ ] Delete BOM entry button (with confirmation)
 - [ ] Floorplan total display
 
-### 7.6 Placement-Level Controls
+### 7.6 Placement-Level Controls [PENDING]
 
 - [ ] Click placement → show variant/addon selector popup
 - [ ] Variant dropdown (filtered to same item variants)
 - [ ] Addon checkboxes (required vs optional)
 - [ ] Changes update BOM entry (triggering snapshot refresh)
 
-### 7.7 Migration Strategy
+### 7.7 Migration Strategy ✓ COMPLETE
 
-**Backfill existing data:**
-1. For each placement with old structure:
+**Backfill existing data:** ✓ Migration script created (016_backfill_placements_to_bom.ts)
+1. ✓ For each placement with old structure:
    - Extract variant_id from placement
    - Check if BOM entry exists for (floorplan_id, variant_id)
    - If not, create BOM entry with snapshots from catalog
    - Create required addon children
    - Update placement.bom_entry_id
-2. Remove old columns from placements
 
-### 7.8 Tests
+### 7.8 Tests [PENDING]
 
 - [ ] Backend: Create placement → BOM entry + required addons created
 - [ ] Backend: Switch variant → snapshots updated, addons swapped
