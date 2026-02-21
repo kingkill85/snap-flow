@@ -440,8 +440,9 @@ const ProjectDashboard = () => {
                   <div className="flex gap-1 items-center">
                     {/* View Toggle Tabs */}
                     <button
+                      type="button"
                       onClick={() => setActiveView('configurator')}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
+                      className={`relative z-10 flex items-center gap-2 px-3 py-2 rounded-md transition-colors pointer-events-auto ${
                         activeView === 'configurator'
                           ? 'bg-white shadow-sm border border-gray-200'
                           : 'bg-gray-100 hover:bg-gray-200'
@@ -452,8 +453,9 @@ const ProjectDashboard = () => {
                       }`}>Configurator</span>
                     </button>
                     <button
+                      type="button"
                       onClick={() => setActiveView('bom')}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-md transition-colors ${
+                      className={`relative z-10 flex items-center gap-2 px-3 py-2 rounded-md transition-colors pointer-events-auto ${
                         activeView === 'bom'
                           ? 'bg-white shadow-sm border border-gray-200'
                           : 'bg-gray-100 hover:bg-gray-200'
