@@ -21,11 +21,9 @@ const Header = () => {
   return (
     <Navbar fluid className="bg-white border-b shadow-sm">
       <Navbar.Brand as={Link} to="/">
-        <img 
-          src="/logo.png" 
-          alt="SnapFlow" 
-          className="h-14 w-auto"
-        />
+        <span className="self-center whitespace-nowrap text-2xl font-bold text-blue-600">
+          SnapFlow
+        </span>
       </Navbar.Brand>
       
       <div className="flex md:order-2 gap-3 items-center">
