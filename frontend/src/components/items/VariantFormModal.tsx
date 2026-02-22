@@ -207,7 +207,7 @@ export function VariantFormModal({ itemId, variant, isOpen, onClose, onSubmit }:
     try {
       await itemService.addVariantAddon(itemId, variant.id, {
         addon_variant_id: parseInt(selectedAddonVariant),
-        is_optional: isOptional,
+        is_required: !isOptional,
       });
       await loadAddons();
       setSelectedAddonVariant('');
@@ -355,7 +355,7 @@ export function VariantFormModal({ itemId, variant, isOpen, onClose, onSubmit }:
                 </h4>
                 {addons.length > 0 && (
                   <span className="text-xs text-gray-500">
-                    {addons.filter(a => a.is_optional).length} optional, {addons.filter(a => !a.is_optional).length} required
+                    {addons.filter(a => !a.is_required).length} optional, {addons.filter(a => a.is_required).length} required
                   </span>
                 )}
               </div>
@@ -390,8 +390,8 @@ export function VariantFormModal({ itemId, variant, isOpen, onClose, onSubmit }:
                           </div>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0 ml-2">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${addon.is_optional ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            {addon.is_optional ? 'Opt' : 'Req'}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${addon.is_required ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                            {addon.is_required ? 'Req' : 'Opt'}
                           </span>
                           <button
                             type="button"

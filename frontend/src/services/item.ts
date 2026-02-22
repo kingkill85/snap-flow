@@ -68,7 +68,7 @@ export interface VariantAddon {
   id: number;
   variant_id: number;
   addon_variant_id: number;
-  is_optional: boolean;
+  is_required: boolean;
   sort_order: number;
   created_at: string;
   addon_variant?: ItemVariant;
@@ -76,7 +76,7 @@ export interface VariantAddon {
 
 export interface CreateVariantAddonDTO {
   addon_variant_id: number;
-  is_optional?: boolean;
+  is_required?: boolean;
 }
 
 export interface ItemFilter {
