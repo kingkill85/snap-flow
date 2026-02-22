@@ -82,13 +82,23 @@ export class BomService {
       picture_path: variant.image_path,
     });
 
-    // Create required addon children
-    const requiredAddons = await variantAddonRepository.findByVariantId(variantId);
+    // Create required addon children (only non-optional addons)
+    const allAddons = await variantAddonRepository.findByVariantId(variantId);
+    console.log(`Found ${allAddons.length} addons for variant ${variantId}`);
+    const requiredAddons = allAddons.filter(addon => !addon.is_optional);
+    console.log(`Found ${requiredAddons.length} required addons`);
     for (const addon of requiredAddons) {
-      if (!addon.addon_variant) continue;
+      console.log(`Processing addon:`, addon);
+      if (!addon.addon_variant) {
+        console.log(`  Skipping: no addon_variant`);
+        continue;
+      }
 
       const addonItem = await itemRepository.findById(addon.addon_variant.item_id);
-      if (!addonItem) continue;
+      if (!addonItem) {
+        console.log(`  Skipping: no addonItem found`);
+        continue;
+      }
 
       await bomEntryRepository.create({
         floorplan_id: floorplanId,
@@ -100,6 +110,8 @@ export class BomService {
         price_snapshot: addon.addon_variant.price,
         picture_path: addon.addon_variant.image_path,
       });
+      
+      console.log(`  Created addon: ${addonItem.name}`);
     }
 
     return mainEntry;
