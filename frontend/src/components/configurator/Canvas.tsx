@@ -216,11 +216,10 @@ function DraggablePlacement({
               e.stopPropagation();
               onEdit();
             }}
-            className="absolute p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
-            style={{ top: '-24px', left: '-24px' }}
+            className="absolute -top-10 -left-10 p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
             title="Edit placement"
           >
-            <HiPencil className="w-4 h-4" />
+            <HiPencil className="w-3 h-3" />
           </button>
 
           {/* Delete button - positioned outside top-right corner */}
@@ -229,11 +228,10 @@ function DraggablePlacement({
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
-            style={{ top: '-24px', right: '-24px' }}
+            className="absolute -top-10 -right-10 p-3 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
             title="Delete placement"
           >
-            <HiX className="w-4 h-4" />
+            <HiX className="w-3 h-3" />
           </button>
 
           {/* Resize handles - corners only */}
