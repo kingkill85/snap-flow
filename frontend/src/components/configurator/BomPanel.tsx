@@ -78,7 +78,7 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
 
   if (isLoading) {
     return (
-      <div className={`w-[400px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col ${className}`}>
+      <div className={`flex-shrink-0 bg-white flex flex-col h-full ${className}`}>
         <div className="flex-1 flex justify-center items-center">
           <Spinner size="lg" />
         </div>
@@ -88,7 +88,7 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
 
   if (error) {
     return (
-      <div className={`w-[400px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col ${className}`}>
+      <div className={`flex-shrink-0 bg-white flex flex-col h-full ${className}`}>
         <div className="p-4">
           <Alert color="failure">{error}</Alert>
           <Button color="light" size="sm" onClick={() => fetchBom(true)} className="mt-2">
@@ -101,7 +101,7 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
 
   if (!bom || bom.groups.length === 0) {
     return (
-      <div className={`w-[400px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col ${className}`}>
+      <div className={`flex-shrink-0 bg-white flex flex-col h-full ${className}`}>
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold">Bill of Materials</h2>
         </div>
@@ -116,30 +116,24 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
   }
 
   return (
-    <div className={`w-[400px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col ${className}`}>
-      {/* Header */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="text-lg font-semibold">Bill of Materials</h2>
+    <div className={`flex-shrink-0 bg-white flex flex-col h-full ${className}`}>
+      {/* BOM Info Bar */}
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-gray-600">{bom.groups.length} item groups</span>
           <Button
             color="light"
             size="xs"
             onClick={handleUpdateFromCatalog}
             disabled={isUpdating}
+            title="Update from catalog"
           >
             {isUpdating ? (
-              <Spinner size="sm" className="mr-1" />
+              <Spinner size="sm" />
             ) : (
-              <HiRefresh className="mr-1" />
+              <HiRefresh className="h-4 w-4" />
             )}
-            Update
           </Button>
-        </div>
-        <div className="flex justify-between items-center text-sm">
-          <span className="text-gray-600">{bom.groups.length} item groups</span>
-          <span className="font-semibold text-lg">
-            Total: ${bom.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-          </span>
         </div>
       </div>
 
@@ -153,7 +147,7 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
               <ul className="text-xs space-y-1">
                 {changeReport.updated.map(update => (
                   <li key={update.entryId}>
-                    {update.name}: ${update.oldPrice.toFixed(2)} → ${update.newPrice.toFixed(2)}
+                    {update.name}: ${update.oldPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → ${update.newPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </li>
                 ))}
               </ul>
@@ -172,8 +166,8 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
             </div>
           )}
           <div className="flex justify-between text-xs mt-2 pt-2 border-t border-yellow-200">
-            <span>Before: ${changeReport.totalBefore.toFixed(2)}</span>
-            <span>After: ${changeReport.totalAfter.toFixed(2)}</span>
+            <span>Before: ${changeReport.totalBefore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span>After: ${changeReport.totalAfter.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <Button color="light" size="xs" onClick={() => setChangeReport(null)} className="mt-2">
             Close Report
@@ -205,7 +199,7 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
                   {group.mainEntry.picture_path ? (
                     <img
                       src={`/uploads/${group.mainEntry.picture_path}`}
-                      alt={group.mainEntry.name_snapshot}
+                      alt={group.mainEntry.item_name}
                       className="w-full h-full object-contain"
                     />
                   ) : (
@@ -218,20 +212,20 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">
-                    {group.mainEntry.name_snapshot}
+                    {group.mainEntry.item_name}
                     {group.mainEntry.style_name && (
                       <span className="text-gray-500"> - {group.mainEntry.style_name}</span>
                     )}
                   </p>
                   <p className="text-xs text-gray-500">
-                    {group.mainEntry.model_number_snapshot || 'No model #'}
+                    {group.mainEntry.model_number || 'No model #'}
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     <Badge color="blue" size="xs">
                       x{group.quantity}
                     </Badge>
                     <span className="text-xs text-gray-600">
-                      ${group.mainEntry.price_snapshot.toFixed(2)} each
+                      ${group.mainEntry.unit_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} each
                     </span>
                   </div>
                 </div>
@@ -239,35 +233,55 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
                 {/* Price & Delete */}
                 <div className="text-right">
                   <p className="font-semibold text-sm">
-                    ${(group.mainEntry.price_snapshot * group.quantity).toFixed(2)}
+                    ${(group.mainEntry.unit_price * group.quantity).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
               </div>
               
               {/* Children (Addons) */}
               {isExpanded && hasChildren && (
-                <div className="mt-3 pl-6 border-l-2 border-gray-200 space-y-2">
+                <div className="mt-3 pl-6 border-l-2 border-gray-200 space-y-3">
                   {group.children.map((child) => (
-                    <div key={child.id} className="flex items-center gap-2 py-1">
-                      <div className="w-8 h-8 bg-gray-100 rounded flex-shrink-0 overflow-hidden">
+                    <div key={child.id} className="flex items-center gap-3 py-1">
+                      {/* Picture - same size as parent */}
+                      <div className="w-12 h-12 bg-gray-100 rounded flex-shrink-0 overflow-hidden">
                         {child.picture_path ? (
                           <img
                             src={`/uploads/${child.picture_path}`}
-                            alt={child.name_snapshot}
+                            alt={child.item_name}
                             className="w-full h-full object-contain"
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-400">
-                            -
+                          <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
+                            No img
                           </div>
                         )}
                       </div>
+                      {/* Info - slightly smaller than parent */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs truncate">{child.name_snapshot}</p>
+                        <p className="font-medium text-xs truncate">
+                          {child.item_name}
+                          {child.style_name && (
+                            <span className="text-gray-500"> - {child.style_name}</span>
+                          )}
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          {child.model_number || 'No model #'}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge color="blue" size="xs">
+                            x{group.quantity}
+                          </Badge>
+                          <span className="text-[11px] text-gray-600">
+                            ${child.unit_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} each
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-right text-xs">
-                        <span className="text-gray-500">x{group.quantity}</span>
-                        <span className="ml-2">${(child.price_snapshot * group.quantity).toFixed(2)}</span>
+                      {/* Price */}
+                      <div className="text-right">
+                        <p className="font-semibold text-xs">
+                          ${(child.unit_price * group.quantity).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -275,13 +289,23 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
                   {/* Group Total */}
                   <div className="flex justify-between items-center pt-2 border-t border-gray-200 mt-2">
                     <span className="text-xs font-medium text-gray-600">Group Total:</span>
-                    <span className="font-semibold text-sm">${group.totalPrice.toFixed(2)}</span>
+                    <span className="font-semibold text-sm">${group.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               )}
             </Card>
           );
         })}
+      </div>
+
+      {/* Floorplan Total */}
+      <div className="border-t border-gray-200 p-4 bg-gray-50 flex-shrink-0">
+        <div className="flex justify-between items-center">
+          <span className="text-xs font-medium text-gray-600">Floorplan Total:</span>
+          <span className="text-sm font-bold text-gray-900">
+            ${bom.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+        </div>
       </div>
     </div>
   );

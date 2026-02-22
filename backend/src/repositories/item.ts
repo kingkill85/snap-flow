@@ -85,9 +85,17 @@ export class ItemRepository {
     values.push(limit, offset);
 
     const result = getDb().queryEntries(query, values);
+    
+    // Load variants for each item
+    const itemsWithVariants = await Promise.all(
+      (result as unknown as Item[]).map(async (item) => {
+        item.variants = await itemVariantRepository.findByItemId(item.id);
+        return item;
+      })
+    );
 
     return {
-      items: result as unknown as Item[],
+      items: itemsWithVariants,
       total,
       page,
       totalPages: Math.ceil(total / limit),

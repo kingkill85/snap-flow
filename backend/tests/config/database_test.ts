@@ -113,13 +113,13 @@ Deno.test('Database - placements table has correct structure', () => {
   const columnNames = columns.map(c => c.name);
   
   assertEquals(columnNames.includes('id'), true);
-  assertEquals(columnNames.includes('floorplan_id'), true);
-  assertEquals(columnNames.includes('item_id'), true);
+  assertEquals(columnNames.includes('bom_id'), true);
   assertEquals(columnNames.includes('x'), true);
   assertEquals(columnNames.includes('y'), true);
   assertEquals(columnNames.includes('width'), true);
   assertEquals(columnNames.includes('height'), true);
   assertEquals(columnNames.includes('created_at'), true);
+  // floorplan_id moved to project_bom table
 });
 
 Deno.test('Database - foreign key constraints exist', () => {

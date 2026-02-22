@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { projectRepository } from '../repositories/project.ts';
 import { floorplanRepository } from '../repositories/floorplan.ts';
 import { authMiddleware } from '../middleware/auth.ts';
+import { bomService } from '../services/bom.ts';
 import type { CreateProjectDTO } from '../models/index.ts';
 
 // Extend Hono context types
@@ -48,6 +49,24 @@ projectRoutes.get('/', authMiddleware, async (c) => {
     });
   } catch (error) {
     console.error('List projects error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// GET /projects/:id/total - Get total price for entire project (MUST come before /:id)
+projectRoutes.get('/:id/total', authMiddleware, async (c) => {
+  const id = parseInt(c.req.param('id'));
+  
+  try {
+    const project = await projectRepository.findById(id);
+    if (!project) {
+      return c.json({ error: 'Project not found' }, 404);
+    }
+    
+    const total = await bomService.getProjectTotal(id);
+    return c.json({ data: total });
+  } catch (error) {
+    console.error('Get project total error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

@@ -463,6 +463,15 @@ export async function runMigrations(): Promise<void> {
         -- Step 6: Drop old table
         DROP TABLE floorplan_bom_entries;
       `
+    },
+    {
+      name: '024_rename_bom_snapshot_columns',
+      sql: `
+        -- Rename snapshot columns to remove '_snapshot' suffix
+        ALTER TABLE project_bom RENAME COLUMN name_snapshot TO item_name;
+        ALTER TABLE project_bom RENAME COLUMN model_number_snapshot TO model_number;
+        ALTER TABLE project_bom RENAME COLUMN price_snapshot TO unit_price;
+      `
     }
   ];
 

@@ -11,8 +11,7 @@ import { ProjectFormModal } from '../../components/projects/ProjectFormModal';
 import { FloorplanFormModal } from '../../components/floorplans/FloorplanFormModal';
 import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
 import { Canvas } from '../../components/configurator/Canvas';
-import { ProductPanel } from '../../components/configurator/ProductPanel';
-import { BomPanel } from '../../components/configurator/BomPanel';
+import { RightPanel } from '../../components/configurator/RightPanel';
 import axios from 'axios';
 
 // Generate project number: YYYY-MM-DD_Customer Name_Address
@@ -46,9 +45,6 @@ const ProjectDashboard = () => {
   const [floorplanToDelete, setFloorplanToDelete] = useState<Floorplan | null>(null);
   // Track active drag item for overlay
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
-  
-  // View toggle: 'configurator' | 'bom'
-  const [activeView, setActiveView] = useState<'configurator' | 'bom'>('configurator');
   
   // Track placement changes for BOM refresh
   const [placementsVersion, setPlacementsVersion] = useState(0);
@@ -440,40 +436,9 @@ const ProjectDashboard = () => {
               </div>
             ) : (
               <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Combined Tabs Row: View Toggle + Floorplan Tabs + Add Button */}
+                {/* Tabs Area: Floorplan Tabs + Add Button */}
                 <div className="bg-white border-b border-gray-200 px-4 py-2 flex-shrink-0">
                   <div className="flex gap-1 items-center">
-                    {/* View Toggle Tabs */}
-                    <button
-                      type="button"
-                      onClick={() => setActiveView('configurator')}
-                      className={`relative z-10 flex items-center gap-2 px-3 py-2 rounded-md transition-colors pointer-events-auto ${
-                        activeView === 'configurator'
-                          ? 'bg-white shadow-sm border border-gray-200'
-                          : 'bg-gray-100 hover:bg-gray-200'
-                      }`}
-                    >
-                      <span className={`font-medium text-sm ${
-                        activeView === 'configurator' ? 'text-gray-900' : 'text-gray-600'
-                      }`}>Configurator</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveView('bom')}
-                      className={`relative z-10 flex items-center gap-2 px-3 py-2 rounded-md transition-colors pointer-events-auto ${
-                        activeView === 'bom'
-                          ? 'bg-white shadow-sm border border-gray-200'
-                          : 'bg-gray-100 hover:bg-gray-200'
-                      }`}
-                    >
-                      <span className={`font-medium text-sm ${
-                        activeView === 'bom' ? 'text-gray-900' : 'text-gray-600'
-                      }`}>Bill of Materials</span>
-                    </button>
-                    
-                    {/* Divider */}
-                    <div className="h-6 w-px bg-gray-300 mx-2"></div>
-                    
                     {/* Floorplan Tabs */}
                     <div className="flex gap-1 flex-1">
                       {floorplans.map((floorplan, index) => (
@@ -568,12 +533,13 @@ const ProjectDashboard = () => {
             )}
           </div>
 
-          {/* Right Side - Product Panel or BOM Panel */}
-          {activeView === 'configurator' ? (
-            <ProductPanel placements={placements} />
-          ) : (
-            activeFloorplan && <BomPanel floorplanId={activeFloorplan.id} placementsVersion={placementsVersion} />
-          )}
+          {/* Right Side - Right Panel with Products/BOM tabs */}
+          <RightPanel 
+            projectId={projectId}
+            placements={placements} 
+            floorplanId={activeFloorplan?.id} 
+            placementsVersion={placementsVersion}
+          />
         </div>
         
         {/* Drag overlay - shows just the item image (like it will appear on canvas) */}

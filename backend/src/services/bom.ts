@@ -78,10 +78,10 @@ export class BomService {
       item_id: variant.item_id,
       variant_id: variantId,
       parent_bom_id: null,
-      name_snapshot: item.name,
+      item_name: item.name,
       style_name: variant.style_name,
-      model_number_snapshot: item.base_model_number || `${variant.style_name}`,
-      price_snapshot: variant.price,
+      model_number: item.base_model_number || `${variant.style_name}`,
+      unit_price: variant.price,
       picture_path: variant.image_path,
     });
 
@@ -109,10 +109,10 @@ export class BomService {
         item_id: addon.addon_variant.item_id,
         variant_id: addon.addon_variant_id,
         parent_bom_id: mainEntry.id,
-        name_snapshot: addonItem.name,
+        item_name: addonItem.name,
         style_name: addon.addon_variant.style_name,
-        model_number_snapshot: addonItem.base_model_number || '',
-        price_snapshot: addon.addon_variant.price,
+        model_number: addonItem.base_model_number || '',
+        unit_price: addon.addon_variant.price,
         picture_path: addon.addon_variant.image_path,
       });
       
@@ -149,10 +149,10 @@ export class BomService {
     // Update main entry with new variant and snapshots
     const updated = await bomEntryRepository.update(bomEntryId, {
       variant_id: newVariantId,
-      name_snapshot: item.name,
+      item_name: item.name,
       style_name: newVariant.style_name,
-      model_number_snapshot: item.base_model_number || `${newVariant.style_name}`,
-      price_snapshot: newVariant.price,
+      model_number: item.base_model_number || `${newVariant.style_name}`,
+      unit_price: newVariant.price,
       picture_path: newVariant.image_path,
     });
 
@@ -180,10 +180,10 @@ export class BomService {
         item_id: addon.addon_variant.item_id,
         variant_id: addon.addon_variant_id,
         parent_bom_id: bomEntryId,
-        name_snapshot: addonItem.name,
+        item_name: addonItem.name,
         style_name: addon.addon_variant.style_name,
-        model_number_snapshot: addonItem.base_model_number || '',
-        price_snapshot: addon.addon_variant.price,
+        model_number: addonItem.base_model_number || '',
+        unit_price: addon.addon_variant.price,
         picture_path: addon.addon_variant.image_path,
       });
     }
@@ -213,8 +213,8 @@ export class BomService {
       const quantity = await bomEntryRepository.getPlacementCount(mainEntry.id);
       
       // Calculate total price for group
-      const mainTotal = mainEntry.price_snapshot * quantity;
-      const childrenTotal = children.reduce((sum, child) => sum + child.price_snapshot, 0) * quantity;
+      const mainTotal = mainEntry.unit_price * quantity;
+      const childrenTotal = children.reduce((sum, child) => sum + child.unit_price, 0) * quantity;
       const totalPrice = mainTotal + childrenTotal;
       
       groups.push({
@@ -233,6 +233,23 @@ export class BomService {
       groups,
       totalPrice,
     };
+  }
+
+  /**
+   * Get total price for entire project (all floorplans)
+   */
+  async getProjectTotal(projectId: number): Promise<{ totalPrice: number }> {
+    // Get all floorplans for project
+    const floorplans = await floorplanRepository.findByProject(projectId);
+    
+    // Sum up totals from all floorplans
+    let totalPrice = 0;
+    for (const floorplan of floorplans) {
+      const floorplanBom = await this.getBomForFloorplan(floorplan.id);
+      totalPrice += floorplanBom.totalPrice;
+    }
+    
+    return { totalPrice };
   }
 
   /**
@@ -263,7 +280,7 @@ export class BomService {
       // Calculate contribution to total (main entries only)
       if (entry.parent_bom_id === null) {
         const qty = await bomEntryRepository.getPlacementCount(entry.id);
-        totalBefore += entry.price_snapshot * qty;
+        totalBefore += entry.unit_price * qty;
       }
 
       // Get current variant data
@@ -274,29 +291,29 @@ export class BomService {
         // Mark as invalid
         report.invalid.push({
           entryId: entry.id,
-          name: entry.name_snapshot,
+          name: entry.item_name,
           reason: variant ? 'Item/variant inactive' : 'Variant not found in catalog',
         });
         continue;
       }
 
       // Check if price changed
-      if (variant.price !== entry.price_snapshot) {
-        const oldPrice = entry.price_snapshot;
+      if (variant.price !== entry.unit_price) {
+        const oldPrice = entry.unit_price;
         const newPrice = variant.price;
         
         // Update snapshot
         await bomEntryRepository.update(entry.id, {
-          name_snapshot: item.name,
+          item_name: item.name,
           style_name: variant.style_name,
-          model_number_snapshot: item.base_model_number || `${variant.style_name}`,
-          price_snapshot: variant.price,
+          model_number: item.base_model_number || `${variant.style_name}`,
+          unit_price: variant.price,
           picture_path: variant.image_path,
         });
 
         report.updated.push({
           entryId: entry.id,
-          name: entry.name_snapshot,
+          name: entry.item_name,
           oldPrice,
           newPrice,
         });
@@ -307,7 +324,7 @@ export class BomService {
     for (const entry of entries) {
       if (entry.parent_bom_id === null) {
         const qty = await bomEntryRepository.getPlacementCount(entry.id);
-        totalAfter += entry.price_snapshot * qty;
+        totalAfter += entry.unit_price * qty;
       }
     }
 

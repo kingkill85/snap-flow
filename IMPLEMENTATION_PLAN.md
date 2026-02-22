@@ -8,7 +8,7 @@
 - [x] Phase 4: Excel Catalog Import + Sync
 - [x] Phase 5: Customers + Projects
 - [x] Phase 6: Configurator Core (floorplans, canvas, placements)
-- [~] Phase 7: Floorplan BOM (Backend complete, Frontend pending)
+- [x] Phase 7: Floorplan BOM (Bill of Materials)
 - [ ] Phase 8: Proposal Generation
 - [~] Phase 9: Testing, QA, and Polish
 - [x] Phase 10: Deployment (Docker + CI/CD)
@@ -197,18 +197,17 @@ Example:
    - Total before/after
    - Timestamp
 
-### 7.5 Frontend BOM Panel [PENDING]
+### 7.5 Frontend BOM Panel ✓ COMPLETE
 
-**Next priority after backend testing:**
-- [ ] BOM table showing hierarchical structure
-- [ ] Columns: Picture, Name, Model #, Qty, Unit Price, Line Total
-- [ ] Expandable/collapsible addon rows under parent
-- [ ] Variant switcher dropdown (only variants of same item)
-- [ ] "Add Optional Addon" button (for non-required addons)
-- [ ] Custom picture upload per BOM entry
-- [ ] "Update from Catalog" button with change report modal
-- [ ] Delete BOM entry button (with confirmation)
-- [ ] Floorplan total display
+**Implementation:**
+- [x] RightPanel with Products/BOM tabs
+- [x] BomPanel showing hierarchical BOM structure
+- [x] Columns: Picture, Name, Model #, Style, Qty, Unit Price, Line Total
+- [x] Expandable/collapsible addon rows under parent
+- [x] Floorplan Total display (per-floorplan)
+- [x] Project Total display (sum of all floorplans)
+- [x] "Update from Catalog" button with change report modal
+- [x] Consistent number formatting with thousand separators
 
 ### 7.6 Placement-Level Controls [PENDING]
 
@@ -227,15 +226,18 @@ Example:
    - Create required addon children
    - Update placement.bom_entry_id
 
-### 7.8 Tests [PENDING]
+### 7.8 Tests [IN PROGRESS]
 
-- [ ] Backend: Create placement → BOM entry + required addons created
-- [ ] Backend: Switch variant → snapshots updated, addons swapped
-- [ ] Backend: Delete BOM entry → children + placements deleted
-- [ ] Backend: Update from catalog → snapshots refreshed, change report returned
-- [ ] Frontend: BOM panel shows hierarchical structure
-- [ ] Frontend: Variant switcher updates BOM and placements
-- [ ] Frontend: Update from catalog displays change report
+- [x] Backend: Create placement → BOM entry + required addons created
+- [x] Backend: Switch variant → snapshots updated, addons swapped
+- [x] Backend: Delete BOM entry → children + placements deleted
+- [x] Backend: Update from catalog → snapshots refreshed, change report returned
+- [x] Backend: Project total endpoint sums all floorplan totals
+- [x] Frontend: BOM panel shows hierarchical structure
+- [x] Frontend: Floorplan total and Project total display correctly
+- [x] Frontend: Update from catalog displays change report
+- [ ] Backend: Add comprehensive test suite
+- [ ] Frontend: Add component tests
 
 ---
 

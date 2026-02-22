@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Button, Spinner, Alert } from 'flowbite-react';
+import { Spinner, Alert } from 'flowbite-react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { HiDocumentDownload, HiReceiptTax } from 'react-icons/hi';
 import type { Item } from '../../services/item';
 import { itemService } from '../../services/item';
 import type { Category } from '../../services/category';
@@ -99,24 +98,9 @@ export function ProductPanel({ className = '', placements = [] }: ProductPanelPr
     fetchData();
   }, []);
 
-  // Calculate total from placements
-  const calculateTotal = (): number => {
-    return placements.reduce((total, placement) => {
-      const item = items.find(i => i.id === placement.item_id);
-      if (item) {
-        const variant = item.variants?.find(v => v.id === placement.item_variant_id);
-        const price = variant?.price || 0;
-        return total + price;
-      }
-      return total;
-    }, 0);
-  };
-
-  const total = calculateTotal();
-
   if (isLoading) {
     return (
-      <div className={`w-[350px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col ${className}`}>
+      <div className={`flex-shrink-0 bg-white flex flex-col ${className}`}>
         <div className="flex-1 flex justify-center items-center">
           <Spinner size="lg" />
         </div>
@@ -126,7 +110,7 @@ export function ProductPanel({ className = '', placements = [] }: ProductPanelPr
 
   if (error) {
     return (
-      <div className={`w-[350px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col ${className}`}>
+      <div className={`flex-shrink-0 bg-white flex flex-col ${className}`}>
         <div className="p-4">
           <Alert color="failure">{error}</Alert>
         </div>
@@ -135,7 +119,7 @@ export function ProductPanel({ className = '', placements = [] }: ProductPanelPr
   }
 
   return (
-    <div className={`w-[350px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col h-full ${className}`}>
+    <div className={`flex-shrink-0 bg-white flex flex-col h-full ${className}`}>
       {/* Scrollable Product Area */}
       <div className="flex-1 overflow-y-auto p-4">
         {categories.map((category) => {
@@ -161,39 +145,6 @@ export function ProductPanel({ className = '', placements = [] }: ProductPanelPr
             </div>
           );
         })}
-      </div>
-
-      {/* Fixed Totals Section */}
-      <div className="border-t border-gray-200 p-4 bg-gray-50">
-        {/* Total */}
-        <div className="flex justify-between items-center mb-4">
-          <span className="text-sm font-medium text-gray-600">TOTAL:</span>
-          <span className="text-xl font-bold text-gray-900">
-            ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="space-y-2">
-          <Button
-            color="light"
-            size="sm"
-            className="w-full"
-            disabled
-          >
-            <HiDocumentDownload className="mr-2 h-4 w-4" />
-            Generate Presentation (PDF)
-          </Button>
-          <Button
-            color="light"
-            size="sm"
-            className="w-full"
-            disabled
-          >
-            <HiReceiptTax className="mr-2 h-4 w-4" />
-            Create Invoice (PDF)
-          </Button>
-        </div>
       </div>
     </div>
   );

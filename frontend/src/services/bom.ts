@@ -7,10 +7,10 @@ export interface BomEntry {
   item_id: number;
   variant_id: number;
   parent_bom_id: number | null;
-  name_snapshot: string;
+  item_name: string;
   style_name: string | null;  // Style name snapshot (e.g., "Ivory White")
-  model_number_snapshot: string | null;
-  price_snapshot: number;
+  model_number: string | null;
+  unit_price: number;
   picture_path: string | null;
   created_at: string;
   updated_at: string;
@@ -76,6 +76,11 @@ export const bomService = {
 
   async updateFromCatalog(floorplanId: number): Promise<ChangeReport> {
     const response = await api.post(`/floorplans/${floorplanId}/bom/update-from-catalog`);
+    return response.data.data;
+  },
+
+  async getProjectTotal(projectId: number): Promise<{ totalPrice: number }> {
+    const response = await api.get(`/projects/${projectId}/total`);
     return response.data.data;
   },
 };

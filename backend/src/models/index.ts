@@ -225,10 +225,10 @@ export interface ProjectBom {
   item_id: number;
   variant_id: number;
   parent_bom_id: number | null;
-  name_snapshot: string;
+  item_name: string;
   style_name: string | null;  // Snapshot of variant.style_name
-  model_number_snapshot: string | null;
-  price_snapshot: number;
+  model_number: string | null;
+  unit_price: number;
   picture_path: string | null;
   created_at: string;
   updated_at: string;
@@ -243,18 +243,18 @@ export interface CreateBomEntryDTO {
   item_id: number;
   variant_id: number;
   parent_bom_id?: number | null;
-  name_snapshot: string;
+  item_name: string;
   style_name?: string | null;
-  model_number_snapshot?: string;
-  price_snapshot: number;
+  model_number?: string;
+  unit_price: number;
   picture_path?: string | null;
 }
 
 export interface UpdateBomEntryDTO {
   variant_id?: number;
-  name_snapshot?: string;
+  item_name?: string;
   style_name?: string | null;
-  model_number_snapshot?: string;
-  price_snapshot?: number;
+  model_number?: string;
+  unit_price?: number;
   picture_path?: string | null;
 }
