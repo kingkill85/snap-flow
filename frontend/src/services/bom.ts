@@ -21,6 +21,7 @@ export interface BomEntry {
 export interface BomGroup {
   mainEntry: BomEntry;
   children: BomEntry[];
+  bomEntryIds?: number[];
   quantity: number;
   totalPrice: number;
 }
