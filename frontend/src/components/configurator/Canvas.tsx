@@ -217,7 +217,7 @@ function DraggablePlacement({
               onEdit();
             }}
             className="absolute p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
-            style={{ top: '-14px', left: '-14px' }}
+            style={{ top: '-16px', left: '-16px' }}
             title="Edit placement"
           >
             <HiPencil className="w-4 h-4" />
@@ -230,7 +230,7 @@ function DraggablePlacement({
               onDelete();
             }}
             className="absolute p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
-            style={{ top: '-14px', right: '-14px' }}
+            style={{ top: '-16px', right: '-16px' }}
             title="Delete placement"
           >
             <HiX className="w-4 h-4" />
