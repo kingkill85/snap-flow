@@ -102,9 +102,11 @@ placementRoutes.post('/', authMiddleware, zValidator('json', createPlacementSche
       data: placement,
       message: 'Placement created successfully',
     }, 201);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create placement error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    return c.json({ error: 'Internal server error', details: error.message }, 500);
   }
 });
 

@@ -448,11 +448,12 @@ export async function runMigrations(): Promise<void> {
           x REAL NOT NULL,
           y REAL NOT NULL,
           width REAL NOT NULL,
-          height REAL NOT NULL
+          height REAL NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         
-        INSERT INTO placements_new (id, bom_id, x, y, width, height)
-        SELECT id, bom_entry_id, x, y, width, height FROM placements;
+        INSERT INTO placements_new (id, bom_id, x, y, width, height, created_at)
+        SELECT id, bom_entry_id, x, y, width, height, created_at FROM placements;
         
         DROP TABLE placements;
         ALTER TABLE placements_new RENAME TO placements;
