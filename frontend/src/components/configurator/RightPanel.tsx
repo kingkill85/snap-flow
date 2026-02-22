@@ -65,26 +65,21 @@ export function RightPanel({ projectId, placements, floorplanId, placementsVersi
 
       {/* Content */}
       <div className="flex-1 overflow-hidden relative">
-        {/* Only render Products panel when active */}
-        {activeTab === 'products' && (
+        <div className={`h-full ${activeTab === 'products' ? 'block' : 'hidden'}`}>
           <div className="h-full overflow-y-auto">
             <ProductPanel placements={placements} className="w-full border-l-0" />
           </div>
-        )}
+        </div>
         
-        {/* Only render BOM panel when active */}
-        {activeTab === 'bom' && floorplanId && (
+        <div className={`h-full ${activeTab === 'bom' && floorplanId ? 'block' : 'hidden'}`}>
           <div className="h-full overflow-y-auto">
             <BomPanel floorplanId={floorplanId} placementsVersion={placementsVersion} className="w-full border-l-0" />
           </div>
-        )}
+        </div>
         
-        {/* Show message when BOM tab selected but no floorplan */}
-        {activeTab === 'bom' && !floorplanId && (
-          <div className="h-full flex items-center justify-center text-gray-500 p-4 text-center">
-            <p>No floorplan selected.</p>
-          </div>
-        )}
+        <div className={`h-full flex items-center justify-center text-gray-500 p-4 text-center ${activeTab === 'bom' && !floorplanId ? 'block' : 'hidden'}`}>
+          <p>No floorplan selected.</p>
+        </div>
       </div>
 
       {/* Fixed Totals Section - Shows for all tabs */}
