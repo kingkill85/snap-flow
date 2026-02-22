@@ -1,17 +1,18 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { HiX } from 'react-icons/hi';
+import { HiX, HiPencil } from 'react-icons/hi';
 import type { Floorplan } from '../../services/floorplan';
 import type { Placement } from '../../services/placement';
 import type { Item } from '../../services/item';
+import { PlacementEditModal } from './PlacementEditModal';
 
 interface CanvasProps {
   floorplan: Floorplan;
   placements: Placement[];
   items: Item[];
   onPlacementDelete: (id: number) => void;
-  onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number }) => void;
+  onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number; item_variant_id?: number; addon_ids?: number[] }) => void;
   isResizingRef?: React.MutableRefObject<boolean>;
 }
 
@@ -23,6 +24,7 @@ interface DraggablePlacementProps {
   onSelect: () => void;
   onDelete: () => void;
   onResize: (x: number, y: number, width: number, height: number) => void;
+  onEdit: () => void;
   parentIsResizingRef?: React.MutableRefObject<boolean>;
   scaleX: number;
   scaleY: number;
@@ -37,6 +39,7 @@ function DraggablePlacement({
   onSelect, 
   onDelete, 
   onResize,
+  onEdit,
   parentIsResizingRef,
   scaleX,
   scaleY,
@@ -155,7 +158,17 @@ function DraggablePlacement({
     };
   }, [isResizing, onResize, scaleX, scaleY, maxNaturalWidth, maxNaturalHeight]);
 
-  const imageUrl = item?.preview_image ? `/uploads/${item.preview_image}` : null;
+  // Get variant from items array as fallback
+  const variant = item?.variants?.find(v => v.id === placement.item_variant_id);
+  
+  // Use BOM picture_path if available (updated when variant changes), fallback to variant or item image
+  const imageUrl = placement.item_variant_image_path 
+    ? `/uploads/${placement.item_variant_image_path}` 
+    : variant?.image_path 
+    ? `/uploads/${variant.image_path}` 
+    : item?.preview_image 
+    ? `/uploads/${item.preview_image}` 
+    : null;
   const displayName = item?.name || 'Unknown';
 
   return (
@@ -197,16 +210,28 @@ function DraggablePlacement({
       {/* Selection overlay with resize handles */}
       {isSelected && (
         <>
-          {/* Delete button - positioned outside top-right corner like app close button */}
+          {/* Edit button - positioned outside top-left corner */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="absolute -top-10 -left-10 p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
+            title="Edit placement"
+          >
+            <HiPencil className="w-3 h-3" />
+          </button>
+
+          {/* Delete button - positioned outside top-right corner, further away for better accessibility */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute -top-4 -right-4 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
+            className="absolute -top-10 -right-10 p-3 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
             title="Delete placement"
           >
-            <HiX className="w-4 h-4" />
+            <HiX className="w-3 h-3" />
           </button>
 
           {/* Resize handles - corners only */}
@@ -264,6 +289,7 @@ export function Canvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const [selectedPlacementId, setSelectedPlacementId] = useState<number | null>(null);
+  const [editingPlacement, setEditingPlacement] = useState<Placement | null>(null);
   const { setNodeRef, isOver } = useDroppable({
     id: `canvas-${floorplan.id}`,
   });
@@ -386,6 +412,7 @@ export function Canvas({
                       setSelectedPlacementId(null);
                     }}
                     onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
+                    onEdit={() => setEditingPlacement(placement)}
                     parentIsResizingRef={isResizingRef}
                     scaleX={scaleX}
                     scaleY={scaleY}
@@ -405,8 +432,22 @@ export function Canvas({
 
         {/* Minimal controls hint */}
         <div className="absolute bottom-2 left-2 text-xs text-gray-400 bg-white bg-opacity-75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize • Click 🗑 to delete
+          Click item to select • Drag corners to resize • Click 🗑 to delete • Click ✎ to edit
         </div>
+
+        {/* Edit Placement Modal */}
+        <PlacementEditModal
+          placement={editingPlacement}
+          floorplanId={floorplan.id}
+          isOpen={editingPlacement !== null}
+          onClose={() => setEditingPlacement(null)}
+          onUpdate={async (variantId, selectedAddons) => {
+            if (editingPlacement) {
+              await onPlacementUpdate(editingPlacement.id, { item_variant_id: variantId, addon_ids: selectedAddons });
+              setEditingPlacement(null);
+            }
+          }}
+        />
       </div>
 
     </div>

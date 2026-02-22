@@ -125,8 +125,8 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
             color="light"
             size="xs"
             onClick={handleUpdateFromCatalog}
-            disabled={isUpdating}
-            title="Update from catalog"
+            disabled={true}
+            title="Update from catalog (coming soon)"
           >
             {isUpdating ? (
               <Spinner size="sm" />

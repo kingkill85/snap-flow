@@ -49,6 +49,12 @@ const ProjectDashboard = () => {
   // Track placement changes for BOM refresh
   const [placementsVersion, setPlacementsVersion] = useState(0);
 
+  // Session-based memory for item sizes (item_id -> {width, height})
+  const itemSizeMemory = useRef<Map<number, { width: number; height: number }>>(new Map());
+
+  // Session-based memory for item variants and addons (item_id -> {variant_id, addon_ids})
+  const itemVariantMemory = useRef<Map<number, { variant_id: number; addon_ids: number[] }>>(new Map());
+
   // DnD sensors - with custom activation to skip resize handles
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -162,28 +168,78 @@ const ProjectDashboard = () => {
   };
 
   // Placement handlers
-  const handlePlacementCreate = async (placement: { x: number; y: number; width: number; height: number; item_variant_id: number }) => {
+  const handlePlacementCreate = async (placement: { x: number; y: number; width?: number; height?: number; item_id: number; item_variant_id: number; addon_ids?: number[] }) => {
     if (!activeFloorplan) return;
+    
+    // Use stored size if available, otherwise default to 60x60
+    const storedSize = itemSizeMemory.current.get(placement.item_id);
+    const width = placement.width ?? storedSize?.width ?? 60;
+    const height = placement.height ?? storedSize?.height ?? 60;
     
     const createData: CreatePlacementDTO = {
       floorplan_id: activeFloorplan.id,
       item_variant_id: placement.item_variant_id,
       x: placement.x,
       y: placement.y,
-      width: placement.width,
-      height: placement.height,
+      width,
+      height,
     };
     
-    await placementService.create(createData);
+    const newPlacement = await placementService.create(createData);
+    
+    // If there are addon_ids, update the BOM to include them
+    if (placement.addon_ids && placement.addon_ids.length > 0) {
+      await placementService.updateBom(newPlacement.id, placement.item_variant_id, placement.addon_ids);
+    }
+    
     await fetchPlacements(activeFloorplan.id);
     setPlacementsVersion(prev => prev + 1); // Trigger BOM refresh
   };
 
-  const handlePlacementUpdate = async (id: number, placement: { x?: number; y?: number; width?: number; height?: number }) => {
+  const handlePlacementUpdate = async (id: number, placement: { x?: number; y?: number; width?: number; height?: number; item_variant_id?: number; addon_ids?: number[] }) => {
+    // Handle variant/addon change using updateBom endpoint (cleanest: delete and recreate)
+    if (placement.item_variant_id !== undefined) {
+      try {
+        await placementService.updateBom(id, placement.item_variant_id, placement.addon_ids || []);
+        
+        // Store variant and addon configuration in memory for this item
+        const updatedPlacement = placements.find(p => p.id === id);
+        if (updatedPlacement) {
+          itemVariantMemory.current.set(updatedPlacement.item_id, {
+            variant_id: placement.item_variant_id,
+            addon_ids: placement.addon_ids || [],
+          });
+        }
+        
+        // Refresh placements to get updated BOM reference
+        if (activeFloorplan) {
+          await fetchPlacements(activeFloorplan.id);
+        }
+        setPlacementsVersion(prev => prev + 1);
+        return;
+      } catch (err) {
+        console.error('Failed to update BOM:', err);
+        throw err;
+      }
+    }
+    
     // Optimistically update local state first for instant feedback
     setPlacements(prev => prev.map(p => 
       p.id === id ? { ...p, ...placement } : p
     ));
+    
+    // Store size in memory if width/height changed (resizing)
+    if (placement.width !== undefined || placement.height !== undefined) {
+      const updatedPlacement = placements.find(p => p.id === id);
+      if (updatedPlacement) {
+        const newWidth = placement.width ?? updatedPlacement.width;
+        const newHeight = placement.height ?? updatedPlacement.height;
+        itemSizeMemory.current.set(updatedPlacement.item_id, {
+          width: newWidth,
+          height: newHeight,
+        });
+      }
+    }
     
     // Update server in the background
     await placementService.update(id, placement);
@@ -321,15 +377,20 @@ const ProjectDashboard = () => {
           const dropY = screenY / scaleY;
           
           const fullItem = await itemService.getById(itemData.item.id);
-          const firstVariant = fullItem.variants?.[0];
           
-          if (firstVariant) {
+          // Use stored variant/addons if available, otherwise default to first variant
+          const storedConfig = itemVariantMemory.current.get(itemData.item.id);
+          const variantToUse = storedConfig?.variant_id
+            ? fullItem.variants?.find(v => v.id === storedConfig.variant_id)
+            : fullItem.variants?.[0];
+          
+          if (variantToUse) {
             await handlePlacementCreate({
               x: dropX,
               y: dropY,
-              width: 60,
-              height: 60,
-              item_variant_id: firstVariant.id,
+              item_id: itemData.item.id,
+              item_variant_id: variantToUse.id,
+              addon_ids: storedConfig?.addon_ids,
             });
           }
         } catch (err) {

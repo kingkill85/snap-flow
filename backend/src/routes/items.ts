@@ -100,7 +100,7 @@ itemRoutes.post('/:id/variants/:variantId/addons', authMiddleware, adminMiddlewa
   try {
     const itemId = parseInt(c.req.param('id'));
     const variantId = parseInt(c.req.param('variantId'));
-    const { addon_variant_id, is_optional } = await c.req.json();
+    const { addon_variant_id, is_required } = await c.req.json();
 
     if (!addon_variant_id) {
       return c.json({ error: 'addon_variant_id is required' }, 400);
@@ -131,7 +131,7 @@ itemRoutes.post('/:id/variants/:variantId/addons', authMiddleware, adminMiddlewa
     const createData: CreateVariantAddonDTO = {
       variant_id: variantId,
       addon_variant_id: parseInt(addon_variant_id),
-      is_optional: is_optional ?? true,
+      is_required: is_required ?? true,
     };
 
     const addon = await variantAddonRepository.create(createData);

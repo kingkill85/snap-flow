@@ -116,7 +116,7 @@ export interface VariantAddon {
   id: number;
   variant_id: number;
   addon_variant_id: number;
-  is_optional: boolean;
+  is_required: boolean;
   sort_order: number;
   created_at: string;
   // Joined data
@@ -126,7 +126,7 @@ export interface VariantAddon {
 export interface CreateVariantAddonDTO {
   variant_id: number;
   addon_variant_id: number;
-  is_optional?: boolean;
+  is_required?: boolean;
   sort_order?: number;
 }
 
@@ -137,6 +137,7 @@ export interface UpdatePlacementDTO {
   y?: number | undefined;
   width?: number | undefined;
   height?: number | undefined;
+  bom_id?: number | undefined;
 }
 
 // Project (includes customer information directly)
@@ -199,6 +200,7 @@ export interface Placement {
   floorplan_id: number;  // Joined from project_bom
   item_id: number;       // Joined from project_bom
   item_variant_id: number; // Joined from project_bom
+  item_variant_image_path?: string; // Joined from project_bom (picture_path)
   x: number;
   y: number;
   width: number;

@@ -167,6 +167,42 @@ placementRoutes.put('/:id/variant', authMiddleware, zValidator('json', switchVar
   }
 });
 
+// POST /placements/:id/update-bom - Update BOM with new variant and selected addons
+// Cleanest approach: delete old BOM entry, create new one
+const updateBomSchema = z.object({
+  variant_id: z.number().int().positive(),
+  addon_ids: z.array(z.number().int().positive()).default([]),
+});
+
+placementRoutes.post('/:id/update-bom', authMiddleware, zValidator('json', updateBomSchema), async (c) => {
+  const id = parseInt(c.req.param('id'));
+  const { variant_id, addon_ids } = c.req.valid('json');
+
+  try {
+    const placement = await placementRepository.findById(id);
+    if (!placement) {
+      return c.json({ error: 'Placement not found' }, 404);
+    }
+
+    // Recreate BOM entry with new variant and selected addons
+    const newBomEntry = await bomService.recreateBomEntry(id, variant_id, addon_ids);
+    
+    // Get placement with updated data
+    const updatedPlacement = await placementRepository.findById(id);
+
+    return c.json({
+      data: {
+        placement: updatedPlacement,
+        bomEntry: newBomEntry,
+      },
+      message: 'BOM updated successfully',
+    });
+  } catch (error) {
+    console.error('Update BOM error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // DELETE /placements/:id - Delete placement
 // Also deletes BOM entry if no more placements reference it
 placementRoutes.delete('/:id', authMiddleware, async (c) => {

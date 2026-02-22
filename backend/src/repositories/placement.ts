@@ -21,7 +21,8 @@ export class PlacementRepository {
   async findByFloorplan(floorplanId: number): Promise<Placement[]> {
     const result = getDb().queryEntries(`
       SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.created_at,
-             b.floorplan_id, b.item_id, b.variant_id as item_variant_id
+             b.floorplan_id, b.item_id, b.variant_id as item_variant_id,
+             b.picture_path as item_variant_image_path
       FROM placements p
       JOIN project_bom b ON p.bom_id = b.id
       WHERE b.floorplan_id = ?
@@ -109,6 +110,10 @@ export class PlacementRepository {
       sets.push('height = ?');
       values.push(data.height);
     }
+    if (data.bom_id !== undefined) {
+      sets.push('bom_id = ?');
+      values.push(data.bom_id);
+    }
 
     if (sets.length === 0) {
       return this.findById(id);
@@ -153,6 +158,15 @@ export class PlacementRepository {
         WHERE floorplan_id = ? AND item_id = ?
       )
     `, [width, height, floorplanId, itemId]);
+  }
+
+  async findByBomId(bomId: number): Promise<Placement[]> {
+    const result = getDb().queryEntries(`
+      SELECT id, bom_id, x, y, width, height, created_at
+      FROM placements
+      WHERE bom_id = ?
+    `, [bomId]);
+    return result as unknown as Placement[];
   }
 }
 

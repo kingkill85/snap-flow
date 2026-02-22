@@ -71,7 +71,7 @@ interface ProductPanelProps {
   placements?: Placement[];
 }
 
-export function ProductPanel({ className = '', placements = [] }: ProductPanelProps) {
+export function ProductPanel({ className = '', placements: _placements = [] }: ProductPanelProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);

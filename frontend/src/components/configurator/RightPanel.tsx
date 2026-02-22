@@ -3,7 +3,7 @@ import { Button } from 'flowbite-react';
 import { HiDocumentDownload, HiReceiptTax } from 'react-icons/hi';
 import { ProductPanel } from './ProductPanel';
 import { BomPanel } from './BomPanel';
-import type { Placement } from '../../types';
+import type { Placement } from '../../services/placement';
 import { bomService } from '../../services/bom';
 
 interface RightPanelProps {
