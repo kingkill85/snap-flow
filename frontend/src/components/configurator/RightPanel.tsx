@@ -66,12 +66,12 @@ export function RightPanel({ projectId, placements, floorplanId, placementsVersi
       {/* Content */}
       <div className="flex-1 overflow-hidden relative">
         {activeTab === 'products' ? (
-          <div className="h-full overflow-y-auto">
+          <div className="h-full overflow-y-auto" key="products-panel">
             <ProductPanel placements={placements} className="w-full border-l-0" />
           </div>
         ) : (
           floorplanId ? (
-            <div className="h-full overflow-y-auto">
+            <div className="h-full overflow-y-auto" key="bom-panel">
               <BomPanel floorplanId={floorplanId} placementsVersion={placementsVersion} className="w-full border-l-0" />
             </div>
           ) : (
