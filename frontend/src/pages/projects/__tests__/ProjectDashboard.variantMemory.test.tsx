@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
 
+type StoredConfig = {
+  variant_id: number;
+  addon_ids: number[];
+};
+
 describe('ProjectDashboard - Variant Memory', () => {
   it('should default to first variant when no memory exists', () => {
     // Test the logic: when no stored config, use first variant
@@ -11,7 +16,7 @@ describe('ProjectDashboard - Variant Memory', () => {
       ],
     };
 
-    const storedConfig = undefined; // No memory
+    let storedConfig: StoredConfig | undefined; // No memory
     const variantToUse = storedConfig?.variant_id
       ? fullItem.variants?.find((v: { id: number }) => v.id === storedConfig.variant_id)
       : fullItem.variants?.[0];
