@@ -1,109 +1,111 @@
 import { getDb } from '../config/database.ts';
-import type { FloorplanBomEntry, CreateBomEntryDTO, UpdateBomEntryDTO } from '../models/index.ts';
+import type { ProjectBom, CreateBomEntryDTO, UpdateBomEntryDTO } from '../models/index.ts';
 
 /**
- * Floorplan BOM Entry Repository
- * Handles all database operations for BOM entries
+ * Project BOM Repository
+ * Handles all database operations for project bill of materials
  */
 export class BomEntryRepository {
-  async findAll(): Promise<FloorplanBomEntry[]> {
+  async findAll(): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
-      SELECT id, floorplan_id, item_id, variant_id, parent_bom_entry_id,
-             name_snapshot, model_number_snapshot, price_snapshot, picture_path,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+             name_snapshot, style_name, model_number_snapshot, price_snapshot, picture_path,
              created_at, updated_at
-      FROM floorplan_bom_entries
+      FROM project_bom
       ORDER BY created_at DESC
     `);
-    return result as unknown as FloorplanBomEntry[];
+    return result as unknown as ProjectBom[];
   }
 
-  async findByFloorplan(floorplanId: number): Promise<FloorplanBomEntry[]> {
+  async findByFloorplan(floorplanId: number): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
-      SELECT id, floorplan_id, item_id, variant_id, parent_bom_entry_id,
-             name_snapshot, model_number_snapshot, price_snapshot, picture_path,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+             name_snapshot, style_name, model_number_snapshot, price_snapshot, picture_path,
              created_at, updated_at
-      FROM floorplan_bom_entries
+      FROM project_bom
       WHERE floorplan_id = ?
-      ORDER BY parent_bom_entry_id NULLS FIRST, created_at DESC
+      ORDER BY parent_bom_id NULLS FIRST, created_at DESC
     `, [floorplanId]);
-    return result as unknown as FloorplanBomEntry[];
+    return result as unknown as ProjectBom[];
   }
 
-  async findById(id: number): Promise<FloorplanBomEntry | null> {
+  async findById(id: number): Promise<ProjectBom | null> {
     const result = getDb().queryEntries(`
-      SELECT id, floorplan_id, item_id, variant_id, parent_bom_entry_id,
-             name_snapshot, model_number_snapshot, price_snapshot, picture_path,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+             name_snapshot, style_name, model_number_snapshot, price_snapshot, picture_path,
              created_at, updated_at
-      FROM floorplan_bom_entries
+      FROM project_bom
       WHERE id = ?
     `, [id]);
-    return result.length > 0 ? (result[0] as unknown as FloorplanBomEntry) : null;
+    return result.length > 0 ? (result[0] as unknown as ProjectBom) : null;
   }
 
   async findByVariantAddons(
     floorplanId: number, 
     variantId: number, 
     parentId: number | null = null
-  ): Promise<FloorplanBomEntry | null> {
+  ): Promise<ProjectBom | null> {
     const result = getDb().queryEntries(`
-      SELECT id, floorplan_id, item_id, variant_id, parent_bom_entry_id,
-             name_snapshot, model_number_snapshot, price_snapshot, picture_path,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+             name_snapshot, style_name, model_number_snapshot, price_snapshot, picture_path,
              created_at, updated_at
-      FROM floorplan_bom_entries
+      FROM project_bom
       WHERE floorplan_id = ? AND variant_id = ? 
-        AND (parent_bom_entry_id = ? OR (parent_bom_entry_id IS NULL AND ? IS NULL))
+        AND (parent_bom_id = ? OR (parent_bom_id IS NULL AND ? IS NULL))
     `, [floorplanId, variantId, parentId, parentId]);
-    return result.length > 0 ? (result[0] as unknown as FloorplanBomEntry) : null;
+    return result.length > 0 ? (result[0] as unknown as ProjectBom) : null;
   }
 
-  async findByItem(floorplanId: number, itemId: number): Promise<FloorplanBomEntry[]> {
+  async findByItem(floorplanId: number, itemId: number): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
-      SELECT id, floorplan_id, item_id, variant_id, parent_bom_entry_id,
-             name_snapshot, model_number_snapshot, price_snapshot, picture_path,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+             name_snapshot, style_name, model_number_snapshot, price_snapshot, picture_path,
              created_at, updated_at
-      FROM floorplan_bom_entries
-      WHERE floorplan_id = ? AND item_id = ? AND parent_bom_entry_id IS NULL
+      FROM project_bom
+      WHERE floorplan_id = ? AND item_id = ? AND parent_bom_id IS NULL
       ORDER BY created_at DESC
     `, [floorplanId, itemId]);
-    return result as unknown as FloorplanBomEntry[];
+    return result as unknown as ProjectBom[];
   }
 
-  async findChildren(parentId: number): Promise<FloorplanBomEntry[]> {
+  async findChildren(parentId: number): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
-      SELECT id, floorplan_id, item_id, variant_id, parent_bom_entry_id,
-             name_snapshot, model_number_snapshot, price_snapshot, picture_path,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+             name_snapshot, style_name, model_number_snapshot, price_snapshot, picture_path,
              created_at, updated_at
-      FROM floorplan_bom_entries
-      WHERE parent_bom_entry_id = ?
+      FROM project_bom
+      WHERE parent_bom_id = ?
       ORDER BY created_at ASC
     `, [parentId]);
-    return result as unknown as FloorplanBomEntry[];
+    return result as unknown as ProjectBom[];
   }
 
-  async create(data: CreateBomEntryDTO): Promise<FloorplanBomEntry> {
+  async create(data: CreateBomEntryDTO): Promise<ProjectBom> {
     const result = getDb().queryEntries(`
-      INSERT INTO floorplan_bom_entries 
-      (floorplan_id, item_id, variant_id, parent_bom_entry_id,
-       name_snapshot, model_number_snapshot, price_snapshot, picture_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      RETURNING id, floorplan_id, item_id, variant_id, parent_bom_entry_id,
-                name_snapshot, model_number_snapshot, price_snapshot, picture_path,
+      INSERT INTO project_bom 
+      (project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+       name_snapshot, style_name, model_number_snapshot, price_snapshot, picture_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+                name_snapshot, style_name, model_number_snapshot, price_snapshot, picture_path,
                 created_at, updated_at
     `, [
+      data.project_id,
       data.floorplan_id,
       data.item_id,
       data.variant_id,
-      data.parent_bom_entry_id ?? null,
+      data.parent_bom_id ?? null,
       data.name_snapshot,
+      data.style_name ?? null,
       data.model_number_snapshot ?? null,
       data.price_snapshot,
       data.picture_path ?? null
     ]);
 
-    return result[0] as unknown as FloorplanBomEntry;
+    return result[0] as unknown as ProjectBom;
   }
 
-  async update(id: number, data: UpdateBomEntryDTO): Promise<FloorplanBomEntry | null> {
+  async update(id: number, data: UpdateBomEntryDTO): Promise<ProjectBom | null> {
     const sets: string[] = [];
     const values: (string | number | null | undefined)[] = [];
 
@@ -114,6 +116,10 @@ export class BomEntryRepository {
     if (data.name_snapshot !== undefined) {
       sets.push('name_snapshot = ?');
       values.push(data.name_snapshot);
+    }
+    if (data.style_name !== undefined) {
+      sets.push('style_name = ?');
+      values.push(data.style_name);
     }
     if (data.model_number_snapshot !== undefined) {
       sets.push('model_number_snapshot = ?');
@@ -137,30 +143,30 @@ export class BomEntryRepository {
     values.push(id);
 
     const result = getDb().queryEntries(`
-      UPDATE floorplan_bom_entries
+      UPDATE project_bom
       SET ${sets.join(', ')}
       WHERE id = ?
-      RETURNING id, floorplan_id, item_id, variant_id, parent_bom_entry_id,
-                name_snapshot, model_number_snapshot, price_snapshot, picture_path,
+      RETURNING id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+                name_snapshot, style_name, model_number_snapshot, price_snapshot, picture_path,
                 created_at, updated_at
     `, values);
 
-    return result.length > 0 ? (result[0] as unknown as FloorplanBomEntry) : null;
+    return result.length > 0 ? (result[0] as unknown as ProjectBom) : null;
   }
 
   async delete(id: number): Promise<void> {
     // Cascade delete will handle children and placements
-    getDb().query(`DELETE FROM floorplan_bom_entries WHERE id = ?`, [id]);
+    getDb().query(`DELETE FROM project_bom WHERE id = ?`, [id]);
   }
 
   async deleteByFloorplan(floorplanId: number): Promise<void> {
-    getDb().query(`DELETE FROM floorplan_bom_entries WHERE floorplan_id = ?`, [floorplanId]);
+    getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ?`, [floorplanId]);
   }
 
-  async getPlacementCount(bomEntryId: number): Promise<number> {
+  async getPlacementCount(bomId: number): Promise<number> {
     const result = getDb().queryEntries(`
-      SELECT COUNT(*) as count FROM placements WHERE bom_entry_id = ?
-    `, [bomEntryId]);
+      SELECT COUNT(*) as count FROM placements WHERE bom_id = ?
+    `, [bomId]);
     return (result[0] as { count: number }).count;
   }
 }

@@ -4,11 +4,11 @@ import { floorplanRepository } from '../repositories/floorplan.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { itemRepository } from '../repositories/item.ts';
 import { variantAddonRepository } from '../repositories/variant-addon.ts';
-import type { FloorplanBomEntry, CreateBomEntryDTO } from '../models/index.ts';
+import type { ProjectBom, CreateBomEntryDTO } from '../models/index.ts';
 
 export interface BomGroup {
-  mainEntry: FloorplanBomEntry;
-  children: FloorplanBomEntry[];
+  mainEntry: ProjectBom;
+  children: ProjectBom[];
   quantity: number;
   totalPrice: number;
 }
@@ -45,9 +45,10 @@ export class BomService {
    * Creates main entry + required addon children
    */
   async createBomEntry(
+    projectId: number,
     floorplanId: number,
     variantId: number
-  ): Promise<FloorplanBomEntry> {
+  ): Promise<ProjectBom> {
     // Check if BOM entry already exists
     const existing = await bomEntryRepository.findByVariantAddons(
       floorplanId,
@@ -72,11 +73,13 @@ export class BomService {
 
     // Create main BOM entry
     const mainEntry = await bomEntryRepository.create({
+      project_id: projectId,
       floorplan_id: floorplanId,
       item_id: variant.item_id,
       variant_id: variantId,
-      parent_bom_entry_id: null,
+      parent_bom_id: null,
       name_snapshot: item.name,
+      style_name: variant.style_name,
       model_number_snapshot: item.base_model_number || `${variant.style_name}`,
       price_snapshot: variant.price,
       picture_path: variant.image_path,
@@ -101,11 +104,13 @@ export class BomService {
       }
 
       await bomEntryRepository.create({
+        project_id: projectId,
         floorplan_id: floorplanId,
         item_id: addon.addon_variant.item_id,
         variant_id: addon.addon_variant_id,
-        parent_bom_entry_id: mainEntry.id,
+        parent_bom_id: mainEntry.id,
         name_snapshot: addonItem.name,
+        style_name: addon.addon_variant.style_name,
         model_number_snapshot: addonItem.base_model_number || '',
         price_snapshot: addon.addon_variant.price,
         picture_path: addon.addon_variant.image_path,
@@ -124,7 +129,7 @@ export class BomService {
   async switchVariant(
     bomEntryId: number,
     newVariantId: number
-  ): Promise<FloorplanBomEntry> {
+  ): Promise<ProjectBom> {
     const entry = await bomEntryRepository.findById(bomEntryId);
     if (!entry) {
       throw new Error('BOM entry not found');
@@ -145,6 +150,7 @@ export class BomService {
     const updated = await bomEntryRepository.update(bomEntryId, {
       variant_id: newVariantId,
       name_snapshot: item.name,
+      style_name: newVariant.style_name,
       model_number_snapshot: item.base_model_number || `${newVariant.style_name}`,
       price_snapshot: newVariant.price,
       picture_path: newVariant.image_path,
@@ -169,11 +175,13 @@ export class BomService {
       if (!addonItem) continue;
 
       await bomEntryRepository.create({
+        project_id: entry.project_id,
         floorplan_id: entry.floorplan_id,
         item_id: addon.addon_variant.item_id,
         variant_id: addon.addon_variant_id,
-        parent_bom_entry_id: bomEntryId,
+        parent_bom_id: bomEntryId,
         name_snapshot: addonItem.name,
+        style_name: addon.addon_variant.style_name,
         model_number_snapshot: addonItem.base_model_number || '',
         price_snapshot: addon.addon_variant.price,
         picture_path: addon.addon_variant.image_path,
@@ -191,15 +199,15 @@ export class BomService {
     const allEntries = await bomEntryRepository.findByFloorplan(floorplanId);
     
     // Separate main entries and children
-    const mainEntries = allEntries.filter(e => e.parent_bom_entry_id === null);
-    const childEntries = allEntries.filter(e => e.parent_bom_entry_id !== null);
+    const mainEntries = allEntries.filter(e => e.parent_bom_id === null);
+    const childEntries = allEntries.filter(e => e.parent_bom_id !== null);
 
     // Build groups
     const groups: BomGroup[] = [];
     
     for (const mainEntry of mainEntries) {
       // Get children for this entry
-      const children = childEntries.filter(c => c.parent_bom_entry_id === mainEntry.id);
+      const children = childEntries.filter(c => c.parent_bom_id === mainEntry.id);
       
       // Get placement count (quantity)
       const quantity = await bomEntryRepository.getPlacementCount(mainEntry.id);
@@ -253,7 +261,7 @@ export class BomService {
 
     for (const entry of entries) {
       // Calculate contribution to total (main entries only)
-      if (entry.parent_bom_entry_id === null) {
+      if (entry.parent_bom_id === null) {
         const qty = await bomEntryRepository.getPlacementCount(entry.id);
         totalBefore += entry.price_snapshot * qty;
       }
@@ -280,6 +288,7 @@ export class BomService {
         // Update snapshot
         await bomEntryRepository.update(entry.id, {
           name_snapshot: item.name,
+          style_name: variant.style_name,
           model_number_snapshot: item.base_model_number || `${variant.style_name}`,
           price_snapshot: variant.price,
           picture_path: variant.image_path,
@@ -296,7 +305,7 @@ export class BomService {
 
     // Recalculate totals after updates
     for (const entry of entries) {
-      if (entry.parent_bom_entry_id === null) {
+      if (entry.parent_bom_id === null) {
         const qty = await bomEntryRepository.getPlacementCount(entry.id);
         totalAfter += entry.price_snapshot * qty;
       }

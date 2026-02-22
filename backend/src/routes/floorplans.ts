@@ -265,7 +265,7 @@ floorplanRoutes.post('/:id/bom-entries', authMiddleware, zValidator('json', crea
       return c.json({ error: 'Floorplan not found' }, 404);
     }
     
-    const bomEntry = await bomService.createBomEntry(floorplanId, variant_id);
+    const bomEntry = await bomService.createBomEntry(floorplan.project_id, floorplanId, variant_id);
     return c.json({
       data: bomEntry,
       message: 'BOM entry created successfully',

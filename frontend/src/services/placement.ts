@@ -3,6 +3,7 @@ import axios from 'axios';
 
 export interface Placement {
   id: number;
+  bom_id: number;
   floorplan_id: number;
   item_id: number;
   item_variant_id: number;
@@ -10,7 +11,6 @@ export interface Placement {
   y: number;
   width: number;
   height: number;
-  selected_addons: string | null;
   created_at: string;
 }
 
@@ -21,7 +21,6 @@ export interface CreatePlacementDTO {
   y: number;
   width: number;
   height: number;
-  selected_addons?: string;
 }
 
 export interface UpdatePlacementDTO {
@@ -29,8 +28,6 @@ export interface UpdatePlacementDTO {
   y?: number;
   width?: number;
   height?: number;
-  item_variant_id?: number;
-  selected_addons?: string;
 }
 
 const isCancelError = (error: any): boolean => {

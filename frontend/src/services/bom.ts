@@ -2,11 +2,13 @@ import api from './api';
 
 export interface BomEntry {
   id: number;
+  project_id: number;
   floorplan_id: number;
   item_id: number;
   variant_id: number;
-  parent_bom_entry_id: number | null;
+  parent_bom_id: number | null;
   name_snapshot: string;
+  style_name: string | null;  // Style name snapshot (e.g., "Ivory White")
   model_number_snapshot: string | null;
   price_snapshot: number;
   picture_path: string | null;

@@ -195,10 +195,10 @@ export interface UpdateFloorplanDTO {
 // Placement
 export interface Placement {
   id: number;
-  bom_entry_id: number;
-  floorplan_id: number;  // Joined from bom_entry
-  item_id: number;       // Joined from bom_entry
-  item_variant_id: number; // Joined from bom_entry
+  bom_id: number;
+  floorplan_id: number;  // Joined from project_bom
+  item_id: number;       // Joined from project_bom
+  item_variant_id: number; // Joined from project_bom
   x: number;
   y: number;
   width: number;
@@ -217,30 +217,34 @@ export interface CreatePlacementDTO {
   height: number;
 }
 
-// Floorplan BOM Entry
-export interface FloorplanBomEntry {
+// Project BOM (Bill of Materials)
+export interface ProjectBom {
   id: number;
+  project_id: number;
   floorplan_id: number;
   item_id: number;
   variant_id: number;
-  parent_bom_entry_id: number | null;
+  parent_bom_id: number | null;
   name_snapshot: string;
+  style_name: string | null;  // Snapshot of variant.style_name
   model_number_snapshot: string | null;
   price_snapshot: number;
   picture_path: string | null;
   created_at: string;
   updated_at: string;
   // Joined data
-  children?: FloorplanBomEntry[];
+  children?: ProjectBom[];
   placement_count?: number;
 }
 
 export interface CreateBomEntryDTO {
+  project_id: number;
   floorplan_id: number;
   item_id: number;
   variant_id: number;
-  parent_bom_entry_id?: number | null;
+  parent_bom_id?: number | null;
   name_snapshot: string;
+  style_name?: string | null;
   model_number_snapshot?: string;
   price_snapshot: number;
   picture_path?: string | null;
@@ -249,6 +253,7 @@ export interface CreateBomEntryDTO {
 export interface UpdateBomEntryDTO {
   variant_id?: number;
   name_snapshot?: string;
+  style_name?: string | null;
   model_number_snapshot?: string;
   price_snapshot?: number;
   picture_path?: string | null;

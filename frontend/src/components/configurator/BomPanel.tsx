@@ -219,6 +219,9 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">
                     {group.mainEntry.name_snapshot}
+                    {group.mainEntry.style_name && (
+                      <span className="text-gray-500"> - {group.mainEntry.style_name}</span>
+                    )}
                   </p>
                   <p className="text-xs text-gray-500">
                     {group.mainEntry.model_number_snapshot || 'No model #'}

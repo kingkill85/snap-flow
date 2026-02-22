@@ -88,7 +88,7 @@ placementRoutes.post('/', authMiddleware, zValidator('json', createPlacementSche
     }
 
     // Get or create BOM entry for this variant
-    const bomEntry = await bomService.createBomEntry(data.floorplan_id, data.item_variant_id);
+    const bomEntry = await bomService.createBomEntry(floorplan.project_id, data.floorplan_id, data.item_variant_id);
     
     // Create placement referencing BOM entry
     const placement = await placementRepository.createWithBomEntry(bomEntry.id, {
@@ -147,7 +147,7 @@ placementRoutes.put('/:id/variant', authMiddleware, zValidator('json', switchVar
     }
 
     // Switch variant in BOM entry (same placement, different BOM entry reference)
-    const updatedBomEntry = await bomService.switchVariant(placement.bom_entry_id, variant_id);
+    const updatedBomEntry = await bomService.switchVariant(placement.bom_id, variant_id);
     
     // Get placement with updated data
     const updatedPlacement = await placementRepository.findById(id);
@@ -176,7 +176,7 @@ placementRoutes.delete('/:id', authMiddleware, async (c) => {
       return c.json({ error: 'Placement not found' }, 404);
     }
 
-    const bomEntryId = placement.bom_entry_id;
+    const bomEntryId = placement.bom_id;
     
     // Delete the placement
     await placementRepository.delete(id);
