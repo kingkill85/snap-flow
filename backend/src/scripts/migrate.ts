@@ -463,13 +463,6 @@ export async function runMigrations(): Promise<void> {
         -- Step 6: Drop old table
         DROP TABLE floorplan_bom_entries;
       `
-    },
-    {
-      name: '024_add_created_at_to_placements',
-      sql: `
-        -- Add created_at column to placements (fixes migration 023)
-        ALTER TABLE placements ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP;
-      `
     }
   ];
 
