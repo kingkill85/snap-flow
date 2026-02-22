@@ -210,25 +210,25 @@ function DraggablePlacement({
       {/* Selection overlay with resize handles */}
       {isSelected && (
         <>
-          {/* Edit button - positioned inside top-left corner */}
+          {/* Edit button - positioned outside top-left corner */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               onEdit();
             }}
-            className="absolute top-2 left-2 p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
+            className="absolute -top-3 -left-3 p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
             title="Edit placement"
           >
             <HiPencil className="w-4 h-4" />
           </button>
 
-          {/* Delete button - positioned inside top-right corner */}
+          {/* Delete button - positioned outside top-right corner */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
+            className="absolute -top-3 -right-3 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
             title="Delete placement"
           >
             <HiX className="w-4 h-4" />
