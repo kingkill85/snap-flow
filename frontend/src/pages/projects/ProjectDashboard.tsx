@@ -194,15 +194,11 @@ const ProjectDashboard = () => {
   };
 
   const handlePlacementDelete = async (id: number) => {
-    console.log('handlePlacementDelete called for id:', id);
     await placementService.delete(id);
-    console.log('Placement deleted, fetching placements...');
     if (activeFloorplan) {
       await fetchPlacements(activeFloorplan.id);
     }
-    console.log('Incrementing placementsVersion...');
     setPlacementsVersion(prev => prev + 1); // Trigger BOM refresh
-    console.log('BOM refresh triggered');
   };
 
   // Track if we're currently resizing (to skip move logic)

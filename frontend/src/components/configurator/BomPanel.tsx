@@ -25,9 +25,7 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
   
   // Refresh when placements change
   useEffect(() => {
-    console.log('BomPanel: placementsVersion changed to:', placementsVersion);
     if (placementsVersion > 0) {
-      console.log('BomPanel: triggering refresh');
       fetchBom(false);
     }
   }, [placementsVersion]);
