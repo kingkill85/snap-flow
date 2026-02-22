@@ -1,8 +1,8 @@
-import { DB } from "https://deno.land/x/sqlite@v3.9.1/mod.ts";
+import { getDb } from "../config/database.ts";
 import { hashPassword } from "../services/password.ts";
 
-export async function seedAdmin(): Promise<{ created: boolean; password?: string }> {
-  const db = new DB("./data/database.sqlite");
+export function seedAdmin(): { created: boolean; password?: string } {
+  const db = getDb();
 
   try {
     // Check if admin user already exists
@@ -24,7 +24,7 @@ export async function seedAdmin(): Promise<{ created: boolean; password?: string
     };
 
     const adminPassword = generatePassword();
-    const passwordHash = await hashPassword(adminPassword);
+    const passwordHash = hashPassword(adminPassword);
 
     // Create admin user
     db.query(
@@ -43,12 +43,13 @@ export async function seedAdmin(): Promise<{ created: boolean; password?: string
     console.log("");
 
     return { created: true, password: adminPassword };
-  } finally {
-    db.close();
+  } catch (error) {
+    console.error("Error in seedAdmin:", error);
+    throw error;
   }
 }
 
 // Run if called directly
 if (import.meta.main) {
-  await seedAdmin();
+  seedAdmin();
 }

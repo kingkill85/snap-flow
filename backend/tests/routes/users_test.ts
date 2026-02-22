@@ -13,7 +13,7 @@ async function getAdminToken(): Promise<string> {
   clearDatabase();
   
   // Create admin user
-  const passwordHash = await hashPassword('admin123');
+  const passwordHash = hashPassword('admin123');
   await userRepository.create({
     email: 'admin@example.com',
     password_hash: passwordHash,
@@ -38,7 +38,7 @@ async function getUserToken(): Promise<string> {
   clearDatabase();
   
   // Create regular user
-  const passwordHash = await hashPassword('user123');
+  const passwordHash = hashPassword('user123');
   await userRepository.create({
     email: 'user@example.com',
     password_hash: passwordHash,
@@ -204,7 +204,7 @@ Deno.test('User management - cannot delete yourself', async () => {
   clearDatabase();
   
   // Create admin and get token
-  const passwordHash = await hashPassword('admin123');
+  const passwordHash = hashPassword('admin123');
   const admin = await userRepository.create({
     email: 'selfdelete@example.com',
     password_hash: passwordHash,

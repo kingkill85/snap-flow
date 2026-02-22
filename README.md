@@ -58,6 +58,8 @@ A web application for smart home automation companies to create professional pro
    
    # Install frontend dependencies
    cd frontend && npm install && cd ..
+   
+   # Backend uses Deno-native dependencies - no install needed!
    ```
 
 3. **Set up environment**

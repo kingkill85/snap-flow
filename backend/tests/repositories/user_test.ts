@@ -11,7 +11,7 @@ const { userRepository } = await import('../../src/repositories/user.ts');
 Deno.test('UserRepository - create user', async () => {
   clearDatabase();
   
-  const passwordHash = await hashPassword('testpassword');
+  const passwordHash = hashPassword('testpassword');
   const user = await userRepository.create({
     email: 'test@example.com',
     password_hash: passwordHash,
@@ -28,7 +28,7 @@ Deno.test('UserRepository - create user', async () => {
 Deno.test('UserRepository - create user with full_name', async () => {
   clearDatabase();
   
-  const passwordHash = await hashPassword('testpassword');
+  const passwordHash = hashPassword('testpassword');
   const user = await userRepository.create({
     email: 'named@example.com',
     full_name: 'John Doe',
@@ -45,7 +45,7 @@ Deno.test('UserRepository - create user with full_name', async () => {
 Deno.test('UserRepository - findByEmail finds existing user', async () => {
   clearDatabase();
   
-  const passwordHash = await hashPassword('testpassword');
+  const passwordHash = hashPassword('testpassword');
   await userRepository.create({
     email: 'find@example.com',
     full_name: 'Jane Smith',
@@ -71,7 +71,7 @@ Deno.test('UserRepository - findByEmail returns null for non-existent user', asy
 Deno.test('UserRepository - findById finds user by id', async () => {
   clearDatabase();
   
-  const passwordHash = await hashPassword('testpassword');
+  const passwordHash = hashPassword('testpassword');
   const created = await userRepository.create({
     email: 'byid@example.com',
     full_name: 'Test User',
@@ -90,7 +90,7 @@ Deno.test('UserRepository - findById finds user by id', async () => {
 Deno.test('UserRepository - findAll returns all users', async () => {
   clearDatabase();
   
-  const passwordHash = await hashPassword('testpassword');
+  const passwordHash = hashPassword('testpassword');
   await userRepository.create({
     email: 'user1@example.com',
     full_name: 'User One',
@@ -114,7 +114,7 @@ Deno.test('UserRepository - findAll returns all users', async () => {
 Deno.test('UserRepository - update user full_name', async () => {
   clearDatabase();
   
-  const passwordHash = await hashPassword('testpassword');
+  const passwordHash = hashPassword('testpassword');
   const created = await userRepository.create({
     email: 'update@example.com',
     password_hash: passwordHash,
@@ -132,7 +132,7 @@ Deno.test('UserRepository - update user full_name', async () => {
 Deno.test('UserRepository - update user email', async () => {
   clearDatabase();
   
-  const passwordHash = await hashPassword('testpassword');
+  const passwordHash = hashPassword('testpassword');
   const created = await userRepository.create({
     email: 'old@example.com',
     password_hash: passwordHash,
@@ -150,7 +150,7 @@ Deno.test('UserRepository - update user email', async () => {
 Deno.test('UserRepository - update user full_name to null', async () => {
   clearDatabase();
   
-  const passwordHash = await hashPassword('testpassword');
+  const passwordHash = hashPassword('testpassword');
   const created = await userRepository.create({
     email: 'clearnametest@example.com',
     full_name: 'Original Name',
@@ -169,7 +169,7 @@ Deno.test('UserRepository - update user full_name to null', async () => {
 Deno.test('UserRepository - delete user', async () => {
   clearDatabase();
   
-  const passwordHash = await hashPassword('testpassword');
+  const passwordHash = hashPassword('testpassword');
   const created = await userRepository.create({
     email: 'delete@example.com',
     password_hash: passwordHash,
@@ -185,7 +185,7 @@ Deno.test('UserRepository - delete user', async () => {
 Deno.test('UserRepository - user has password_hash field', async () => {
   clearDatabase();
   
-  const passwordHash = await hashPassword('testpassword');
+  const passwordHash = hashPassword('testpassword');
   const user = await userRepository.create({
     email: 'haspassword@example.com',
     password_hash: passwordHash,

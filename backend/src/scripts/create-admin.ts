@@ -34,7 +34,7 @@ async function createAdminUser() {
     }
     
     // Hash password
-    const passwordHash = await hashPassword(ADMIN_PASSWORD);
+    const passwordHash = hashPassword(ADMIN_PASSWORD);
     
     // Create admin user
     db.query(

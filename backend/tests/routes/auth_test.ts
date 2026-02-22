@@ -13,7 +13,7 @@ Deno.test('Auth endpoints - login with valid credentials', async () => {
   clearDatabase();
   
   // Create a test user
-  const passwordHash = await hashPassword('testpassword123');
+  const passwordHash = hashPassword('testpassword123');
   await userRepository.create({
     email: 'logintest@example.com',
     password_hash: passwordHash,
@@ -61,7 +61,7 @@ Deno.test('Auth endpoints - login with invalid password', async () => {
   clearDatabase();
   
   // Create a test user
-  const passwordHash = await hashPassword('correctpassword');
+  const passwordHash = hashPassword('correctpassword');
   await userRepository.create({
     email: 'wrongpass@example.com',
     password_hash: passwordHash,
@@ -101,7 +101,7 @@ Deno.test('Auth endpoints - get current user with valid token', async () => {
   clearDatabase();
   
   // Create and login a user
-  const passwordHash = await hashPassword('testpassword123');
+  const passwordHash = hashPassword('testpassword123');
   await userRepository.create({
     email: 'me@example.com',
     password_hash: passwordHash,
@@ -154,7 +154,7 @@ Deno.test('Auth endpoints - logout with valid token', async () => {
   clearDatabase();
   
   // Create and login a user
-  const passwordHash = await hashPassword('testpassword123');
+  const passwordHash = hashPassword('testpassword123');
   await userRepository.create({
     email: 'logout@example.com',
     password_hash: passwordHash,
@@ -189,7 +189,7 @@ Deno.test('Auth endpoints - update profile with full_name', async () => {
   clearDatabase();
   
   // Create and login a user
-  const passwordHash = await hashPassword('testpassword123');
+  const passwordHash = hashPassword('testpassword123');
   await userRepository.create({
     email: 'updateprofile@example.com',
     password_hash: passwordHash,
@@ -230,7 +230,7 @@ Deno.test('Auth endpoints - refresh token with valid refresh token', async () =>
   clearDatabase();
   
   // Create and login a user
-  const passwordHash = await hashPassword('testpassword123');
+  const passwordHash = hashPassword('testpassword123');
   await userRepository.create({
     email: 'refreshtest@example.com',
     password_hash: passwordHash,
@@ -288,7 +288,7 @@ Deno.test('Auth endpoints - access protected endpoint with refreshed token', asy
   clearDatabase();
   
   // Create and login a user
-  const passwordHash = await hashPassword('testpassword123');
+  const passwordHash = hashPassword('testpassword123');
   await userRepository.create({
     email: 'refreshthenaccess@example.com',
     password_hash: passwordHash,
@@ -334,7 +334,7 @@ Deno.test('Auth endpoints - update profile with email', async () => {
   clearDatabase();
   
   // Create and login a user
-  const passwordHash = await hashPassword('testpassword123');
+  const passwordHash = hashPassword('testpassword123');
   await userRepository.create({
     email: 'updateemail@example.com',
     password_hash: passwordHash,
@@ -375,7 +375,7 @@ Deno.test('Auth endpoints - update profile with password', async () => {
   clearDatabase();
   
   // Create and login a user
-  const passwordHash = await hashPassword('oldpassword');
+  const passwordHash = hashPassword('oldpassword');
   await userRepository.create({
     email: 'updatepass@example.com',
     password_hash: passwordHash,
@@ -425,7 +425,7 @@ Deno.test('Auth endpoints - update profile without changes fails', async () => {
   clearDatabase();
   
   // Create and login a user
-  const passwordHash = await hashPassword('testpassword123');
+  const passwordHash = hashPassword('testpassword123');
   await userRepository.create({
     email: 'nochanges@example.com',
     full_name: 'Test User',

@@ -15,7 +15,7 @@ const { itemVariantRepository } = await import('../../src/repositories/item-vari
 async function getAdminToken(): Promise<string> {
   clearDatabase();
   
-  const passwordHash = await hashPassword('admin123');
+  const passwordHash = hashPassword('admin123');
   await userRepository.create({
     email: 'admin@example.com',
     password_hash: passwordHash,
@@ -165,7 +165,7 @@ Deno.test('POST /items - should require admin role', async () => {
   clearDatabase();
   
   // Create regular user
-  const passwordHash = await hashPassword('user123');
+  const passwordHash = hashPassword('user123');
   await userRepository.create({
     email: 'user@example.com',
     password_hash: passwordHash,

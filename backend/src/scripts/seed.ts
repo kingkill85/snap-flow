@@ -14,7 +14,7 @@ async function seed() {
     console.log('✅ Admin user already exists');
   } else {
     // Create default admin user
-    const passwordHash = await hashPassword('admin123');
+    const passwordHash = hashPassword('admin123');
     
     const admin = await userRepository.create({
       email: 'admin@snapflow.com',

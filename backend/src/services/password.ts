@@ -1,17 +1,18 @@
-import { compare, hash } from 'bcrypt';
+import { compareSync, genSaltSync, hashSync } from "bcrypt";
 
 const SALT_ROUNDS = 10;
 
 /**
- * Hash a password
+ * Hash a password (sync version - avoids Web Worker issues)
  */
-export async function hashPassword(password: string): Promise<string> {
-  return await hash(password, SALT_ROUNDS);
+export function hashPassword(password: string): string {
+  const salt = genSaltSync(SALT_ROUNDS);
+  return hashSync(password, salt);
 }
 
 /**
- * Compare a password with a hash
+ * Compare a password with a hash (sync version)
  */
-export async function comparePassword(password: string, hash: string): Promise<boolean> {
-  return await compare(password, hash);
+export function comparePassword(password: string, hash: string): boolean {
+  return compareSync(password, hash);
 }

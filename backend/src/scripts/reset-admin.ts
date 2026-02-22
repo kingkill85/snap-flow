@@ -10,7 +10,7 @@ async function resetAdmin() {
     
     if (existingAdmin) {
       console.log('Admin user exists, updating password...');
-      const newPasswordHash = await hashPassword('admin123');
+      const newPasswordHash = hashPassword('admin123');
       await userRepository.update(existingAdmin.id, { 
         password_hash: newPasswordHash,
         role: 'admin'
@@ -18,7 +18,7 @@ async function resetAdmin() {
       console.log('✅ Admin password reset to: admin123');
     } else {
       console.log('Creating new admin user...');
-      const passwordHash = await hashPassword('admin123');
+      const passwordHash = hashPassword('admin123');
       await userRepository.create({
         email: 'admin@snapflow.com',
         password_hash: passwordHash,

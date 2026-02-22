@@ -3,7 +3,7 @@ import { hashPassword, comparePassword } from '../../src/services/password.ts';
 
 Deno.test("Password service - hashPassword creates a hash", async () => {
   const password = 'testpassword123';
-  const hash = await hashPassword(password);
+  const hash = hashPassword(password);
   
   // Hash should be different from original password
   assertNotEquals(hash, password);
@@ -13,16 +13,16 @@ Deno.test("Password service - hashPassword creates a hash", async () => {
 
 Deno.test("Password service - comparePassword validates correct password", async () => {
   const password = 'testpassword123';
-  const hash = await hashPassword(password);
+  const hash = hashPassword(password);
   
-  const isValid = await comparePassword(password, hash);
+  const isValid = comparePassword(password, hash);
   assertEquals(isValid, true);
 });
 
 Deno.test("Password service - comparePassword rejects incorrect password", async () => {
   const password = 'testpassword123';
-  const hash = await hashPassword(password);
+  const hash = hashPassword(password);
   
-  const isValid = await comparePassword('wrongpassword', hash);
+  const isValid = comparePassword('wrongpassword', hash);
   assertEquals(isValid, false);
 });

@@ -39,7 +39,7 @@ authRoutes.post('/login', loginRateLimit(), zValidator('json', loginSchema), asy
     }
 
     // Verify password
-    const isValid = await comparePassword(password, user.password_hash);
+    const isValid = comparePassword(password, user.password_hash);
     if (!isValid) {
       return c.json({ error: 'Invalid email or password' }, 401);
     }
@@ -191,7 +191,7 @@ authRoutes.put('/me', authMiddleware, async (c) => {
     
     if (body.password) {
       const { hashPassword } = await import('../services/password.ts');
-      updateData.password_hash = await hashPassword(body.password);
+      updateData.password_hash = hashPassword(body.password);
     }
     
     if (Object.keys(updateData).length === 0) {

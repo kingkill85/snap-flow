@@ -14,7 +14,7 @@ async function getAuthToken(): Promise<string> {
   clearDatabase();
   
   // Create user
-  const passwordHash = await hashPassword('password123');
+  const passwordHash = hashPassword('password123');
   await userRepository.create({
     email: 'test@example.com',
     password_hash: passwordHash,

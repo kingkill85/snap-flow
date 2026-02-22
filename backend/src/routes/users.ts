@@ -27,7 +27,7 @@ userRoutes.post('/', authMiddleware, adminMiddleware, zValidator('json', createU
     }
 
     // Hash password
-    const passwordHash = await hashPassword(password);
+    const passwordHash = hashPassword(password);
 
     // Create user
     const user = await userRepository.create({
@@ -89,7 +89,7 @@ userRoutes.put('/:id', authMiddleware, adminMiddleware, async (c) => {
     }
     
     if (body.password) {
-      updateData.password_hash = await hashPassword(body.password);
+      updateData.password_hash = hashPassword(body.password);
     }
     
     if (body.role && ['admin', 'user'].includes(body.role)) {

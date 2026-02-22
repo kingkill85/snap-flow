@@ -8,13 +8,13 @@
     "start": "deno run --allow-all src/main.ts",
     "test": "deno test --allow-all",
     "migrate": "deno run --allow-all src/scripts/migrate.ts",
-    "install": "deno install --allow-scripts=npm:bcrypt --entrypoint src/main.ts"
+    "install": "echo 'No install needed - using Deno-native dependencies'"
   },
   "imports": {
     "hono": "npm:hono@^4.0.0",
     "@hono/zod-validator": "npm:@hono/zod-validator@^0.2.0",
     "zod": "npm:zod@^3.22.0",
-    "bcrypt": "npm:bcrypt@^5.1.0",
+    "bcrypt": "https://deno.land/x/bcrypt@v0.4.1/mod.ts",
     "djwt": "https://deno.land/x/djwt@v3.0.2/mod.ts",
     "xlsx": "npm:xlsx@^0.18.5",
     "sqlite": "https://deno.land/x/sqlite@v3.9.1/mod.ts"

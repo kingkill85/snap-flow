@@ -16,7 +16,7 @@ async function getAdminToken(): Promise<string> {
   clearDatabase();
   
   // Create admin user
-  const passwordHash = await hashPassword('admin123');
+  const passwordHash = hashPassword('admin123');
   await userRepository.create({
     email: 'admin@example.com',
     password_hash: passwordHash,
@@ -41,7 +41,7 @@ async function getUserToken(): Promise<string> {
   clearDatabase();
   
   // Create regular user
-  const passwordHash = await hashPassword('user123');
+  const passwordHash = hashPassword('user123');
   await userRepository.create({
     email: 'user@example.com',
     password_hash: passwordHash,
@@ -262,7 +262,7 @@ Deno.test('PUT /categories/:id - should deactivate category and cascade to items
   clearDatabase();
   
   // Create admin user
-  const passwordHash = await hashPassword('admin123');
+  const passwordHash = hashPassword('admin123');
   const admin = await userRepository.create({
     email: 'admin@test.com',
     password_hash: passwordHash,
@@ -344,7 +344,7 @@ Deno.test('PUT /categories/:id - should activate category without cascading to c
   clearDatabase();
   
   // Create admin user
-  const passwordHash = await hashPassword('admin123');
+  const passwordHash = hashPassword('admin123');
   const admin = await userRepository.create({
     email: 'admin@test.com',
     password_hash: passwordHash,
