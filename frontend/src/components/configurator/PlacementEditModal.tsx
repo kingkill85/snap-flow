@@ -54,9 +54,14 @@ export function PlacementEditModal({ placement, floorplanId, isOpen, onClose, on
         if (floorplanId) {
           try {
             const bomData = await bomService.getBomForFloorplan(floorplanId);
-            // Find the group that contains this placement's variant
+            // Find the group that matches this placement's bom_id
+            // This is crucial because multiple placements can have the same variant
+            // but with different addons, so we must match by bom_id, not variant_id
             const group = bomData.groups.find(g => 
-              g.mainEntry.variant_id === placement.item_variant_id
+              // Check if placement's bom_id is in the group's bomEntryIds array
+              // This handles the case where multiple placements share the same config
+              // and are grouped together with multiple BOM entry IDs
+              g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
             );
             if (group) {
               // Get addon IDs from children

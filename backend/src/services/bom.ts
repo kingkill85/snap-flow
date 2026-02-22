@@ -11,6 +11,7 @@ export interface BomGroup {
   children: ProjectBom[];
   quantity: number;
   totalPrice: number;
+  bomEntryIds: number[]; // All BOM entry IDs in this group (for edit modal matching)
 }
 
 export interface FloorplanBom {
@@ -278,6 +279,7 @@ export class BomService {
 
   /**
    * Get full BOM for a floorplan with hierarchical structure
+   * Groups by variant + addon configuration (not by individual BOM entry)
    */
   async getBomForFloorplan(floorplanId: number): Promise<FloorplanBom> {
     // Get all BOM entries for floorplan
@@ -287,28 +289,56 @@ export class BomService {
     const mainEntries = allEntries.filter(e => e.parent_bom_id === null);
     const childEntries = allEntries.filter(e => e.parent_bom_id !== null);
 
-    // Build groups
-    const groups: BomGroup[] = [];
+    // Group by variant + addon configuration
+    const groupMap = new Map<string, {
+      mainEntry: ProjectBom;
+      children: ProjectBom[];
+      quantity: number;
+      bomEntryIds: number[];
+    }>();
     
     for (const mainEntry of mainEntries) {
-      // Get children for this entry
+      // Get children (addons) for this entry
       const children = childEntries.filter(c => c.parent_bom_id === mainEntry.id);
       
       // Get placement count (quantity)
       const quantity = await bomEntryRepository.getPlacementCount(mainEntry.id);
       
-      // Calculate total price for group
+      // Create a unique key based on variant + sorted addon variant IDs
+      // This groups identical configurations together
+      const addonVariantIds = children.map(c => c.variant_id).sort().join(',');
+      const groupKey = `${mainEntry.variant_id}:${addonVariantIds}`;
+      
+      if (groupMap.has(groupKey)) {
+        // Merge with existing group
+        const existing = groupMap.get(groupKey)!;
+        existing.quantity += quantity;
+        existing.bomEntryIds.push(mainEntry.id);
+      } else {
+        // Create new group
+        groupMap.set(groupKey, {
+          mainEntry,
+          children,
+          quantity,
+          bomEntryIds: [mainEntry.id],
+        });
+      }
+    }
+
+    // Convert map to groups array
+    const groups: BomGroup[] = Array.from(groupMap.values()).map(({ mainEntry, children, quantity, bomEntryIds }) => {
       const mainTotal = mainEntry.unit_price * quantity;
       const childrenTotal = children.reduce((sum, child) => sum + child.unit_price, 0) * quantity;
       const totalPrice = mainTotal + childrenTotal;
       
-      groups.push({
+      return {
         mainEntry,
         children,
         quantity,
         totalPrice,
-      });
-    }
+        bomEntryIds,
+      };
+    });
 
     // Calculate floorplan total
     const totalPrice = groups.reduce((sum, group) => sum + group.totalPrice, 0);
