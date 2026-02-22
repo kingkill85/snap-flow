@@ -201,9 +201,10 @@ function DraggablePlacement({
           <button
             onClick={(e) => {
               e.stopPropagation();
+              console.log('Delete button clicked, calling onDelete');
               onDelete();
             }}
-            className="absolute -top-4 -right-4 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white"
+            className="absolute -top-4 -right-4 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
             title="Delete placement"
           >
             <HiX className="w-4 h-4" />
@@ -382,6 +383,7 @@ export function Canvas({
                     isSelected={selectedPlacementId === placement.id}
                     onSelect={() => setSelectedPlacementId(placement.id)}
                     onDelete={() => {
+                      console.log('Canvas onDelete called for placement:', placement.id);
                       onPlacementDelete(placement.id);
                       setSelectedPlacementId(null);
                     }}
