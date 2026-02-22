@@ -49,6 +49,9 @@ const ProjectDashboard = () => {
   
   // View toggle: 'configurator' | 'bom'
   const [activeView, setActiveView] = useState<'configurator' | 'bom'>('configurator');
+  
+  // Track placement changes for BOM refresh
+  const [placementsVersion, setPlacementsVersion] = useState(0);
 
   // DnD sensors - with custom activation to skip resize handles
   const sensors = useSensors(
@@ -177,6 +180,7 @@ const ProjectDashboard = () => {
     
     await placementService.create(createData);
     await fetchPlacements(activeFloorplan.id);
+    setPlacementsVersion(prev => prev + 1); // Trigger BOM refresh
   };
 
   const handlePlacementUpdate = async (id: number, placement: { x?: number; y?: number; width?: number; height?: number }) => {
@@ -194,6 +198,7 @@ const ProjectDashboard = () => {
     if (activeFloorplan) {
       await fetchPlacements(activeFloorplan.id);
     }
+    setPlacementsVersion(prev => prev + 1); // Trigger BOM refresh
   };
 
   // Track if we're currently resizing (to skip move logic)
@@ -567,7 +572,7 @@ const ProjectDashboard = () => {
           {activeView === 'configurator' ? (
             <ProductPanel placements={placements} />
           ) : (
-            activeFloorplan && <BomPanel floorplanId={activeFloorplan.id} />
+            activeFloorplan && <BomPanel floorplanId={activeFloorplan.id} placementsVersion={placementsVersion} />
           )}
         </div>
         

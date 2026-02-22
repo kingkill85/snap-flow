@@ -6,10 +6,11 @@ import { bomService } from '../../services/bom';
 
 interface BomPanelProps {
   floorplanId: number;
+  placementsVersion?: number; // Increment to trigger refresh
   className?: string;
 }
 
-export function BomPanel({ floorplanId, className = '' }: BomPanelProps) {
+export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }: BomPanelProps) {
   const [bom, setBom] = useState<FloorplanBom | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -17,14 +18,17 @@ export function BomPanel({ floorplanId, className = '' }: BomPanelProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [changeReport, setChangeReport] = useState<ChangeReport | null>(null);
 
+  // Initial load
   useEffect(() => {
-    fetchBom(true); // Show loading on initial fetch
-    
-    // Auto-refresh every 2 seconds to sync with canvas changes
-    const interval = setInterval(() => fetchBom(false), 2000);
-    
-    return () => clearInterval(interval);
+    fetchBom(true);
   }, [floorplanId]);
+  
+  // Refresh when placements change
+  useEffect(() => {
+    if (placementsVersion > 0) {
+      fetchBom(false);
+    }
+  }, [placementsVersion]);
 
   const fetchBom = async (showLoading = false) => {
     try {
