@@ -10,7 +10,7 @@ export class VariantAddonRepository {
     const result = getDb().queryEntries(`
       SELECT 
         va.id, va.variant_id, va.addon_variant_id, va.is_optional, va.sort_order, va.created_at,
-        iv.style_name as addon_style_name, iv.price as addon_price, iv.image_path as addon_image_path
+        iv.item_id as addon_item_id, iv.style_name as addon_style_name, iv.price as addon_price, iv.image_path as addon_image_path
       FROM variant_addons va
       JOIN item_variants iv ON va.addon_variant_id = iv.id
       WHERE va.variant_id = ?
@@ -26,6 +26,7 @@ export class VariantAddonRepository {
       created_at: row.created_at,
       addon_variant: {
         id: row.addon_variant_id,
+        item_id: row.addon_item_id,
         style_name: row.addon_style_name,
         price: row.addon_price,
         image_path: row.addon_image_path,
