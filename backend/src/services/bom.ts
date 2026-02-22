@@ -340,8 +340,18 @@ export class BomService {
       };
     });
 
-    // Calculate floorplan total
+    // Calculate floorplan total from groups (already includes main + children)
     const totalPrice = groups.reduce((sum, group) => sum + group.totalPrice, 0);
+    
+    // Debug: log calculation details
+    console.log(`Floorplan ${floorplanId} BOM calculation:`);
+    groups.forEach((group, i) => {
+      console.log(`  Group ${i}: ${group.mainEntry.item_name} x${group.quantity} = $${group.totalPrice} (main: $${group.mainEntry.unit_price}, children: ${group.children.length})`);
+      group.children.forEach(child => {
+        console.log(`    - ${child.item_name}: $${child.unit_price}`);
+      });
+    });
+    console.log(`  Total: $${totalPrice}`);
 
     return {
       floorplanId,
