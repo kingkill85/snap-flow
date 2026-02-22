@@ -216,7 +216,8 @@ function DraggablePlacement({
               e.stopPropagation();
               onEdit();
             }}
-            className="absolute -top-10 -left-10 p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
+            className="absolute p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
+            style={{ top: '-9px', left: '-9px' }}
             title="Edit placement"
           >
             <HiPencil className="w-4 h-4" />
@@ -228,7 +229,8 @@ function DraggablePlacement({
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute -top-10 -right-10 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
+            className="absolute p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
+            style={{ top: '-9px', right: '-9px' }}
             title="Delete placement"
           >
             <HiX className="w-4 h-4" />
