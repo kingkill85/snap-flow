@@ -99,7 +99,7 @@ Deno.test('BOM - Create placement auto-creates BOM entry with required addons', 
   await variantAddonRepository.create({
     variant_id: variant.id,
     addon_variant_id: addonVariant.id,
-    is_optional: false,
+    is_required: true,
     sort_order: 1,
   });
 

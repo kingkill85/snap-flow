@@ -191,14 +191,14 @@ Deno.test("ExcelSyncService - variant addons can be linked", async () => {
   const addonLink = await variantAddonRepository.create({
     variant_id: parentVariant.id,
     addon_variant_id: addonVariant.id,
-    is_optional: false,
+    is_required: true,
     sort_order: 1
   });
   
   assertExists(addonLink);
   assertEquals(addonLink.variant_id, parentVariant.id);
   assertEquals(addonLink.addon_variant_id, addonVariant.id);
-  assertEquals(Boolean(addonLink.is_optional), false);
+  assertEquals(addonLink.is_required, true);
   assertEquals(addonLink.sort_order, 1);
   
   // Test findByVariantId

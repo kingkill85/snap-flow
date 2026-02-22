@@ -531,7 +531,7 @@ Deno.test('GET /items/:id/variants/:variantId/addons - should list variant addon
     },
     body: JSON.stringify({
       addon_variant_id: addonVariant.id,
-      is_optional: true,
+      is_required: false,
     }),
   });
   assertEquals(response1.status, 201);
@@ -547,7 +547,7 @@ Deno.test('GET /items/:id/variants/:variantId/addons - should list variant addon
   assertEquals(response2.status, 200);
   assertEquals(data.data.length, 1);
   assertEquals(data.data[0].addon_variant_id, addonVariant.id);
-  assertEquals(data.data[0].is_optional, true);
+  assertEquals(data.data[0].is_required, false);
 });
 
 Deno.test('POST /items/:id/variants/:variantId/addons - should add addon (admin)', async () => {
@@ -584,7 +584,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should add addon (admin)
     },
     body: JSON.stringify({
       addon_variant_id: addonVariant.id,
-      is_optional: false,
+      is_required: true,
     }),
   });
 
@@ -592,7 +592,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should add addon (admin)
 
   assertEquals(response.status, 201);
   assertEquals(data.data.addon_variant_id, addonVariant.id);
-  assertEquals(data.data.is_optional, false);
+  assertEquals(data.data.is_required, true);
   assertEquals(data.message, 'Add-on added successfully');
 });
 
@@ -631,7 +631,7 @@ Deno.test('DELETE /items/:id/variants/:variantId/addons/:addonId - should remove
     },
     body: JSON.stringify({
       addon_variant_id: addonVariant.id,
-      is_optional: true,
+      is_required: false,
     }),
   });
   const addonData = await parseJSON(response1);
@@ -686,7 +686,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should reject duplicate 
     },
     body: JSON.stringify({
       addon_variant_id: addonVariant.id,
-      is_optional: true,
+      is_required: false,
     }),
   });
 
@@ -699,7 +699,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should reject duplicate 
     },
     body: JSON.stringify({
       addon_variant_id: addonVariant.id,
-      is_optional: true,
+      is_required: false,
     }),
   });
 

@@ -818,7 +818,7 @@ export class ExcelSyncService {
             await variantAddonRepository.create({
               variant_id: parentVariant.id,
               addon_variant_id: matchingAddonVariant.id,
-              is_optional: addonRef.isOptional,
+              is_required: !addonRef.isOptional,
               sort_order: addonRef.slotNumber,
             });
             result.phases.addons.linked++;
