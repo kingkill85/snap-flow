@@ -226,63 +226,42 @@ export class BomService {
       throw new Error('Item not found');
     }
 
-    // Check if a BOM entry already exists for this variant on this floorplan
-    let newMainEntry = await bomEntryRepository.findByVariantAddons(floorplanId, newVariantId, null);
-    
-    if (!newMainEntry) {
-      // Create new main BOM entry only if one doesn't exist
-      newMainEntry = await bomEntryRepository.create({
+    // ALWAYS create a new BOM entry for this specific placement configuration
+    // Don't reuse existing entries - each placement gets its own BOM entry
+    // This allows different placements of the same variant to have different addons
+    const newMainEntry = await bomEntryRepository.create({
+      project_id: floorplan.project_id,
+      floorplan_id: floorplanId,
+      item_id: newVariant.item_id,
+      variant_id: newVariantId,
+      parent_bom_id: null,
+      item_name: item.name,
+      style_name: newVariant.style_name,
+      model_number: item.base_model_number || `${newVariant.style_name}`,
+      unit_price: newVariant.price,
+      picture_path: newVariant.image_path,
+    });
+
+    // Create all selected addons for this new entry
+    for (const addonVariantId of selectedAddonIds) {
+      const addonVariant = await itemVariantRepository.findById(addonVariantId);
+      if (!addonVariant) continue;
+
+      const addonItem = await itemRepository.findById(addonVariant.item_id);
+      if (!addonItem) continue;
+
+      await bomEntryRepository.create({
         project_id: floorplan.project_id,
         floorplan_id: floorplanId,
-        item_id: newVariant.item_id,
-        variant_id: newVariantId,
-        parent_bom_id: null,
-        item_name: item.name,
-        style_name: newVariant.style_name,
-        model_number: item.base_model_number || `${newVariant.style_name}`,
-        unit_price: newVariant.price,
-        picture_path: newVariant.image_path,
+        item_id: addonVariant.item_id,
+        variant_id: addonVariantId,
+        parent_bom_id: newMainEntry.id,
+        item_name: addonItem.name,
+        style_name: addonVariant.style_name,
+        model_number: addonItem.base_model_number || '',
+        unit_price: addonVariant.price,
+        picture_path: addonVariant.image_path,
       });
-    }
-
-    // Ensure all selected addons exist (create if missing)
-    // AND remove addons that are no longer selected
-    if (selectedAddonIds.length > 0 || true) { // Always run this to handle removals too
-      // Get existing children
-      const existingChildren = await bomEntryRepository.findChildren(newMainEntry.id);
-      const existingChildVariantIds = new Set(existingChildren.map(c => c.variant_id));
-      const selectedAddonIdsSet = new Set(selectedAddonIds);
-      
-      // Add missing addons
-      for (const addonVariantId of selectedAddonIds) {
-        if (existingChildVariantIds.has(addonVariantId)) continue;
-        
-        const addonVariant = await itemVariantRepository.findById(addonVariantId);
-        if (!addonVariant) continue;
-
-        const addonItem = await itemRepository.findById(addonVariant.item_id);
-        if (!addonItem) continue;
-
-        await bomEntryRepository.create({
-          project_id: floorplan.project_id,
-          floorplan_id: floorplanId,
-          item_id: addonVariant.item_id,
-          variant_id: addonVariantId,
-          parent_bom_id: newMainEntry.id,
-          item_name: addonItem.name,
-          style_name: addonVariant.style_name,
-          model_number: addonItem.base_model_number || '',
-          unit_price: addonVariant.price,
-          picture_path: addonVariant.image_path,
-        });
-      }
-      
-      // Remove addons that are no longer selected
-      for (const child of existingChildren) {
-        if (!selectedAddonIdsSet.has(child.variant_id)) {
-          await bomEntryRepository.delete(child.id);
-        }
-      }
     }
 
     // Update placement to reference the BOM entry (new or existing)

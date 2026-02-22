@@ -472,6 +472,20 @@ export async function runMigrations(): Promise<void> {
         ALTER TABLE project_bom RENAME COLUMN model_number_snapshot TO model_number;
         ALTER TABLE project_bom RENAME COLUMN price_snapshot TO unit_price;
       `
+    },
+    {
+      name: '025_allow_multiple_bom_entries_per_variant',
+      sql: `
+        -- Allow multiple BOM entries per variant
+        -- This enables different placements of the same variant to have different addon configurations
+        
+        -- Drop the old unique index
+        DROP INDEX IF EXISTS idx_project_bom_unique;
+        
+        -- Create a non-unique index for performance instead
+        CREATE INDEX idx_project_bom_floorplan_variant ON project_bom(floorplan_id, variant_id) 
+          WHERE parent_bom_id IS NULL;
+      `
     }
   ];
 
