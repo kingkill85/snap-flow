@@ -177,7 +177,7 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
           <div>
             <Label value={isEdit ? 'Floorplan Image' : 'Floorplan Image *'} />
             <div
-              className="mt-2 border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors cursor-pointer"
+              className="mt-2 border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-purple-500 transition-colors cursor-pointer"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onClick={() => fileInputRef.current?.click()}

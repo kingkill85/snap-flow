@@ -520,7 +520,7 @@ const ProjectDashboard = () => {
                                 e.preventDefault();
                                 openEditFloorplanModal(floorplan);
                               }}
-                              className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors cursor-pointer"
+                              className="p-1 text-purple-600 hover:bg-purple-100 rounded transition-colors cursor-pointer"
                               title="Rename"
                               role="button"
                             >
@@ -606,7 +606,7 @@ const ProjectDashboard = () => {
         {/* Drag overlay - shows just the item image (like it will appear on canvas) */}
         <DragOverlay>
           {activeDragItem && (
-            <div className="border-2 border-blue-500 rounded bg-white shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
+            <div className="border-2 border-purple-500 rounded bg-white shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
               {activeDragItem.preview_image ? (
                 <img
                   src={`/uploads/${activeDragItem.preview_image}`}

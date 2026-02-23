@@ -22,7 +22,7 @@ const Header = () => {
     <Navbar fluid className="bg-white border-b shadow-sm">
       <Navbar.Brand as={Link} to="/">
         <div className="flex flex-col items-start">
-          <span className="whitespace-nowrap text-3xl font-black tracking-tight" style={{ color: '#6D28D9' }}>
+          <span className="whitespace-nowrap text-3xl font-black tracking-tight" style={{ color: '#8C00AA' }}>
             SnapFlow
           </span>
         </div>
@@ -34,9 +34,9 @@ const Header = () => {
             arrowIcon={false}
             inline
             label={
-              <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500">
                 <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
                     {getAvatarLetter()}
                   </div>
                   <div className="hidden md:flex flex-col items-start">
@@ -56,7 +56,7 @@ const Header = () => {
           >
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-semibold">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white font-semibold">
                   {getAvatarLetter()}
                 </div>
                 <div>
@@ -92,11 +92,11 @@ const Header = () => {
       </div>
       
       <Navbar.Collapse>
-        <Link to="/" className="px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
+        <Link to="/" className="px-3 py-2 text-gray-700 hover:text-purple-600 font-medium">
           Home
         </Link>
         
-        <Link to="/projects" className="px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
+        <Link to="/projects" className="px-3 py-2 text-gray-700 hover:text-purple-600 font-medium">
           Projects
         </Link>
 
@@ -104,7 +104,7 @@ const Header = () => {
           <Dropdown
             inline
             label={
-              <span className="px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
+              <span className="px-3 py-2 text-gray-700 hover:text-purple-600 font-medium">
                 Catalog
               </span>
             }
@@ -128,7 +128,7 @@ const Header = () => {
           <Dropdown
             inline
             label={
-              <span className="px-3 py-2 text-gray-700 hover:text-blue-600 font-medium">
+              <span className="px-3 py-2 text-gray-700 hover:text-purple-600 font-medium">
                 Settings
               </span>
             }

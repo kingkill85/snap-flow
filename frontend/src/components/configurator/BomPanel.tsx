@@ -221,7 +221,7 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
                     {group.mainEntry.model_number || 'No model #'}
                   </p>
                   <div className="flex items-center gap-2 mt-1">
-                    <Badge color="blue" size="xs">
+                    <Badge color="purple" size="xs">
                       x{group.quantity}
                     </Badge>
                     <span className="text-xs text-gray-600">
@@ -281,7 +281,7 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
                           {child.model_number || 'No model #'}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
-                          <Badge color="blue" size="xs">
+                          <Badge color="purple" size="xs">
                             x{group.quantity}
                           </Badge>
                           <span className="text-[11px] text-gray-600">

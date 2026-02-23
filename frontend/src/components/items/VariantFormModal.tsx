@@ -324,7 +324,7 @@ export function VariantFormModal({ itemId, variant, isOpen, onClose, onSubmit }:
                 type="file"
                 accept="image/*"
                 onChange={handleImageChange}
-                className="block w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 mt-1"
+                className="block w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 mt-1"
               />
             </div>
             
@@ -474,7 +474,7 @@ export function VariantFormModal({ itemId, variant, isOpen, onClose, onSubmit }:
                                       setIsAddonDropdownOpen(false);
                                       setAddonSearchQuery('');
                                     }}
-                                    className={`w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-gray-50 text-xs ${isSelected ? 'bg-blue-50' : ''}`}
+                                    className={`w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-gray-50 text-xs ${isSelected ? 'bg-purple-50' : ''}`}
                                   >
                                     {v.image_path ? (
                                       <img
