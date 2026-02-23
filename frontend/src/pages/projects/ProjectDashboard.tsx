@@ -489,7 +489,7 @@ const ProjectDashboard = () => {
               <div className="flex-1 flex items-center justify-center text-gray-500">
                 <div className="text-center">
                   <p className="mb-2">No floorplans yet.</p>
-                  <Button size="sm" onClick={openCreateFloorplanModal}>
+                  <Button color="purple" size="sm" onClick={openCreateFloorplanModal}>
                     <HiPlus className="mr-2 h-4 w-4" />
                     Add Your First Floorplan
                   </Button>
@@ -568,7 +568,7 @@ const ProjectDashboard = () => {
                     </div>
                     
                     {/* Add Floorplan Button */}
-                    <Button size="xs" onClick={openCreateFloorplanModal} className="ml-2">
+                    <Button color="purple" size="xs" onClick={openCreateFloorplanModal} className="ml-2">
                       <HiPlus className="mr-1 h-4 w-4" />
                       Add Floorplan
                     </Button>

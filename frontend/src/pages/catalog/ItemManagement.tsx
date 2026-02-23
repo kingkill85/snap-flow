@@ -232,7 +232,7 @@ const ItemManagement = () => {
             <HiUpload className="mr-2 h-5 w-5" />
             Import Catalog
           </Button>
-          <Button onClick={openCreateItem}>
+          <Button color="purple" onClick={openCreateItem}>
             <HiPlus className="mr-2 h-5 w-5" />
             Add Item
           </Button>

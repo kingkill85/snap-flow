@@ -234,7 +234,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
       </div>
 
       <div className="space-y-2">
-        <Progress progress={progress} size="lg" color="blue" />
+        <Progress progress={progress} size="lg" color="purple" />
         <p className="text-sm text-gray-600">{statusMessage}</p>
       </div>
 
@@ -460,7 +460,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
             <Button onClick={handleImportAnother} color="light">
               Import Another
             </Button>
-            <Button onClick={handleClose}>
+            <Button color="purple" onClick={handleClose}>
               Close
             </Button>
           </>

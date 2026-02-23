@@ -123,7 +123,7 @@ const ProjectList = () => {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Projects</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Manage all your projects</p>
         </div>
-        <Button onClick={openCreateModal}>
+        <Button color="purple" onClick={openCreateModal}>
           <HiPlus className="mr-2 h-5 w-5" />
           New Project
         </Button>

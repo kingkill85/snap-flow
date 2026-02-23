@@ -152,7 +152,7 @@ export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModal
         </form>
       </Modal.Body>
       <Modal.Footer>
-        <Button onClick={handleSubmit} disabled={isSubmitting}>
+        <Button color="purple" onClick={handleSubmit} disabled={isSubmitting}>
           {isSubmitting ? (
             <>
               <Spinner size="sm" className="mr-2" />

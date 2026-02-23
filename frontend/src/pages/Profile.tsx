@@ -135,7 +135,7 @@ const Profile = () => {
           </div>
 
           <div className="flex gap-2 pt-4">
-            <Button type="submit" disabled={isLoading}>
+            <Button color="purple" type="submit" disabled={isLoading}>
               {isLoading ? <><Spinner size="sm" className="mr-2" />Saving...</> : <><HiSave className="mr-2 h-5 w-5" />Save Changes</>}
             </Button>
           </div>

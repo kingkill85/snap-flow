@@ -80,7 +80,7 @@ const Header = () => {
           </Dropdown>
         ) : (
           <Button 
-            color="blue" 
+            color="purple" 
             size="sm" 
             as={Link} 
             to="/login"

@@ -101,7 +101,7 @@ const UserManagement = () => {
           <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
           <p className="text-gray-600">Manage system users and permissions</p>
         </div>
-        <Button onClick={openCreateModal}>
+        <Button color="purple" onClick={openCreateModal}>
           <HiPlus className="mr-2 h-5 w-5" />
           Add User
         </Button>

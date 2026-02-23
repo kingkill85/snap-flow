@@ -112,7 +112,7 @@ const CategoryManagement = () => {
             Organize product categories and arrange their display order
           </p>
         </div>
-        <Button onClick={openCreateModal}>
+        <Button color="purple" onClick={openCreateModal}>
           <HiPlus className="mr-2 h-5 w-5" />
           Add Category
         </Button>

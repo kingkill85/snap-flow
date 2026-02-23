@@ -80,6 +80,7 @@ const Login = () => {
           </div>
 
           <Button 
+            color="purple"
             type="submit" 
             className="w-full" 
             disabled={isLoading}

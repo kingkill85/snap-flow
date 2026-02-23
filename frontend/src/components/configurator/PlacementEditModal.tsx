@@ -275,7 +275,7 @@ export function PlacementEditModal({ placement, floorplanId, isOpen, onClose, on
           Cancel
         </Button>
         <Button
-          color="blue"
+          color="purple"
           onClick={handleSave}
           disabled={isLoading || isSaving || !selectedVariantId}
         >
