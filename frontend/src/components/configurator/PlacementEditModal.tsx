@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Button, Spinner, Alert, Checkbox } from 'flowbite-react';
-import { HiX } from 'react-icons/hi';
+import { useState, useEffect, useMemo } from 'react';
+import { Button, Spinner, Alert, Checkbox, Modal, ModalHeader, ModalBody, ModalFooter } from 'flowbite-react';
 import { itemService, type Item, type ItemVariant } from '../../services/item';
 import { variantAddonService, type VariantAddon } from '../../services/variant-addon';
 import { bomService } from '../../services/bom';
@@ -151,24 +150,18 @@ export function PlacementEditModal({ placement, floorplanId, isOpen, onClose, on
     }
   };
 
+  // Get selected variant for display
+  const selectedVariant = useMemo(() => 
+    variants.find(v => v.id === selectedVariantId),
+    [variants, selectedVariantId]
+  );
+
   if (!isOpen || !placement) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b">
-          <h2 className="text-lg font-semibold">Edit Placement</h2>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-          >
-            <HiX className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-4">
+    <Modal show={isOpen} onClose={onClose} size="md">
+      <ModalHeader>Style & Add-Ons</ModalHeader>
+      <ModalBody>
           {isLoading ? (
             <div className="flex justify-center py-8">
               <Spinner size="lg" />
@@ -182,8 +175,26 @@ export function PlacementEditModal({ placement, floorplanId, isOpen, onClose, on
               {/* Item Info */}
               {item && (
                 <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                  <p className="font-medium">{item.name}</p>
-                  <p className="text-sm text-gray-500">{item.base_model_number}</p>
+                  <div className="flex items-start gap-3">
+                    {selectedVariant?.image_path ? (
+                      <img
+                        src={`/uploads/${selectedVariant.image_path}`}
+                        alt={item.name}
+                        className="w-20 h-20 object-contain rounded bg-white"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 bg-gray-200 rounded flex items-center justify-center text-gray-400 text-xs">
+                        No Image
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-base">{item.name}</p>
+                      <p className="text-sm text-gray-500">
+                        {item.base_model_number}
+                        {selectedVariant?.style_name && ` - ${selectedVariant.style_name}`}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -199,7 +210,7 @@ export function PlacementEditModal({ placement, floorplanId, isOpen, onClose, on
                 >
                   {variants.map((variant) => (
                     <option key={variant.id} value={variant.id}>
-                      {variant.style_name} - ${variant.price.toFixed(2)}
+                      {variant.style_name} - ${variant.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </option>
                   ))}
                 </select>
@@ -232,7 +243,7 @@ export function PlacementEditModal({ placement, floorplanId, isOpen, onClose, on
                               )}
                             </p>
                             <p className="text-xs text-gray-500">
-                              ${addon.addon_variant.price.toFixed(2)}
+                              ${addon.addon_variant.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </p>
                           </div>
                         </div>
@@ -258,29 +269,26 @@ export function PlacementEditModal({ placement, floorplanId, isOpen, onClose, on
               </div>
             </>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-2 p-4 border-t bg-gray-50">
-          <Button color="light" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            color="blue"
-            onClick={handleSave}
-            disabled={isLoading || isSaving || !selectedVariantId}
-          >
-            {isSaving ? (
-              <>
-                <Spinner size="sm" className="mr-2" />
-                Saving...
-              </>
-            ) : (
-              'Save Changes'
-            )}
-          </Button>
-        </div>
-      </div>
-    </div>
+      </ModalBody>
+      <ModalFooter>
+        <Button color="light" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          color="blue"
+          onClick={handleSave}
+          disabled={isLoading || isSaving || !selectedVariantId}
+        >
+          {isSaving ? (
+            <>
+              <Spinner size="sm" className="mr-2" />
+              Saving...
+            </>
+          ) : (
+            'Save Changes'
+          )}
+        </Button>
+      </ModalFooter>
+    </Modal>
   );
 }
