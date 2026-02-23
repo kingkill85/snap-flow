@@ -174,7 +174,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
         className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
           selectedFile
             ? 'border-green-500 bg-green-50'
-            : 'border-gray-300 hover:border-blue-500 hover:bg-blue-50'
+            : 'border-gray-300 hover:border-purple-500 hover:bg-purple-50'
         }`}
         onClick={() => fileInputRef.current?.click()}
       >
@@ -194,7 +194,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
             <p className="text-sm text-gray-500">
               {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
             </p>
-            <p className="text-sm text-blue-600">Click to change file</p>
+            <p className="text-sm text-purple-600">Click to change file</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -209,9 +209,9 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
         )}
       </div>
 
-      <div className="bg-blue-50 p-4 rounded-lg">
-        <h4 className="font-medium text-blue-900 mb-2">What will happen:</h4>
-        <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+      <div className="bg-purple-50 p-4 rounded-lg">
+        <h4 className="font-medium text-purple-900 mb-2">What will happen:</h4>
+        <ul className="text-sm text-purple-800 space-y-1 list-disc list-inside">
           <li>Categories will be synced (new ones created, missing ones deactivated)</li>
           <li>Items will be updated or created based on model numbers</li>
           <li>Variants with images will be synced</li>
@@ -242,7 +242,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
         <p className="text-xs text-gray-500 font-medium mb-2">Processing:</p>
         <div className="space-y-1 text-sm text-gray-600">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+            <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div>
             <span>Extracting data and images from Excel...</span>
           </div>
         </div>
@@ -287,7 +287,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
                 <span className="font-medium">{phases.categories.added}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-blue-600">Activated:</span>
+                <span className="text-purple-600">Activated:</span>
                 <span className="font-medium">{phases.categories.activated}</span>
               </div>
               <div className="flex justify-between">
@@ -309,7 +309,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
                 <span className="font-medium">{phases.items.added}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-blue-600">Updated:</span>
+                <span className="text-purple-600">Updated:</span>
                 <span className="font-medium">{phases.items.updated}</span>
               </div>
               <div className="flex justify-between">
@@ -331,7 +331,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
                 <span className="font-medium">{phases.variants.added}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-blue-600">Updated:</span>
+                <span className="text-purple-600">Updated:</span>
                 <span className="font-medium">{phases.variants.updated}</span>
               </div>
               <div className="flex justify-between">
@@ -349,7 +349,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
             <h4 className="font-medium text-gray-900 mb-3">Variant Addons</h4>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-blue-600">References:</span>
+                <span className="text-purple-600">References:</span>
                 <span className="font-medium">{phases.addons.total}</span>
               </div>
               <div className="flex justify-between">

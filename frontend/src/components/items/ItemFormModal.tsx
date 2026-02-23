@@ -180,15 +180,15 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
           </div>
 
           {!isEdit && (
-            <div className="bg-blue-50 p-3 rounded text-sm text-blue-700">
+            <div className="bg-purple-50 p-3 rounded text-sm text-purple-700">
               <strong>Note:</strong> After creating the item, you can add variants (with price and image) by expanding the item row.
             </div>
           )}
 
           {isEdit && (
             <>
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-700">
+              <div className="p-4 bg-purple-50 rounded-lg">
+                <p className="text-sm text-purple-700">
                   <strong>Note:</strong> Price and images are managed per variant. Use "Edit" on a variant to manage add-ons and details.
                 </p>
               </div>

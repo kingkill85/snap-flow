@@ -188,7 +188,7 @@ function DraggablePlacement({
       className={`rounded select-none group ${
         isSelected
           ? 'ring-2 ring-red-500 shadow-lg'
-          : 'border-2 border-blue-500 overflow-hidden'
+          : 'border-2 border-purple-500 overflow-hidden'
       } ${isDragging ? 'cursor-grabbing' : isResizing ? 'cursor-nwse-resize' : 'cursor-move'}`}
       title={displayName}
       onClick={handleClick}
@@ -216,7 +216,7 @@ function DraggablePlacement({
               e.stopPropagation();
               onEdit();
             }}
-            className="absolute -top-10 -left-10 p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
+            className="absolute -top-10 -left-10 p-3 bg-purple-500 text-white rounded-full hover:bg-purple-600 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-white pointer-events-auto"
             title="Edit placement"
           >
             <HiPencil className="w-3 h-3" />
@@ -237,7 +237,7 @@ function DraggablePlacement({
           {/* Resize handles - corners only */}
           {/* Top-left */}
           <div
-            className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-nw-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
+            className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-purple-500 border-2 border-white rounded-full cursor-nw-resize shadow-md z-20 hover:bg-purple-600 transition-colors"
             onMouseDown={(e) => startResize(e, 'nw')}
             onPointerDown={(e) => { e.stopPropagation(); }}
             data-no-drag="true"
@@ -245,7 +245,7 @@ function DraggablePlacement({
           />
           {/* Top-right */}
           <div
-            className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-ne-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
+            className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-purple-500 border-2 border-white rounded-full cursor-ne-resize shadow-md z-20 hover:bg-purple-600 transition-colors"
             onMouseDown={(e) => startResize(e, 'ne')}
             onPointerDown={(e) => { e.stopPropagation(); }}
             data-no-drag="true"
@@ -253,7 +253,7 @@ function DraggablePlacement({
           />
           {/* Bottom-left */}
           <div
-            className="absolute -bottom-1.5 -left-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-sw-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
+            className="absolute -bottom-1.5 -left-1.5 w-4 h-4 bg-purple-500 border-2 border-white rounded-full cursor-sw-resize shadow-md z-20 hover:bg-purple-600 transition-colors"
             onMouseDown={(e) => startResize(e, 'sw')}
             onPointerDown={(e) => { e.stopPropagation(); }}
             data-no-drag="true"
@@ -261,7 +261,7 @@ function DraggablePlacement({
           />
           {/* Bottom-right */}
           <div
-            className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full cursor-se-resize shadow-md z-20 hover:bg-blue-600 transition-colors"
+            className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-purple-500 border-2 border-white rounded-full cursor-se-resize shadow-md z-20 hover:bg-purple-600 transition-colors"
             onMouseDown={(e) => startResize(e, 'se')}
             onPointerDown={(e) => { e.stopPropagation(); }}
             data-no-drag="true"
@@ -377,7 +377,7 @@ export function Canvas({
         data-canvas-id={floorplan.id}
         onClick={handleCanvasClick}
         className={`relative w-full h-full flex items-start justify-center transition-colors ${
-          isOver ? 'bg-blue-50 border-blue-300' : ''
+          isOver ? 'bg-purple-50 border-purple-300' : ''
         }`}
         style={{ touchAction: 'none' }}
       >

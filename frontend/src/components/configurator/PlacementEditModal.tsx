@@ -206,7 +206,7 @@ export function PlacementEditModal({ placement, floorplanId, isOpen, onClose, on
                 <select
                   value={selectedVariantId || ''}
                   onChange={(e) => setSelectedVariantId(Number(e.target.value))}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 >
                   {variants.map((variant) => (
                     <option key={variant.id} value={variant.id}>
@@ -227,7 +227,7 @@ export function PlacementEditModal({ placement, floorplanId, isOpen, onClose, on
                       <div
                         key={addon.id}
                         className={`flex items-center justify-between p-2 rounded-lg border ${
-                          addon.is_required ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'
+                          addon.is_required ? 'bg-purple-50 border-purple-200' : 'bg-white border-gray-200'
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -248,7 +248,7 @@ export function PlacementEditModal({ placement, floorplanId, isOpen, onClose, on
                           </div>
                         </div>
                         {addon.is_required && (
-                          <span className="text-xs text-blue-600 font-medium">
+                          <span className="text-xs text-purple-600 font-medium">
                             Required
                           </span>
                         )}
