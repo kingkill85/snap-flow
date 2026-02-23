@@ -238,6 +238,18 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
                 </div>
               </div>
               
+              {/* Collapsed Summary - Show only when collapsed and has children */}
+              {hasChildren && !isExpanded && (
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-xs text-gray-500 ml-6">
+                    + {group.children.length} Add-On{group.children.length !== 1 ? 's' : ''}
+                  </span>
+                  <span className="text-sm font-semibold text-gray-700">
+                    = ${group.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+              
               {/* Children (Addons) */}
               {isExpanded && hasChildren && (
                 <div className="mt-3 pl-6 border-l-2 border-gray-200 space-y-3">
