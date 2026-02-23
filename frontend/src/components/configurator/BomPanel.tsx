@@ -245,7 +245,7 @@ export function BomPanel({ floorplanId, placementsVersion = 0, className = '' }:
                     + {group.children.length} Add-On{group.children.length !== 1 ? 's' : ''}
                   </span>
                   <span className="text-sm font-semibold text-gray-700">
-                    = ${group.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${group.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               )}
