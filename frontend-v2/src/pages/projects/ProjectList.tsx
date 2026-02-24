@@ -38,6 +38,7 @@ const ProjectList = () => {
   const location = useLocation();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('active');
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,9 +47,13 @@ const ProjectList = () => {
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
-  const fetchProjects = async (signal?: AbortSignal) => {
+  const fetchProjects = async (signal?: AbortSignal, isSearch = false) => {
     try {
-      setIsLoading(true);
+      if (isSearch) {
+        setIsSearching(true);
+      } else {
+        setIsLoading(true);
+      }
       const data = await projectService.getAll(searchQuery || undefined, signal);
       setProjects(data);
       setError('');
@@ -58,6 +63,7 @@ const ProjectList = () => {
       }
     } finally {
       setIsLoading(false);
+      setIsSearching(false);
     }
   };
 
@@ -70,7 +76,7 @@ const ProjectList = () => {
   // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchProjects();
+      fetchProjects(undefined, true);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
@@ -185,8 +191,9 @@ const ProjectList = () => {
 
       {/* Projects Table */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>All Projects</CardTitle>
+          {isSearching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
         </CardHeader>
         <CardContent>
           <Table>
