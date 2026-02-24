@@ -175,10 +175,7 @@ export const itemService = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await api.post('/items/import-preview', formData, {
-      signal,
-      // Don't set Content-Type - let axios set it automatically with proper boundary
-    });
+    const response = await api.post('/items/import-preview', formData, { signal });
     return response.data.data;
   },
 
