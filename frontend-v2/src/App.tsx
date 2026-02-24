@@ -8,6 +8,7 @@ import Layout from '@/components/layout/Layout';
 import Home from '@/pages/Home';
 import Login from '@/pages/Login';
 import NotFound from '@/pages/NotFound';
+import Profile from '@/pages/Profile';
 import UserManagement from '@/pages/settings/UserManagement';
 import CategoryManagement from '@/pages/catalog/CategoryManagement';
 
@@ -27,6 +28,7 @@ function App() {
               </ProtectedRoute>
             }>
               <Route index element={<Home />} />
+              <Route path="profile" element={<Profile />} />
               
               {/* Admin only routes */}
               <Route path="catalog/items" element={
