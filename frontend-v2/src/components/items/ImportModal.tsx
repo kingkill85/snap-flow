@@ -10,8 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Upload, Loader2, CheckCircle, AlertCircle, FileSpreadsheet } from 'lucide-react';
+import { Upload, Loader2, CheckCircle, AlertCircle, FileSpreadsheet, FileText } from 'lucide-react';
 import { itemService } from '@/services/item';
 
 interface ImportModalProps {
@@ -270,7 +269,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
         )}
 
         {step === 'complete' && result && (
-          <div className="space-y-6">
+          <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
             <div className={`p-4 rounded-lg ${result.success ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800' : 'bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800'}`}>
               <div className="flex items-center gap-3">
                 {result.success ? (
@@ -279,7 +278,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
                   <AlertCircle className="w-8 h-8 text-yellow-600" />
                 )}
                 <div>
-                  <h3 className={`font-medium ${result.success ? 'text-green-900 dark:text-green-100' : 'text-yellow-900 dark:text-yellow-100'}`}>
+                  <h3 className={`font-medium text-lg ${result.success ? 'text-green-900 dark:text-green-100' : 'text-yellow-900 dark:text-yellow-100'}`}>
                     {result.success ? 'Sync Completed Successfully!' : 'Sync Completed with Warnings'}
                   </h3>
                   <p className={`text-sm ${result.success ? 'text-green-700 dark:text-green-300' : 'text-yellow-700 dark:text-yellow-300'}`}>
@@ -289,24 +288,24 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card>
-                <CardContent className="pt-6">
-                  <h4 className="font-medium mb-3">Categories</h4>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Card className="border">
+                <CardContent className="p-4">
+                  <h4 className="font-semibold mb-3">Categories</h4>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-green-600">Added:</span>
-                      <Badge variant="secondary">{result.phases.categories.added}</Badge>
+                      <span className="font-bold">{result.phases.categories.added}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-blue-600">Activated:</span>
-                      <Badge variant="secondary">{result.phases.categories.activated}</Badge>
+                      <span className="font-bold">{result.phases.categories.activated}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-red-600">Deactivated:</span>
-                      <Badge variant="secondary">{result.phases.categories.deactivated}</Badge>
+                      <span className="font-bold">{result.phases.categories.deactivated}</span>
                     </div>
-                    <div className="border-t pt-2 flex justify-between font-medium">
+                    <div className="border-t pt-2 flex justify-between font-semibold">
                       <span>Total:</span>
                       <span>{result.phases.categories.total}</span>
                     </div>
@@ -314,23 +313,23 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="pt-6">
-                  <h4 className="font-medium mb-3">Items</h4>
+              <Card className="border">
+                <CardContent className="p-4">
+                  <h4 className="font-semibold mb-3">Base Items</h4>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-green-600">Added:</span>
-                      <Badge variant="secondary">{result.phases.items.added}</Badge>
+                      <span className="font-bold">{result.phases.items.added}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-blue-600">Updated:</span>
-                      <Badge variant="secondary">{result.phases.items.updated}</Badge>
+                      <span className="font-bold">{result.phases.items.updated}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-red-600">Deactivated:</span>
-                      <Badge variant="secondary">{result.phases.items.deactivated}</Badge>
+                      <span className="font-bold">{result.phases.items.deactivated}</span>
                     </div>
-                    <div className="border-t pt-2 flex justify-between font-medium">
+                    <div className="border-t pt-2 flex justify-between font-semibold">
                       <span>Total:</span>
                       <span>{result.phases.items.total}</span>
                     </div>
@@ -338,23 +337,23 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="pt-6">
-                  <h4 className="font-medium mb-3">Variants</h4>
+              <Card className="border">
+                <CardContent className="p-4">
+                  <h4 className="font-semibold mb-3">Variants</h4>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-green-600">Added:</span>
-                      <Badge variant="secondary">{result.phases.variants.added}</Badge>
+                      <span className="font-bold">{result.phases.variants.added}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-blue-600">Updated:</span>
-                      <Badge variant="secondary">{result.phases.variants.updated}</Badge>
+                      <span className="font-bold">{result.phases.variants.updated}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-purple-600">Images:</span>
-                      <Badge variant="secondary">{result.phases.variants.imagesExtracted}</Badge>
+                      <span className="font-bold">{result.phases.variants.imagesExtracted}</span>
                     </div>
-                    <div className="border-t pt-2 flex justify-between font-medium">
+                    <div className="border-t pt-2 flex justify-between font-semibold">
                       <span>Total:</span>
                       <span>{result.phases.variants.total}</span>
                     </div>
@@ -362,30 +361,56 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="pt-6">
-                  <h4 className="font-medium mb-3">Add-ons</h4>
+              <Card className="border">
+                <CardContent className="p-4">
+                  <h4 className="font-semibold mb-3">Addons</h4>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-green-600">Linked:</span>
-                      <Badge variant="secondary">{result.phases.addons.linked}</Badge>
+                      <span className="text-blue-600">References:</span>
+                      <span className="font-bold">{result.phases.addons.total}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-red-600">Not Found:</span>
-                      <Badge variant="secondary">{result.phases.addons.notFound}</Badge>
+                      <span className="text-green-600">Resolved:</span>
+                      <span className="font-bold">{result.phases.addons.linked}</span>
                     </div>
-                    <div className="border-t pt-2 flex justify-between font-medium">
-                      <span>Total:</span>
-                      <span>{result.phases.addons.total}</span>
+                    <div className="flex justify-between">
+                      <span className="text-purple-600">Links:</span>
+                      <span className="font-bold">{result.phases.addons.linked}</span>
+                    </div>
+                    <div className="border-t pt-2 flex justify-between font-semibold">
+                      <span className="text-amber-600">Not Found:</span>
+                      <span className="text-amber-600">{result.phases.addons.notFound}</span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
+            {result.log && result.log.length > 0 && (
+              <div className="bg-muted/50 border rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="h-5 w-5 text-muted-foreground" />
+                  <h4 className="font-semibold">Action Log ({result.log.length} entries)</h4>
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-1 text-sm font-mono">
+                  {result.log.slice(0, 100).map((entry, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-muted-foreground">
+                      <span className="text-green-600 mt-0.5">✓</span>
+                      <span className="break-all">{entry}</span>
+                    </div>
+                  ))}
+                  {result.log.length > 100 && (
+                    <div className="text-muted-foreground italic">
+                      ... and {result.log.length - 100} more entries
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {result.errors.length > 0 && (
               <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 p-4 rounded-lg">
-                <h4 className="font-medium text-red-900 dark:text-red-100 mb-2">Errors:</h4>
+                <h4 className="font-semibold text-red-900 dark:text-red-100 mb-2">Errors:</h4>
                 <ul className="text-sm text-red-800 dark:text-red-200 space-y-1 max-h-32 overflow-y-auto">
                   {result.errors.map((err, idx) => (
                     <li key={idx}>Row {err.row}: {err.message}</li>
