@@ -327,6 +327,7 @@ const ItemManagement = () => {
                         <TableCell>
                           <div className="flex gap-2">
                             <Button variant="outline" size="sm" disabled>
+                              <Pencil className="mr-1 h-3 w-3" />
                               Edit
                             </Button>
                             <Button 
@@ -334,6 +335,7 @@ const ItemManagement = () => {
                               size="sm"
                               onClick={() => openDeleteModal(item)}
                             >
+                              <Trash2 className="mr-1 h-3 w-3" />
                               Delete
                             </Button>
                           </div>
