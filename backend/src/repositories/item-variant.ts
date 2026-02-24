@@ -21,7 +21,10 @@ export class ItemVariantRepository {
         ORDER BY sort_order ASC, id ASC
       `;
     const result = getDb().queryEntries(query, [itemId]);
-    return result as unknown as ItemVariant[];
+    return (result as any[]).map(v => ({
+      ...v,
+      is_active: Boolean(v.is_active)
+    })) as unknown as ItemVariant[];
   }
 
   async findById(id: number): Promise<ItemVariant | null> {
@@ -30,7 +33,12 @@ export class ItemVariantRepository {
       FROM item_variants
       WHERE id = ?
     `, [id]);
-    return result.length > 0 ? (result[0] as unknown as ItemVariant) : null;
+    if (result.length === 0) return null;
+    const variant = result[0] as any;
+    if (variant && variant.is_active !== undefined) {
+      variant.is_active = Boolean(variant.is_active);
+    }
+    return variant as ItemVariant;
   }
 
   async create(data: CreateItemVariantDTO): Promise<ItemVariant> {
@@ -94,7 +102,14 @@ export class ItemVariantRepository {
       RETURNING id, item_id, style_name, price, image_path, sort_order, created_at, is_active
     `, values);
 
-    return result.length > 0 ? (result[0] as unknown as ItemVariant) : null;
+    if (result.length === 0) return null;
+    
+    // Convert integer is_active to boolean
+    const variant = result[0] as any;
+    if (variant && variant.is_active !== undefined) {
+      variant.is_active = Boolean(variant.is_active);
+    }
+    return variant as ItemVariant;
   }
 
   async deactivate(id: number): Promise<ItemVariant | null> {
