@@ -477,7 +477,7 @@ const ProjectDashboard = () => {
       >
         <div className="flex-1 flex overflow-hidden">
           {/* Left Side - Canvas Area */}
-          <div className="flex-1 flex flex-col min-w-0 bg-muted/30">
+          <div className="flex-1 flex flex-col min-w-0 bg-card">
             {floorplans.length === 0 ? (
               <div className="flex-1 flex items-center justify-center text-muted-foreground">
                 <div className="text-center">
@@ -491,72 +491,73 @@ const ProjectDashboard = () => {
             ) : (
               <div className="flex-1 flex flex-col overflow-hidden">
                 {/* Floorplan Tabs */}
-                <div className="bg-muted/30 border-b px-4 py-2 flex-shrink-0">
-                  <div className="flex gap-1 items-center">
-                    <div className="flex gap-1 flex-1 overflow-x-auto">
-                      {floorplans.map((floorplan, index) => (
-                        <div
-                          key={floorplan.id}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors whitespace-nowrap ${
-                            activeFloorplan?.id === floorplan.id
-                              ? 'bg-background shadow-sm border border-border'
-                              : 'bg-muted/50 hover:bg-muted'
-                          }`}
-                          onClick={() => setActiveFloorplan(floorplan)}
-                        >
-                          <span className="font-medium text-sm">{floorplan.name}</span>
-                          <div className="flex items-center gap-0.5 ml-1">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditFloorplanModal(floorplan);
-                              }}
-                              className="p-1 text-primary hover:bg-primary/10 rounded transition-colors"
-                              title="Rename"
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
-                              }}
-                              disabled={index === 0}
-                              className={`p-1 text-muted-foreground hover:bg-muted rounded transition-colors ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                              title="Move Left"
-                            >
-                              <ChevronLeft className="h-3 w-3" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
-                              }}
-                              disabled={index === floorplans.length - 1}
-                              className={`p-1 text-muted-foreground hover:bg-muted rounded transition-colors ${index === floorplans.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                              title="Move Right"
-                            >
-                              <ChevronRight className="h-3 w-3" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDeleteFloorplanModal(floorplan);
-                              }}
-                              className="p-1 text-destructive hover:bg-destructive/10 rounded transition-colors"
-                              title="Delete"
-                            >
-                              <Trash className="h-3 w-3" />
-                            </button>
-                          </div>
+                <div className="flex items-center justify-start border-b bg-muted/30 px-4 py-2 flex-shrink-0 h-10">
+                  <div className="flex gap-1 overflow-x-auto">
+                    {floorplans.map((floorplan, index) => (
+                      <div
+                        key={floorplan.id}
+                        className={`flex items-center px-3 py-2 cursor-pointer transition-colors whitespace-nowrap border-b-2 ${
+                          activeFloorplan?.id === floorplan.id
+                            ? 'text-foreground border-primary font-medium'
+                            : 'text-muted-foreground border-transparent hover:text-foreground'
+                        }`}
+                        onClick={() => setActiveFloorplan(floorplan)}
+                      >
+                        <span className="text-sm">{floorplan.name}</span>
+                        <div className="flex items-center gap-0.5 ml-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditFloorplanModal(floorplan);
+                            }}
+                            className="p-1 text-primary hover:bg-primary/10 rounded transition-colors"
+                            title="Rename"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
+                            }}
+                            disabled={index === 0}
+                            className={`p-1 text-muted-foreground hover:bg-muted rounded transition-colors ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                            title="Move Left"
+                          >
+                            <ChevronLeft className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
+                            }}
+                            disabled={index === floorplans.length - 1}
+                            className={`p-1 text-muted-foreground hover:bg-muted rounded transition-colors ${index === floorplans.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                            title="Move Right"
+                          >
+                            <ChevronRight className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDeleteFloorplanModal(floorplan);
+                            }}
+                            className="p-1 text-destructive hover:bg-destructive/10 rounded transition-colors"
+                            title="Delete"
+                          >
+                            <Trash className="h-3 w-3" />
+                          </button>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                     
-                    <Button size="sm" onClick={openCreateFloorplanModal} className="ml-2">
-                      <Plus className="mr-1 h-4 w-4" />
-                      Add Floorplan
-                    </Button>
+                    <div
+                      className="flex items-center px-3 py-2 cursor-pointer transition-colors whitespace-nowrap border-b-2 text-muted-foreground border-transparent hover:text-foreground"
+                      onClick={openCreateFloorplanModal}
+                      title="Add Floorplan"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </div>
                   </div>
                 </div>
 
@@ -583,10 +584,10 @@ const ProjectDashboard = () => {
           <div className="w-[400px] flex-shrink-0 bg-card border-l flex flex-col h-full">
             <Tabs defaultValue="products" className="flex flex-col flex-1 min-h-0">
               <TabsList className="w-full justify-start rounded-none border-b bg-muted/30 px-4 py-2 flex-shrink-0">
-                <TabsTrigger value="products" className="data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-border">
+                <TabsTrigger value="products" className="data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:font-medium data-[state=inactive]:text-muted-foreground data-[state=inactive]:border-transparent data-[state=inactive]:hover:text-foreground rounded-none bg-transparent shadow-none border-0 px-3 py-2">
                   Products
                 </TabsTrigger>
-                <TabsTrigger value="bom" className="data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-border">
+                <TabsTrigger value="bom" className="data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:font-medium data-[state=inactive]:text-muted-foreground data-[state=inactive]:border-transparent data-[state=inactive]:hover:text-foreground rounded-none bg-transparent shadow-none border-0 px-3 py-2">
                   Bill of Materials
                 </TabsTrigger>
               </TabsList>
