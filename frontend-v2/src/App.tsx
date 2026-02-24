@@ -10,6 +10,7 @@ import Login from '@/pages/Login';
 import NotFound from '@/pages/NotFound';
 import Profile from '@/pages/Profile';
 import ProjectList from '@/pages/projects/ProjectList';
+import ProjectDashboard from '@/pages/projects/ProjectDashboard';
 import UserManagement from '@/pages/settings/UserManagement';
 import CategoryManagement from '@/pages/catalog/CategoryManagement';
 
@@ -31,6 +32,7 @@ function App() {
               <Route index element={<Home />} />
               <Route path="profile" element={<Profile />} />
               <Route path="projects" element={<ProjectList />} />
+              <Route path="projects/:id" element={<ProjectDashboard />} />
               
               {/* Admin only routes */}
               <Route path="catalog/items" element={
