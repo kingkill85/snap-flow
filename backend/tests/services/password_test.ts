@@ -7,8 +7,9 @@ Deno.test("Password service - hashPassword creates a hash", async () => {
   
   // Hash should be different from original password
   assertNotEquals(hash, password);
-  // Hash should be a bcrypt hash (starts with $2b$)
-  assertEquals(hash.startsWith('$2b$'), true);
+  // Hash should be a bcrypt hash (starts with $2a$ or $2b$)
+  const isBcryptHash = hash.startsWith('$2a$') || hash.startsWith('$2b$');
+  assertEquals(isBcryptHash, true);
 });
 
 Deno.test("Password service - comparePassword validates correct password", async () => {

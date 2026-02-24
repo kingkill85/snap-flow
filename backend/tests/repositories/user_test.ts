@@ -197,5 +197,7 @@ Deno.test('UserRepository - user has password_hash field', async () => {
   // Password hash should be accessible from findByEmail (which uses SELECT *)
   assertExists(found);
   assertExists(found?.password_hash);
-  assertEquals(found?.password_hash.startsWith('$2b$'), true);
+  // Check if it's a valid bcrypt hash (starts with $2a$ or $2b$)
+  const isBcryptHash = found?.password_hash?.startsWith('$2a$') || found?.password_hash?.startsWith('$2b$');
+  assertEquals(isBcryptHash, true);
 });
