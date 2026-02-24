@@ -187,56 +187,69 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
         )}
 
         {!preview && !importResult && (
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            className={`
-              border-2 border-dashed rounded-lg p-8 cursor-pointer
-              transition-colors duration-200 text-center
-              ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-muted-foreground/50'}
-            `}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
-              className="hidden"
-            />
+          <div className="space-y-4">
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              className={`
+                border-2 border-dashed rounded-lg p-8 cursor-pointer
+                transition-colors duration-200 text-center
+                ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-muted-foreground/50'}
+              `}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
+                className="hidden"
+              />
 
-            {file ? (
-              <div className="flex items-center justify-center gap-3">
-                <FileSpreadsheet className="h-8 w-8 text-green-600" />
-                <div className="text-left">
-                  <p className="font-medium">{file.name}</p>
+              {file ? (
+                <div className="flex items-center justify-center gap-3">
+                  <FileSpreadsheet className="h-8 w-8 text-green-600" />
+                  <div className="text-left">
+                    <p className="font-medium">{file.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {(file.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearFile();
+                    }}
+                    className="p-1 hover:bg-muted rounded"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Upload className="mx-auto h-12 w-12 text-muted-foreground" />
+                  <p className="text-lg font-medium">
+                    Drop Excel file here or click to browse
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    {(file.size / 1024).toFixed(1)} KB
+                    Supports .xlsx and .xls files up to 50MB
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    clearFile();
-                  }}
-                  className="p-1 hover:bg-muted rounded"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <>
-                <Upload className="mx-auto h-10 w-10 text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  Drag and drop an Excel file here, or click to select
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Supports: .xlsx, .xls
-                </p>
-              </>
-            )}
+              )}
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+              <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">What will happen:</h4>
+              <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
+                <li>Categories will be synced (new ones created, missing ones deactivated)</li>
+                <li>Items will be updated or created based on model numbers</li>
+                <li>Variants with images will be synced</li>
+                <li>Items/variants not in Excel will be deactivated (not deleted)</li>
+                <li>Excel is the source of truth - existing data will be overwritten</li>
+              </ul>
+            </div>
           </div>
         )}
 
