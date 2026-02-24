@@ -13,5 +13,8 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "@radix-ui/react-tabs": "^1.1.13"
   }
 }

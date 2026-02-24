@@ -10,6 +10,8 @@ class Database {
   static getInstance(): DB {
     if (!Database.instance) {
       Database.instance = new DB(env.DATABASE_URL);
+      // Enable foreign key constraints (required for CASCADE to work)
+      Database.instance.query('PRAGMA foreign_keys = ON');
       console.log(`📦 Database connected: ${env.DATABASE_URL}`);
     }
     return Database.instance;
@@ -23,6 +25,8 @@ class Database {
       Database.instance.close();
     }
     Database.instance = new DB(':memory:');
+    // Enable foreign key constraints (required for CASCADE to work)
+    Database.instance.query('PRAGMA foreign_keys = ON');
     console.log('📦 Database connected: :memory:');
     return Database.instance;
   }

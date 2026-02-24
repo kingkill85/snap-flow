@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { projectService, type Project } from '@/services/project';
-import { floorplanService, type Floorplan } from '@/services/floorplan';
+import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/services/floorplan';
 import { placementService, type Placement, type CreatePlacementDTO } from '@/services/placement';
 import { itemService, type Item } from '@/services/item';
 import { bomService } from '@/services/bom';
@@ -12,14 +12,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronLeft, ChevronRight, FileDown, Receipt } from 'lucide-react';
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { ConfiguratorCanvas, ItemPalette, BOMPanel } from '@/components/configurator';
+import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 
 const generateProjectNumber = (project: Project): string => {
   const date = new Date(project.created_at);
@@ -49,8 +48,6 @@ const ProjectDashboard = () => {
   // Floorplan modal state
   const [showFloorplanModal, setShowFloorplanModal] = useState(false);
   const [floorplanToEdit, setFloorplanToEdit] = useState<Floorplan | null>(null);
-  const [floorplanName, setFloorplanName] = useState('');
-  const [floorplanImage, setFloorplanImage] = useState<File | null>(null);
   const [showDeleteFloorplanModal, setShowDeleteFloorplanModal] = useState(false);
   const [floorplanToDelete, setFloorplanToDelete] = useState<Floorplan | null>(null);
 
@@ -353,27 +350,22 @@ const ProjectDashboard = () => {
     setActiveDragItem(null);
   };
 
-  const handleSubmitFloorplan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const handleSubmitFloorplan = async (data: CreateFloorplanDTO | { name?: string; sort_order?: number }, image?: File) => {
     try {
       if (floorplanToEdit) {
-        await floorplanService.update(floorplanToEdit.id, { name: floorplanName }, floorplanImage || undefined);
+        await floorplanService.update(floorplanToEdit.id, data as { name?: string; sort_order?: number }, image);
       } else {
-        if (!floorplanImage) {
-          setError('Image is required');
-          return;
+        if (!image) {
+          throw new Error('Image is required');
         }
-        await floorplanService.create({ project_id: projectId, name: floorplanName }, floorplanImage);
+        await floorplanService.create(data as CreateFloorplanDTO, image);
       }
       
       setShowFloorplanModal(false);
-      setFloorplanName('');
-      setFloorplanImage(null);
       setFloorplanToEdit(null);
       await fetchProjectData();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to save floorplan');
+      throw err;
     }
   };
 
@@ -385,6 +377,7 @@ const ProjectDashboard = () => {
       setActiveFloorplan(null);
       setShowDeleteFloorplanModal(false);
       setFloorplanToDelete(null);
+      setPlacementsVersion(prev => prev + 1);
       await fetchProjectData();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to delete floorplan');
@@ -412,15 +405,11 @@ const ProjectDashboard = () => {
 
   const openCreateFloorplanModal = () => {
     setFloorplanToEdit(null);
-    setFloorplanName('');
-    setFloorplanImage(null);
     setShowFloorplanModal(true);
   };
 
   const openEditFloorplanModal = (floorplan: Floorplan) => {
     setFloorplanToEdit(floorplan);
-    setFloorplanName(floorplan.name);
-    setFloorplanImage(null);
     setShowFloorplanModal(true);
   };
 
@@ -446,7 +435,7 @@ const ProjectDashboard = () => {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="fixed inset-0 top-16 flex flex-col">
       {/* Project Header */}
       <div className="bg-card border-b px-4 py-3 flex items-center gap-4 flex-shrink-0">
         <Button variant="outline" size="sm" onClick={() => navigate('/projects')}>
@@ -502,7 +491,7 @@ const ProjectDashboard = () => {
             ) : (
               <div className="flex-1 flex flex-col overflow-hidden">
                 {/* Floorplan Tabs */}
-                <div className="bg-card border-b px-4 py-2 flex-shrink-0">
+                <div className="bg-muted/30 border-b px-4 py-2 flex-shrink-0">
                   <div className="flex gap-1 items-center">
                     <div className="flex gap-1 flex-1 overflow-x-auto">
                       {floorplans.map((floorplan, index) => (
@@ -511,7 +500,7 @@ const ProjectDashboard = () => {
                           className={`flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors whitespace-nowrap ${
                             activeFloorplan?.id === floorplan.id
                               ? 'bg-background shadow-sm border border-border'
-                              : 'bg-muted hover:bg-muted/80'
+                              : 'bg-muted/50 hover:bg-muted'
                           }`}
                           onClick={() => setActiveFloorplan(floorplan)}
                         >
@@ -591,13 +580,13 @@ const ProjectDashboard = () => {
           </div>
 
           {/* Right Side - Products/BOM Panel */}
-          <div className="w-[400px] flex-shrink-0 bg-card border-l flex flex-col">
-            <Tabs defaultValue="products" className="flex flex-col h-full">
-              <TabsList className="w-full justify-start rounded-none border-b bg-muted/30 px-4 py-2">
-                <TabsTrigger value="products" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">
+          <div className="w-[400px] flex-shrink-0 bg-card border-l flex flex-col h-full">
+            <Tabs defaultValue="products" className="flex flex-col flex-1 min-h-0">
+              <TabsList className="w-full justify-start rounded-none border-b bg-muted/30 px-4 py-2 flex-shrink-0">
+                <TabsTrigger value="products" className="data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-border">
                   Products
                 </TabsTrigger>
-                <TabsTrigger value="bom" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                <TabsTrigger value="bom" className="data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-border">
                   Bill of Materials
                 </TabsTrigger>
               </TabsList>
@@ -622,7 +611,7 @@ const ProjectDashboard = () => {
             </Tabs>
 
             {/* Project Total & Actions */}
-            <div className="border-t p-4 bg-muted/30 flex-shrink-0">
+            <div className="border-t p-4 bg-muted/30">
               <div className="flex justify-between items-center mb-4">
                 <span className="text-sm font-medium text-muted-foreground">Project Total:</span>
                 <span className="text-xl font-bold">
@@ -679,43 +668,16 @@ const ProjectDashboard = () => {
       </DndContext>
 
       {/* Floorplan Modal */}
-      <Dialog open={showFloorplanModal} onOpenChange={setShowFloorplanModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{floorplanToEdit ? 'Edit Floorplan' : 'Add Floorplan'}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSubmitFloorplan} className="space-y-4">
-            <div>
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={floorplanName}
-                onChange={(e) => setFloorplanName(e.target.value)}
-                placeholder="e.g., Ground Floor"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="image">Image</Label>
-              <Input
-                id="image"
-                type="file"
-                accept="image/*"
-                onChange={(e) => setFloorplanImage(e.target.files?.[0] || null)}
-                required={!floorplanToEdit}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setShowFloorplanModal(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                {floorplanToEdit ? 'Update' : 'Create'}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <FloorplanFormModal
+        floorplan={floorplanToEdit}
+        projectId={projectId}
+        isOpen={showFloorplanModal}
+        onClose={() => {
+          setShowFloorplanModal(false);
+          setFloorplanToEdit(null);
+        }}
+        onSubmit={handleSubmitFloorplan}
+      />
 
       {/* Delete Floorplan Modal */}
       <Dialog open={showDeleteFloorplanModal} onOpenChange={setShowDeleteFloorplanModal}>

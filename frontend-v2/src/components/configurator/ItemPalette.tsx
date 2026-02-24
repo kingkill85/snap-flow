@@ -97,23 +97,19 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
 
   if (isLoading) {
     return (
-      <Card className={`h-full ${className}`}>
-        <CardContent className="flex justify-center items-center h-32">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </CardContent>
-      </Card>
+      <div className={`h-full flex justify-center items-center ${className}`}>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Card className={`h-full ${className}`}>
-        <CardContent className="p-4">
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
+      <div className={`h-full p-4 ${className}`}>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
     );
   }
 

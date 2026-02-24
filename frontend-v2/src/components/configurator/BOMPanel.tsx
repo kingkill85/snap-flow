@@ -104,7 +104,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
   if (!bom || bom.groups.length === 0) {
     return (
       <div className={`flex flex-col h-full ${className}`}>
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-border/50">
           <h2 className="text-lg font-semibold">Bill of Materials</h2>
         </div>
         <div className="flex-1 flex items-center justify-center p-4 text-muted-foreground text-center">
@@ -119,7 +119,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
 
   return (
     <div className={`flex flex-col h-full ${className}`}>
-      <div className="px-4 py-3 border-b border-border bg-muted/30">
+      <div className="px-4 py-3 border-b border-border/50 bg-muted/20">
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">{bom.groups.length} item groups</span>
           <Button
@@ -181,7 +181,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
           const hasChildren = group.children.length > 0;
           
           return (
-            <Card key={group.mainEntry.id} className="mb-2">
+            <Card key={group.mainEntry.id} className="mb-2 border-border/50 shadow-none">
               <div 
                 className="flex items-center gap-3 cursor-pointer p-3"
                 onClick={() => hasChildren && toggleGroup(group.mainEntry.id)}
@@ -301,7 +301,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
         })}
       </div>
 
-      <div className="border-t border-border p-4 bg-muted/30 flex-shrink-0">
+      <div className="border-t border-border/50 p-4 bg-muted/20 flex-shrink-0">
         <div className="flex justify-between items-center">
           <span className="text-xs font-medium text-muted-foreground">Floorplan Total:</span>
           <span className="text-sm font-bold">

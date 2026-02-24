@@ -16,6 +16,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { itemService, type ItemVariant } from '@/services/item';
+import { variantAddonService, type VariantAddon } from '@/services/variant-addon';
+import { bomService } from '@/services/bom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
 
@@ -199,9 +201,9 @@ function DraggablePlacement({
       }}
       className={`rounded select-none group ${
         isSelected
-          ? 'ring-2 ring-destructive shadow-lg'
+          ? 'ring-2 ring-destructive shadow-lg z-50'
           : 'border-2 border-primary overflow-hidden'
-      } ${isDragging ? 'cursor-grabbing' : isResizing ? 'cursor-nwse-resize' : 'cursor-move'}`}
+      } ${isDragging ? 'cursor-grabbing z-50' : isResizing ? 'cursor-nwse-resize z-50' : 'cursor-move'}`}
       title={displayName}
       onClick={handleClick}
     >
@@ -209,11 +211,11 @@ function DraggablePlacement({
         <img
           src={imageUrl}
           alt={displayName}
-          className="w-full h-full object-contain"
+          className="w-full h-full object-contain relative z-10"
           draggable={false}
         />
       ) : (
-        <div className="w-full h-full bg-muted flex items-center justify-center">
+        <div className="w-full h-full bg-muted flex items-center justify-center relative z-10">
           <span className="text-xs text-muted-foreground">No image</span>
         </div>
       )}
@@ -243,25 +245,25 @@ function DraggablePlacement({
           </button>
 
           <div
-            className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-primary border-2 border-background rounded-full cursor-nw-resize shadow-md z-20"
+            className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-primary border-2 border-background rounded-full cursor-nw-resize shadow-md z-50"
             onMouseDown={(e) => startResize(e, 'nw')}
             onPointerDown={(e) => { e.stopPropagation(); }}
             title="Resize from top-left"
           />
           <div
-            className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-primary border-2 border-background rounded-full cursor-ne-resize shadow-md z-20"
+            className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-primary border-2 border-background rounded-full cursor-ne-resize shadow-md z-50"
             onMouseDown={(e) => startResize(e, 'ne')}
             onPointerDown={(e) => { e.stopPropagation(); }}
             title="Resize from top-right"
           />
           <div
-            className="absolute -bottom-1.5 -left-1.5 w-4 h-4 bg-primary border-2 border-background rounded-full cursor-sw-resize shadow-md z-20"
+            className="absolute -bottom-1.5 -left-1.5 w-4 h-4 bg-primary border-2 border-background rounded-full cursor-sw-resize shadow-md z-50"
             onMouseDown={(e) => startResize(e, 'sw')}
             onPointerDown={(e) => { e.stopPropagation(); }}
             title="Resize from bottom-left"
           />
           <div
-            className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-primary border-2 border-background rounded-full cursor-se-resize shadow-md z-20"
+            className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-primary border-2 border-background rounded-full cursor-se-resize shadow-md z-50"
             onMouseDown={(e) => startResize(e, 'se')}
             onPointerDown={(e) => { e.stopPropagation(); }}
             title="Resize from bottom-right"
@@ -278,12 +280,13 @@ function DraggablePlacement({
 
 interface PlacementEditModalProps {
   placement: Placement | null;
+  floorplanId: number;
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (variantId: number, selectedAddons: number[]) => Promise<void>;
 }
 
-function PlacementEditModal({ placement, isOpen, onClose, onUpdate }: PlacementEditModalProps) {
+function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate }: PlacementEditModalProps) {
   const [item, setItem] = useState<Item | null>(null);
   const [variants, setVariants] = useState<ItemVariant[]>([]);
   const [addons, setAddons] = useState<VariantAddon[]>([]);
@@ -308,6 +311,7 @@ function PlacementEditModal({ placement, isOpen, onClose, onUpdate }: PlacementE
         setIsLoading(true);
         setError('');
 
+        // Fetch item with variants (for available options)
         const itemData = await itemService.getById(placement.item_id);
         setItem(itemData);
         setVariants(itemData.variants || []);
@@ -315,8 +319,32 @@ function PlacementEditModal({ placement, isOpen, onClose, onUpdate }: PlacementE
         setSelectedVariantId(placement.item_variant_id);
         setOriginalVariantId(placement.item_variant_id);
 
-        setSelectedAddons(new Set());
-        setOriginalAddons(new Set());
+        // Fetch current BOM to get selected addons
+        let currentAddonIds: number[] = [];
+        try {
+          const bomData = await bomService.getBomForFloorplan(floorplanId);
+          // Find the group that matches this placement's bom_id
+          const group = bomData.groups.find(g => 
+            g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
+          );
+          if (group) {
+            // Get addon IDs from children (these are the currently selected addons)
+            currentAddonIds = group.children.map(child => child.variant_id);
+          }
+        } catch (err) {
+          console.error('Failed to load BOM:', err);
+        }
+
+        // Fetch addons for current variant
+        const addonData = await variantAddonService.getByVariant(placement.item_id, placement.item_variant_id);
+        setAddons(addonData);
+
+        // Set currently selected addons (from BOM)
+        const currentAddons = new Set<number>(currentAddonIds);
+        setSelectedAddons(currentAddons);
+        
+        // Store original addons for restoration when switching back
+        setOriginalAddons(new Set(currentAddonIds));
       } catch (err) {
         console.error('Failed to load item data:', err);
         setError('Failed to load item details');
@@ -326,14 +354,14 @@ function PlacementEditModal({ placement, isOpen, onClose, onUpdate }: PlacementE
     };
 
     loadItemData();
-  }, [placement]);
+  }, [placement, floorplanId]);
 
   useEffect(() => {
     const loadAddons = async () => {
       if (!selectedVariantId || !placement) return;
 
       try {
-        const addonData = await itemService.getAddons(placement.item_id, selectedVariantId);
+        const addonData = await variantAddonService.getByVariant(placement.item_id, selectedVariantId);
         setAddons(addonData);
 
         if (originalVariantId !== null && selectedVariantId !== originalVariantId) {
@@ -591,7 +619,7 @@ export function ConfiguratorCanvas({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-muted/30 overflow-hidden"
+      className="relative w-full h-full bg-background overflow-hidden"
       style={{ touchAction: 'none' }}
     >
       <div
@@ -599,7 +627,7 @@ export function ConfiguratorCanvas({
         data-canvas-id={floorplan.id}
         onClick={handleCanvasClick}
         className={`relative w-full h-full flex items-start justify-center transition-colors ${
-          isOver ? 'bg-primary/5' : ''
+          isOver ? 'bg-primary/5' : 'bg-background'
         }`}
         style={{ touchAction: 'none' }}
       >
@@ -617,30 +645,37 @@ export function ConfiguratorCanvas({
                 onDragStart={(e) => e.preventDefault()}
               />
 
-              {placements.map((placement) => {
-                const item = items.find((i) => i.id === placement.item_id);
+              {[...placements]
+                .sort((a, b) => {
+                  // Selected placement should be rendered last (on top)
+                  if (a.id === selectedPlacementId) return 1;
+                  if (b.id === selectedPlacementId) return -1;
+                  return 0;
+                })
+                .map((placement) => {
+                  const item = items.find((i) => i.id === placement.item_id);
 
-                return (
-                  <DraggablePlacement
-                    key={placement.id}
-                    placement={placement}
-                    item={item}
-                    isSelected={selectedPlacementId === placement.id}
-                    onSelect={() => setSelectedPlacementId(placement.id)}
-                    onDelete={() => {
-                      onPlacementDelete(placement.id);
-                      setSelectedPlacementId(null);
-                    }}
-                    onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
-                    onEdit={() => setEditingPlacement(placement)}
-                    parentIsResizingRef={isResizingRef}
-                    scaleX={scaleX}
-                    scaleY={scaleY}
-                    maxNaturalWidth={imageNaturalSize.width}
-                    maxNaturalHeight={imageNaturalSize.height}
-                  />
-                );
-              })}
+                  return (
+                    <DraggablePlacement
+                      key={placement.id}
+                      placement={placement}
+                      item={item}
+                      isSelected={selectedPlacementId === placement.id}
+                      onSelect={() => setSelectedPlacementId(placement.id)}
+                      onDelete={() => {
+                        onPlacementDelete(placement.id);
+                        setSelectedPlacementId(null);
+                      }}
+                      onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
+                      onEdit={() => setEditingPlacement(placement)}
+                      parentIsResizingRef={isResizingRef}
+                      scaleX={scaleX}
+                      scaleY={scaleY}
+                      maxNaturalWidth={imageNaturalSize.width}
+                      maxNaturalHeight={imageNaturalSize.height}
+                    />
+                  );
+                })}
             </div>
           </div>
         ) : (
@@ -656,6 +691,7 @@ export function ConfiguratorCanvas({
 
         <PlacementEditModal
           placement={editingPlacement}
+          floorplanId={floorplan.id}
           isOpen={editingPlacement !== null}
           onClose={() => setEditingPlacement(null)}
           onUpdate={async (variantId, selectedAddons) => {
