@@ -3,6 +3,7 @@ import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { variantAddonRepository } from '../repositories/variant-addon.ts';
 import { categoryRepository } from '../repositories/category.ts';
+import { bomEntryRepository } from '../repositories/bom-entry.ts';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.ts';
 import { uploadMiddleware } from '../middleware/upload.ts';
 import { fileStorageService } from '../services/file-storage.ts';
@@ -587,6 +588,13 @@ itemRoutes.delete('/:id/variants/:variantId', authMiddleware, adminMiddleware, a
     if (!existingVariant || existingVariant.item_id !== itemId) {
       return c.json({ error: 'Variant not found' }, 404);
     }
+
+    // Clear variant_id in project_bom to preserve BOM history
+    await bomEntryRepository.clearVariantId(variantId);
+
+    // Delete variant_addon relationships first (application-level cascade)
+    await variantAddonRepository.deleteByVariantId(variantId);
+    await variantAddonRepository.deleteByAddonVariantId(variantId);
 
     if (existingVariant.image_path) {
       await fileStorageService.deleteFile(existingVariant.image_path);

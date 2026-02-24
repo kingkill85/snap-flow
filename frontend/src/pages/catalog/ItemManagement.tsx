@@ -65,6 +65,9 @@ const ItemManagement = () => {
   const [loadingVariants, setLoadingVariants] = useState<Record<number, boolean>>({});
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
+  const [showDeleteVariantModal, setShowDeleteVariantModal] = useState(false);
+  const [variantToDelete, setVariantToDelete] = useState<ItemVariant | null>(null);
+  const [itemIdForVariantDelete, setItemIdForVariantDelete] = useState<number | null>(null);
   
   // Modal states
   const [showItemModal, setShowItemModal] = useState(false);
@@ -72,6 +75,9 @@ const ItemManagement = () => {
   const [showVariantModal, setShowVariantModal] = useState(false);
   const [variantToEdit, setVariantToEdit] = useState<ItemVariant | null>(null);
   const [selectedItemIdForVariant, setSelectedItemIdForVariant] = useState<number | null>(null);
+  const [selectedItemForVariant, setSelectedItemForVariant] = useState<Item | null>(null);
+  const [allVariantsForAddon, setAllVariantsForAddon] = useState<ItemVariant[]>([]);
+  const [allItemsForAddon, setAllItemsForAddon] = useState<Item[]>([]);
   const [showImportModal, setShowImportModal] = useState(false);
 
   const itemsPerPage = 10;
@@ -191,6 +197,28 @@ const ItemManagement = () => {
     setShowDeleteModal(true);
   };
 
+  // Variant delete handlers
+  const openDeleteVariantModal = (itemId: number, variant: ItemVariant) => {
+    setItemIdForVariantDelete(itemId);
+    setVariantToDelete(variant);
+    setShowDeleteVariantModal(true);
+  };
+
+  const closeDeleteVariantModal = () => {
+    setShowDeleteVariantModal(false);
+    setVariantToDelete(null);
+    setItemIdForVariantDelete(null);
+  };
+
+  const handleDeleteVariant = async () => {
+    if (!itemIdForVariantDelete || !variantToDelete) return;
+    await itemService.deleteVariant(itemIdForVariantDelete, variantToDelete.id);
+    // Refresh variants
+    const variants = await itemService.getVariants(itemIdForVariantDelete, showInactive);
+    setItemVariants(prev => ({ ...prev, [itemIdForVariantDelete]: variants }));
+    closeDeleteVariantModal();
+  };
+
   // Item modal handlers
   const openItemModal = (item: Item | null = null) => {
     setItemToEdit(item);
@@ -223,9 +251,28 @@ const ItemManagement = () => {
   };
 
   // Variant modal handlers
-  const openVariantModal = (itemId: number, variant: ItemVariant | null = null) => {
-    setSelectedItemIdForVariant(itemId);
+  const openVariantModal = async (item: Item, variant: ItemVariant | null = null) => {
+    setSelectedItemIdForVariant(item.id);
+    setSelectedItemForVariant(item);
     setVariantToEdit(variant);
+    
+    // Fetch all variants from all items for add-on selection
+    try {
+      const allItemsResult = await itemService.getAll({ include_inactive: false }, { page: 1, limit: 1000 });
+      setAllItemsForAddon(allItemsResult.items);
+      const variants: ItemVariant[] = [];
+      for (const it of allItemsResult.items) {
+        if (it.variants) {
+          variants.push(...it.variants);
+        }
+      }
+      setAllVariantsForAddon(variants);
+    } catch (err) {
+      console.error('Failed to fetch variants for add-ons:', err);
+      setAllItemsForAddon([]);
+      setAllVariantsForAddon([]);
+    }
+    
     setShowVariantModal(true);
   };
 
@@ -233,6 +280,9 @@ const ItemManagement = () => {
     setShowVariantModal(false);
     setVariantToEdit(null);
     setSelectedItemIdForVariant(null);
+    setSelectedItemForVariant(null);
+    setAllVariantsForAddon([]);
+    setAllItemsForAddon([]);
   };
 
   const handleVariantSubmit = async (data: CreateVariantDTO | UpdateVariantDTO) => {
@@ -465,7 +515,7 @@ const ItemManagement = () => {
                                 <Button 
                                   size="sm" 
                                   variant="outline"
-                                  onClick={() => openVariantModal(item.id)}
+                                  onClick={() => openVariantModal(item)}
                                 >
                                   <Plus className="mr-1 h-3 w-3" /> Add Variant
                                 </Button>
@@ -483,12 +533,12 @@ const ItemManagement = () => {
                               ) : (
                                 <table className="w-full">
                                   <thead>
-                                    <tr className="border-b">
-                                      <th className="text-left py-2 px-4 w-16 text-xs uppercase font-semibold">Image</th>
-                                      <th className="text-left py-2 px-4 text-xs uppercase font-semibold">Style</th>
-                                      <th className="text-left py-2 px-4 w-24 text-xs uppercase font-semibold">Price</th>
-                                      <th className="text-left py-2 px-4 w-28 text-xs uppercase font-semibold">Status</th>
-                                      <th className="text-right py-2 px-4 w-32 text-xs uppercase font-semibold">Actions</th>
+                                     <tr className="border-b">
+                                      <th className="text-left py-2 px-4 w-16 font-semibold text-muted-foreground">Image</th>
+                                      <th className="text-left py-2 px-4 font-semibold text-muted-foreground">Style</th>
+                                      <th className="text-left py-2 px-4 w-24 font-semibold text-muted-foreground">Price</th>
+                                      <th className="text-left py-2 px-4 w-28 font-semibold text-muted-foreground">Status</th>
+                                      <th className="text-right py-2 px-4 w-32"></th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -527,7 +577,7 @@ const ItemManagement = () => {
                                             <Button 
                                               size="sm" 
                                               variant="outline"
-                                              onClick={() => openVariantModal(item.id, variant)}
+                                              onClick={() => openVariantModal(item, variant)}
                                             >
                                               <Pencil className="mr-1 h-3 w-3" />
                                               Edit
@@ -535,14 +585,7 @@ const ItemManagement = () => {
                                             <Button 
                                               size="sm" 
                                               variant="destructive"
-                                              onClick={async () => {
-                                                if (confirm(`Are you sure you want to delete variant "${variant.style_name}"?`)) {
-                                                  await itemService.deleteVariant(item.id, variant.id);
-                                                  // Refresh variants
-                                                  const variants = await itemService.getVariants(item.id, showInactive);
-                                                  setItemVariants(prev => ({ ...prev, [item.id]: variants }));
-                                                }
-                                              }}
+                                              onClick={() => openDeleteVariantModal(item.id, variant)}
                                             >
                                               <Trash2 className="mr-1 h-3 w-3" />
                                               Delete
@@ -603,6 +646,15 @@ const ItemManagement = () => {
         onConfirm={handleDeleteItem}
       />
 
+      <ConfirmDeleteModal
+        title="Delete Variant"
+        itemName={variantToDelete?.style_name || ''}
+        warningText="This action cannot be undone. The variant will be permanently removed."
+        isOpen={showDeleteVariantModal}
+        onClose={closeDeleteVariantModal}
+        onConfirm={handleDeleteVariant}
+      />
+
       <ItemFormModal
         item={itemToEdit}
         categories={categories}
@@ -614,7 +666,10 @@ const ItemManagement = () => {
       {selectedItemIdForVariant && (
         <VariantFormModal
           itemId={selectedItemIdForVariant}
+          item={selectedItemForVariant}
           variant={variantToEdit}
+          availableVariants={allVariantsForAddon}
+          availableItems={allItemsForAddon}
           isOpen={showVariantModal}
           onClose={closeVariantModal}
           onSubmit={handleVariantSubmit}

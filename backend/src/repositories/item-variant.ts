@@ -1,5 +1,7 @@
 import { getDb } from '../config/database.ts';
 import type { ItemVariant, CreateItemVariantDTO } from '../models/index.ts';
+import { variantAddonRepository } from './variant-addon.ts';
+import { bomEntryRepository } from './bom-entry.ts';
 
 /**
  * Item Variant Repository
@@ -139,6 +141,21 @@ export class ItemVariantRepository {
   }
 
   async deleteByItemId(itemId: number): Promise<void> {
+    // Get all variants for this item first
+    const variants = await this.findByItemId(itemId, true);
+    
+    // Clear variant_id in project_bom to preserve BOM history
+    for (const variant of variants) {
+      await bomEntryRepository.clearVariantId(variant.id);
+    }
+    
+    // Delete addon relationships for each variant first
+    for (const variant of variants) {
+      await variantAddonRepository.deleteByVariantId(variant.id);
+      await variantAddonRepository.deleteByAddonVariantId(variant.id);
+    }
+    
+    // Now delete the variants
     getDb().query(`DELETE FROM item_variants WHERE item_id = ?`, [itemId]);
   }
 

@@ -1,5 +1,6 @@
 import { getDb } from '../config/database.ts';
 import type { ProjectBom, CreateBomEntryDTO, UpdateBomEntryDTO } from '../models/index.ts';
+import { placementRepository } from './placement.ts';
 
 /**
  * Project BOM Repository
@@ -155,12 +156,30 @@ export class BomEntryRepository {
   }
 
   async delete(id: number): Promise<void> {
-    // Cascade delete will handle children and placements
+    // Delete children BOM entries first (application-level cascade)
+    getDb().query(`DELETE FROM project_bom WHERE parent_bom_id = ?`, [id]);
+    
+    // Delete placements that reference this BOM entry
+    await placementRepository.deleteByBomEntry(id);
+    
+    // Now delete the BOM entry itself
     getDb().query(`DELETE FROM project_bom WHERE id = ?`, [id]);
   }
 
   async deleteByFloorplan(floorplanId: number): Promise<void> {
     getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ?`, [floorplanId]);
+  }
+
+  async clearVariantId(variantId: number): Promise<void> {
+    // Set variant_id to NULL for all BOM entries referencing this variant
+    // This preserves BOM history while allowing variant deletion
+    getDb().query(`UPDATE project_bom SET variant_id = NULL WHERE variant_id = ?`, [variantId]);
+  }
+
+  async clearItemId(itemId: number): Promise<void> {
+    // Set item_id to NULL for all BOM entries referencing this item
+    // This preserves BOM history while allowing item deletion
+    getDb().query(`UPDATE project_bom SET item_id = NULL WHERE item_id = ?`, [itemId]);
   }
 
   async getPlacementCount(bomId: number): Promise<number> {

@@ -134,6 +134,10 @@ export class CategoryRepository {
   }
 
   async delete(id: number): Promise<void> {
+    // Set category_id to NULL for all items in this category (preserve items)
+    getDb().query(`UPDATE items SET category_id = NULL WHERE category_id = ?`, [id]);
+    
+    // Now delete the category
     getDb().query(`DELETE FROM categories WHERE id = ?`, [id]);
   }
 

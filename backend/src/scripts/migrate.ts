@@ -29,8 +29,22 @@ export async function getAppliedMigrations(): Promise<string[]> {
 
 export async function applyMigration(name: string, sql: string): Promise<void> {
   try {
-    getDb().execute(sql);
-    getDb().query(`INSERT INTO migrations (name) VALUES (?)`, [name]);
+    const db = getDb();
+    
+    // For migration 025, we need to disable foreign keys temporarily
+    // because we're recreating tables with foreign key references
+    if (name === '025_remove_all_cascade_constraints') {
+      db.query('PRAGMA foreign_keys = OFF');
+    }
+    
+    db.execute(sql);
+    db.query(`INSERT INTO migrations (name) VALUES (?)`, [name]);
+    
+    // Re-enable foreign keys if we disabled them
+    if (name === '025_remove_all_cascade_constraints') {
+      db.query('PRAGMA foreign_keys = ON');
+    }
+    
     console.log(`✅ Applied migration: ${name}`);
   } catch (error) {
     console.error(`❌ Failed to apply migration ${name}:`, error);
@@ -485,6 +499,105 @@ export async function runMigrations(): Promise<void> {
         -- Create a non-unique index for performance instead
         CREATE INDEX idx_project_bom_floorplan_variant ON project_bom(floorplan_id, variant_id) 
           WHERE parent_bom_id IS NULL;
+      `
+    },
+    {
+      name: '025_remove_all_cascade_constraints',
+      sql: `
+        -- Remove remaining ON DELETE CASCADE constraints
+        -- Application will handle deletions manually
+        
+        -- 1. Fix item_variants table - remove CASCADE from item_id
+        CREATE TABLE item_variants_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id INTEGER NOT NULL REFERENCES items(id),
+          style_name TEXT NOT NULL,
+          model_number TEXT,
+          price REAL NOT NULL,
+          image_path TEXT,
+          sort_order INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          is_active BOOLEAN DEFAULT true
+        );
+        
+        INSERT INTO item_variants_new SELECT * FROM item_variants;
+        DROP TABLE item_variants;
+        ALTER TABLE item_variants_new RENAME TO item_variants;
+        
+        CREATE INDEX idx_item_variants_item ON item_variants(item_id);
+        CREATE INDEX idx_item_variants_is_active ON item_variants(is_active);
+        
+        -- 2. Fix refresh_tokens table - remove CASCADE from user_id
+        CREATE TABLE refresh_tokens_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          token_hash TEXT NOT NULL UNIQUE,
+          expires_at DATETIME NOT NULL,
+          revoked_at DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        INSERT INTO refresh_tokens_new SELECT * FROM refresh_tokens;
+        DROP TABLE refresh_tokens;
+        ALTER TABLE refresh_tokens_new RENAME TO refresh_tokens;
+        
+        CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
+        CREATE INDEX idx_refresh_tokens_token ON refresh_tokens(token_hash);
+        
+        -- 3. Fix placements table - remove CASCADE from bom_id
+        CREATE TABLE placements_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bom_id INTEGER REFERENCES project_bom(id),
+          x REAL NOT NULL,
+          y REAL NOT NULL,
+          width REAL NOT NULL,
+          height REAL NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        INSERT INTO placements_new SELECT * FROM placements;
+        DROP TABLE placements;
+        ALTER TABLE placements_new RENAME TO placements;
+        
+        CREATE INDEX idx_placements_bom ON placements(bom_id);
+      `
+    },
+    {
+      name: '026_allow_null_item_id_in_project_bom',
+      sql: `
+        -- Allow item_id to be NULL in project_bom to preserve BOM history when items are deleted
+        
+        PRAGMA foreign_keys = OFF;
+        
+        CREATE TABLE project_bom_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL REFERENCES projects(id),
+          floorplan_id INTEGER NOT NULL REFERENCES floorplans(id),
+          item_id INTEGER REFERENCES items(id),
+          variant_id INTEGER REFERENCES item_variants(id),
+          parent_bom_id INTEGER REFERENCES project_bom(id),
+          item_name TEXT NOT NULL,
+          style_name TEXT,
+          model_number TEXT,
+          unit_price REAL NOT NULL,
+          picture_path TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        INSERT INTO project_bom_new SELECT * FROM project_bom;
+        DROP TABLE project_bom;
+        ALTER TABLE project_bom_new RENAME TO project_bom;
+        
+        CREATE INDEX idx_project_bom_project ON project_bom(project_id);
+        CREATE INDEX idx_project_bom_floorplan ON project_bom(floorplan_id);
+        CREATE INDEX idx_project_bom_parent ON project_bom(parent_bom_id);
+        CREATE INDEX idx_project_bom_item ON project_bom(item_id);
+        CREATE INDEX idx_project_bom_variant ON project_bom(variant_id);
+        CREATE INDEX idx_project_bom_floorplan_variant ON project_bom(floorplan_id, variant_id) 
+          WHERE parent_bom_id IS NULL;
+          
+        PRAGMA foreign_keys = ON;
       `
     }
   ];

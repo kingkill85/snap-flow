@@ -80,6 +80,10 @@ export class VariantAddonRepository {
     getDb().query(`DELETE FROM variant_addons WHERE variant_id = ?`, [variantId]);
   }
 
+  async deleteByAddonVariantId(addonVariantId: number): Promise<void> {
+    getDb().query(`DELETE FROM variant_addons WHERE addon_variant_id = ?`, [addonVariantId]);
+  }
+
   async addAddonIfNotExists(
     variantId: number,
     addonVariantId: number,
