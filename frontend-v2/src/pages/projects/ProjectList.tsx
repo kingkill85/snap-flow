@@ -39,7 +39,7 @@ const ProjectList = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('active');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -115,7 +115,7 @@ const ProjectList = () => {
   };
 
   const filteredProjects = projects.filter(project => {
-    if (filterStatus && project.status !== filterStatus) return false;
+    if (filterStatus !== 'all' && project.status !== filterStatus) return false;
     return true;
   }).sort((a, b) => {
     const numA = generateProjectNumber(a);
@@ -172,10 +172,10 @@ const ProjectList = () => {
                   <SelectValue placeholder="Filter status" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
-                  <SelectItem value="">All Statuses</SelectItem>
                 </SelectContent>
               </Select>
             </div>
