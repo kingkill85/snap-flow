@@ -409,12 +409,14 @@ const ItemManagement = () => {
                                           )}
                                         </td>
                                         <td className="py-3 px-4 text-right">
-                                          <div className="flex gap-1 justify-end">
-                                            <Button size="sm" variant="ghost" disabled>
-                                              <Pencil className="h-3 w-3" />
+                                          <div className="flex gap-2 justify-end">
+                                            <Button size="sm" variant="outline" disabled>
+                                              <Pencil className="mr-1 h-3 w-3" />
+                                              Edit
                                             </Button>
-                                            <Button size="sm" variant="ghost" disabled>
-                                              <Trash2 className="h-3 w-3" />
+                                            <Button size="sm" variant="destructive" disabled>
+                                              <Trash2 className="mr-1 h-3 w-3" />
+                                              Delete
                                             </Button>
                                           </div>
                                         </td>
