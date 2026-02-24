@@ -171,6 +171,11 @@ export const itemService = {
     await api.delete(`/items/${itemId}/variants/${variantId}`, { signal });
   },
 
+  async getAddons(itemId: number, variantId: number, signal?: AbortSignal): Promise<any[]> {
+    const response = await api.get(`/items/${itemId}/variants/${variantId}/addons`, { signal });
+    return response.data.data;
+  },
+
   async syncCatalog(file: File, signal?: AbortSignal): Promise<any> {
     const formData = new FormData();
     formData.append('file', file);
