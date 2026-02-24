@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { itemService, type Item, type ItemVariant } from '@/services/item';
+import { 
+  itemService, 
+  type Item, 
+  type ItemVariant,
+  type CreateItemDTO,
+  type UpdateItemDTO,
+  type CreateVariantDTO,
+  type UpdateVariantDTO,
+} from '@/services/item';
 import { categoryService, type Category } from '@/services/category';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +24,11 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
+import {
+  ItemFormModal,
+  VariantFormModal,
+  ImportModal,
+} from '@/components/items';
 import {
   Select,
   SelectContent,
@@ -52,6 +65,14 @@ const ItemManagement = () => {
   const [loadingVariants, setLoadingVariants] = useState<Record<number, boolean>>({});
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
+  
+  // Modal states
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [itemToEdit, setItemToEdit] = useState<Item | null>(null);
+  const [showVariantModal, setShowVariantModal] = useState(false);
+  const [variantToEdit, setVariantToEdit] = useState<ItemVariant | null>(null);
+  const [selectedItemIdForVariant, setSelectedItemIdForVariant] = useState<number | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const itemsPerPage = 10;
 
@@ -163,6 +184,82 @@ const ItemManagement = () => {
     setShowDeleteModal(true);
   };
 
+  // Item modal handlers
+  const openItemModal = (item: Item | null = null) => {
+    setItemToEdit(item);
+    setShowItemModal(true);
+  };
+
+  const closeItemModal = () => {
+    setShowItemModal(false);
+    setItemToEdit(null);
+  };
+
+  const handleItemSubmit = async (data: CreateItemDTO | UpdateItemDTO) => {
+    if (itemToEdit) {
+      await itemService.update(itemToEdit.id, data as UpdateItemDTO);
+    } else {
+      await itemService.create(data as CreateItemDTO);
+    }
+    // Refresh items
+    const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
+    if (selectedCategory !== 'all') filter.category_id = parseInt(selectedCategory);
+    if (searchQuery) filter.search = searchQuery;
+    if (showInactive) filter.include_inactive = true;
+    
+    const result = await itemService.getAll(
+      filter,
+      { page: currentPage, limit: itemsPerPage }
+    );
+    setItems(result.items);
+    setTotalPages(result.totalPages);
+  };
+
+  // Variant modal handlers
+  const openVariantModal = (itemId: number, variant: ItemVariant | null = null) => {
+    setSelectedItemIdForVariant(itemId);
+    setVariantToEdit(variant);
+    setShowVariantModal(true);
+  };
+
+  const closeVariantModal = () => {
+    setShowVariantModal(false);
+    setVariantToEdit(null);
+    setSelectedItemIdForVariant(null);
+  };
+
+  const handleVariantSubmit = async (data: CreateVariantDTO | UpdateVariantDTO) => {
+    if (!selectedItemIdForVariant) return;
+    
+    if (variantToEdit) {
+      await itemService.updateVariant(selectedItemIdForVariant, variantToEdit.id, data as UpdateVariantDTO);
+    } else {
+      await itemService.createVariant(selectedItemIdForVariant, data as CreateVariantDTO);
+    }
+    
+    // Refresh variants for the expanded item
+    if (expandedItems.has(selectedItemIdForVariant)) {
+      const variants = await itemService.getVariants(selectedItemIdForVariant, showInactive);
+      setItemVariants(prev => ({ ...prev, [selectedItemIdForVariant]: variants }));
+    }
+  };
+
+  // Import modal handlers
+  const handleImportSuccess = () => {
+    setShowImportModal(false);
+    // Refresh items after import
+    const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
+    if (selectedCategory !== 'all') filter.category_id = parseInt(selectedCategory);
+    if (searchQuery) filter.search = searchQuery;
+    if (showInactive) filter.include_inactive = true;
+    
+    itemService.getAll(filter, { page: currentPage, limit: itemsPerPage })
+      .then(result => {
+        setItems(result.items);
+        setTotalPages(result.totalPages);
+      });
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -179,11 +276,11 @@ const ItemManagement = () => {
           <p className="text-muted-foreground">Manage products and their details</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" disabled>
+          <Button variant="outline" onClick={() => setShowImportModal(true)}>
             <Upload className="mr-2 h-4 w-4" />
             Import Catalog
           </Button>
-          <Button disabled>
+          <Button onClick={() => openItemModal()}>
             <Plus className="mr-2 h-4 w-4" />
             Add Item
           </Button>
@@ -326,7 +423,11 @@ const ItemManagement = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
-                            <Button variant="outline" size="sm" disabled>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => openItemModal(item)}
+                            >
                               <Pencil className="mr-1 h-3 w-3" />
                               Edit
                             </Button>
@@ -354,7 +455,11 @@ const ItemManagement = () => {
                                   </Badge>
                                   Variants
                                 </h4>
-                                <Button size="sm" variant="outline" disabled>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => openVariantModal(item.id)}
+                                >
                                   <Plus className="mr-1 h-3 w-3" /> Add Variant
                                 </Button>
                               </div>
@@ -412,11 +517,26 @@ const ItemManagement = () => {
                                         </td>
                                         <td className="py-3 px-4 text-right">
                                           <div className="flex gap-2 justify-end">
-                                            <Button size="sm" variant="outline" disabled>
+                                            <Button 
+                                              size="sm" 
+                                              variant="outline"
+                                              onClick={() => openVariantModal(item.id, variant)}
+                                            >
                                               <Pencil className="mr-1 h-3 w-3" />
                                               Edit
                                             </Button>
-                                            <Button size="sm" variant="destructive" disabled>
+                                            <Button 
+                                              size="sm" 
+                                              variant="destructive"
+                                              onClick={async () => {
+                                                if (confirm(`Are you sure you want to delete variant "${variant.style_name}"?`)) {
+                                                  await itemService.deleteVariant(item.id, variant.id);
+                                                  // Refresh variants
+                                                  const variants = await itemService.getVariants(item.id, showInactive);
+                                                  setItemVariants(prev => ({ ...prev, [item.id]: variants }));
+                                                }
+                                              }}
+                                            >
                                               <Trash2 className="mr-1 h-3 w-3" />
                                               Delete
                                             </Button>
@@ -474,6 +594,30 @@ const ItemManagement = () => {
           setItemToDelete(null);
         }}
         onConfirm={handleDeleteItem}
+      />
+
+      <ItemFormModal
+        item={itemToEdit}
+        categories={categories}
+        isOpen={showItemModal}
+        onClose={closeItemModal}
+        onSubmit={handleItemSubmit}
+      />
+
+      {selectedItemIdForVariant && (
+        <VariantFormModal
+          itemId={selectedItemIdForVariant}
+          variant={variantToEdit}
+          isOpen={showVariantModal}
+          onClose={closeVariantModal}
+          onSubmit={handleVariantSubmit}
+        />
+      )}
+
+      <ImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={handleImportSuccess}
       />
     </div>
   );

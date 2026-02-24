@@ -24,6 +24,38 @@ export interface ItemVariant {
   is_active: boolean;
 }
 
+export interface CreateItemDTO {
+  category_id: number;
+  name: string;
+  description?: string;
+  base_model_number?: string;
+  dimensions?: string;
+  is_active?: boolean;
+}
+
+export interface UpdateItemDTO {
+  category_id?: number;
+  name?: string;
+  description?: string;
+  base_model_number?: string;
+  dimensions?: string;
+  is_active?: boolean;
+}
+
+export interface CreateVariantDTO {
+  style_name: string;
+  price: number;
+  image?: File;
+}
+
+export interface UpdateVariantDTO {
+  style_name?: string;
+  price?: number;
+  image?: File;
+  remove_image?: boolean;
+  is_active?: boolean;
+}
+
 export interface ItemFilter {
   category_id?: number;
   search?: string;
@@ -90,6 +122,53 @@ export const itemService = {
 
   async delete(id: number, signal?: AbortSignal): Promise<void> {
     await api.delete(`/items/${id}`, { signal });
+  },
+
+  async create(data: CreateItemDTO, signal?: AbortSignal): Promise<Item> {
+    const response = await api.post('/items', data, { signal });
+    return response.data.data;
+  },
+
+  async update(id: number, data: UpdateItemDTO, signal?: AbortSignal): Promise<Item> {
+    const response = await api.put(`/items/${id}`, data, { signal });
+    return response.data.data;
+  },
+
+  async createVariant(
+    itemId: number,
+    data: CreateVariantDTO,
+    signal?: AbortSignal
+  ): Promise<ItemVariant> {
+    const formData = new FormData();
+    formData.append('style_name', data.style_name);
+    formData.append('price', data.price.toString());
+    
+    if (data.image) formData.append('image', data.image);
+
+    const response = await api.post(`/items/${itemId}/variants`, formData, { signal });
+    return response.data.data;
+  },
+
+  async updateVariant(
+    itemId: number,
+    variantId: number,
+    data: UpdateVariantDTO,
+    signal?: AbortSignal
+  ): Promise<ItemVariant> {
+    const formData = new FormData();
+    
+    if (data.style_name !== undefined) formData.append('style_name', data.style_name);
+    if (data.price !== undefined) formData.append('price', data.price.toString());
+    if (data.image) formData.append('image', data.image);
+    if (data.remove_image) formData.append('remove_image', 'true');
+    if (data.is_active !== undefined) formData.append('is_active', data.is_active.toString());
+
+    const response = await api.put(`/items/${itemId}/variants/${variantId}`, formData, { signal });
+    return response.data.data;
+  },
+
+  async deleteVariant(itemId: number, variantId: number, signal?: AbortSignal): Promise<void> {
+    await api.delete(`/items/${itemId}/variants/${variantId}`, { signal });
   },
 
   getImageUrl(imagePath: string | null, bustCache?: boolean): string | null {
