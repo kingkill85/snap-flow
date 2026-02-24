@@ -13,6 +13,7 @@ import ProjectList from '@/pages/projects/ProjectList';
 import ProjectDashboard from '@/pages/projects/ProjectDashboard';
 import UserManagement from '@/pages/settings/UserManagement';
 import CategoryManagement from '@/pages/catalog/CategoryManagement';
+import ItemManagement from '@/pages/catalog/ItemManagement';
 
 function App() {
   return (
@@ -37,7 +38,7 @@ function App() {
               {/* Admin only routes */}
               <Route path="catalog/items" element={
                 <ProtectedRoute requireAdmin>
-                  <div>Items Management (Coming soon)</div>
+                  <ItemManagement />
                 </ProtectedRoute>
               } />
               <Route path="catalog/categories" element={

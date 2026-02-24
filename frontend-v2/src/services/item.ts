@@ -88,6 +88,10 @@ export const itemService = {
     return response.data.data;
   },
 
+  async delete(id: number, signal?: AbortSignal): Promise<void> {
+    await api.delete(`/items/${id}`, { signal });
+  },
+
   getImageUrl(imagePath: string | null, bustCache?: boolean): string | null {
     if (!imagePath) return null;
     if (bustCache) {
