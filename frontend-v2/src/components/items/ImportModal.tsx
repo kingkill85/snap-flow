@@ -135,10 +135,8 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
       
       setResult(response);
       setStep('complete');
-      
-      if (response.success) {
-        onSuccess();
-      }
+      // Note: onSuccess is NOT called here - it's called when user clicks "Done"
+      // This ensures the summary is visible before modal closes
     } catch (err: any) {
       setStep('upload');
       setError(err.response?.data?.error || err.message || 'Failed to sync catalog');
@@ -147,7 +145,10 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
     }
   };
 
-  const handleClose = () => {
+  const handleClose = (shouldTriggerSuccess = false) => {
+    if (shouldTriggerSuccess && result?.success) {
+      onSuccess();
+    }
     setStep('upload');
     setSelectedFile(null);
     setError(null);
@@ -398,7 +399,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
         <DialogFooter>
           {step === 'upload' && (
             <>
-              <Button variant="outline" onClick={handleClose}>
+              <Button variant="outline" onClick={() => handleClose(false)}>
                 Cancel
               </Button>
               <Button
@@ -425,7 +426,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
               <Button variant="outline" onClick={handleImportAnother}>
                 Import Another
               </Button>
-              <Button onClick={handleClose}>
+              <Button onClick={() => handleClose(true)}>
                 Done
               </Button>
             </>
