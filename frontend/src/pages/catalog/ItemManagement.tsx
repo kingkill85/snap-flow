@@ -130,6 +130,13 @@ const ItemManagement = () => {
     return () => controller.abort();
   }, [selectedCategory, searchQuery, currentPage, showInactive]);
 
+  // Clear variant cache when showInactive changes to force refetch with correct filter
+  useEffect(() => {
+    setItemVariants({});
+    // Also collapse all expanded items to avoid confusion
+    setExpandedItems(new Set());
+  }, [showInactive]);
+
   const toggleItem = (itemId: number) => {
     setExpandedItems(prev => {
       const newSet = new Set(prev);
