@@ -1,76 +1,64 @@
-import { useAuth } from '@/context/AuthContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
+import { Upload, Move, FileSpreadsheet } from 'lucide-react';
 
 const Home = () => {
-  const { user } = useAuth();
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Welcome back, {user?.full_name || user?.email?.split('@')[0] || 'User'}!
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your smart home projects and configurations
-          </p>
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-4 py-12">
+      {/* Hero Section */}
+      <div className="text-center max-w-3xl mx-auto mb-16">
+        <h1 className="text-5xl font-bold tracking-tight mb-6">
+          Welcome to SnapFlow
+        </h1>
+        <p className="text-xl text-muted-foreground mb-8">
+          Smart home automation configurator and proposal generator
+        </p>
+        <div className="flex items-center justify-center gap-4">
+          <Button size="lg" asChild>
+            <Link to="/projects">Get Started</Link>
+          </Button>
+          <Button size="lg" variant="outline" asChild>
+            <Link to="/projects">View Projects</Link>
+          </Button>
         </div>
-        <Button asChild>
-          <Link to="/projects/new">New Project</Link>
-        </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Projects</CardTitle>
+      {/* Feature Cards */}
+      <div className="grid gap-6 md:grid-cols-3 w-full max-w-6xl">
+        <Card className="border shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl font-semibold">Upload Floorplans</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">12</div>
-            <p className="text-xs text-muted-foreground">
-              Active projects
+            <p className="text-muted-foreground leading-relaxed">
+              Import floorplan images and configure multiple floors per project
             </p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Floorplans</CardTitle>
+        <Card className="border shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl font-semibold">Drag & Drop Items</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">24</div>
-            <p className="text-xs text-muted-foreground">
-              Total floorplans
+            <p className="text-muted-foreground leading-relaxed">
+              Place smart home devices on floorplans with an intuitive interface
             </p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Items</CardTitle>
+        <Card className="border shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl font-semibold">Generate Proposals</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">156</div>
-            <p className="text-xs text-muted-foreground">
-              Configured items
+            <p className="text-muted-foreground leading-relaxed">
+              Export professional Excel proposals with item lists and pricing
             </p>
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Projects</CardTitle>
-          <CardDescription>Your most recently updated projects</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Project list will appear here once connected to the backend.
-          </p>
-        </CardContent>
-      </Card>
     </div>
   );
 };
