@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { itemService, type ItemVariant } from '@/services/item';
-import { variantAddonService, type VariantAddon } from '@/services/variant-addon';
+import { variantAddonService } from '@/services/variant-addon';
 import { bomService } from '@/services/bom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
@@ -45,7 +45,7 @@ interface DraggablePlacementProps {
   maxNaturalHeight: number;
 }
 
-interface VariantAddon {
+interface AddonWithVariant {
   id: number;
   addon_variant_id: number;
   is_required: boolean;
@@ -289,7 +289,7 @@ interface PlacementEditModalProps {
 function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate }: PlacementEditModalProps) {
   const [item, setItem] = useState<Item | null>(null);
   const [variants, setVariants] = useState<ItemVariant[]>([]);
-  const [addons, setAddons] = useState<VariantAddon[]>([]);
+  const [addons, setAddons] = useState<AddonWithVariant[]>([]);
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [originalVariantId, setOriginalVariantId] = useState<number | null>(null);
   const [originalAddons, setOriginalAddons] = useState<Set<number>>(new Set());
@@ -365,7 +365,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate 
         setAddons(addonData);
 
         if (originalVariantId !== null && selectedVariantId !== originalVariantId) {
-          const requiredAddons = addonData.filter((a: VariantAddon) => a.is_required).map((a: VariantAddon) => a.addon_variant.id);
+          const requiredAddons = addonData.filter((a: AddonWithVariant) => a.is_required).map((a: AddonWithVariant) => a.addon_variant.id);
           setSelectedAddons(new Set(requiredAddons));
         } else if (originalVariantId !== null && selectedVariantId === originalVariantId) {
           setSelectedAddons(new Set(originalAddons));

@@ -5,7 +5,6 @@ import type { Item } from '@/services/item';
 import { itemService } from '@/services/item';
 import type { Category } from '@/services/category';
 import { categoryService } from '@/services/category';
-import { Card, CardContent } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
