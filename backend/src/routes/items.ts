@@ -490,8 +490,6 @@ itemRoutes.put(
       const uploadResult = c.get('uploadResult');
       const formData = c.get('formData');
 
-      console.log('DEBUG backend - received update request:', { itemId, variantId, formDataKeys: formData ? Array.from(formData.keys()) : null });
-
       const item = await itemRepository.findById(itemId);
       if (!item) {
         if (uploadResult?.success && uploadResult.filePath) {
@@ -501,7 +499,6 @@ itemRoutes.put(
       }
 
       const existingVariant = await itemVariantRepository.findById(variantId);
-      console.log('DEBUG backend - existing variant:', existingVariant);
       if (!existingVariant || existingVariant.item_id !== itemId) {
         if (uploadResult?.success && uploadResult.filePath) {
           await fileStorageService.deleteFile(uploadResult.filePath);
@@ -519,8 +516,6 @@ itemRoutes.put(
       const removeImage = formData.get('remove_image')?.toString() === 'true';
       const isActiveStr = formData.get('is_active')?.toString();
       const isActive = isActiveStr !== undefined ? isActiveStr === 'true' : undefined;
-
-      console.log('DEBUG backend - parsed values:', { styleName, price, isActive, removeImage });
 
       // Check if trying to activate variant while item is inactive
       if (isActive === true && !Boolean(item.is_active)) {
@@ -565,7 +560,6 @@ itemRoutes.put(
       }
 
       const variant = await itemVariantRepository.update(variantId, updateData);
-      console.log('DEBUG backend - update result:', variant);
 
       return c.json({
         data: variant,
