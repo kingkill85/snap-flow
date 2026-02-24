@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Button, Modal, Label, TextInput, Alert, Spinner, ToggleSwitch } from 'flowbite-react';
-import type { Category } from '../../services/category';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import type { Category } from '@/services/category';
 
 interface CategoryFormModalProps {
   category: Category | null;
@@ -13,98 +24,88 @@ export function CategoryFormModal({ category, isOpen, onClose, onSubmit }: Categ
   const isEdit = !!category;
   const [name, setName] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
-      if (category) {
-        setName(category.name);
-        setIsActive(category.is_active);
-      } else {
-        setName('');
-        setIsActive(true); // New categories are always active by default
-      }
-      setError('');
+    if (category) {
+      setName(category.name);
+      setIsActive(category.is_active);
+    } else {
+      setName('');
+      setIsActive(true);
     }
+    setError('');
   }, [category, isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setIsSubmitting(true);
+    setIsLoading(true);
 
     try {
       await onSubmit({ name, is_active: isActive });
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.error || `Failed to ${isEdit ? 'update' : 'create'} category`);
+      setError(err.response?.data?.error || 'Failed to save category');
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
   };
 
-  const handleClose = () => {
-    setError('');
-    onClose();
-  };
-
   return (
-    <Modal show={isOpen} onClose={handleClose}>
-      <Modal.Header>{isEdit ? 'Edit Category' : 'Create New Category'}</Modal.Header>
-      <Modal.Body>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? 'Edit Category' : 'Create Category'}</DialogTitle>
+          <DialogDescription>
+            {isEdit
+              ? 'Update category details below.'
+              : 'Fill in the details to create a new category.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {error && (
+          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <Alert color="failure" onDismiss={() => setError('')}>
-              {error}
-            </Alert>
-          )}
-          <div>
-            <Label htmlFor="categoryName">Category Name</Label>
-            <TextInput
-              id="categoryName"
+          <div className="space-y-2">
+            <Label htmlFor="name">Category Name</Label>
+            <Input
+              id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Enter category name"
+              placeholder="e.g., Lighting, Security, Climate"
               required
             />
           </div>
+
           {isEdit && (
-            <div className="flex items-center gap-3">
-              <ToggleSwitch
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="is_active"
                 checked={isActive}
-                onChange={setIsActive}
-                label=""
+                onCheckedChange={setIsActive}
               />
-              <Label className="mb-0">
-                <span className={isActive ? 'text-green-600 font-medium' : 'text-gray-500'}>
-                  {isActive ? 'Active' : 'Inactive'}
-                </span>
-                <p className="text-sm text-gray-500 mt-1">
-                  {isActive 
-                    ? 'Category is visible in the catalog' 
-                    : 'Category is hidden from the catalog. All items and variants will also be hidden.'}
-                </p>
+              <Label htmlFor="is_active" className="text-sm font-normal cursor-pointer">
+                Active
               </Label>
             </div>
           )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+            </Button>
+          </DialogFooter>
         </form>
-      </Modal.Body>
-      <Modal.Footer>
-        <Button onClick={handleSubmit} disabled={isSubmitting}>
-          {isSubmitting ? (
-            <>
-              <Spinner size="sm" className="mr-2" />
-              {isEdit ? 'Updating...' : 'Creating...'}
-            </>
-          ) : (
-            isEdit ? 'Update Category' : 'Create Category'
-          )}
-        </Button>
-        <Button color="gray" onClick={handleClose}>
-          Cancel
-        </Button>
-      </Modal.Footer>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }

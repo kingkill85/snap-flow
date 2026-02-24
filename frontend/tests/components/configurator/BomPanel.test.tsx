@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import type { FloorplanBom, BomGroup, BomEntry } from '../../../src/services/bom';
+import type { FloorplanBom, BomGroup, BomEntry } from '@/services/bom';
 
-describe('BomPanel - data structure tests', () => {
+describe('BOMPanel - data structure tests', () => {
   const mockMainEntry: BomEntry = {
     id: 1,
     project_id: 1,
@@ -14,8 +14,8 @@ describe('BomPanel - data structure tests', () => {
     model_number: 'SP-001-WH',
     unit_price: 500.00,
     picture_path: 'items/panel.jpg',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
   };
 
   const mockChildEntry: BomEntry = {
@@ -30,8 +30,8 @@ describe('BomPanel - data structure tests', () => {
     model_number: 'WM-001',
     unit_price: 50.00,
     picture_path: 'items/mount.jpg',
-    created_at: '2024-01-01',
-    updated_at: '2024-01-01',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
   };
 
   it('BOM entry has all required properties', () => {

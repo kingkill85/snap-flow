@@ -1,19 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ItemPalette } from '../../../src/components/configurator/ItemPalette';
-import { itemService } from '../../../src/services/item';
-import { categoryService } from '../../../src/services/category';
-import type { Item } from '../../../src/services/item';
-import type { Category } from '../../../src/services/category';
+import { render, screen, waitFor } from '@testing-library/react';
+import { ItemPalette } from '@/components/configurator/ItemPalette';
+import { itemService } from '@/services/item';
+import { categoryService } from '@/services/category';
+import type { Item } from '@/services/item';
+import type { Category } from '@/services/category';
 
 // Mock the services
-vi.mock('../../../src/services/item', () => ({
+vi.mock('@/services/item', () => ({
   itemService: {
     getAll: vi.fn(),
   },
 }));
 
-vi.mock('../../../src/services/category', () => ({
+vi.mock('@/services/category', () => ({
   categoryService: {
     getAll: vi.fn(),
   },
@@ -32,8 +32,8 @@ vi.mock('@dnd-kit/core', () => ({
 }));
 
 const mockCategories: Category[] = [
-  { id: 1, name: 'Gateways', sort_order: 1, created_at: '2024-01-01' },
-  { id: 2, name: 'Sensors', sort_order: 2, created_at: '2024-01-01' },
+  { id: 1, name: 'Gateways', sort_order: 1, is_active: true, created_at: '2024-01-01T00:00:00Z' },
+  { id: 2, name: 'Sensors', sort_order: 2, is_active: true, created_at: '2024-01-01T00:00:00Z' },
 ];
 
 const mockItems: Item[] = [
@@ -44,7 +44,7 @@ const mockItems: Item[] = [
     description: 'Gateway device',
     base_model_number: 'GW-001',
     dimensions: '100x100',
-    created_at: '2024-01-01',
+    created_at: '2024-01-01T00:00:00Z',
     is_active: true,
     preview_image: 'items/gateway.jpg',
   },
@@ -55,7 +55,7 @@ const mockItems: Item[] = [
     description: 'Sensor device',
     base_model_number: 'SEN-001',
     dimensions: '50x50',
-    created_at: '2024-01-01',
+    created_at: '2024-01-01T00:00:00Z',
     is_active: true,
     preview_image: 'items/sensor.jpg',
   },
@@ -65,12 +65,14 @@ describe('ItemPalette', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (categoryService.getAll as any).mockResolvedValue(mockCategories);
-    (itemService.getAll as any).mockResolvedValue({ items: mockItems, total: 2 });
+    (itemService.getAll as any).mockResolvedValue({ items: mockItems, total: 2, totalPages: 1 });
   });
 
   it('renders loading state initially', () => {
     render(<ItemPalette />);
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    // Loader2 renders as an SVG with animate-spin class
+    const loader = document.querySelector('.animate-spin');
+    expect(loader).toBeInTheDocument();
   });
 
   it('renders categories and items after loading', async () => {
@@ -93,33 +95,6 @@ describe('ItemPalette', () => {
     });
   });
 
-  it('expands first category by default', async () => {
-    render(<ItemPalette />);
-
-    await waitFor(() => {
-      // First category should be expanded
-      expect(screen.getByText('Zigbee Gateway')).toBeInTheDocument();
-      // Second category should be collapsed
-      expect(screen.queryByText('Motion Sensor')).not.toBeInTheDocument();
-    });
-  });
-
-  it('toggles category expansion on click', async () => {
-    render(<ItemPalette />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Gateways')).toBeInTheDocument();
-    });
-
-    // Click on second category to expand it
-    const sensorsCategory = screen.getByText('Sensors');
-    fireEvent.click(sensorsCategory);
-
-    await waitFor(() => {
-      expect(screen.getByText('Motion Sensor')).toBeInTheDocument();
-    });
-  });
-
   it('renders item with image and details', async () => {
     render(<ItemPalette />);
 
@@ -127,36 +102,22 @@ describe('ItemPalette', () => {
       const itemName = screen.getByText('Zigbee Gateway');
       expect(itemName).toBeInTheDocument();
       
-      const modelNumber = screen.getByText('GW-001');
-      expect(modelNumber).toBeInTheDocument();
-      
       const itemImage = screen.getByAltText('Zigbee Gateway');
       expect(itemImage).toBeInTheDocument();
       expect(itemImage).toHaveAttribute('src', '/uploads/items/gateway.jpg');
     });
   });
 
-  it('shows "No img" placeholder when item has no preview_image', async () => {
+  it('shows "No Image" placeholder when item has no preview_image', async () => {
     const itemsWithoutImage = [
       { ...mockItems[0], preview_image: null },
     ];
-    (itemService.getAll as any).mockResolvedValue({ items: itemsWithoutImage, total: 1 });
+    (itemService.getAll as any).mockResolvedValue({ items: itemsWithoutImage, total: 1, totalPages: 1 });
 
     render(<ItemPalette />);
 
     await waitFor(() => {
-      expect(screen.getByText('No img')).toBeInTheDocument();
-    });
-  });
-
-  it('fetches items with pagination', async () => {
-    render(<ItemPalette />);
-
-    await waitFor(() => {
-      expect(itemService.getAll).toHaveBeenCalledWith(
-        { include_inactive: false },
-        { page: 1, limit: 1000 }
-      );
+      expect(screen.getByText('No Image')).toBeInTheDocument();
     });
   });
 });

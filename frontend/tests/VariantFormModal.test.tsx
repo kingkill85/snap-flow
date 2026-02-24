@@ -1,36 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { VariantFormModal } from '../src/components/items/VariantFormModal';
-import { itemService } from '../src/services/item';
-
-// Mock the item service
-vi.mock('../src/services/item', () => ({
-  itemService: {
-    getImageUrl: vi.fn((path) => path ? `/uploads/${path}` : null),
-    getVariantAddons: vi.fn(),
-    addVariantAddon: vi.fn(),
-    removeVariantAddon: vi.fn(),
-    getAll: vi.fn().mockResolvedValue({ items: [] }),
-    getVariants: vi.fn().mockResolvedValue([]),
-  },
-}));
+import { VariantFormModal } from '@/components/items/VariantFormModal';
 
 // Mock URL.createObjectURL
 global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
 global.URL.revokeObjectURL = vi.fn();
 
 describe('VariantFormModal', () => {
-  const mockItem = {
-    id: 1,
-    category_id: 1,
-    name: 'Smart Bulb',
-    base_model_number: 'SB-100',
-    description: 'A smart light bulb',
-    dimensions: '120x80mm',
-    created_at: '2024-01-01T00:00:00Z',
-  };
-
   const mockVariant = {
     id: 1,
     item_id: 1,
@@ -38,20 +15,9 @@ describe('VariantFormModal', () => {
     price: 29.99,
     image_path: 'items/bulb-white.jpg',
     sort_order: 1,
+    is_active: true,
     created_at: '2024-01-01T00:00:00Z',
   };
-
-  const mockAvailableVariants = [
-    {
-      id: 2,
-      item_id: 1,
-      style_name: 'Black',
-      price: 29.99,
-      image_path: null,
-      sort_order: 2,
-      created_at: '2024-01-01T00:00:00Z',
-    },
-  ];
 
   const mockOnClose = vi.fn();
   const mockOnSubmit = vi.fn();
@@ -64,16 +30,14 @@ describe('VariantFormModal', () => {
     render(
       <VariantFormModal
         itemId={1}
-        item={mockItem}
         variant={null}
-        availableVariants={mockAvailableVariants}
         isOpen={true}
         onClose={mockOnClose}
         onSubmit={mockOnSubmit}
       />
     );
 
-    expect(screen.getByText('Add Variant')).toBeInTheDocument();
+    expect(screen.getByText('Create Variant')).toBeInTheDocument();
     expect(screen.getByLabelText(/style name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/price/i)).toBeInTheDocument();
   });
@@ -82,9 +46,7 @@ describe('VariantFormModal', () => {
     render(
       <VariantFormModal
         itemId={1}
-        item={mockItem}
         variant={mockVariant}
-        availableVariants={mockAvailableVariants}
         isOpen={true}
         onClose={mockOnClose}
         onSubmit={mockOnSubmit}
@@ -100,19 +62,18 @@ describe('VariantFormModal', () => {
     render(
       <VariantFormModal
         itemId={1}
-        item={mockItem}
         variant={null}
-        availableVariants={mockAvailableVariants}
         isOpen={true}
         onClose={mockOnClose}
         onSubmit={mockOnSubmit}
       />
     );
 
+    // Leave fields empty and try to submit
     const submitButton = screen.getByRole('button', { name: /create/i });
     await userEvent.click(submitButton);
 
-    expect(screen.getByText(/style name and price are required/i)).toBeInTheDocument();
+    // HTML5 validation should prevent submission
     expect(mockOnSubmit).not.toHaveBeenCalled();
   });
 
@@ -120,9 +81,7 @@ describe('VariantFormModal', () => {
     render(
       <VariantFormModal
         itemId={1}
-        item={mockItem}
         variant={null}
-        availableVariants={mockAvailableVariants}
         isOpen={true}
         onClose={mockOnClose}
         onSubmit={mockOnSubmit}

@@ -59,7 +59,7 @@ git checkout -b feature/description
 ### Frontend
 - **Framework:** React 18 + TypeScript
 - **Build Tool:** Vite
-- **UI Library:** Flowbite React + Tailwind CSS
+- **UI Library:** shadcn/ui + Radix UI + Tailwind CSS
 - **Routing:** React Router
 - **Drag & Drop:** @dnd-kit
 - **HTTP Client:** Axios
@@ -1151,7 +1151,8 @@ deno run --allow-all main.ts
 
 - **Hono:** https://hono.dev
 - **Deno:** https://docs.deno.com
-- **Flowbite React:** https://flowbite-react.com
+- **shadcn/ui:** https://ui.shadcn.com
+- **Radix UI:** https://www.radix-ui.com
 - **@dnd-kit:** https://dndkit.com
 
 ---

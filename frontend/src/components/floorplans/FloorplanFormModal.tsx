@@ -1,7 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import { Button, Modal, Label, TextInput, Alert, Spinner } from 'flowbite-react';
-import { HiUpload, HiPencil, HiPhotograph } from 'react-icons/hi';
-import type { Floorplan, CreateFloorplanDTO } from '../../services/floorplan';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2, Upload, Pencil, ImageIcon, X } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import type { Floorplan, CreateFloorplanDTO } from '@/services/floorplan';
 
 interface FloorplanFormModalProps {
   floorplan: Floorplan | null;
@@ -138,7 +147,7 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
   const handleClose = () => {
     setError('');
     setSelectedFile(null);
-    setPreviewUrl(null);
+    setPreviewUrl(isEdit && floorplan?.image_path ? `/uploads/${floorplan.image_path}` : null);
     onClose();
   };
 
@@ -151,19 +160,23 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
   };
 
   return (
-    <Modal show={isOpen} onClose={handleClose}>
-      <Modal.Header>{isEdit ? 'Edit Floorplan' : 'Add New Floorplan'}</Modal.Header>
-      <Modal.Body>
-        {error && (
-          <Alert color="failure" className="mb-4">
-            {error}
-          </Alert>
-        )}
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? 'Edit Floorplan' : 'Add New Floorplan'}</DialogTitle>
+        </DialogHeader>
+        
         <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          
           {/* Floorplan Name */}
           <div>
-            <Label htmlFor="name" value="Floorplan Name *" />
-            <TextInput
+            <Label htmlFor="name">Floorplan Name *</Label>
+            <Input
               id="name"
               type="text"
               placeholder="Ground Floor"
@@ -175,9 +188,9 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
 
           {/* Image Upload */}
           <div>
-            <Label value={isEdit ? 'Floorplan Image' : 'Floorplan Image *'} />
+            <Label>{isEdit ? 'Floorplan Image' : 'Floorplan Image *'}</Label>
             <div
-              className="mt-2 border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors cursor-pointer"
+              className="mt-2 border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer bg-muted/30"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onClick={() => fileInputRef.current?.click()}
@@ -199,56 +212,61 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
                   />
                   <div className="mt-2 flex justify-center gap-2">
                     <Button
-                      size="xs"
-                      color="light"
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={(e) => {
                         e.stopPropagation();
                         clearFile();
                       }}
                     >
+                      <X className="mr-1 h-4 w-4" />
                       Remove
                     </Button>
                     <Button
-                      size="xs"
-                      color="light"
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={(e) => {
                         e.stopPropagation();
                         fileInputRef.current?.click();
                       }}
                     >
+                      <Upload className="mr-1 h-4 w-4" />
                       Change
                     </Button>
                   </div>
                 </div>
               ) : (
-                <div className="text-gray-500">
-                  <HiPhotograph className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+                <div className="text-muted-foreground">
+                  <ImageIcon className="mx-auto h-12 w-12 mb-2" />
                   <p className="text-sm">Click to upload or drag and drop</p>
-                  <p className="text-xs text-gray-400 mt-1">JPG, PNG, WebP (max 5MB)</p>
+                  <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WebP (max 5MB)</p>
                 </div>
               )}
             </div>
           </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {isEdit ? 'Saving...' : 'Uploading...'}
+                </>
+              ) : (
+                <>
+                  {isEdit ? <Pencil className="mr-2 h-4 w-4" /> : <Upload className="mr-2 h-4 w-4" />}
+                  {isEdit ? 'Save Changes' : 'Upload Floorplan'}
+                </>
+              )}
+            </Button>
+          </div>
         </form>
-      </Modal.Body>
-      <Modal.Footer>
-        <Button onClick={handleSubmit} disabled={isSubmitting}>
-          {isSubmitting ? (
-            <>
-              <Spinner size="sm" className="mr-2" />
-              {isEdit ? 'Saving...' : 'Uploading...'}
-            </>
-          ) : (
-            <>
-              {isEdit ? <HiPencil className="mr-2 h-5 w-5" /> : <HiUpload className="mr-2 h-5 w-5" />}
-              {isEdit ? 'Save Changes' : 'Upload Floorplan'}
-            </>
-          )}
-        </Button>
-        <Button color="gray" onClick={handleClose}>
-          Cancel
-        </Button>
-      </Modal.Footer>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }

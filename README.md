@@ -29,7 +29,7 @@ A web application for smart home automation companies to create professional pro
 ### Frontend
 - **Framework:** React 18 + TypeScript
 - **Build Tool:** Vite
-- **UI Library:** Flowbite React + Tailwind CSS
+- **UI Library:** shadcn/ui + Radix UI + Tailwind CSS
 - **Drag & Drop:** @dnd-kit
 - **HTTP Client:** Axios
 - **Routing:** React Router
@@ -629,4 +629,4 @@ For questions or issues, please open an issue on GitHub.
 
 ---
 
-**Built with ❤️ using Deno, React, and Flowbite React**
+**Built with ❤️ using Deno, React, and shadcn/ui**

@@ -8,7 +8,7 @@ export interface BomEntry {
   variant_id: number;
   parent_bom_id: number | null;
   item_name: string;
-  style_name: string | null;  // Style name snapshot (e.g., "Ivory White")
+  style_name: string | null;
   model_number: string | null;
   unit_price: number;
   picture_path: string | null;
@@ -49,39 +49,36 @@ export interface ChangeReport {
 }
 
 export const bomService = {
-  async getBomForFloorplan(floorplanId: number): Promise<FloorplanBom> {
-    const response = await api.get(`/floorplans/${floorplanId}/bom`);
+  async getBomForFloorplan(floorplanId: number, signal?: AbortSignal): Promise<FloorplanBom> {
+    const response = await api.get(`/floorplans/${floorplanId}/bom`, { signal });
     return response.data.data;
   },
 
-  async createBomEntry(floorplanId: number, variantId: number): Promise<BomEntry> {
+  async createBomEntry(floorplanId: number, variantId: number, signal?: AbortSignal): Promise<BomEntry> {
     const response = await api.post(`/floorplans/${floorplanId}/bom-entries`, {
       variant_id: variantId,
-    });
+    }, { signal });
     return response.data.data;
   },
 
-  async switchVariant(entryId: number, variantId: number): Promise<BomEntry> {
-    // Note: entryId is in the URL, but we need floorplanId too
-    // The backend expects: /floorplans/:id/bom-entries/:entryId/variant
-    // We'll need to get the floorplanId from the entry or pass it
+  async switchVariant(entryId: number, variantId: number, signal?: AbortSignal): Promise<BomEntry> {
     const response = await api.put(`/bom-entries/${entryId}/variant`, {
       variant_id: variantId,
-    });
+    }, { signal });
     return response.data.data;
   },
 
-  async deleteBomEntry(floorplanId: number, entryId: number): Promise<void> {
-    await api.delete(`/floorplans/${floorplanId}/bom-entries/${entryId}`);
+  async deleteBomEntry(floorplanId: number, entryId: number, signal?: AbortSignal): Promise<void> {
+    await api.delete(`/floorplans/${floorplanId}/bom-entries/${entryId}`, { signal });
   },
 
-  async updateFromCatalog(floorplanId: number): Promise<ChangeReport> {
-    const response = await api.post(`/floorplans/${floorplanId}/bom/update-from-catalog`);
+  async updateFromCatalog(floorplanId: number, signal?: AbortSignal): Promise<ChangeReport> {
+    const response = await api.post(`/floorplans/${floorplanId}/bom/update-from-catalog`, {}, { signal });
     return response.data.data;
   },
 
-  async getProjectTotal(projectId: number): Promise<{ totalPrice: number }> {
-    const response = await api.get(`/projects/${projectId}/total`);
+  async getProjectTotal(projectId: number, signal?: AbortSignal): Promise<{ totalPrice: number }> {
+    const response = await api.get(`/projects/${projectId}/total`, { signal });
     return response.data.data;
   },
 };

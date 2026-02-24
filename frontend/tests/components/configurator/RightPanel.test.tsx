@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Placement } from '../../../src/types';
+import type { Placement } from '@/types';
 
 describe('RightPanel - data structure tests', () => {
   const mockPlacements: Placement[] = [
@@ -13,7 +13,7 @@ describe('RightPanel - data structure tests', () => {
       y: 100,
       width: 50,
       height: 50,
-      created_at: '2024-01-01',
+      created_at: '2024-01-01T00:00:00Z',
     },
     {
       id: 2,
@@ -25,7 +25,7 @@ describe('RightPanel - data structure tests', () => {
       y: 200,
       width: 60,
       height: 60,
-      created_at: '2024-01-01',
+      created_at: '2024-01-01T00:00:00Z',
     },
   ];
 
@@ -75,6 +75,6 @@ describe('RightPanel - data structure tests', () => {
 
   it('placement has created_at timestamp', () => {
     expect(mockPlacements[0].created_at).toBeDefined();
-    expect(mockPlacements[0].created_at).toBe('2024-01-01');
+    expect(mockPlacements[0].created_at).toBe('2024-01-01T00:00:00Z');
   });
 });

@@ -1,11 +1,38 @@
 import { useState, useEffect } from 'react';
-import { Button, Modal, Label, TextInput, Textarea, Select, Alert, Spinner, ToggleSwitch } from 'flowbite-react';
-import type { Item } from '../../services/item';
-import type { Category } from '../../services/category';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import type { Item } from '@/services/item';
+import type { Category } from '@/services/category';
 
-interface ItemFormData {
-  category_id?: number;
+export interface CreateItemDTO {
+  category_id: number;
   name: string;
+  description?: string;
+  base_model_number?: string;
+  dimensions?: string;
+  is_active?: boolean;
+}
+
+export interface UpdateItemDTO {
+  category_id?: number;
+  name?: string;
   description?: string;
   base_model_number?: string;
   dimensions?: string;
@@ -17,217 +44,179 @@ interface ItemFormModalProps {
   categories: Category[];
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: ItemFormData) => Promise<void>;
+  onSubmit: (data: CreateItemDTO | UpdateItemDTO) => Promise<void>;
 }
 
 export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: ItemFormModalProps) {
   const isEdit = !!item;
-  const [formData, setFormData] = useState({
-    category_id: undefined as number | undefined,
-    name: '',
-    description: '',
-    base_model_number: '',
-    dimensions: '',
-    is_active: true,
-  });
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [baseModelNumber, setBaseModelNumber] = useState('');
+  const [dimensions, setDimensions] = useState('');
+  const [categoryId, setCategoryId] = useState<string>('');
+  const [isActive, setIsActive] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Load item data when modal opens
   useEffect(() => {
-    if (isOpen) {
-      if (item) {
-        // Edit mode - populate with existing data
-        setFormData({
-          category_id: item.category_id,
-          name: item.name,
-          description: item.description || '',
-          base_model_number: item.base_model_number || '',
-          dimensions: item.dimensions || '',
-          is_active: item.is_active,
-        });
-      } else {
-        // Create mode - reset form
-        setFormData({
-          category_id: undefined,
-          name: '',
-          description: '',
-          base_model_number: '',
-          dimensions: '',
-          is_active: true, // New items are always active by default
-        });
-      }
-      setError('');
+    if (item) {
+      setName(item.name);
+      setDescription(item.description || '');
+      setBaseModelNumber(item.base_model_number || '');
+      setDimensions(item.dimensions || '');
+      setCategoryId(item.category_id.toString());
+      setIsActive(item.is_active);
+    } else {
+      setName('');
+      setDescription('');
+      setBaseModelNumber('');
+      setDimensions('');
+      setCategoryId(categories.length > 0 ? categories[0].id.toString() : '');
+      setIsActive(true);
     }
-  }, [item, isOpen]);
+    setError('');
+  }, [item, isOpen, categories]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
-    // Validation
-    if (!isEdit && !formData.category_id) {
-      setError('Category is required');
-      return;
-    }
-    if (!formData.name.trim()) {
-      setError('Name is required');
+    if (!categoryId) {
+      setError('Please select a category');
+      setIsLoading(false);
       return;
     }
 
-    setIsSubmitting(true);
     try {
-      const submitData: ItemFormData = {
-        category_id: formData.category_id,
-        name: formData.name,
-        description: formData.description || undefined,
-        base_model_number: formData.base_model_number || undefined,
-        dimensions: formData.dimensions || undefined,
-      };
-      
-      // Only include is_active when editing
-      if (isEdit) {
-        submitData.is_active = formData.is_active;
-      }
-      
-      await onSubmit(submitData);
+      const data: CreateItemDTO | UpdateItemDTO = isEdit
+        ? {
+            name,
+            description: description || undefined,
+            base_model_number: baseModelNumber || undefined,
+            dimensions: dimensions || undefined,
+            category_id: parseInt(categoryId),
+            is_active: isActive,
+          }
+        : {
+            name,
+            description: description || undefined,
+            base_model_number: baseModelNumber || undefined,
+            dimensions: dimensions || undefined,
+            category_id: parseInt(categoryId),
+            is_active: isActive,
+          };
+
+      await onSubmit(data);
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.error || `Failed to ${isEdit ? 'update' : 'create'} item`);
+      setError(err.response?.data?.error || 'Failed to save item');
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
-  };
-
-  const handleClose = () => {
-    setError('');
-    onClose();
   };
 
   return (
-    <Modal show={isOpen} onClose={handleClose} size="lg">
-      <Modal.Header>{isEdit ? 'Edit Item' : 'Add Item'}</Modal.Header>
-      <Modal.Body>
-        {error && (
-          <Alert color="failure" className="mb-4">
-            {error}
-          </Alert>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {!isEdit && (
-            <div>
-              <Label htmlFor="category" value="Category *" />
-              <Select
-                id="category"
-                required
-                value={formData.category_id || ''}
-                onChange={(e) => setFormData({ ...formData, category_id: parseInt(e.target.value) })}
-              >
-                <option value="">Select a category</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? 'Edit Item' : 'Create Item'}</DialogTitle>
+          <DialogDescription>
+            {isEdit
+              ? 'Update item details below.'
+              : 'Fill in the details to create a new item.'}
+          </DialogDescription>
+        </DialogHeader>
 
-          <div>
-            <Label htmlFor="name" value="Name *" />
-            <TextInput
+        {error && (
+          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Name *</Label>
+            <Input
               id="name"
-              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., Smart Bulb, Security Camera"
               required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="e.g., Smart Light Bulb"
             />
           </div>
 
-          <div>
-            <Label htmlFor="description" value="Description" />
-            <Textarea
+          <div className="space-y-2">
+            <Label htmlFor="category">Category *</Label>
+            <Select value={categoryId} onValueChange={setCategoryId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={category.id.toString()}>
+                    {category.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Description</Label>
+            <Input
               id="description"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Product description..."
-              rows={6}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Brief description of the item"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="modelNumber" value="Model Number" />
-              <TextInput
-                id="modelNumber"
-                type="text"
-                value={formData.base_model_number}
-                onChange={(e) => setFormData({ ...formData, base_model_number: e.target.value })}
+            <div className="space-y-2">
+              <Label htmlFor="base_model_number">Model Number</Label>
+              <Input
+                id="base_model_number"
+                value={baseModelNumber}
+                onChange={(e) => setBaseModelNumber(e.target.value)}
                 placeholder="e.g., SB-100"
               />
             </div>
-            <div>
-              <Label htmlFor="dimensions" value="Dimensions" />
-              <TextInput
+
+            <div className="space-y-2">
+              <Label htmlFor="dimensions">Dimensions</Label>
+              <Input
                 id="dimensions"
-                type="text"
-                value={formData.dimensions}
-                onChange={(e) => setFormData({ ...formData, dimensions: e.target.value })}
+                value={dimensions}
+                onChange={(e) => setDimensions(e.target.value)}
                 placeholder="e.g., 120x80mm"
               />
             </div>
           </div>
 
-          {!isEdit && (
-            <div className="bg-blue-50 p-3 rounded text-sm text-blue-700">
-              <strong>Note:</strong> After creating the item, you can add variants (with price and image) by expanding the item row.
+          {isEdit && (
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="is_active"
+                checked={isActive}
+                onCheckedChange={setIsActive}
+              />
+              <Label htmlFor="is_active" className="text-sm font-normal cursor-pointer">
+                Active
+              </Label>
             </div>
           )}
 
-          {isEdit && (
-            <>
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-700">
-                  <strong>Note:</strong> Price and images are managed per variant. Use "Edit" on a variant to manage add-ons and details.
-                </p>
-              </div>
-              <div className="flex items-center gap-3 pt-4 border-t">
-                <ToggleSwitch
-                  checked={formData.is_active}
-                  onChange={(checked) => setFormData({ ...formData, is_active: checked })}
-                  label=""
-                />
-                <Label className="mb-0">
-                  <span className={formData.is_active ? 'text-green-600 font-medium' : 'text-gray-500'}>
-                    {formData.is_active ? 'Active' : 'Inactive'}
-                  </span>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {formData.is_active 
-                      ? 'Item is visible in the catalog' 
-                      : 'Item is hidden from the catalog. All variants will also be hidden.'}
-                  </p>
-                </Label>
-              </div>
-            </>
-          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isLoading || !categoryId}>
+              {isLoading ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+            </Button>
+          </DialogFooter>
         </form>
-      </Modal.Body>
-      <Modal.Footer>
-        <Button onClick={handleSubmit} disabled={isSubmitting}>
-          {isSubmitting ? (
-            <>
-              <Spinner size="sm" className="mr-2" />
-              {isEdit ? 'Saving...' : 'Creating...'}
-            </>
-          ) : (
-            isEdit ? 'Save Changes' : 'Create Item'
-          )}
-        </Button>
-        <Button color="gray" onClick={handleClose}>
-          Cancel
-        </Button>
-      </Modal.Footer>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }

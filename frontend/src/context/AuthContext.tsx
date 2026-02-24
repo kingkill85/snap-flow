@@ -1,12 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { authService } from '../services/auth';
-
-interface User {
-  id: number;
-  email: string;
-  full_name: string | null;
-  role: 'admin' | 'user';
-}
+import { authService } from '@/services/auth';
+import type { User } from '@/types';
 
 interface UpdateProfileData {
   full_name?: string;
@@ -135,4 +129,4 @@ export const useAuth = () => {
   return context;
 };
 
-export type { User, UpdateProfileData };
+export type { UpdateProfileData };

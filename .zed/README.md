@@ -66,7 +66,7 @@ snap-flow/
 - React 18
 - TypeScript
 - Vite build tool
-- Tailwind CSS + Flowbite
+- Tailwind CSS + shadcn/ui + Radix UI
 - Vitest for testing
 
 ## Customization

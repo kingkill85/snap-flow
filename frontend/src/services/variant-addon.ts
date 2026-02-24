@@ -18,8 +18,8 @@ export interface VariantAddon {
 }
 
 export const variantAddonService = {
-  async getByVariant(itemId: number, variantId: number): Promise<VariantAddon[]> {
-    const response = await api.get(`/items/${itemId}/variants/${variantId}/addons`);
+  async getByVariant(itemId: number, variantId: number, signal?: AbortSignal): Promise<VariantAddon[]> {
+    const response = await api.get(`/items/${itemId}/variants/${variantId}/addons`, { signal });
     return response.data.data;
   },
 };

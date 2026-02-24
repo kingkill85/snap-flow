@@ -1,5 +1,4 @@
 import api from './api';
-import axios from 'axios';
 
 export interface Floorplan {
   id: number;
@@ -19,23 +18,11 @@ export interface UpdateFloorplanDTO {
   sort_order?: number;
 }
 
-const isCancelError = (error: any): boolean => {
-  return axios.isCancel(error) || 
-         error.name === 'CanceledError' || 
-         error.name === 'AbortError' ||
-         error.message === 'canceled';
-};
-
 export const floorplanService = {
   async getAll(projectId?: number, signal?: AbortSignal): Promise<Floorplan[]> {
-    try {
-      const params = projectId ? { project_id: projectId } : undefined;
-      const response = await api.get('/floorplans', { params, signal });
-      return response.data.data;
-    } catch (error) {
-      if (isCancelError(error)) throw error;
-      throw error;
-    }
+    const params = projectId ? { project_id: projectId } : undefined;
+    const response = await api.get('/floorplans', { params, signal });
+    return response.data.data;
   },
 
   async getById(id: number, signal?: AbortSignal): Promise<Floorplan> {
@@ -92,5 +79,3 @@ export const floorplanService = {
     return `/uploads/${imagePath}`;
   },
 };
-
-export type { Floorplan as FloorplanType };

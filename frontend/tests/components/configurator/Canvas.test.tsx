@@ -1,8 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import type { Floorplan } from '../../../src/services/floorplan';
-import type { Placement } from '../../../src/services/placement';
-import type { Item } from '../../../src/services/item';
+import type { Floorplan } from '@/services/floorplan';
+import type { Placement } from '@/services/placement';
+import type { Item } from '@/services/item';
 
 // Simple component test without full Canvas render
 const mockFloorplan: Floorplan = {
@@ -11,7 +10,7 @@ const mockFloorplan: Floorplan = {
   name: 'Ground Floor',
   image_path: 'floorplans/test.jpg',
   sort_order: 1,
-  created_at: '2024-01-01',
+  created_at: '2024-01-01T00:00:00Z',
 };
 
 const mockItems: Item[] = [
@@ -22,7 +21,7 @@ const mockItems: Item[] = [
     description: 'Test',
     base_model_number: 'TEST-001',
     dimensions: '100x100',
-    created_at: '2024-01-01',
+    created_at: '2024-01-01T00:00:00Z',
     is_active: true,
     preview_image: 'items/test.jpg',
   },
@@ -39,7 +38,7 @@ const mockPlacements: Placement[] = [
     width: 100,
     height: 100,
     selected_addons: null,
-    created_at: '2024-01-01',
+    created_at: '2024-01-01T00:00:00Z',
   },
 ];
 

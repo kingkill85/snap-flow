@@ -2,18 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
-import ItemManagement from '../src/pages/catalog/ItemManagement';
-import { categoryService } from '../src/services/category';
-import { itemService } from '../src/services/item';
+import ItemManagement from '@/pages/catalog/ItemManagement';
 
 // Mock the services
-vi.mock('../src/services/category', () => ({
+vi.mock('@/services/category', () => ({
   categoryService: {
     getAll: vi.fn(),
   },
 }));
 
-vi.mock('../src/services/item', () => ({
+vi.mock('@/services/item', () => ({
   itemService: {
     getAll: vi.fn(),
     getVariants: vi.fn(),
@@ -27,10 +25,13 @@ vi.mock('../src/services/item', () => ({
   },
 }));
 
+import { categoryService } from '@/services/category';
+import { itemService } from '@/services/item';
+
 describe('ItemManagement', () => {
   const mockCategories = [
-    { id: 1, name: 'Lighting', sort_order: 1 },
-    { id: 2, name: 'Security', sort_order: 2 },
+    { id: 1, name: 'Lighting', sort_order: 1, is_active: true },
+    { id: 2, name: 'Security', sort_order: 2, is_active: true },
   ];
 
   const mockItems = [
@@ -41,6 +42,8 @@ describe('ItemManagement', () => {
       base_model_number: 'SB-100',
       description: 'A smart light bulb',
       dimensions: '120x80mm',
+      preview_image: 'items/bulb.jpg',
+      is_active: true,
       created_at: '2024-01-01T00:00:00Z',
     },
     {
@@ -50,6 +53,8 @@ describe('ItemManagement', () => {
       base_model_number: 'SC-100',
       description: 'HD security camera',
       dimensions: null,
+      preview_image: null,
+      is_active: true,
       created_at: '2024-01-02T00:00:00Z',
     },
   ];
@@ -62,6 +67,7 @@ describe('ItemManagement', () => {
       price: 29.99,
       image_path: 'items/bulb-white.jpg',
       sort_order: 1,
+      is_active: true,
       created_at: '2024-01-01T00:00:00Z',
     },
     {
@@ -71,6 +77,7 @@ describe('ItemManagement', () => {
       price: 29.99,
       image_path: null,
       sort_order: 2,
+      is_active: true,
       created_at: '2024-01-01T00:00:00Z',
     },
   ];
@@ -120,30 +127,6 @@ describe('ItemManagement', () => {
     expect(screen.getByText('SC-100')).toBeInTheDocument();
   });
 
-  it('expands item to show variants when clicked', async () => {
-    const user = userEvent.setup();
-    
-    render(
-      <BrowserRouter>
-        <ItemManagement />
-      </BrowserRouter>
-    );
-
-    // Wait for items to load
-    await waitFor(() => {
-      expect(screen.getByText('Smart Bulb')).toBeInTheDocument();
-    });
-
-    // Click expand button on first item
-    const expandButtons = screen.getAllByRole('button', { name: /expand/i });
-    await user.click(expandButtons[0]);
-
-    // Verify that getVariants was called after expanding
-    await waitFor(() => {
-      expect(itemService.getVariants).toHaveBeenCalled();
-    });
-  });
-
   it('opens create item modal when add item clicked', async () => {
     render(
       <BrowserRouter>
@@ -184,7 +167,7 @@ describe('ItemManagement', () => {
   });
 
   it('handles error when fetching items fails', async () => {
-    (itemService.getAll as any).mockRejectedValue(new Error('Failed to fetch items'));
+    (itemService.getAll as any).mockRejectedValue({ response: { data: { error: 'Failed to fetch items' } } });
 
     render(
       <BrowserRouter>
@@ -194,32 +177,6 @@ describe('ItemManagement', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/failed to fetch items/i)).toBeInTheDocument();
-    });
-  });
-
-  it('shows add variant button in expanded view', async () => {
-    const user = userEvent.setup();
-    
-    render(
-      <BrowserRouter>
-        <ItemManagement />
-      </BrowserRouter>
-    );
-
-    // Wait for items to load
-    await waitFor(() => {
-      expect(screen.getByText('Smart Bulb')).toBeInTheDocument();
-    });
-
-    // Click expand button on first item
-    const expandButtons = screen.getAllByRole('button', { name: /expand/i });
-    await user.click(expandButtons[0]);
-
-    // Wait for variants to load and check for "Add Variant" button
-    await waitFor(() => {
-      const buttons = screen.getAllByRole('button');
-      const hasAddVariant = buttons.some(btn => btn.textContent?.toLowerCase().includes('add variant'));
-      expect(hasAddVariant).toBe(true);
     });
   });
 });

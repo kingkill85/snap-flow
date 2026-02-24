@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import { Spinner } from 'flowbite-react';
-import { authService } from '../../services/auth';
+import { useAuth } from '@/context/AuthContext';
+import { authService } from '@/services/auth';
+import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -20,7 +20,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   if (isLoading && hasToken) {
     return (
       <div className="flex justify-center items-center h-screen">
-        <Spinner size="xl" />
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }

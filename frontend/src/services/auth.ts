@@ -1,26 +1,14 @@
 import api from './api';
+import type { User, ApiResponse } from '@/types';
 
 interface LoginResponse {
-  user: {
-    id: number;
-    email: string;
-    full_name: string | null;
-    role: 'admin' | 'user';
-  };
+  user: User;
   accessToken: string;
   refreshToken: string;
 }
 
 interface RefreshResponse {
   accessToken: string;
-}
-
-interface User {
-  id: number;
-  email: string;
-  full_name: string | null;
-  role: 'admin' | 'user';
-  created_at?: string;
 }
 
 interface UpdateProfileDTO {
@@ -55,7 +43,7 @@ export const authService = {
 
   // API calls
   async login(email: string, password: string, signal?: AbortSignal): Promise<LoginResponse> {
-    const response = await api.post('/auth/login', { email, password }, { signal });
+    const response = await api.post<ApiResponse<LoginResponse>>('/auth/login', { email, password }, { signal });
     const { user, accessToken, refreshToken } = response.data.data;
     
     // Store tokens
@@ -91,7 +79,7 @@ export const authService = {
       throw new Error('No refresh token available');
     }
 
-    const response = await api.post('/auth/refresh', { refreshToken }, { signal });
+    const response = await api.post<ApiResponse<RefreshResponse>>('/auth/refresh', { refreshToken }, { signal });
     const { accessToken } = response.data.data;
     
     // Update stored access token
@@ -101,14 +89,14 @@ export const authService = {
   },
 
   async getCurrentUser(signal?: AbortSignal): Promise<User> {
-    const response = await api.get('/auth/me', { signal });
+    const response = await api.get<ApiResponse<User>>('/auth/me', { signal });
     return response.data.data;
   },
 
   async updateProfile(data: UpdateProfileDTO, signal?: AbortSignal): Promise<User> {
-    const response = await api.put('/auth/me', data, { signal });
+    const response = await api.put<ApiResponse<User>>('/auth/me', data, { signal });
     return response.data.data;
   },
 };
 
-export type { User, UpdateProfileDTO, LoginResponse, RefreshResponse };
+export type { LoginResponse, RefreshResponse, UpdateProfileDTO };

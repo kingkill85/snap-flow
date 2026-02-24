@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { type AxiosInstance, type AxiosError } from 'axios';
 import { authService } from './auth';
 
 // Use relative URL for API when served from backend (production/Docker)

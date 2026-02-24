@@ -1,21 +1,22 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import ProtectedRoute from '../src/components/auth/ProtectedRoute';
-import { AuthProvider } from '../src/context/AuthContext';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { AuthProvider } from '@/context/AuthContext';
 
 // Mock localStorage
 const localStorageMock = {
   getItem: vi.fn(),
   setItem: vi.fn(),
   removeItem: vi.fn(),
+  clear: vi.fn(),
 };
 Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
 });
 
 // Mock the auth service
-vi.mock('../src/services/auth', () => ({
+vi.mock('@/services/auth', () => ({
   authService: {
     login: vi.fn(),
     logout: vi.fn(),
@@ -36,7 +37,7 @@ describe('ProtectedRoute', () => {
   });
 
   it('redirects to login when not authenticated', async () => {
-    const { authService } = await import('../src/services/auth');
+    const { authService } = await import('@/services/auth');
     authService.getAccessToken.mockReturnValue(null);
     authService.getRefreshToken.mockReturnValue(null);
 
@@ -64,7 +65,7 @@ describe('ProtectedRoute', () => {
   });
 
   it('shows loading spinner when validating token', async () => {
-    const { authService } = await import('../src/services/auth');
+    const { authService } = await import('@/services/auth');
     authService.getAccessToken.mockReturnValue('valid-token');
     authService.getRefreshToken.mockReturnValue('refresh-token');
 
@@ -85,14 +86,14 @@ describe('ProtectedRoute', () => {
       </MemoryRouter>
     );
 
-    // Should show loading spinner
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    // Should show loading spinner (Loader2 renders as SVG)
+    expect(document.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
   it('redirects non-admin to home when admin required', async () => {
     const mockUser = { id: 1, email: 'user@example.com', role: 'user' };
     
-    const { authService } = await import('../src/services/auth');
+    const { authService } = await import('@/services/auth');
     authService.getAccessToken.mockReturnValue('user-token');
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
@@ -126,7 +127,7 @@ describe('ProtectedRoute', () => {
   it('renders content for authenticated user', async () => {
     const mockUser = { id: 1, email: 'user@example.com', role: 'user' };
     
-    const { authService } = await import('../src/services/auth');
+    const { authService } = await import('@/services/auth');
     authService.getAccessToken.mockReturnValue('user-token');
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
@@ -159,7 +160,7 @@ describe('ProtectedRoute', () => {
   it('renders content for admin when admin required', async () => {
     const mockUser = { id: 1, email: 'admin@example.com', role: 'admin' };
     
-    const { authService } = await import('../src/services/auth');
+    const { authService } = await import('@/services/auth');
     authService.getAccessToken.mockReturnValue('admin-token');
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);

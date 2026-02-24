@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
-import Profile from '../src/pages/Profile';
-import { useAuth } from '../src/context/AuthContext';
+import Profile from '@/pages/Profile';
+import { useAuth } from '@/context/AuthContext';
 
-vi.mock('../src/context/AuthContext', () => ({
+vi.mock('@/context/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 

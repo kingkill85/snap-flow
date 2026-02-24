@@ -1,7 +1,26 @@
 import { useState, useEffect } from 'react';
-import { Button, Modal, Label, TextInput, Select, Alert, Spinner } from 'flowbite-react';
-import { HiFolderAdd, HiPencil } from 'react-icons/hi';
-import type { Project, CreateProjectDTO, UpdateProjectDTO } from '../../services/project';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Separator } from '@/components/ui/separator';
+import { Loader2, FolderPlus, Pencil } from 'lucide-react';
+import type { Project, CreateProjectDTO, UpdateProjectDTO } from '@/services/project';
 
 interface ProjectFormModalProps {
   project: Project | null;
@@ -93,25 +112,26 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
     }
   };
 
-  const handleClose = () => {
-    setError('');
-    onClose();
-  };
-
   return (
-    <Modal show={isOpen} onClose={handleClose}>
-      <Modal.Header>{isEdit ? 'Edit Project' : 'Create New Project'}</Modal.Header>
-      <Modal.Body>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? 'Edit Project' : 'Create New Project'}</DialogTitle>
+          <DialogDescription>
+            {isEdit ? 'Update project details below.' : 'Fill in the details to create a new project.'}
+          </DialogDescription>
+        </DialogHeader>
+
         {error && (
-          <Alert color="failure" className="mb-4">
-            {error}
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Project Info */}
-          <div>
-            <Label htmlFor="name" value="Project Name *" />
-            <TextInput
+          <div className="space-y-2">
+            <Label htmlFor="name">Project Name *</Label>
+            <Input
               id="name"
               type="text"
               placeholder="Living Room Renovation"
@@ -120,27 +140,34 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             />
           </div>
-          <div>
-            <Label htmlFor="status" value="Status" />
+
+          <div className="space-y-2">
+            <Label htmlFor="status">Status</Label>
             <Select
-              id="status"
               value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'completed' | 'cancelled' })}
+              onValueChange={(value: 'active' | 'completed' | 'cancelled') =>
+                setFormData({ ...formData, status: value })
+              }
             >
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              <SelectTrigger>
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
             </Select>
           </div>
 
-          {/* Customer Info Section */}
-          <div className="border-t pt-4 mt-4">
-            <h4 className="text-sm font-semibold text-gray-700 mb-3">Customer Information</h4>
-            
+          <Separator />
+
+          <div>
+            <h4 className="text-sm font-semibold mb-3">Customer Information</h4>
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="customer_name" value="Customer Name *" />
-                <TextInput
+              <div className="space-y-2">
+                <Label htmlFor="customer_name">Customer Name *</Label>
+                <Input
                   id="customer_name"
                   type="text"
                   placeholder="John Doe"
@@ -149,9 +176,9 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
                   onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
                 />
               </div>
-              <div>
-                <Label htmlFor="customer_email" value="Email" />
-                <TextInput
+              <div className="space-y-2">
+                <Label htmlFor="customer_email">Email</Label>
+                <Input
                   id="customer_email"
                   type="email"
                   placeholder="john@example.com"
@@ -159,9 +186,9 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
                   onChange={(e) => setFormData({ ...formData, customer_email: e.target.value })}
                 />
               </div>
-              <div>
-                <Label htmlFor="customer_phone" value="Phone" />
-                <TextInput
+              <div className="space-y-2">
+                <Label htmlFor="customer_phone">Phone</Label>
+                <Input
                   id="customer_phone"
                   type="tel"
                   placeholder="+1 234 567 8900"
@@ -169,9 +196,9 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
                   onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
                 />
               </div>
-              <div>
-                <Label htmlFor="customer_address" value="Address" />
-                <TextInput
+              <div className="space-y-2">
+                <Label htmlFor="customer_address">Address</Label>
+                <Input
                   id="customer_address"
                   type="text"
                   placeholder="123 Main St, City, Country"
@@ -181,26 +208,27 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
               </div>
             </div>
           </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {isEdit ? 'Saving...' : 'Creating...'}
+                </>
+              ) : (
+                <>
+                  {isEdit ? <Pencil className="mr-2 h-4 w-4" /> : <FolderPlus className="mr-2 h-4 w-4" />}
+                  {isEdit ? 'Save Changes' : 'Create Project'}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </form>
-      </Modal.Body>
-      <Modal.Footer>
-        <Button onClick={handleSubmit} disabled={isSubmitting}>
-          {isSubmitting ? (
-            <>
-              <Spinner size="sm" className="mr-2" />
-              {isEdit ? 'Saving...' : 'Creating...'}
-            </>
-          ) : (
-            <>
-              {isEdit ? <HiPencil className="mr-2 h-5 w-5" /> : <HiFolderAdd className="mr-2 h-5 w-5" />}
-              {isEdit ? 'Save Changes' : 'Create Project'}
-            </>
-          )}
-        </Button>
-        <Button color="gray" onClick={handleClose}>
-          Cancel
-        </Button>
-      </Modal.Footer>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }

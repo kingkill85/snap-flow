@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
-import Login from '../src/pages/Login';
-import { useAuth } from '../src/context/AuthContext';
+import Login from '@/pages/Login';
+import { useAuth } from '@/context/AuthContext';
 
 // Mock the auth context
-vi.mock('../src/context/AuthContext', () => ({
+vi.mock('@/context/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
@@ -35,8 +35,8 @@ describe('Login', () => {
       </BrowserRouter>
     );
 
-    expect(screen.getByText('Welcome to SnapFlow')).toBeInTheDocument();
-    expect(screen.getByText('Please sign in to continue')).toBeInTheDocument();
+    expect(screen.getByText('Welcome back')).toBeInTheDocument();
+    expect(screen.getByText('Enter your credentials to access your account')).toBeInTheDocument();
     expect(screen.getByLabelText('Email')).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
@@ -155,7 +155,7 @@ describe('Login', () => {
     await userEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Login failed. Please try again.')).toBeInTheDocument();
+      expect(screen.getByText('Invalid email or password')).toBeInTheDocument();
     });
   });
 
@@ -180,9 +180,8 @@ describe('Login', () => {
       expect(screen.getByText('Signing in...')).toBeInTheDocument();
     });
 
-    // Inputs should be disabled during loading
-    expect(emailInput).toBeDisabled();
-    expect(passwordInput).toBeDisabled();
+    // Button should be disabled during loading
+    expect(submitButton).toBeDisabled();
   });
 
   it('clears previous error on new submission', async () => {

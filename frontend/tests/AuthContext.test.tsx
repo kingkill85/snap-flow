@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
-import { AuthProvider, useAuth } from '../src/context/AuthContext';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 
 // Create mock functions that will be shared
 const mockLogin = vi.fn();
@@ -17,7 +17,7 @@ const mockRefreshAccessToken = vi.fn();
 const mockUpdateProfile = vi.fn();
 
 // Mock the auth service
-vi.mock('../src/services/auth', () => ({
+vi.mock('@/services/auth', () => ({
   authService: {
     get login() { return mockLogin; },
     get logout() { return mockLogout; },

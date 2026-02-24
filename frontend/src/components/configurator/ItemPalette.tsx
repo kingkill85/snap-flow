@@ -1,19 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
-import { Card, Spinner, Alert } from 'flowbite-react';
+import { useState, useEffect } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import type { Item } from '../../services/item';
-import { itemService } from '../../services/item';
-import type { Category } from '../../services/category';
-import { categoryService } from '../../services/category';
+import type { Item } from '@/services/item';
+import { itemService } from '@/services/item';
+import type { Category } from '@/services/category';
+import { categoryService } from '@/services/category';
+import { Card, CardContent } from '@/components/ui/card';
+import { Loader2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface DraggableItemProps {
   item: Item;
-  onDragStart?: () => void;
-  onDragEnd?: () => void;
 }
 
-function DraggableItem({ item, onDragStart, onDragEnd }: DraggableItemProps) {
+function DraggableItem({ item }: DraggableItemProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `item-${item.id}`,
     data: {
@@ -22,22 +22,12 @@ function DraggableItem({ item, onDragStart, onDragEnd }: DraggableItemProps) {
     },
   });
 
-  // Notify parent of drag state changes
-  useEffect(() => {
-    if (isDragging && onDragStart) {
-      onDragStart();
-    } else if (!isDragging && onDragEnd) {
-      onDragEnd();
-    }
-  }, [isDragging, onDragStart, onDragEnd]);
-
   const style = transform
     ? {
         transform: CSS.Translate.toString(transform),
       }
     : undefined;
 
-  // Use preview image from first variant
   const imageUrl = item.preview_image ? `/uploads/${item.preview_image}` : null;
 
   return (
@@ -47,27 +37,28 @@ function DraggableItem({ item, onDragStart, onDragEnd }: DraggableItemProps) {
       {...attributes}
       style={{
         ...style,
-        // Hide original element completely when dragging - DragOverlay shows the preview
         visibility: isDragging ? 'hidden' : 'visible',
       }}
-      className="p-2 border rounded cursor-grab hover:bg-gray-50 transition-colors overflow-hidden"
+      className="cursor-grab hover:shadow-md transition-shadow bg-background border border-border rounded-lg overflow-hidden"
     >
-      <div className="flex items-center gap-2">
+      <div className="h-12 bg-muted relative">
         {imageUrl ? (
           <img
             src={imageUrl}
             alt={item.name}
-            className="w-10 h-10 object-contain rounded bg-gray-100"
+            className="w-full h-full object-contain p-0.5"
           />
         ) : (
-          <div className="w-10 h-10 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">
-            No img
+          <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">
+            No Image
           </div>
         )}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{item.name}</p>
-          <p className="text-xs text-gray-500 truncate">{item.base_model_number || 'No model #'}</p>
-        </div>
+      </div>
+      
+      <div className="px-1 py-0.5">
+        <p className="text-[10px] font-medium text-foreground truncate leading-tight" title={item.name}>
+          {item.name}
+        </p>
       </div>
     </div>
   );
@@ -80,11 +71,8 @@ interface ItemPaletteProps {
 export function ItemPalette({ className = '' }: ItemPaletteProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
-  const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [isDraggingFromPalette, setIsDraggingFromPalette] = useState(false);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -94,18 +82,11 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
           categoryService.getAll(),
           itemService.getAll({ include_inactive: false }, { page: 1, limit: 1000 }),
         ]);
-        setCategories(categoriesData);
-        // Show all active items (they all have preview_image from first variant)
+        setCategories(categoriesData.filter(c => c.is_active !== false));
         setItems(itemsResult.items);
-        
-        // Expand first category by default
-        if (categoriesData.length > 0) {
-          setExpandedCategories(new Set([categoriesData[0].id]));
-        }
-        
         setError('');
       } catch (err: any) {
-        setError(err.message || 'Failed to load items');
+        setError(err.message || 'Failed to load products');
       } finally {
         setIsLoading(false);
       }
@@ -114,79 +95,49 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
     fetchData();
   }, []);
 
-  const toggleCategory = (categoryId: number) => {
-    setExpandedCategories((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(categoryId)) {
-        newSet.delete(categoryId);
-      } else {
-        newSet.add(categoryId);
-      }
-      return newSet;
-    });
-  };
-
   if (isLoading) {
     return (
-      <Card className={`h-full ${className}`}>
-        <div className="flex justify-center items-center h-32">
-          <Spinner size="lg" />
-        </div>
-      </Card>
+      <div className={`h-full flex justify-center items-center ${className}`}>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Card className={`h-full ${className}`}>
-        <Alert color="failure">{error}</Alert>
-      </Card>
+      <div className={`h-full p-4 ${className}`}>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </div>
     );
   }
 
   return (
-    <Card className={`h-full flex flex-col ${className}`}>
-      <div 
-        ref={scrollContainerRef}
-        className="flex-1 space-y-2 overflow-x-hidden"
-        style={{ 
-          overflowY: isDraggingFromPalette ? 'hidden' : 'auto',
-          touchAction: isDraggingFromPalette ? 'none' : 'pan-y'
-        }}
-      >
+    <div className={`flex flex-col h-full ${className}`}>
+      <div className="flex-1 overflow-y-auto p-4">
         {categories.map((category) => {
           const categoryItems = items.filter((item) => item.category_id === category.id);
           if (categoryItems.length === 0) return null;
 
-          const isExpanded = expandedCategories.has(category.id);
-
           return (
-            <div key={category.id} className="border rounded">
-              <button
-                onClick={() => toggleCategory(category.id)}
-                className="w-full px-3 py-2 flex items-center justify-between bg-gray-50 hover:bg-gray-100 rounded-t transition-colors"
-              >
-                <span className="font-medium text-sm">{category.name}</span>
-                <span className="text-gray-500 text-xs">
-                  {isExpanded ? '−' : '+'}
-                </span>
-              </button>
-              {isExpanded && (
-                <div className="p-2 space-y-2">
-                  {categoryItems.map((item) => (
-                    <DraggableItem
-                      key={item.id}
-                      item={item}
-                      onDragStart={() => setIsDraggingFromPalette(true)}
-                      onDragEnd={() => setIsDraggingFromPalette(false)}
-                    />
-                  ))}
-                </div>
-              )}
+            <div key={category.id} className="mb-6">
+              <h3 className="text-sm font-bold text-foreground uppercase tracking-wide mb-3">
+                {category.name}
+              </h3>
+              
+              <div className="grid grid-cols-3 gap-2">
+                {categoryItems.map((item) => (
+                  <DraggableItem
+                    key={item.id}
+                    item={item}
+                  />
+                ))}
+              </div>
             </div>
           );
         })}
       </div>
-    </Card>
+    </div>
   );
 }

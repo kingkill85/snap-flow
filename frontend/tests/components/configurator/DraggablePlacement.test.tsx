@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { DndContext } from '@dnd-kit/core';
-import type { Placement } from '../../../src/services/placement';
-import type { Item } from '../../../src/services/item';
+import type { Placement } from '@/services/placement';
+import type { Item } from '@/services/item';
 
-// Mock the Canvas component's DraggablePlacement
+// Mock data for placement tests
 const mockPlacement: Placement = {
   id: 1,
   floorplan_id: 1,
@@ -15,7 +13,7 @@ const mockPlacement: Placement = {
   width: 100,
   height: 100,
   selected_addons: null,
-  created_at: '2024-01-01',
+  created_at: '2024-01-01T00:00:00Z',
 };
 
 const mockItem: Item = {
@@ -25,7 +23,7 @@ const mockItem: Item = {
   description: 'Test',
   base_model_number: 'TEST-001',
   dimensions: '100x100',
-  created_at: '2024-01-01',
+  created_at: '2024-01-01T00:00:00Z',
   is_active: true,
   preview_image: 'items/test.jpg',
 };
@@ -94,12 +92,6 @@ describe('DraggablePlacement', () => {
 });
 
 describe('Canvas drag and drop integration', () => {
-  it('DndContext wraps canvas and palette', () => {
-    // This is an integration test concept
-    // The actual DndContext is in ProjectDashboard
-    expect(true).toBe(true); // Placeholder - actual integration tests would require full render
-  });
-
   it('calculates drop position in natural coordinates', () => {
     // Screen coordinates
     const screenX = 200;

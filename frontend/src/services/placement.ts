@@ -1,5 +1,4 @@
 import api from './api';
-import axios from 'axios';
 
 export interface Placement {
   id: number;
@@ -31,23 +30,11 @@ export interface UpdatePlacementDTO {
   height?: number;
 }
 
-const isCancelError = (error: any): boolean => {
-  return axios.isCancel(error) || 
-         error.name === 'CanceledError' || 
-         error.name === 'AbortError' ||
-         error.message === 'canceled';
-};
-
 export const placementService = {
   async getAll(floorplanId?: number, signal?: AbortSignal): Promise<Placement[]> {
-    try {
-      const params = floorplanId ? { floorplan_id: floorplanId } : undefined;
-      const response = await api.get('/placements', { params, signal });
-      return response.data.data;
-    } catch (error) {
-      if (isCancelError(error)) throw error;
-      throw error;
-    }
+    const params = floorplanId ? { floorplan_id: floorplanId } : undefined;
+    const response = await api.get('/placements', { params, signal });
+    return response.data.data;
   },
 
   async getById(id: number, signal?: AbortSignal): Promise<Placement> {
@@ -92,5 +79,3 @@ export const placementService = {
     });
   },
 };
-
-export type { Placement as PlacementType };

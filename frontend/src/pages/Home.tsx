@@ -1,48 +1,66 @@
-import { Button, Card } from 'flowbite-react'
-import { Link } from 'react-router-dom'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Link } from 'react-router-dom';
+import { Upload, Move, FileSpreadsheet } from 'lucide-react';
 
 const Home = () => {
   return (
-    <div className="space-y-8">
-      <div className="text-center py-12">
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-4 py-12">
+      {/* Hero Section */}
+      <div className="text-center max-w-3xl mx-auto mb-16">
+        <h1 className="text-5xl font-bold tracking-tight mb-6">
           Welcome to SnapFlow
         </h1>
-        <p className="text-xl text-gray-600 mb-8">
+        <p className="text-xl text-muted-foreground mb-8">
           Smart home automation configurator and proposal generator
         </p>
-        <div className="flex justify-center gap-4">
-          <Button as={Link} to="/projects" state={{ openCreateModal: true }} size="lg">
-            Get Started
+        <div className="flex items-center justify-center gap-4">
+          <Button size="lg" asChild>
+            <Link to="/projects">Get Started</Link>
           </Button>
-          <Button color="light" as={Link} to="/projects" size="lg">
-            View Projects
+          <Button size="lg" variant="outline" asChild>
+            <Link to="/projects">View Projects</Link>
           </Button>
         </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
-        <Card>
-          <h3 className="text-xl font-bold mb-2">Upload Floorplans</h3>
-          <p className="text-gray-600">
-            Import floorplan images and configure multiple floors per project
-          </p>
+      {/* Feature Cards */}
+      <div className="grid gap-6 md:grid-cols-3 w-full max-w-6xl">
+        <Card className="border shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl font-semibold">Upload Floorplans</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground leading-relaxed">
+              Import floorplan images and configure multiple floors per project
+            </p>
+          </CardContent>
         </Card>
-        <Card>
-          <h3 className="text-xl font-bold mb-2">Drag & Drop Items</h3>
-          <p className="text-gray-600">
-            Place smart home devices on floorplans with an intuitive interface
-          </p>
+
+        <Card className="border shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl font-semibold">Drag & Drop Items</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground leading-relaxed">
+              Place smart home devices on floorplans with an intuitive interface
+            </p>
+          </CardContent>
         </Card>
-        <Card>
-          <h3 className="text-xl font-bold mb-2">Generate Proposals</h3>
-          <p className="text-gray-600">
-            Export professional Excel proposals with item lists and pricing
-          </p>
+
+        <Card className="border shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl font-semibold">Generate Proposals</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground leading-relaxed">
+              Export professional Excel proposals with item lists and pricing
+            </p>
+          </CardContent>
         </Card>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Home
+export default Home;

@@ -1,6 +1,13 @@
-import { useState } from 'react';
-import { Button, Modal, Alert, Spinner } from 'flowbite-react';
-import { HiTrash } from 'react-icons/hi';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { AlertTriangle } from 'lucide-react';
 
 interface ConfirmDeleteModalProps {
   title: string;
@@ -19,67 +26,39 @@ export function ConfirmDeleteModal({
   onClose,
   onConfirm,
 }: ConfirmDeleteModalProps) {
-  const [error, setError] = useState('');
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const handleDelete = async () => {
-    setIsDeleting(true);
-    setError('');
-
-    try {
-      await onConfirm();
-      onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to delete');
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const handleClose = () => {
-    setError('');
+  const handleConfirm = async () => {
+    await onConfirm();
     onClose();
   };
 
   return (
-    <Modal show={isOpen} onClose={handleClose} size="md">
-      <Modal.Header>{title}</Modal.Header>
-      <Modal.Body>
-        {error ? (
-          <Alert color="failure" className="mb-2">
-            {error}
-          </Alert>
-        ) : (
-          <>
-            <p className="text-gray-600 dark:text-gray-400">
-              Are you sure you want to delete &quot;{itemName}&quot;?
-            </p>
-            {warningText && (
-              <Alert color="warning" className="mt-3 text-sm">
-                {warningText}
-              </Alert>
-            )}
-          </>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+            {title}
+          </DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete <strong>{itemName}</strong>? This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+
+        {warningText && (
+          <div className="bg-muted p-3 rounded-md text-sm text-muted-foreground">
+            {warningText}
+          </div>
         )}
-      </Modal.Body>
-      <Modal.Footer>
-        <Button color="failure" onClick={handleDelete} disabled={isDeleting || !!error}>
-          {isDeleting ? (
-            <>
-              <Spinner size="sm" className="mr-2" />
-              Deleting...
-            </>
-          ) : (
-            <>
-              <HiTrash className="mr-2" />
-              Delete
-            </>
-          )}
-        </Button>
-        <Button color="gray" onClick={handleClose}>
-          Cancel
-        </Button>
-      </Modal.Footer>
-    </Modal>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" onClick={handleConfirm}>
+            Delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

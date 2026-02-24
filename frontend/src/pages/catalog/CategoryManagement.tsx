@@ -1,9 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Button, Card, Table, Alert, Spinner, ToggleSwitch } from 'flowbite-react';
-import { HiPlus, HiTrash, HiPencil, HiArrowUp, HiArrowDown, HiCheckCircle, HiXCircle } from 'react-icons/hi';
-import { categoryService, type Category } from '../../services/category';
-import { CategoryFormModal } from '../../components/categories/CategoryFormModal';
-import { ConfirmDeleteModal } from '../../components/common/ConfirmDeleteModal';
+import { categoryService, type Category } from '@/services/category';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Switch } from '@/components/ui/switch';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
+import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
+import { Plus, Pencil, Trash2, ArrowUp, ArrowDown, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 const CategoryManagement = () => {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -71,8 +82,8 @@ const CategoryManagement = () => {
     const categoryIds = newCategories.map(c => c.id);
     
     try {
-      await categoryService.reorder(categoryIds);
-      setCategories(newCategories);
+      const updatedCategories = await categoryService.reorder(categoryIds);
+      setCategories(updatedCategories);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to reorder categories');
     }
@@ -96,7 +107,7 @@ const CategoryManagement = () => {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <Spinner size="xl" />
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -105,116 +116,125 @@ const CategoryManagement = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Category Management
-          </h1>
-          <p className="text-gray-600">
-            Organize product categories and arrange their display order
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">Category Management</h1>
+          <p className="text-muted-foreground">Organize product categories and arrange their display order</p>
         </div>
         <Button onClick={openCreateModal}>
-          <HiPlus className="mr-2 h-5 w-5" />
+          <Plus className="mr-2 h-4 w-4" />
           Add Category
         </Button>
       </div>
 
       {error && (
-        <Alert color="failure" onDismiss={() => setError('')}>
-          {error}
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
       <Card>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Categories</h2>
-          <ToggleSwitch
-            checked={showInactive}
-            onChange={setShowInactive}
-            label="Show inactive"
-          />
-        </div>
-        <Table hoverable>
-          <Table.Head>
-            <Table.HeadCell>POSITION</Table.HeadCell>
-            <Table.HeadCell>NAME</Table.HeadCell>
-            <Table.HeadCell>STATUS</Table.HeadCell>
-            <Table.HeadCell className="w-48"></Table.HeadCell>
-          </Table.Head>
-          <Table.Body>
-            {categories.length === 0 ? (
-              <Table.Row>
-                <Table.Cell colSpan={4} className="text-center py-8 text-gray-500">
-                  No categories found. Create your first category to get started.
-                </Table.Cell>
-              </Table.Row>
-            ) : (
-              categories.map((category, index) => (
-                <Table.Row 
-                  key={category.id} 
-                  className={`hover:bg-gray-50 transition-colors ${!category.is_active ? 'border-l-4 border-l-gray-400 opacity-75' : ''}`}
-                >
-                  <Table.Cell>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-500">{category.sort_order}</span>
-                      <div className="flex flex-col">
-                        <button
-                          onClick={() => moveCategory(index, 'up')}
-                          disabled={index === 0}
-                          className="p-1 hover:bg-gray-100 rounded disabled:opacity-30"
-                        >
-                          <HiArrowUp className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => moveCategory(index, 'down')}
-                          disabled={index === categories.length - 1}
-                          className="p-1 hover:bg-gray-100 rounded disabled:opacity-30"
-                        >
-                          <HiArrowDown className="h-4 w-4" />
-                        </button>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Categories</CardTitle>
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="show-inactive"
+              checked={showInactive}
+              onCheckedChange={setShowInactive}
+            />
+            <label htmlFor="show-inactive" className="text-sm text-muted-foreground cursor-pointer">
+              Show inactive
+            </label>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Position</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-48"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {categories.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    No categories found. Create your first category to get started.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                categories.map((category, index) => (
+                  <TableRow 
+                    key={category.id}
+                    className={!category.is_active ? 'opacity-60' : ''}
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground w-6">{category.sort_order}</span>
+                        <div className="flex flex-col">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => moveCategory(index, 'up')}
+                            disabled={index === 0}
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => moveCategory(index, 'down')}
+                            disabled={index === categories.length - 1}
+                          >
+                            <ArrowDown className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  </Table.Cell>
-                  <Table.Cell className="font-medium">
-                    {category.name}
-                  </Table.Cell>
-                  <Table.Cell>
-                    {category.is_active ? (
-                      <span className="inline-flex items-center text-green-600 text-sm">
-                        <HiCheckCircle className="w-5 h-5 mr-1" />
-                        Active
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center text-gray-500 text-sm">
-                        <HiXCircle className="w-5 h-5 mr-1" />
-                        Inactive
-                      </span>
-                    )}
-                  </Table.Cell>
-                  <Table.Cell>
-                    <div className="flex gap-2 justify-end">
-                      <Button 
-                            color="light" 
-                            size="xs" 
-                            onClick={() => openEditModal(category)}
-                          >
-                            <HiPencil className="mr-1 h-4 w-4" />
-                            Edit
-                          </Button>
-                          <Button 
-                            color="failure" 
-                            size="xs" 
-                            onClick={() => openDeleteModal(category)}
-                          >
-                            <HiTrash className="mr-1 h-4 w-4" />
-                            Delete
-                          </Button>
-                    </div>
-                  </Table.Cell>
-                </Table.Row>
-              ))
-            )}
-          </Table.Body>
-        </Table>
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {category.name}
+                    </TableCell>
+                    <TableCell>
+                      {category.is_active ? (
+                        <span className="inline-flex items-center text-green-600 text-sm">
+                          <CheckCircle className="w-4 h-4 mr-1" />
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center text-muted-foreground text-sm">
+                          <XCircle className="w-4 h-4 mr-1" />
+                          Inactive
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => openEditModal(category)}
+                        >
+                          <Pencil className="mr-1 h-3 w-3" />
+                          Edit
+                        </Button>
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          onClick={() => openDeleteModal(category)}
+                        >
+                          <Trash2 className="mr-1 h-3 w-3" />
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
       </Card>
 
       <CategoryFormModal

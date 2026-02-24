@@ -1,5 +1,4 @@
 import api from './api';
-import axios from 'axios';
 
 export interface Project {
   id: number;
@@ -30,26 +29,11 @@ export interface UpdateProjectDTO {
   customer_address?: string;
 }
 
-// Helper to check if error is a cancellation error
-const isCancelError = (error: any): boolean => {
-  return axios.isCancel(error) || 
-         error.name === 'CanceledError' || 
-         error.name === 'AbortError' ||
-         error.message === 'canceled';
-};
-
 export const projectService = {
   async getAll(search?: string, signal?: AbortSignal): Promise<Project[]> {
-    try {
-      const params = search ? { search } : undefined;
-      const response = await api.get('/projects', { params, signal });
-      return response.data.data;
-    } catch (error) {
-      if (isCancelError(error)) {
-        throw error;
-      }
-      throw error;
-    }
+    const params = search ? { search } : undefined;
+    const response = await api.get('/projects', { params, signal });
+    return response.data.data;
   },
 
   async getById(id: number, signal?: AbortSignal): Promise<Project> {
@@ -71,5 +55,3 @@ export const projectService = {
     await api.delete(`/projects/${id}`, { signal });
   },
 };
-
-export type { Project as ProjectType };

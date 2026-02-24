@@ -1,13 +1,5 @@
 import api from './api';
-import axios from 'axios';
-
-export interface User {
-  id: number;
-  email: string;
-  full_name: string | null;
-  role: 'admin' | 'user';
-  created_at: string;
-}
+import type { User } from '@/types';
 
 export interface CreateUserDTO {
   email: string;
@@ -23,25 +15,10 @@ export interface UpdateUserDTO {
   role?: 'admin' | 'user';
 }
 
-// Helper to check if error is a cancellation error
-const isCancelError = (error: any): boolean => {
-  return axios.isCancel(error) || 
-         error.name === 'CanceledError' || 
-         error.name === 'AbortError' ||
-         error.message === 'canceled';
-};
-
 export const userService = {
   async getAll(signal?: AbortSignal): Promise<User[]> {
-    try {
-      const response = await api.get('/users', { signal });
-      return response.data.data;
-    } catch (error) {
-      if (isCancelError(error)) {
-        throw error;
-      }
-      throw error;
-    }
+    const response = await api.get('/users', { signal });
+    return response.data.data;
   },
 
   async getById(id: number, signal?: AbortSignal): Promise<User> {
@@ -63,5 +40,3 @@ export const userService = {
     await api.delete(`/users/${id}`, { signal });
   },
 };
-
-export type { User as UserType };
