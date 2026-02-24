@@ -166,7 +166,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[800px] lg:max-w-[900px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Import Catalog</DialogTitle>
           <DialogDescription>
