@@ -91,11 +91,6 @@ const Login = () => {
               )}
             </Button>
           </form>
-          
-          <div className="mt-4 text-center text-sm text-muted-foreground">
-            <p>Demo credentials:</p>
-            <p className="font-mono text-xs mt-1">admin@snapflow.com / admin123</p>
-          </div>
         </CardContent>
       </Card>
     </div>
