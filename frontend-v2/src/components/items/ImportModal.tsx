@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,9 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Upload, FileSpreadsheet, X, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Upload, Loader2, CheckCircle, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import { itemService } from '@/services/item';
 
 interface ImportModalProps {
@@ -18,107 +20,148 @@ interface ImportModalProps {
   onSuccess: () => void;
 }
 
-interface PreviewData {
-  items: Array<{
-    name: string;
-    category: string;
-    model_number: string;
-    price: number;
-    variant: string;
-    dimensions: string;
-  }>;
-  categories: string[];
-  total: number;
+interface SyncPhase {
+  categories: {
+    added: number;
+    activated: number;
+    deactivated: number;
+    total: number;
+  };
+  items: {
+    added: number;
+    updated: number;
+    deactivated: number;
+    total: number;
+  };
+  variants: {
+    added: number;
+    updated: number;
+    deactivated: number;
+    imagesExtracted: number;
+    total: number;
+  };
+  addons: {
+    linked: number;
+    notFound: number;
+    total: number;
+  };
 }
 
+interface SyncResult {
+  success: boolean;
+  phases: SyncPhase;
+  log: string[];
+  errors: Array<{
+    row: number;
+    message: string;
+    details?: string;
+  }>;
+}
+
+type ImportStep = 'upload' | 'syncing' | 'complete';
+
 export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
-  const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [error, setError] = useState('');
-  const [preview, setPreview] = useState<PreviewData | null>(null);
-  const [importResult, setImportResult] = useState<{ success: number; errors: string[] } | null>(null);
+  const [step, setStep] = useState<ImportStep>('upload');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<SyncResult | null>(null);
+  const [progress, setProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (selectedFile: File | null) => {
-    if (selectedFile) {
-      if (!selectedFile.name.endsWith('.xlsx') && !selectedFile.name.endsWith('.xls')) {
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const validTypes = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel',
+      ];
+      
+      if (!validTypes.includes(file.type) && !file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
         setError('Please select a valid Excel file (.xlsx or .xls)');
+        setSelectedFile(null);
         return;
       }
-      setFile(selectedFile);
-      setError('');
-      setPreview(null);
-      setImportResult(null);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const droppedFile = e.dataTransfer.files[0];
-    handleFileChange(droppedFile);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const clearFile = () => {
-    setFile(null);
-    setPreview(null);
-    setImportResult(null);
-    setError('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handlePreview = async () => {
-    if (!file) return;
-
-    setIsLoading(true);
-    setError('');
-
-    try {
-      const data = await itemService.previewImport(file);
-      setPreview(data);
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.message || 'Failed to preview import');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleImport = async () => {
-    if (!preview) return;
-
-    setIsImporting(true);
-    setError('');
-
-    try {
-      const data = await itemService.executeImport(preview);
-      setImportResult(data);
       
-      if (data.errors.length === 0) {
+      if (file.size > 50 * 1024 * 1024) {
+        setError('File size must be less than 50MB');
+        setSelectedFile(null);
+        return;
+      }
+
+      setSelectedFile(file);
+      setError(null);
+    }
+  };
+
+  const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files?.[0];
+    if (file) {
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        setSelectedFile(file);
+        setError(null);
+      } else {
+        setError('Please select a valid Excel file (.xlsx or .xls)');
+      }
+    }
+  }, []);
+
+  const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  }, []);
+
+  const handleStartSync = async () => {
+    if (!selectedFile) return;
+
+    setIsUploading(true);
+    setStep('syncing');
+    setError(null);
+    setProgress(10);
+
+    try {
+      // Simulate progress updates
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) return prev;
+          return prev + Math.random() * 5;
+        });
+      }, 500);
+
+      const response = await itemService.syncCatalog(selectedFile);
+      
+      clearInterval(progressInterval);
+      setProgress(100);
+      
+      setResult(response);
+      setStep('complete');
+      
+      if (response.success) {
         onSuccess();
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || err.message || 'Failed to import catalog');
+      setStep('upload');
+      setError(err.response?.data?.error || err.message || 'Failed to sync catalog');
     } finally {
-      setIsImporting(false);
+      setIsUploading(false);
     }
   };
 
   const handleClose = () => {
-    clearFile();
+    setStep('upload');
+    setSelectedFile(null);
+    setError(null);
+    setResult(null);
+    setProgress(0);
     onClose();
+  };
+
+  const handleImportAnother = () => {
+    setStep('upload');
+    setSelectedFile(null);
+    setError(null);
+    setResult(null);
+    setProgress(0);
   };
 
   return (
@@ -131,80 +174,54 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
           </DialogDescription>
         </DialogHeader>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {importResult && importResult.errors.length === 0 && (
-          <Alert className="bg-green-50 border-green-200">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-800">
-              Successfully imported {importResult.success} items!
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {importResult && importResult.errors.length > 0 && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Import completed with {importResult.success} successes and {importResult.errors.length} errors:
-              <ul className="mt-2 list-disc list-inside text-sm">
-                {importResult.errors.map((err, idx) => (
-                  <li key={idx}>{err}</li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {!preview && !importResult && (
+        {step === 'upload' && (
           <div className="space-y-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
             <div
-              onClick={() => fileInputRef.current?.click()}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              className={`
-                border-2 border-dashed rounded-lg p-8 cursor-pointer
-                transition-colors duration-200 text-center
-                ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-muted-foreground/50'}
-              `}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                selectedFile
+                  ? 'border-green-500 bg-green-50 dark:bg-green-950/20'
+                  : 'border-muted-foreground/25 hover:border-primary hover:bg-primary/5'
+              }`}
             >
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".xlsx,.xls"
-                onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
+                onChange={handleFileSelect}
                 className="hidden"
               />
-
-              {file ? (
-                <div className="flex items-center justify-center gap-3">
-                  <FileSpreadsheet className="h-8 w-8 text-green-600" />
-                  <div className="text-left">
-                    <p className="font-medium">{file.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {(file.size / 1024).toFixed(1)} KB
-                    </p>
-                  </div>
+              
+              {selectedFile ? (
+                <div className="space-y-2">
+                  <CheckCircle className="w-12 h-12 text-green-600 mx-auto" />
+                  <p className="text-lg font-medium">{selectedFile.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                  </p>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      clearFile();
+                      setSelectedFile(null);
                     }}
-                    className="p-1 hover:bg-muted rounded"
+                    className="text-sm text-primary hover:underline"
                   >
-                    <X className="h-4 w-4" />
+                    Click to change file
                   </button>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Upload className="mx-auto h-12 w-12 text-muted-foreground" />
+                  <Upload className="w-12 h-12 text-muted-foreground mx-auto" />
                   <p className="text-lg font-medium">
                     Drop Excel file here or click to browse
                   </p>
@@ -215,7 +232,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
               )}
             </div>
 
-            <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+            <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-4 rounded-lg">
               <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">What will happen:</h4>
               <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
                 <li>Categories will be synced (new ones created, missing ones deactivated)</li>
@@ -228,97 +245,189 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
           </div>
         )}
 
-        {preview && !importResult && (
-          <div className="space-y-4">
-            <div className="bg-muted p-4 rounded-lg">
-              <h4 className="font-semibold mb-2">Import Preview</h4>
-              <p className="text-sm text-muted-foreground mb-2">
-                {preview.total} items will be imported
-              </p>
-              {preview.categories.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {preview.categories.map((cat) => (
-                    <span
-                      key={cat}
-                      className="text-xs bg-secondary px-2 py-1 rounded"
-                    >
-                      {cat}
-                    </span>
-                  ))}
-                </div>
-              )}
+        {step === 'syncing' && (
+          <div className="space-y-6 text-center py-4">
+            <div className="flex justify-center">
+              <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium">Syncing Catalog...</h3>
+              <p className="text-muted-foreground mt-1">This may take a few minutes</p>
             </div>
 
-            <div className="max-h-48 overflow-y-auto border rounded-lg">
-              <table className="w-full text-sm">
-                <thead className="bg-muted sticky top-0">
-                  <tr>
-                    <th className="text-left px-3 py-2">Name</th>
-                    <th className="text-left px-3 py-2">Category</th>
-                    <th className="text-left px-3 py-2">Price</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.items.slice(0, 10).map((item, idx) => (
-                    <tr key={idx} className="border-b last:border-b-0">
-                      <td className="px-3 py-2">{item.name}</td>
-                      <td className="px-3 py-2">{item.category}</td>
-                      <td className="px-3 py-2">${item.price.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {preview.items.length > 10 && (
-                <p className="text-center text-sm text-muted-foreground py-2">
-                  ...and {preview.items.length - 10} more items
-                </p>
-              )}
+            <div className="space-y-2">
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">{Math.round(progress)}%</p>
             </div>
           </div>
         )}
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={handleClose}>
-            {importResult ? 'Close' : 'Cancel'}
-          </Button>
+        {step === 'complete' && result && (
+          <div className="space-y-6">
+            <div className={`p-4 rounded-lg ${result.success ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800' : 'bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800'}`}>
+              <div className="flex items-center gap-3">
+                {result.success ? (
+                  <CheckCircle className="w-8 h-8 text-green-600" />
+                ) : (
+                  <AlertCircle className="w-8 h-8 text-yellow-600" />
+                )}
+                <div>
+                  <h3 className={`font-medium ${result.success ? 'text-green-900 dark:text-green-100' : 'text-yellow-900 dark:text-yellow-100'}`}>
+                    {result.success ? 'Sync Completed Successfully!' : 'Sync Completed with Warnings'}
+                  </h3>
+                  <p className={`text-sm ${result.success ? 'text-green-700 dark:text-green-300' : 'text-yellow-700 dark:text-yellow-300'}`}>
+                    {result.errors.length} error{result.errors.length !== 1 ? 's' : ''} occurred
+                  </p>
+                </div>
+              </div>
+            </div>
 
-          {!importResult && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <h4 className="font-medium mb-3">Categories</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-green-600">Added:</span>
+                      <Badge variant="secondary">{result.phases.categories.added}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-blue-600">Activated:</span>
+                      <Badge variant="secondary">{result.phases.categories.activated}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-red-600">Deactivated:</span>
+                      <Badge variant="secondary">{result.phases.categories.deactivated}</Badge>
+                    </div>
+                    <div className="border-t pt-2 flex justify-between font-medium">
+                      <span>Total:</span>
+                      <span>{result.phases.categories.total}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-6">
+                  <h4 className="font-medium mb-3">Items</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-green-600">Added:</span>
+                      <Badge variant="secondary">{result.phases.items.added}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-blue-600">Updated:</span>
+                      <Badge variant="secondary">{result.phases.items.updated}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-red-600">Deactivated:</span>
+                      <Badge variant="secondary">{result.phases.items.deactivated}</Badge>
+                    </div>
+                    <div className="border-t pt-2 flex justify-between font-medium">
+                      <span>Total:</span>
+                      <span>{result.phases.items.total}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-6">
+                  <h4 className="font-medium mb-3">Variants</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-green-600">Added:</span>
+                      <Badge variant="secondary">{result.phases.variants.added}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-blue-600">Updated:</span>
+                      <Badge variant="secondary">{result.phases.variants.updated}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-purple-600">Images:</span>
+                      <Badge variant="secondary">{result.phases.variants.imagesExtracted}</Badge>
+                    </div>
+                    <div className="border-t pt-2 flex justify-between font-medium">
+                      <span>Total:</span>
+                      <span>{result.phases.variants.total}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-6">
+                  <h4 className="font-medium mb-3">Add-ons</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-green-600">Linked:</span>
+                      <Badge variant="secondary">{result.phases.addons.linked}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-red-600">Not Found:</span>
+                      <Badge variant="secondary">{result.phases.addons.notFound}</Badge>
+                    </div>
+                    <div className="border-t pt-2 flex justify-between font-medium">
+                      <span>Total:</span>
+                      <span>{result.phases.addons.total}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {result.errors.length > 0 && (
+              <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 p-4 rounded-lg">
+                <h4 className="font-medium text-red-900 dark:text-red-100 mb-2">Errors:</h4>
+                <ul className="text-sm text-red-800 dark:text-red-200 space-y-1 max-h-32 overflow-y-auto">
+                  {result.errors.map((err, idx) => (
+                    <li key={idx}>Row {err.row}: {err.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          {step === 'upload' && (
             <>
-              {preview ? (
-                <Button
-                  onClick={handleImport}
-                  disabled={isImporting}
-                >
-                  {isImporting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Importing...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Import {preview.total} Items
-                    </>
-                  )}
-                </Button>
-              ) : (
-                <Button
-                  onClick={handlePreview}
-                  disabled={!file || isLoading}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Previewing...
-                    </>
-                  ) : (
-                    <>
-                      <FileSpreadsheet className="mr-2 h-4 w-4" />
-                      Preview Import
-                    </>
-                  )}
-                </Button>
-              )}
+              <Button variant="outline" onClick={handleClose}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleStartSync}
+                disabled={!selectedFile || isUploading}
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    Import Catalog
+                  </>
+                )}
+              </Button>
+            </>
+          )}
+          
+          {step === 'complete' && (
+            <>
+              <Button variant="outline" onClick={handleImportAnother}>
+                Import Another
+              </Button>
+              <Button onClick={handleClose}>
+                Done
+              </Button>
             </>
           )}
         </DialogFooter>

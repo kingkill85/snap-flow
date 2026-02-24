@@ -171,16 +171,11 @@ export const itemService = {
     await api.delete(`/items/${itemId}/variants/${variantId}`, { signal });
   },
 
-  async previewImport(file: File, signal?: AbortSignal): Promise<any> {
+  async syncCatalog(file: File, signal?: AbortSignal): Promise<any> {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await api.post('/items/import-preview', formData, { signal });
-    return response.data.data;
-  },
-
-  async executeImport(preview: any, signal?: AbortSignal): Promise<any> {
-    const response = await api.post('/items/import', { preview }, { signal });
+    const response = await api.post('/items/sync-catalog', formData, { signal });
     return response.data.data;
   },
 
