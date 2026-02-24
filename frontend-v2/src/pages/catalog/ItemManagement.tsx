@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { itemService, type Item, type ItemVariant } from '@/services/item';
 import { categoryService, type Category } from '@/services/category';
 import { Button } from '@/components/ui/button';
@@ -269,9 +269,9 @@ const ItemManagement = () => {
                   const isExpanded = expandedItems.has(item.id);
                   
                   return (
-                    <>
+                    <React.Fragment key={item.id}>
                       {/* Main Item Row */}
-                      <TableRow key={item.id} className={!item.is_active ? 'opacity-60' : ''}>
+                      <TableRow className={!item.is_active ? 'opacity-60' : ''}>
                         <TableCell className="text-center">
                           <button 
                             onClick={() => toggleItem(item.id)}
@@ -405,7 +405,7 @@ const ItemManagement = () => {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </React.Fragment>
                   );
                 })
               )}
