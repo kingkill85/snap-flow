@@ -8,6 +8,8 @@ import Layout from '@/components/layout/Layout';
 import Home from '@/pages/Home';
 import Login from '@/pages/Login';
 import NotFound from '@/pages/NotFound';
+import UserManagement from '@/pages/settings/UserManagement';
+import CategoryManagement from '@/pages/catalog/CategoryManagement';
 
 function App() {
   return (
@@ -34,12 +36,12 @@ function App() {
               } />
               <Route path="catalog/categories" element={
                 <ProtectedRoute requireAdmin>
-                  <div>Categories Management (Coming soon)</div>
+                  <CategoryManagement />
                 </ProtectedRoute>
               } />
               <Route path="settings/users" element={
                 <ProtectedRoute requireAdmin>
-                  <div>User Management (Coming soon)</div>
+                  <UserManagement />
                 </ProtectedRoute>
               } />
             </Route>
