@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Upload, FileSpreadsheet, X, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { itemService } from '@/services/item';
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -86,23 +87,10 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
     setError('');
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch('/api/items/import-preview', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to preview import');
-      }
-
-      const data = await response.json();
-      setPreview(data.data);
+      const data = await itemService.previewImport(file);
+      setPreview(data);
     } catch (err: any) {
-      setError(err.message || 'Failed to preview import');
+      setError(err.response?.data?.error || err.message || 'Failed to preview import');
     } finally {
       setIsLoading(false);
     }
@@ -115,27 +103,14 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
     setError('');
 
     try {
-      const response = await fetch('/api/items/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ preview }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to import catalog');
-      }
-
-      const data = await response.json();
-      setImportResult(data.data);
+      const data = await itemService.executeImport(preview);
+      setImportResult(data);
       
-      if (data.data.errors.length === 0) {
+      if (data.errors.length === 0) {
         onSuccess();
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to import catalog');
+      setError(err.response?.data?.error || err.message || 'Failed to import catalog');
     } finally {
       setIsImporting(false);
     }

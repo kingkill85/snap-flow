@@ -171,6 +171,24 @@ export const itemService = {
     await api.delete(`/items/${itemId}/variants/${variantId}`, { signal });
   },
 
+  async previewImport(file: File, signal?: AbortSignal): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await api.post('/items/import-preview', formData, {
+      signal,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data.data;
+  },
+
+  async executeImport(preview: any, signal?: AbortSignal): Promise<any> {
+    const response = await api.post('/items/import', { preview }, { signal });
+    return response.data.data;
+  },
+
   getImageUrl(imagePath: string | null, bustCache?: boolean): string | null {
     if (!imagePath) return null;
     if (bustCache) {
