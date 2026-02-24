@@ -32,6 +32,9 @@ import {
   Image as ImageIcon,
   ChevronDown,
   ChevronRight,
+  Upload,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
 const ItemManagement = () => {
@@ -175,10 +178,16 @@ const ItemManagement = () => {
           <h1 className="text-3xl font-bold tracking-tight">Item Management</h1>
           <p className="text-muted-foreground">Manage products and their details</p>
         </div>
-        <Button disabled>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Item (Coming Soon)
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" disabled>
+            <Upload className="mr-2 h-4 w-4" />
+            Import Catalog
+          </Button>
+          <Button disabled>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Item
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -365,6 +374,7 @@ const ItemManagement = () => {
                                       <th className="text-left py-2 px-4 text-xs uppercase font-semibold">Style</th>
                                       <th className="text-left py-2 px-4 w-24 text-xs uppercase font-semibold">Price</th>
                                       <th className="text-left py-2 px-4 w-28 text-xs uppercase font-semibold">Status</th>
+                                      <th className="text-right py-2 px-4 w-32 text-xs uppercase font-semibold">Actions</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -397,6 +407,16 @@ const ItemManagement = () => {
                                               Inactive
                                             </span>
                                           )}
+                                        </td>
+                                        <td className="py-3 px-4 text-right">
+                                          <div className="flex gap-1 justify-end">
+                                            <Button size="sm" variant="ghost" disabled>
+                                              <Pencil className="h-3 w-3" />
+                                            </Button>
+                                            <Button size="sm" variant="ghost" disabled>
+                                              <Trash2 className="h-3 w-3" />
+                                            </Button>
+                                          </div>
                                         </td>
                                       </tr>
                                     ))}
