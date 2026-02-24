@@ -2,9 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Run Dev (Backend + Frontend)",
-      "type": "npm",
-      "script": "dev",
+      "label": "Run Dev (Backend + Frontend V2)",
+      "type": "shell",
+      "command": "npm run dev",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -21,15 +21,15 @@
     },
     {
       "label": "Run Backend Only",
-      "type": "npm",
-      "script": "dev:backend",
+      "type": "shell",
+      "command": "cd backend && deno task dev",
       "problemMatcher": [],
       "group": "build"
     },
     {
-      "label": "Run Frontend Only",
-      "type": "npm",
-      "script": "dev:frontend",
+      "label": "Run Frontend V2 Only",
+      "type": "shell",
+      "command": "cd frontend-v2 && npm run dev",
       "problemMatcher": {
         "pattern": {
           "regexp": "."
@@ -43,9 +43,25 @@
       "group": "build"
     },
     {
-      "label": "Start Frontend Server",
+      "label": "Run Frontend Legacy Only",
       "type": "shell",
       "command": "cd frontend && npm run dev",
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "."
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "> vite",
+          "endsPattern": "ready in"
+        }
+      },
+      "group": "build"
+    },
+    {
+      "label": "Start Frontend V2 Server",
+      "type": "shell",
+      "command": "cd frontend-v2 && npm run dev",
       "problemMatcher": {
         "pattern": {
           "regexp": "."
@@ -60,18 +76,56 @@
       "group": "build"
     },
     {
-      "label": "Build Frontend",
-      "type": "npm",
-      "script": "build",
+      "label": "Start Frontend Legacy Server",
+      "type": "shell",
+      "command": "cd frontend && npm run dev -- --port 5174",
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "."
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "> vite",
+          "endsPattern": "ready in"
+        }
+      },
+      "isBackground": true,
+      "group": "build"
+    },
+    {
+      "label": "Build Frontend V2",
+      "type": "shell",
+      "command": "cd frontend-v2 && npm run build",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "Build Frontend Legacy",
+      "type": "shell",
+      "command": "cd frontend && npm run build",
       "problemMatcher": [],
       "group": "build"
     },
     {
       "label": "Install All Dependencies",
-      "type": "npm",
-      "script": "install:all",
+      "type": "shell",
+      "command": "npm run install:all",
       "problemMatcher": [],
       "group": "build"
+    },
+    {
+      "label": "Test Backend",
+      "type": "shell",
+      "command": "cd backend && deno test --allow-all tests/",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "Test Frontend V2",
+      "type": "shell",
+      "command": "cd frontend-v2 && npm test",
+      "problemMatcher": [],
+      "group": "test"
     }
   ]
 }

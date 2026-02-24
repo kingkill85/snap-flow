@@ -23,10 +23,11 @@ dist/
 build/
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
+# Note: .vscode/ is allowed at root level for shared workspace settings
+# Subdirectories should ignore their own .vscode folders
 
 # OS
 .DS_Store

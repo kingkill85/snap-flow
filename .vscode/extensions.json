@@ -1,0 +1,20 @@
+{
+  "recommendations": [
+    "denoland.vscode-deno",
+    "bradlc.vscode-tailwindcss",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "vscode-icons-team.vscode-icons",
+    "formulahendry.auto-rename-tag",
+    "christian-kohler.path-intellisense",
+    "usernamehw.errorlens",
+    "streetsidesoftware.code-spell-checker",
+    "gruntfuggly.todo-tree",
+    "eamodio.gitlens",
+    "pkief.material-icon-theme",
+    "antfu.vite",
+    "yoavbls.pretty-ts-errors",
+    "mattpocock.ts-error-translator"
+  ],
+  "unwantedRecommendations": []
+}

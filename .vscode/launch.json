@@ -17,29 +17,45 @@
       "console": "integratedTerminal"
     },
     {
-      "name": "Debug Frontend (Chrome)",
+      "name": "Debug Frontend V2 (Chrome)",
       "type": "chrome",
       "request": "launch",
       "url": "http://localhost:5173",
-      "webRoot": "${workspaceFolder}/frontend/src",
-      "preLaunchTask": "Start Frontend Server",
+      "webRoot": "${workspaceFolder}/frontend-v2/src",
+      "preLaunchTask": "Start Frontend V2 Server",
       "sourceMapPathOverrides": {
         "webpack:///src/*": "${webRoot}/*"
       }
     },
     {
-      "name": "Debug Frontend (Edge)",
+      "name": "Debug Frontend V2 (Edge)",
       "type": "msedge",
       "request": "launch",
       "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/frontend-v2/src",
+      "preLaunchTask": "Start Frontend V2 Server"
+    },
+    {
+      "name": "Debug Frontend Legacy (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5174",
       "webRoot": "${workspaceFolder}/frontend/src",
-      "preLaunchTask": "Start Frontend Server"
+      "preLaunchTask": "Start Frontend Legacy Server",
+      "sourceMapPathOverrides": {
+        "webpack:///src/*": "${webRoot}/*"
+      }
     }
   ],
   "compounds": [
     {
-      "name": "Debug Full Stack",
-      "configurations": ["Debug Backend (Deno)", "Debug Frontend (Chrome)"],
+      "name": "Debug Full Stack (V2 + Backend)",
+      "configurations": ["Debug Backend (Deno)", "Debug Frontend V2 (Chrome)"],
+      "stopAll": true
+    },
+    {
+      "name": "Debug Full Stack (Legacy + Backend)",
+      "configurations": ["Debug Backend (Deno)", "Debug Frontend Legacy (Chrome)"],
       "stopAll": true
     }
   ]
