@@ -155,6 +155,7 @@ export const itemService = {
     data: UpdateVariantDTO,
     signal?: AbortSignal
   ): Promise<ItemVariant> {
+    console.log('DEBUG updateVariant called with:', { itemId, variantId, data });
     const formData = new FormData();
     
     if (data.style_name !== undefined) formData.append('style_name', data.style_name);
@@ -163,7 +164,10 @@ export const itemService = {
     if (data.remove_image) formData.append('remove_image', 'true');
     if (data.is_active !== undefined) formData.append('is_active', data.is_active.toString());
 
-    const response = await api.put(`/items/${itemId}/variants/${variantId}`, formData, { signal });
+    const url = `/items/${itemId}/variants/${variantId}`;
+    console.log('DEBUG: Calling API URL:', url);
+    const response = await api.put(url, formData, { signal });
+    console.log('DEBUG: API response:', response.data);
     return response.data.data;
   },
 

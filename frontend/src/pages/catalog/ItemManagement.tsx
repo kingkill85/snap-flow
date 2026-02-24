@@ -229,11 +229,14 @@ const ItemManagement = () => {
   };
 
   const handleVariantSubmit = async (data: CreateVariantDTO | UpdateVariantDTO) => {
+    console.log('DEBUG handleVariantSubmit called:', { selectedItemIdForVariant, variantToEdit, data });
     if (!selectedItemIdForVariant) return;
     
     if (variantToEdit) {
+      console.log('DEBUG: Updating variant', { itemId: selectedItemIdForVariant, variantId: variantToEdit.id });
       await itemService.updateVariant(selectedItemIdForVariant, variantToEdit.id, data as UpdateVariantDTO);
     } else {
+      console.log('DEBUG: Creating new variant');
       await itemService.createVariant(selectedItemIdForVariant, data as CreateVariantDTO);
     }
     
