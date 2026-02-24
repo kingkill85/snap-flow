@@ -163,7 +163,9 @@ export const itemService = {
     if (data.remove_image) formData.append('remove_image', 'true');
     if (data.is_active !== undefined) formData.append('is_active', data.is_active.toString());
 
+    console.log('DEBUG updateVariant - sending data:', { itemId, variantId, data });
     const response = await api.put(`/items/${itemId}/variants/${variantId}`, formData, { signal });
+    console.log('DEBUG updateVariant - received:', response.data);
     return response.data.data;
   },
 
