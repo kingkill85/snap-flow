@@ -177,9 +177,7 @@ export const itemService = {
 
     const response = await api.post('/items/import-preview', formData, {
       signal,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      // Don't set Content-Type - let axios set it automatically with proper boundary
     });
     return response.data.data;
   },
