@@ -82,8 +82,8 @@ const CategoryManagement = () => {
     const categoryIds = newCategories.map(c => c.id);
     
     try {
-      await categoryService.reorder(categoryIds);
-      setCategories(newCategories);
+      const updatedCategories = await categoryService.reorder(categoryIds);
+      setCategories(updatedCategories);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to reorder categories');
     }
