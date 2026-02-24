@@ -269,7 +269,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
         )}
 
         {step === 'complete' && result && (
-          <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
+          <div className="space-y-6">
             <div className={`p-4 rounded-lg ${result.success ? 'bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800' : 'bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800'}`}>
               <div className="flex items-center gap-3">
                 {result.success ? (
