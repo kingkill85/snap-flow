@@ -39,11 +39,13 @@ const ProjectDashboard = () => {
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showNotFound, setShowNotFound] = useState(false);
   const [error, setError] = useState('');
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
   const [placementsVersion, setPlacementsVersion] = useState(0);
   const [projectTotal, setProjectTotal] = useState<number>(0);
   const [isLoadingTotal, setIsLoadingTotal] = useState(false);
+  const [isDropping, setIsDropping] = useState(false);
   
   // Floorplan modal state
   const [showFloorplanModal, setShowFloorplanModal] = useState(false);
@@ -67,6 +69,7 @@ const ProjectDashboard = () => {
   const fetchProjectData = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
+      setShowNotFound(false);
       const [projectData, floorplansData, itemsResult] = await Promise.all([
         projectService.getById(projectId, signal),
         floorplanService.getAll(projectId, signal),
@@ -85,6 +88,10 @@ const ProjectDashboard = () => {
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setError(err.response?.data?.error || 'Failed to load project data');
+        // Only show "not found" if we get a 404
+        if (err.response?.status === 404) {
+          setShowNotFound(true);
+        }
       }
     } finally {
       setIsLoading(false);
@@ -284,9 +291,13 @@ const ProjectDashboard = () => {
       
       if (itemData?.item) {
         try {
+          // Hide overlay immediately to prevent fly-back animation
+          setIsDropping(true);
+          
           const canvasElement = document.querySelector(`[data-canvas-id="${activeFloorplan.id}"]`);
           if (!canvasElement) {
             console.error('Canvas element not found');
+            setIsDropping(false);
             setActiveDragItem(null);
             return;
           }
@@ -294,6 +305,7 @@ const ProjectDashboard = () => {
           const floorplanImage = canvasElement.querySelector('img[data-floorplan-image="true"]') as HTMLImageElement | null;
           if (!floorplanImage) {
             console.error('Floorplan image not found');
+            setIsDropping(false);
             setActiveDragItem(null);
             return;
           }
@@ -340,9 +352,16 @@ const ProjectDashboard = () => {
               item_variant_id: variantToUse.id,
               addon_ids: storedConfig?.addon_ids,
             });
+            // Clear drag item - placement will appear with fade-in animation
+            setIsDropping(false);
+            setActiveDragItem(null);
+            return;
           }
+          
+          setIsDropping(false);
         } catch (err) {
           console.error('Failed to create placement:', err);
+          setIsDropping(false);
         }
       }
     }
@@ -426,11 +445,19 @@ const ProjectDashboard = () => {
     );
   }
 
-  if (!project) {
+  if (showNotFound) {
     return (
       <Alert variant="destructive">
         <AlertDescription>Project not found</AlertDescription>
       </Alert>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
     );
   }
 
@@ -648,9 +675,9 @@ const ProjectDashboard = () => {
           </div>
         </div>
         
-        {/* Drag Overlay */}
-        <DragOverlay>
-          {activeDragItem && (
+        {/* Drag Overlay - use dropAnimation=null to prevent fly-back, only show when not dropping */}
+        <DragOverlay dropAnimation={null}>
+          {activeDragItem && !isDropping && (
             <div className="border-2 border-primary rounded bg-background shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
               {activeDragItem.preview_image ? (
                 <img
