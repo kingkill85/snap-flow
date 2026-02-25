@@ -57,7 +57,7 @@ export interface UpdateVariantDTO {
 }
 
 export interface ItemFilter {
-  category_id?: number;
+  category_id?: number | null;
   search?: string;
   include_inactive?: boolean;
 }
@@ -83,8 +83,8 @@ export const itemService = {
   ): Promise<PaginatedItemsResult> {
     const params = new URLSearchParams();
     
-    if (filter?.category_id) {
-      params.append('category_id', filter.category_id.toString());
+    if (filter?.category_id !== undefined) {
+      params.append('category_id', filter.category_id === null ? 'null' : filter.category_id.toString());
     }
     if (filter?.search) {
       params.append('search', filter.search);

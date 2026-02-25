@@ -57,13 +57,20 @@ const ProjectList = () => {
       const data = await projectService.getAll(searchQuery || undefined, signal);
       setProjects(data);
       setError('');
+      if (!isSearch) {
+        setIsLoading(false);
+      } else {
+        setIsSearching(false);
+      }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setError(err.response?.data?.error || 'Failed to fetch projects');
       }
-    } finally {
-      setIsLoading(false);
-      setIsSearching(false);
+      if (!isSearch) {
+        setIsLoading(false);
+      } else {
+        setIsSearching(false);
+      }
     }
   };
 
