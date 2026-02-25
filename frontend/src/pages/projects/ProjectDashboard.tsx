@@ -45,6 +45,7 @@ const ProjectDashboard = () => {
   const [placementsVersion, setPlacementsVersion] = useState(0);
   const [projectTotal, setProjectTotal] = useState<number>(0);
   const [isLoadingTotal, setIsLoadingTotal] = useState(false);
+  const [isDropping, setIsDropping] = useState(false);
   
   // Floorplan modal state
   const [showFloorplanModal, setShowFloorplanModal] = useState(false);
@@ -290,9 +291,13 @@ const ProjectDashboard = () => {
       
       if (itemData?.item) {
         try {
+          // Hide overlay immediately to prevent fly-back animation
+          setIsDropping(true);
+          
           const canvasElement = document.querySelector(`[data-canvas-id="${activeFloorplan.id}"]`);
           if (!canvasElement) {
             console.error('Canvas element not found');
+            setIsDropping(false);
             setActiveDragItem(null);
             return;
           }
@@ -300,6 +305,7 @@ const ProjectDashboard = () => {
           const floorplanImage = canvasElement.querySelector('img[data-floorplan-image="true"]') as HTMLImageElement | null;
           if (!floorplanImage) {
             console.error('Floorplan image not found');
+            setIsDropping(false);
             setActiveDragItem(null);
             return;
           }
@@ -346,9 +352,16 @@ const ProjectDashboard = () => {
               item_variant_id: variantToUse.id,
               addon_ids: storedConfig?.addon_ids,
             });
+            // Clear drag item - placement will appear with fade-in animation
+            setIsDropping(false);
+            setActiveDragItem(null);
+            return;
           }
+          
+          setIsDropping(false);
         } catch (err) {
           console.error('Failed to create placement:', err);
+          setIsDropping(false);
         }
       }
     }
@@ -662,9 +675,9 @@ const ProjectDashboard = () => {
           </div>
         </div>
         
-        {/* Drag Overlay */}
-        <DragOverlay>
-          {activeDragItem && (
+        {/* Drag Overlay - use dropAnimation=null to prevent fly-back, only show when not dropping */}
+        <DragOverlay dropAnimation={null}>
+          {activeDragItem && !isDropping && (
             <div className="border-2 border-primary rounded bg-background shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
               {activeDragItem.preview_image ? (
                 <img
