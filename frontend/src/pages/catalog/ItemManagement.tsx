@@ -110,8 +110,8 @@ const ItemManagement = () => {
         setIsLoading(true);
         setError('');
         
-        const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
-        if (selectedCategory !== 'all') filter.category_id = parseInt(selectedCategory);
+        const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
+        if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
         if (searchQuery) filter.search = searchQuery;
         if (showInactive) filter.include_inactive = true;
 
@@ -179,8 +179,8 @@ const ItemManagement = () => {
     await itemService.delete(itemToDelete.id);
     
     // Refresh items
-    const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
-    if (selectedCategory !== 'all') filter.category_id = parseInt(selectedCategory);
+    const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
+    if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
     if (searchQuery) filter.search = searchQuery;
     if (showInactive) filter.include_inactive = true;
     
@@ -237,8 +237,8 @@ const ItemManagement = () => {
       await itemService.create(data as CreateItemDTO);
     }
     // Refresh items
-    const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
-    if (selectedCategory !== 'all') filter.category_id = parseInt(selectedCategory);
+    const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
+    if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
     if (searchQuery) filter.search = searchQuery;
     if (showInactive) filter.include_inactive = true;
     
@@ -305,8 +305,8 @@ const ItemManagement = () => {
   const handleImportSuccess = () => {
     setShowImportModal(false);
     // Refresh items after import
-    const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
-    if (selectedCategory !== 'all') filter.category_id = parseInt(selectedCategory);
+    const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
+    if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
     if (searchQuery) filter.search = searchQuery;
     if (showInactive) filter.include_inactive = true;
     
@@ -379,6 +379,7 @@ const ItemManagement = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Categories</SelectItem>
+                  <SelectItem value="null">Uncategorized</SelectItem>
                   {categories.map((category) => (
                     <SelectItem key={category.id} value={category.id.toString()}>
                       {category.name}

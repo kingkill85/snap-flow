@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -231,23 +230,18 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit Variant' : 'Create Variant'}</DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? 'Update variant details below.'
-              : 'Fill in the details to create a new variant.'}
-          </DialogDescription>
+      <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto p-4">
+        <DialogHeader className="pb-2">
+          <DialogTitle className="text-lg">{isEdit ? 'Edit Variant' : 'Create Variant'}</DialogTitle>
         </DialogHeader>
 
         {error && (
-          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
+          <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
           <div className="space-y-2">
             <Label htmlFor="style_name">Style Name *</Label>
             <Input
@@ -284,7 +278,7 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
                 border-2 border-dashed rounded-lg p-6 cursor-pointer
                 transition-colors duration-200
                 ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-muted-foreground/50'}
-                ${imagePreview ? 'p-2' : 'p-6'}
+                ${imagePreview ? 'p-1' : 'p-3'}
               `}
             >
               <input
@@ -300,7 +294,7 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
                   <img
                     src={imagePreview}
                     alt="Preview"
-                    className="max-h-48 mx-auto rounded object-contain"
+                    className="max-h-16 mx-auto rounded object-contain"
                   />
                   <button
                     type="button"
@@ -315,12 +309,9 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
                 </div>
               ) : (
                 <div className="text-center">
-                  <Upload className="mx-auto h-10 w-10 text-muted-foreground mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    Drag and drop an image here, or click to select
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Supports: JPG, PNG, WebP
+                  <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-1" />
+                  <p className="text-xs text-muted-foreground">
+                    Drop image here or click
                   </p>
                 </div>
               )}
@@ -342,105 +333,35 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
 
           {/* Add-ons Section - Only for Edit Mode */}
           {isEdit && (
-            <div className="border-t pt-4 mt-4">
-              <h4 className="text-sm font-semibold mb-3">Add-ons</h4>
+            <div className="border-t pt-3 mt-3">
+              <h4 className="text-sm font-semibold mb-2">Add-ons</h4>
               
-              {loadingAddons ? (
-                <div className="flex items-center justify-center py-4 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Loading add-ons...
-                </div>
-              ) : addons.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic mb-4">No add-ons configured.</p>
-              ) : (
-                <div className="space-y-2 mb-4">
-                  {addons.map((addon) => (
-                    <div key={addon.id} className="flex items-center justify-between bg-muted p-2 rounded">
-                      <div className="flex items-center gap-3">
-                        {addon.addon_variant?.image_path ? (
-                          <img
-                            src={`/uploads/${addon.addon_variant.image_path}`}
-                            alt={addon.addon_variant.style_name}
-                            className="h-12 w-12 object-contain rounded border bg-white"
-                          />
-                        ) : (
-                          <div className="h-12 w-12 bg-background rounded border flex items-center justify-center text-muted-foreground text-xs">
-                            No Image
-                          </div>
-                        )}
-                        <div>
-                          <div className="font-medium text-sm">
-                            {addon.addon_variant?.item_name} - {addon.addon_variant?.style_name}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            ${addon.addon_variant?.price} 
-                            <span className={`ml-2 text-xs px-2 py-0.5 rounded ${addon.is_required ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                              {addon.is_required ? 'Required' : 'Optional'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleRemoveAddon(addon.id)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Add New Add-on */}
-              <div className="bg-muted/50 p-3 rounded space-y-3">
-                <p className="text-sm font-medium">Add New Add-on</p>
-                
-                {/* Custom Variant Selector with Images */}
-                <div className="space-y-2 variant-dropdown-container">
-                  <div className="relative">
+              {/* Add New Add-on - Compact single line */}
+              <div className="bg-muted/50 p-2 rounded mb-2">
+                <div className="flex items-center gap-2">
+                  {/* Variant Dropdown */}
+                  <div className="flex-1 variant-dropdown-container relative">
                     <button
                       type="button"
                       onClick={() => setShowVariantDropdown(!showVariantDropdown)}
-                      className="w-full flex items-center justify-between px-3 py-2 border rounded-md bg-background hover:bg-accent transition-colors"
+                      className="w-full flex items-center justify-between px-2 py-1.5 border rounded bg-background hover:bg-accent transition-colors text-left"
                     >
                       {selectedAddonVariant ? (
-                        <div className="flex items-center gap-2">
+                        <span className="text-sm truncate">
                           {(() => {
                             const v = availableVariants.find(v => v.id.toString() === selectedAddonVariant);
                             const itemInfo = v ? getItemInfo(v.item_id) : null;
-                            return v ? (
-                              <>
-                                {v.image_path ? (
-                                  <img
-                                    src={`/uploads/${v.image_path}`}
-                                    alt={v.style_name}
-                                    className="h-8 w-8 object-contain rounded border bg-white"
-                                  />
-                                ) : (
-                                  <div className="h-8 w-8 bg-muted rounded border flex items-center justify-center">
-                                    <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                                  </div>
-                                )}
-                                <span className="text-sm">
-                                  {itemInfo?.base_model_number || itemInfo?.name || 'Unknown'} - {v.style_name} (${v.price})
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-sm text-muted-foreground">Select variant...</span>
-                            );
+                            return v ? `${itemInfo?.base_model_number || itemInfo?.name || 'Unknown'} - ${v.style_name}` : 'Select variant...';
                           })()}
-                        </div>
+                        </span>
                       ) : (
                         <span className="text-sm text-muted-foreground">Select variant...</span>
                       )}
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0 ml-1" />
                     </button>
                     
                     {showVariantDropdown && (
-                      <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-lg max-h-60 overflow-auto">
+                      <div className="absolute z-50 w-full mt-1 bg-popover border rounded shadow-lg max-h-48 overflow-auto">
                         {availableVariants
                           .filter(v => v.id !== variant?.id && !addons.some(a => a.addon_variant_id === v.id))
                           .map((v) => {
@@ -453,21 +374,21 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
                                   setSelectedAddonVariant(v.id.toString());
                                   setShowVariantDropdown(false);
                                 }}
-                                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent transition-colors text-left"
+                                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-accent transition-colors text-left"
                               >
                                 {v.image_path ? (
                                   <img
                                     src={`/uploads/${v.image_path}`}
                                     alt={v.style_name}
-                                    className="h-10 w-10 object-contain rounded border bg-white flex-shrink-0"
+                                    className="h-6 w-6 object-contain rounded border bg-white flex-shrink-0"
                                   />
                                 ) : (
-                                  <div className="h-10 w-10 bg-muted rounded border flex items-center justify-center flex-shrink-0">
-                                    <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                                  <div className="h-6 w-6 bg-muted rounded border flex items-center justify-center flex-shrink-0">
+                                    <ImageIcon className="h-3 w-3 text-muted-foreground" />
                                   </div>
                                 )}
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-medium truncate">
+                                  <div className="text-xs font-medium truncate">
                                     {itemInfo?.base_model_number || itemInfo?.name || 'Unknown'}
                                   </div>
                                   <div className="text-xs text-muted-foreground truncate">
@@ -481,33 +402,86 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
                     )}
                   </div>
                   
-                  <div className="flex gap-2 items-center">
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id="is_required"
-                        checked={isRequired}
-                        onCheckedChange={setIsRequired}
-                      />
-                      <Label htmlFor="is_required" className="text-sm whitespace-nowrap cursor-pointer">
-                        Required
-                      </Label>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleAddAddon}
-                      disabled={!selectedAddonVariant || addingAddon}
-                    >
-                      {addingAddon ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Plus className="h-4 w-4" />
-                      )}
-                    </Button>
+                  {/* Required Toggle */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Switch
+                      id="is_required"
+                      checked={isRequired}
+                      onCheckedChange={setIsRequired}
+                      className="scale-75"
+                    />
+                    <Label htmlFor="is_required" className="text-xs whitespace-nowrap cursor-pointer">
+                      Required
+                    </Label>
                   </div>
+                  
+                  {/* Add Button */}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleAddAddon}
+                    disabled={!selectedAddonVariant || addingAddon}
+                    className="h-7 w-7 p-0 flex-shrink-0"
+                  >
+                    {addingAddon ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Plus className="h-3 w-3" />
+                    )}
+                  </Button>
                 </div>
               </div>
+
+              {/* Existing Add-ons List - Scrollable */}
+              {loadingAddons ? (
+                <div className="flex items-center justify-center py-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Loading add-ons...
+                </div>
+              ) : addons.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">No add-ons configured.</p>
+              ) : (
+                <div className="max-h-[150px] overflow-y-auto space-y-1 pr-1">
+                  {addons.map((addon) => (
+                    <div key={addon.id} className="flex items-center justify-between bg-muted p-1.5 rounded">
+                      <div className="flex items-center gap-1.5">
+                        {addon.addon_variant?.image_path ? (
+                          <img
+                            src={`/uploads/${addon.addon_variant.image_path}`}
+                            alt={addon.addon_variant.style_name}
+                            className="h-5 w-5 object-contain rounded border bg-white"
+                          />
+                        ) : (
+                          <div className="h-5 w-5 bg-background rounded border flex items-center justify-center text-muted-foreground text-[10px]">
+                            No
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-medium text-xs">
+                            {addon.addon_variant?.item_name} - {addon.addon_variant?.style_name}
+                          </div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-1">
+                            ${addon.addon_variant?.price} 
+                            <span className={`text-[10px] px-1 py-0 rounded ${addon.is_required ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                              {addon.is_required ? 'Req' : 'Opt'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleRemoveAddon(addon.id)}
+                        className="text-destructive hover:text-destructive h-7 w-7 p-0"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

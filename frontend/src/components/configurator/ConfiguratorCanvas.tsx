@@ -21,6 +21,14 @@ import { bomService } from '@/services/bom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
 
+// CSS keyframes for fade-in animation (50ms for snappy feel)
+const fadeInKeyframes = `
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+`;
+
 interface CanvasProps {
   floorplan: Floorplan;
   placements: Placement[];
@@ -43,6 +51,7 @@ interface DraggablePlacementProps {
   scaleY: number;
   maxNaturalWidth: number;
   maxNaturalHeight: number;
+  isNew?: boolean;
 }
 
 interface AddonWithVariant {
@@ -70,6 +79,7 @@ function DraggablePlacement({
   scaleY,
   maxNaturalWidth,
   maxNaturalHeight,
+  isNew,
 }: DraggablePlacementProps) {
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0, placementX: 0, placementY: 0, corner: '' });
@@ -88,7 +98,10 @@ function DraggablePlacement({
         transform: CSS.Translate.toString(transform),
         zIndex: isResizing ? 200 : 100,
       }
-    : { zIndex: isResizing ? 200 : isDragging ? 100 : 1 };
+    : { 
+        zIndex: isResizing ? 200 : isDragging ? 100 : 1,
+        animation: isNew ? 'fadeIn 50ms ease-out' : undefined,
+      };
 
   const handleClick = (e: React.MouseEvent) => {
     if (isResizing) return;
@@ -552,6 +565,31 @@ export function ConfiguratorCanvas({
   const { setNodeRef, isOver } = useDroppable({
     id: `canvas-${floorplan.id}`,
   });
+  
+  // Track new placements for fade-in animation
+  const newPlacementIdsRef = useRef<Set<number>>(new Set());
+  const prevPlacementsRef = useRef<Placement[]>([]);
+  
+  // Detect new placements when placements array changes
+  useEffect(() => {
+    const currentIds = new Set(placements.map(p => p.id));
+    const prevIds = new Set(prevPlacementsRef.current.map(p => p.id));
+    
+    // Find placements that exist now but didn't exist before
+    const newIds = [...currentIds].filter(id => !prevIds.has(id));
+    
+    if (newIds.length > 0) {
+      // Add new IDs to the ref
+      newIds.forEach(id => newPlacementIdsRef.current.add(id));
+      
+      // Remove them after animation completes (50ms + buffer)
+      setTimeout(() => {
+        newIds.forEach(id => newPlacementIdsRef.current.delete(id));
+      }, 100);
+    }
+    
+    prevPlacementsRef.current = placements;
+  }, [placements]);
 
   const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
   const [imageDisplaySize, setImageDisplaySize] = useState({ width: 0, height: 0 });
@@ -617,11 +655,13 @@ export function ConfiguratorCanvas({
   };
 
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full h-full bg-background overflow-hidden"
-      style={{ touchAction: 'none' }}
-    >
+    <>
+      <style>{fadeInKeyframes}</style>
+      <div
+        ref={containerRef}
+        className="relative w-full h-full bg-background overflow-hidden"
+        style={{ touchAction: 'none' }}
+      >
       <div
         ref={setNodeRef}
         data-canvas-id={floorplan.id}
@@ -655,6 +695,8 @@ export function ConfiguratorCanvas({
                 .map((placement) => {
                   const item = items.find((i) => i.id === placement.item_id);
 
+                  const isNewPlacement = newPlacementIdsRef.current.has(placement.id);
+
                   return (
                     <DraggablePlacement
                       key={placement.id}
@@ -673,6 +715,7 @@ export function ConfiguratorCanvas({
                       scaleY={scaleY}
                       maxNaturalWidth={imageNaturalSize.width}
                       maxNaturalHeight={imageNaturalSize.height}
+                      isNew={isNewPlacement}
                     />
                   );
                 })}
@@ -703,5 +746,6 @@ export function ConfiguratorCanvas({
         />
       </div>
     </div>
+    </>
   );
 }

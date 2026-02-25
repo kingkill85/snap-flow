@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
 import type { Item } from '@/services/item';
 import { itemService } from '@/services/item';
 import type { Category } from '@/services/category';
@@ -13,19 +12,13 @@ interface DraggableItemProps {
 }
 
 function DraggableItem({ item }: DraggableItemProps) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef } = useDraggable({
     id: `item-${item.id}`,
     data: {
       item,
       type: 'item',
     },
   });
-
-  const style = transform
-    ? {
-        transform: CSS.Translate.toString(transform),
-      }
-    : undefined;
 
   const imageUrl = item.preview_image ? `/uploads/${item.preview_image}` : null;
 
@@ -34,10 +27,6 @@ function DraggableItem({ item }: DraggableItemProps) {
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      style={{
-        ...style,
-        visibility: isDragging ? 'hidden' : 'visible',
-      }}
       className="cursor-grab hover:shadow-md transition-shadow bg-background border border-border rounded-lg overflow-hidden"
     >
       <div className="h-12 bg-muted relative">
