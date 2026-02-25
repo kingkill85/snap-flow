@@ -52,4 +52,3 @@ temp/
 Dockerfile
 docker-compose.yml
 deploy.sh
-backend/deno.lock
