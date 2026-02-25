@@ -70,7 +70,7 @@ floorplanRoutes.get('/:id', authMiddleware, async (c) => {
 });
 
 // POST /floorplans - Create floorplan with image upload
-floorplanRoutes.post('/', authMiddleware, uploadMiddleware('floorplans'), async (c) => {
+floorplanRoutes.post('/', authMiddleware, uploadMiddleware('floorplans', { maxImageWidth: 1920 }), async (c) => {
   try {
     const uploadResult = c.get('uploadResult');
     const formData = c.get('formData');
@@ -118,7 +118,7 @@ floorplanRoutes.post('/', authMiddleware, uploadMiddleware('floorplans'), async 
 });
 
 // PUT /floorplans/:id - Update floorplan (with optional image upload)
-floorplanRoutes.put('/:id', authMiddleware, uploadMiddleware('floorplans'), async (c) => {
+floorplanRoutes.put('/:id', authMiddleware, uploadMiddleware('floorplans', { maxImageWidth: 1920 }), async (c) => {
   const id = parseInt(c.req.param('id'));
   const uploadResult = c.get('uploadResult');
   const formData = c.get('formData');

@@ -1,5 +1,6 @@
 import type { Context, Next } from 'hono';
 import { fileStorageService } from '../services/file-storage.ts';
+import { processImageSafe, type ProcessOptions } from '../services/image-processing.ts';
 
 /**
  * Allowed image MIME types
@@ -51,6 +52,7 @@ export function uploadMiddleware(
     allowedTypes?: string[];
     maxSize?: number;
     skipValidation?: boolean;
+    maxImageWidth?: number;
   } = {}
 ): (c: Context, next: Next) => Promise<void> {
   return async (c: Context, next: Next) => {
@@ -59,6 +61,7 @@ export function uploadMiddleware(
       allowedTypes = ALLOWED_IMAGE_MIME_TYPES,
       maxSize = MAX_IMAGE_FILE_SIZE,
       skipValidation = false,
+      maxImageWidth,
     } = options;
 
     try {
@@ -107,7 +110,28 @@ export function uploadMiddleware(
       }
 
       // Read file buffer
-      const buffer = new Uint8Array(await file.arrayBuffer());
+      const fileBuffer = await file.arrayBuffer();
+      let buffer: Uint8Array;
+
+      // Process image if maxImageWidth is specified
+      if (maxImageWidth && maxImageWidth > 0) {
+        try {
+          const processResult = await processImageSafe(new Uint8Array(fileBuffer), {
+            maxWidth: maxImageWidth,
+          });
+          if (processResult.format !== 'unknown') {
+            buffer = processResult.buffer;
+            console.log(`Image processed: ${processResult.originalSize} bytes → ${processResult.processedSize} bytes (${Math.round((1 - processResult.processedSize / processResult.originalSize) * 100)}% reduction)`);
+          } else {
+            buffer = new Uint8Array(fileBuffer);
+          }
+        } catch (error) {
+          console.warn('Image processing failed, saving original:', error);
+          buffer = new Uint8Array(fileBuffer);
+        }
+      } else {
+        buffer = new Uint8Array(fileBuffer);
+      }
 
       // Save file
       const filePath = await fileStorageService.saveFile(
