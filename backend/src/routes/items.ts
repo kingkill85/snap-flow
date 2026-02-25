@@ -34,10 +34,14 @@ itemRoutes.get('/', async (c) => {
     const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
     const includeInactive = c.req.query('include_inactive') === 'true';
 
-    const filter: { category_id?: number; search?: string; include_inactive?: boolean } = {};
+    const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
     
     if (categoryId) {
-      filter.category_id = parseInt(categoryId, 10);
+      if (categoryId === 'null') {
+        filter.category_id = null;
+      } else {
+        filter.category_id = parseInt(categoryId, 10);
+      }
     }
     
     if (search) {

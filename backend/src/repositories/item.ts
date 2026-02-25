@@ -4,7 +4,7 @@ import { itemVariantRepository } from './item-variant.ts';
 import { bomEntryRepository } from './bom-entry.ts';
 
 export interface ItemFilter {
-  category_id?: number;
+  category_id?: number | null;
   search?: string;
 }
 
@@ -38,9 +38,13 @@ export class ItemRepository {
       whereConditions.push('i.is_active = true');
     }
 
-    if (filter?.category_id) {
-      whereConditions.push('i.category_id = ?');
-      values.push(filter.category_id);
+    if (filter?.category_id !== undefined) {
+      if (filter.category_id === null) {
+        whereConditions.push('i.category_id IS NULL');
+      } else {
+        whereConditions.push('i.category_id = ?');
+        values.push(filter.category_id);
+      }
     }
 
     if (filter?.search) {

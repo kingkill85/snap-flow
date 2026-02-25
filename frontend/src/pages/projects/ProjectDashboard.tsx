@@ -39,6 +39,7 @@ const ProjectDashboard = () => {
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showNotFound, setShowNotFound] = useState(false);
   const [error, setError] = useState('');
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
   const [placementsVersion, setPlacementsVersion] = useState(0);
@@ -67,6 +68,7 @@ const ProjectDashboard = () => {
   const fetchProjectData = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
+      setShowNotFound(false);
       const [projectData, floorplansData, itemsResult] = await Promise.all([
         projectService.getById(projectId, signal),
         floorplanService.getAll(projectId, signal),
@@ -85,6 +87,10 @@ const ProjectDashboard = () => {
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setError(err.response?.data?.error || 'Failed to load project data');
+        // Only show "not found" if we get a 404
+        if (err.response?.status === 404) {
+          setShowNotFound(true);
+        }
       }
     } finally {
       setIsLoading(false);
@@ -426,11 +432,19 @@ const ProjectDashboard = () => {
     );
   }
 
-  if (!project) {
+  if (showNotFound) {
     return (
       <Alert variant="destructive">
         <AlertDescription>Project not found</AlertDescription>
       </Alert>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
     );
   }
 
