@@ -1,11 +1,12 @@
 name: Build and Push Docker Image
 
 on:
+  workflow_run:
+    workflows: ["Run Tests"]
+    branches: [main]
+    types: [completed]
   push:
-    branches: [ main ]
     tags: [ 'v*' ]
-  pull_request:
-    branches: [ main ]
 
 env:
   REGISTRY: ghcr.io
@@ -14,6 +15,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Only run if tests passed or if it's a tag push (tags bypass test requirement)
+    if: ${{ github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
       packages: write
@@ -27,7 +30,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -58,7 +60,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -67,5 +69,4 @@ jobs:
             JWT_SECRET=${{ steps.jwt.outputs.JWT_SECRET }}
 
       - name: Image digest
-        if: github.event_name != 'pull_request'
         run: echo "Image pushed to ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
