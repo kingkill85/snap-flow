@@ -80,8 +80,16 @@ const ProjectDashboard = () => {
       setFloorplans(floorplansData);
       setItems(itemsResult.items);
       
-      if (floorplansData.length > 0 && !activeFloorplan) {
-        setActiveFloorplan(floorplansData[0]);
+      if (floorplansData.length > 0) {
+        if (!activeFloorplan) {
+          setActiveFloorplan(floorplansData[0]);
+        } else {
+          // Update active floorplan with fresh data from API
+          const updatedFloorplan = floorplansData.find(fp => fp.id === activeFloorplan.id);
+          if (updatedFloorplan) {
+            setActiveFloorplan(updatedFloorplan);
+          }
+        }
       }
 
       setError('');
@@ -593,6 +601,7 @@ const ProjectDashboard = () => {
                   <div className="flex-1 overflow-hidden">
                     <div className="h-full">
                       <ConfiguratorCanvas
+                        key={`canvas-${activeFloorplan.id}-${activeFloorplan.image_path}`}
                         floorplan={activeFloorplan}
                         placements={placements}
                         items={items}
