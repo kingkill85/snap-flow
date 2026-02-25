@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { Pencil, X } from 'lucide-react';
+import { Pencil, X, Loader2 } from 'lucide-react';
 import type { Floorplan } from '@/services/floorplan';
 import type { Placement } from '@/services/placement';
 import type { Item } from '@/services/item';
@@ -19,7 +19,6 @@ import { itemService, type ItemVariant } from '@/services/item';
 import { variantAddonService } from '@/services/variant-addon';
 import { bomService } from '@/services/bom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2 } from 'lucide-react';
 
 // CSS keyframes for fade-in animation (50ms for snappy feel)
 const fadeInKeyframes = `
@@ -562,9 +561,17 @@ export function ConfiguratorCanvas({
   const imageRef = useRef<HTMLImageElement>(null);
   const [selectedPlacementId, setSelectedPlacementId] = useState<number | null>(null);
   const [editingPlacement, setEditingPlacement] = useState<Placement | null>(null);
+  const [imageCacheBuster, setImageCacheBuster] = useState(Date.now());
+  const [isImageLoading, setIsImageLoading] = useState(true);
   const { setNodeRef, isOver } = useDroppable({
     id: `canvas-${floorplan.id}`,
   });
+
+  // Update cache buster when floorplan changes to force image reload
+  useEffect(() => {
+    setImageCacheBuster(Date.now());
+    setIsImageLoading(true);
+  }, [floorplan.id, floorplan.image_path]);
   
   // Track new placements for fade-in animation
   const newPlacementIdsRef = useRef<Set<number>>(new Set());
@@ -613,6 +620,8 @@ export function ConfiguratorCanvas({
         width: naturalWidth * fittedScale,
         height: naturalHeight * fittedScale,
       });
+      
+      setIsImageLoading(false);
     }
   }, []);
 
@@ -648,11 +657,18 @@ export function ConfiguratorCanvas({
     onPlacementUpdate(placementId, { x, y, width, height });
   };
 
-  const imageUrl = `/uploads/${floorplan.image_path}`;
-  const imageWrapperStyle = {
-    width: `${imageDisplaySize.width}px`,
-    height: `${imageDisplaySize.height}px`,
-  };
+  const imageUrl = `/uploads/${floorplan.image_path}?v=${imageCacheBuster}`;
+  const imageWrapperStyle = imageDisplaySize.width > 0 && imageDisplaySize.height > 0
+    ? {
+        width: `${imageDisplaySize.width}px`,
+        height: `${imageDisplaySize.height}px`,
+      }
+    : {
+        width: 'auto',
+        height: 'auto',
+        maxWidth: '100%',
+        maxHeight: '100%',
+      };
 
   return (
     <>
@@ -674,13 +690,23 @@ export function ConfiguratorCanvas({
         {floorplan.image_path ? (
           <div className="flex h-full w-full items-center justify-center">
             <div className="relative" style={imageWrapperStyle}>
+              {isImageLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              )}
               <img
+                key={`floorplan-${floorplan.id}-${imageCacheBuster}`}
                 ref={imageRef}
                 src={imageUrl}
                 alt={floorplan.name}
                 data-floorplan-image="true"
                 className="block h-full w-full object-contain cursor-crosshair select-none"
                 onLoad={updateImageSize}
+                onError={() => {
+                  console.error('Failed to load floorplan image:', imageUrl);
+                  setIsImageLoading(false);
+                }}
                 draggable={false}
                 onDragStart={(e) => e.preventDefault()}
               />

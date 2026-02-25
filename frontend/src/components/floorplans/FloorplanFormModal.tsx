@@ -229,7 +229,7 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
                 onChange={handleFileChange}
               />
               
-              {previewUrl ? (
+                  {previewUrl ? (
                 <div className="relative">
                   <img
                     src={previewUrl}
@@ -237,18 +237,20 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
                     className="max-h-48 mx-auto rounded shadow"
                   />
                   <div className="mt-2 flex justify-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        clearFile();
-                      }}
-                    >
-                      <X className="mr-1 h-4 w-4" />
-                      Remove
-                    </Button>
+                    {!isEdit && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearFile();
+                        }}
+                      >
+                        <X className="mr-1 h-4 w-4" />
+                        Remove
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       variant="outline"
