@@ -36,6 +36,24 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Reusable validation and file setting function
+  const validateAndSetFile = (file: File): boolean => {
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file (JPG, PNG, WebP)');
+      return false;
+    }
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File size must be less than 5MB');
+      return false;
+    }
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setError('');
+    return true;
+  };
+
   useEffect(() => {
     if (isOpen) {
       if (floorplan) {
@@ -55,22 +73,40 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
     }
   }, [floorplan, isOpen]);
 
+  // Handle paste events for floorplan images
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePaste = async (e: ClipboardEvent) => {
+      // Don't handle paste if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      // Find first image in clipboard
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          e.preventDefault();
+          const blob = items[i].getAsFile();
+          if (blob) {
+            validateAndSetFile(blob);
+          }
+          break;
+        }
+      }
+    };
+
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [isOpen]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        setError('Please select an image file (JPG, PNG, WebP)');
-        return;
-      }
-      // Validate file size (5MB max)
-      if (file.size > 5 * 1024 * 1024) {
-        setError('File size must be less than 5MB');
-        return;
-      }
-      setSelectedFile(file);
-      setPreviewUrl(URL.createObjectURL(file));
-      setError('');
+      validateAndSetFile(file);
     }
   };
 
@@ -78,17 +114,7 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (file) {
-      if (!file.type.startsWith('image/')) {
-        setError('Please select an image file (JPG, PNG, WebP)');
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        setError('File size must be less than 5MB');
-        return;
-      }
-      setSelectedFile(file);
-      setPreviewUrl(URL.createObjectURL(file));
-      setError('');
+      validateAndSetFile(file);
     }
   };
 
@@ -240,7 +266,7 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
               ) : (
                 <div className="text-muted-foreground">
                   <ImageIcon className="mx-auto h-12 w-12 mb-2" />
-                  <p className="text-sm">Click to upload or drag and drop</p>
+                  <p className="text-sm">Click to upload, drag and drop, or paste (Ctrl+V)</p>
                   <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WebP (max 5MB)</p>
                 </div>
               )}
