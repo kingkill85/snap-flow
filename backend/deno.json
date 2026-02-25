@@ -2,7 +2,7 @@
   "name": "snapflow-backend",
   "version": "0.1.0",
   "exports": "./src/main.ts",
-  "nodeModulesDir": "auto",
+  "nodeModulesDir": true,
   "tasks": {
     "dev": "deno run --allow-all --watch src/main.ts",
     "start": "deno run --allow-all src/main.ts",
