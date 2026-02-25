@@ -3,6 +3,7 @@ import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { categoryRepository } from '../repositories/category.ts';
 import { fileStorageService } from './file-storage.ts';
+import { processImageSafe } from './image-processing.ts';
 import type { Item, ItemVariant } from '../models/index.ts';
 import { env } from '../config/env.ts';
 
@@ -359,7 +360,17 @@ export class ExcelSyncService {
         
         try {
           const imageData = await Deno.readFile(sourcePath);
-          await Deno.writeFile(targetPath, imageData);
+          
+          // Process image: resize to 600px max width for catalog items
+          const processResult = await processImageSafe(imageData, {
+            maxWidth: 600,
+          });
+          
+          await Deno.writeFile(targetPath, processResult.buffer);
+          
+          if (processResult.format !== 'unknown') {
+            console.log(`Excel image processed: ${filename} - ${processResult.originalSize} bytes → ${processResult.processedSize} bytes (${Math.round((1 - processResult.processedSize / processResult.originalSize) * 100)}% reduction)`);
+          }
         } catch (e) {
           console.error(`Failed to copy image ${filename}:`, e);
         }
