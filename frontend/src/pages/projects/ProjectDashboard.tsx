@@ -276,17 +276,17 @@ const ProjectDashboard = () => {
         const activeRect = active.rect.current?.translated;
         
         if (activeRect) {
-          const { zoom, pan } = canvasZoomRef.current;
+          // clientWidth already includes zoom transform, don't multiply by zoom again
           const scaleX = floorplanImage.naturalWidth > 0
-            ? (floorplanImage.clientWidth / floorplanImage.naturalWidth) * zoom
-            : zoom;
+            ? floorplanImage.clientWidth / floorplanImage.naturalWidth
+            : 1;
           const scaleY = floorplanImage.naturalHeight > 0
-            ? (floorplanImage.clientHeight / floorplanImage.naturalHeight) * zoom
-            : zoom;
+            ? floorplanImage.clientHeight / floorplanImage.naturalHeight
+            : 1;
           
-          // Adjust for pan offset and convert to natural coordinates
-          const screenX = Math.max(0, activeRect.left - imageRect.left - pan.x);
-          const screenY = Math.max(0, activeRect.top - imageRect.top - pan.y);
+          // getBoundingClientRect already includes transforms, so no need to adjust for pan
+          const screenX = Math.max(0, activeRect.left - imageRect.left);
+          const screenY = Math.max(0, activeRect.top - imageRect.top);
           const newX = screenX / scaleX;
           const newY = screenY / scaleY;
           
@@ -324,31 +324,31 @@ const ProjectDashboard = () => {
           const imageRect = floorplanImage.getBoundingClientRect();
           const activeRect = active.rect.current?.translated;
           
-          const { zoom, pan } = canvasZoomRef.current;
+          // clientWidth already includes zoom transform, don't multiply by zoom again
           const scaleX = floorplanImage.naturalWidth > 0
-            ? (floorplanImage.clientWidth / floorplanImage.naturalWidth) * zoom
-            : zoom;
+            ? floorplanImage.clientWidth / floorplanImage.naturalWidth
+            : 1;
           const scaleY = floorplanImage.naturalHeight > 0
-            ? (floorplanImage.clientHeight / floorplanImage.naturalHeight) * zoom
-            : zoom;
+            ? floorplanImage.clientHeight / floorplanImage.naturalHeight
+            : 1;
           
           let screenX: number;
           let screenY: number;
           
           if (activeRect) {
+            // getBoundingClientRect already includes transforms
             screenX = activeRect.left - imageRect.left;
             screenY = activeRect.top - imageRect.top;
           } else {
+            // For delta-based positioning, we need to account for the fact that
+            // the drag overlay size doesn't change with zoom
             screenX = event.delta.x;
             screenY = event.delta.y;
           }
           
-          // Adjust for pan offset and convert to natural coordinates
-          screenX = screenX - pan.x;
-          screenY = screenY - pan.y;
-          
-          screenX = Math.max(0, Math.min(screenX, imageRect.width * zoom - 100));
-          screenY = Math.max(0, Math.min(screenY, imageRect.height * zoom - 100));
+          // Clamp to image bounds
+          screenX = Math.max(0, Math.min(screenX, imageRect.width - 100));
+          screenY = Math.max(0, Math.min(screenY, imageRect.height - 100));
           
           const dropX = screenX / scaleX;
           const dropY = screenY / scaleY;
