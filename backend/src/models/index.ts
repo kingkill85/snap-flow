@@ -237,6 +237,8 @@ export interface ProjectBom {
   // Joined data
   children?: ProjectBom[];
   placement_count?: number;
+  // Availability status (for frontend display)
+  is_available?: boolean;
 }
 
 export interface CreateBomEntryDTO {

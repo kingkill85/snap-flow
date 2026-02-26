@@ -188,6 +188,17 @@ export class BomEntryRepository {
     `, [bomId]);
     return (result[0] as { count: number }).count;
   }
+
+  async findByPicturePath(picturePath: string): Promise<ProjectBom[]> {
+    const result = getDb().queryEntries(`
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+             item_name, style_name, model_number, unit_price, picture_path,
+             created_at, updated_at
+      FROM project_bom
+      WHERE picture_path = ?
+    `, [picturePath]);
+    return result as unknown as ProjectBom[];
+  }
 }
 
 export const bomEntryRepository = new BomEntryRepository();

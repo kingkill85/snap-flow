@@ -70,6 +70,50 @@ export class FileStorageService {
   }
 
   /**
+   * Copy a file from source to destination
+   * @param sourceRelativePath - Relative path of source file (e.g., "items/image.jpg")
+   * @param destinationSubdirectory - Destination subdirectory (e.g., "projects/123/bom-images")
+   * @param newFilename - Optional new filename (if not provided, generates unique name)
+   * @returns Relative path of the copied file, or original path if copy fails
+   */
+  async copyFile(
+    sourceRelativePath: string,
+    destinationSubdirectory: string,
+    newFilename?: string
+  ): Promise<string> {
+    try {
+      const sourceFullPath = `${this.uploadDir}/${sourceRelativePath}`;
+      
+      // Check if source file exists
+      try {
+        await Deno.stat(sourceFullPath);
+      } catch {
+        // Source file doesn't exist, return original path as fallback
+        return sourceRelativePath;
+      }
+      
+      const destDir = await this.ensureDirectory(destinationSubdirectory);
+      
+      // Generate unique filename if not provided
+      const finalFilename = newFilename 
+        ? newFilename 
+        : this.generateUniqueFilename(sourceRelativePath.split('/').pop() || 'image.jpg');
+      
+      const destFullPath = `${destDir}/${finalFilename}`;
+      
+      // Read source file and write to destination
+      const fileContent = await Deno.readFile(sourceFullPath);
+      await Deno.writeFile(destFullPath, fileContent);
+      
+      return `${destinationSubdirectory}/${finalFilename}`;
+    } catch (error) {
+      console.error('Failed to copy file:', error);
+      // Return original path as fallback
+      return sourceRelativePath;
+    }
+  }
+
+  /**
    * Delete a file
    */
   async deleteFile(relativePath: string): Promise<void> {

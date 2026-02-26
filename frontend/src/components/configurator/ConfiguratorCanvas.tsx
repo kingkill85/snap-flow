@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { Pencil, X, Loader2 } from 'lucide-react';
+import { Pencil, X, Loader2, AlertCircle } from 'lucide-react';
 import type { Floorplan } from '@/services/floorplan';
 import type { Placement } from '@/services/placement';
 import type { Item } from '@/services/item';
@@ -62,6 +62,8 @@ interface AddonWithVariant {
     item_name: string;
     style_name: string | null;
     price: number;
+    image_path: string | null;
+    is_active: boolean;
   };
 }
 
@@ -296,9 +298,10 @@ interface PlacementEditModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (variantId: number, selectedAddons: number[]) => Promise<void>;
+  onDelete?: () => void;
 }
 
-function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate }: PlacementEditModalProps) {
+function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate, onDelete }: PlacementEditModalProps) {
   const [item, setItem] = useState<Item | null>(null);
   const [variants, setVariants] = useState<ItemVariant[]>([]);
   const [addons, setAddons] = useState<AddonWithVariant[]>([]);
@@ -309,6 +312,8 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+  const [isItemUnavailable, setIsItemUnavailable] = useState(false);
+  const [bomData, setBomData] = useState<any>(null);
 
   useEffect(() => {
     const loadItemData = async () => {
@@ -316,25 +321,21 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate 
         setItem(null);
         setVariants([]);
         setAddons([]);
+        setIsItemUnavailable(false);
+        setBomData(null);
         return;
       }
 
       try {
         setIsLoading(true);
         setError('');
+        setIsItemUnavailable(false);
 
-        // Fetch item with variants (for available options)
-        const itemData = await itemService.getById(placement.item_id);
-        setItem(itemData);
-        setVariants(itemData.variants || []);
-
-        setSelectedVariantId(placement.item_variant_id);
-        setOriginalVariantId(placement.item_variant_id);
-
-        // Fetch current BOM to get selected addons
+        // Fetch current BOM first (we need this regardless of item availability)
         let currentAddonIds: number[] = [];
         try {
           const bomData = await bomService.getBomForFloorplan(floorplanId);
+          setBomData(bomData);
           // Find the group that matches this placement's bom_id
           const group = bomData.groups.find(g => 
             g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
@@ -347,9 +348,8 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate 
           console.error('Failed to load BOM:', err);
         }
 
-        // Fetch addons for current variant
-        const addonData = await variantAddonService.getByVariant(placement.item_id, placement.item_variant_id);
-        setAddons(addonData);
+        setSelectedVariantId(placement.item_variant_id);
+        setOriginalVariantId(placement.item_variant_id);
 
         // Set currently selected addons (from BOM)
         const currentAddons = new Set<number>(currentAddonIds);
@@ -357,9 +357,47 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate 
         
         // Store original addons for restoration when switching back
         setOriginalAddons(new Set(currentAddonIds));
+
+        // Fetch item with variants (for available options)
+        try {
+          const itemData = await itemService.getById(placement.item_id);
+          
+          // Check if item is inactive
+          if (!itemData.is_active) {
+            setIsItemUnavailable(true);
+            setItem(itemData);
+            setVariants([]);
+            setAddons([]);
+          } else {
+            // Check if current variant is in the available variants list
+            // If not, it means the variant is inactive or deleted
+            const currentVariant = itemData.variants?.find(v => v.id === placement.item_variant_id);
+            if (!currentVariant) {
+              // Variant is not in active list - it's unavailable
+              setIsItemUnavailable(true);
+              setItem(itemData);
+              setVariants(itemData.variants || []);
+              setAddons([]);
+            } else {
+              setItem(itemData);
+              setVariants(itemData.variants || []);
+              
+              // Fetch addons for current variant
+              const addonData = await variantAddonService.getByVariant(placement.item_id, placement.item_variant_id);
+              setAddons(addonData);
+            }
+          }
+        } catch (err: any) {
+          // Item not found (404) or other error - item has been deleted
+          console.error('Failed to load item data:', err);
+          setIsItemUnavailable(true);
+          setItem(null);
+          setVariants([]);
+          setAddons([]);
+        }
       } catch (err) {
-        console.error('Failed to load item data:', err);
-        setError('Failed to load item details');
+        console.error('Failed to load placement data:', err);
+        setError('Failed to load placement details');
       } finally {
         setIsLoading(false);
       }
@@ -434,6 +472,112 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate 
           <Alert variant="destructive" className="mb-4">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
+        ) : isItemUnavailable ? (
+          // Read-only view for unavailable items (inactive/deleted)
+          <div className="space-y-4">
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>
+                This item is no longer available in the catalog. You can delete this placement, but you cannot edit it.
+              </AlertDescription>
+            </Alert>
+
+            {bomData && (
+              <div className="p-3 bg-muted rounded-lg">
+                <div className="flex items-start gap-3">
+                  {(() => {
+                    // Find the BOM group for this placement
+                    const group = bomData.groups.find((g: any) => 
+                      g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
+                    );
+                    const mainEntry = group?.mainEntry;
+                    return mainEntry?.picture_path ? (
+                      <img
+                        src={`/uploads/${mainEntry.picture_path}`}
+                        alt={mainEntry.item_name}
+                        className="w-20 h-20 object-contain rounded bg-white"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs">
+                        No Image
+                      </div>
+                    );
+                  })()}
+                  <div className="flex-1 min-w-0">
+                    {(() => {
+                      const group = bomData.groups.find((g: any) => 
+                        g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
+                      );
+                      const mainEntry = group?.mainEntry;
+                      return (
+                        <>
+                          <p className="font-medium">{mainEntry?.item_name || 'Unknown Item'}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {mainEntry?.model_number}
+                            {mainEntry?.style_name && ` - ${mainEntry.style_name}`}
+                          </p>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {(() => {
+              const group = bomData?.groups.find((g: any) => 
+                g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
+              );
+              return group && group.children.length > 0 ? (
+                <div>
+                  <Label className="block text-sm font-medium mb-2">Add-ons</Label>
+                  <div className="space-y-2">
+                    {group.children.map((child: any) => (
+                      <div
+                        key={child.id}
+                        className="flex items-center justify-between p-2 rounded-lg border bg-background border-border opacity-75"
+                      >
+                        <div className="flex items-center gap-3">
+                          {child.picture_path ? (
+                            <img
+                              src={`/uploads/${child.picture_path}`}
+                              alt={child.item_name}
+                              className="w-10 h-10 object-contain rounded bg-white flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs flex-shrink-0">
+                              No img
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-medium text-sm">
+                              {child.item_name}
+                              {child.style_name && (
+                                <span className="text-muted-foreground"> - {child.style_name}</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              ${child.unit_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
+            {placement && (
+              <div className="p-3 bg-muted rounded-lg text-sm">
+                <p className="text-muted-foreground">
+                  Position: ({Math.round(placement.x)}, {Math.round(placement.y)})
+                </p>
+                <p className="text-muted-foreground">
+                  Size: {Math.round(placement.width)} × {Math.round(placement.height)}
+                </p>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="space-y-4">
             {item && (
@@ -489,16 +633,33 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate 
                       key={addon.id}
                       className={`flex items-center justify-between p-2 rounded-lg border ${
                         addon.is_required ? 'bg-primary/5 border-primary/20' : 'bg-background border-border'
-                      }`}
+                      } ${!addon.addon_variant.is_active ? 'opacity-60 bg-muted/30' : ''}`}
                     >
                       <div className="flex items-center gap-3">
+                        {addon.addon_variant.image_path ? (
+                          <img
+                            src={`/uploads/${addon.addon_variant.image_path}`}
+                            alt={addon.addon_variant.item_name}
+                            className="w-10 h-10 object-contain rounded bg-white flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs flex-shrink-0">
+                            No img
+                          </div>
+                        )}
                         <Checkbox
                           checked={selectedAddons.has(addon.addon_variant.id)}
                           onCheckedChange={() => handleAddonToggle(addon.addon_variant.id)}
+                          disabled={!addon.addon_variant.is_active}
                         />
                         <div>
                           <p className="font-medium text-sm">
                             {addon.addon_variant.item_name}
+                            {!addon.addon_variant.is_active && (
+                              <span title="Add-on no longer available" className="ml-1">
+                                <AlertCircle className="h-3 w-3 text-destructive inline-block" />
+                              </span>
+                            )}
                             {addon.addon_variant.style_name && (
                               <span className="text-muted-foreground"> - {addon.addon_variant.style_name}</span>
                             )}
@@ -533,16 +694,35 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate 
         )}
 
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={isLoading || isSaving || !selectedVariantId}
-          >
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save Changes
-          </Button>
+          {isItemUnavailable ? (
+            <>
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  onDelete?.();
+                  onClose();
+                }}
+              >
+                Delete Placement
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={isLoading || isSaving || !selectedVariantId}
+              >
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Changes
+              </Button>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>
@@ -766,6 +946,12 @@ export function ConfiguratorCanvas({
           onUpdate={async (variantId, selectedAddons) => {
             if (editingPlacement) {
               await onPlacementUpdate(editingPlacement.id, { item_variant_id: variantId, addon_ids: selectedAddons });
+              setEditingPlacement(null);
+            }
+          }}
+          onDelete={() => {
+            if (editingPlacement) {
+              onPlacementDelete(editingPlacement.id);
               setEditingPlacement(null);
             }
           }}

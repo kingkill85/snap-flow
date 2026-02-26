@@ -14,6 +14,7 @@ export interface VariantAddon {
     style_name: string;
     price: number;
     image_path: string | null;
+    is_active: boolean;
   };
 }
 

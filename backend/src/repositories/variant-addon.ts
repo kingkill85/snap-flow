@@ -10,8 +10,8 @@ export class VariantAddonRepository {
     const result = getDb().queryEntries(`
       SELECT 
         va.id, va.variant_id, va.addon_variant_id, va.is_optional, va.sort_order, va.created_at,
-        iv.item_id as addon_item_id, iv.style_name as addon_style_name, iv.price as addon_price, iv.image_path as addon_image_path,
-        i.name as addon_item_name, i.base_model_number as addon_model_number
+        iv.item_id as addon_item_id, iv.style_name as addon_style_name, iv.price as addon_price, iv.image_path as addon_image_path, iv.is_active as variant_is_active,
+        i.name as addon_item_name, i.base_model_number as addon_model_number, i.is_active as item_is_active
       FROM variant_addons va
       JOIN item_variants iv ON va.addon_variant_id = iv.id
       JOIN items i ON iv.item_id = i.id
@@ -35,7 +35,7 @@ export class VariantAddonRepository {
         image_path: row.addon_image_path,
         sort_order: 0,
         created_at: row.created_at,
-        is_active: true,
+        is_active: Boolean(row.variant_is_active) && Boolean(row.item_is_active),
       } as ItemVariant,
     })) as VariantAddon[];
   }

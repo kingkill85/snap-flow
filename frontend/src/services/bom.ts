@@ -16,6 +16,7 @@ export interface BomEntry {
   updated_at: string;
   children?: BomEntry[];
   placement_count?: number;
+  is_available?: boolean;
 }
 
 export interface BomGroup {
@@ -24,6 +25,7 @@ export interface BomGroup {
   bomEntryIds?: number[];
   quantity: number;
   totalPrice: number;
+  isAvailable: boolean;
 }
 
 export interface FloorplanBom {
