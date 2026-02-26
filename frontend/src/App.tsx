@@ -36,7 +36,7 @@ function App() {
               <Route path="projects/:id" element={<ProjectDashboard />} />
               
               {/* Admin only routes */}
-              <Route path="catalog/items" element={
+              <Route path="catalog/products" element={
                 <ProtectedRoute requireAdmin>
                   <ItemManagement />
                 </ProtectedRoute>

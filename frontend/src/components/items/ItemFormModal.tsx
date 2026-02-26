@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import type { Item } from '@/services/item';
 import type { Category } from '@/services/category';
+import { X, Save, Plus } from 'lucide-react';
 
 export interface CreateItemDTO {
   category_id: number;
@@ -121,11 +122,11 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit Item' : 'Create Item'}</DialogTitle>
+          <DialogTitle>{isEdit ? 'Edit Product' : 'Create Product'}</DialogTitle>
           <DialogDescription>
             {isEdit
-              ? 'Update item details below.'
-              : 'Fill in the details to create a new item.'}
+              ? 'Update product details below.'
+              : 'Fill in the details to create a new product.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -169,7 +170,7 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
               id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Brief description of the item"
+              placeholder="Brief description of the product"
               rows={3}
             />
           </div>
@@ -211,10 +212,23 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
+              <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading || !categoryId}>
-              {isLoading ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+              {isLoading ? (
+                'Saving...'
+              ) : isEdit ? (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Update
+                </>
+              ) : (
+                <>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create
+                </>
+              )}
             </Button>
           </DialogFooter>
         </form>

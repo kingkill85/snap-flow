@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { X, Upload, Plus, Trash2, Loader2, ChevronDown, Image as ImageIcon } from 'lucide-react';
+import { X, Upload, Plus, Trash2, Loader2, ChevronDown, Image as ImageIcon, Save } from 'lucide-react';
 import type { ItemVariant, Item } from '@/services/item';
 import { variantAddonService, type VariantAddon } from '@/services/variant-addon';
 
@@ -232,7 +232,7 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto p-4">
         <DialogHeader className="pb-2">
-          <DialogTitle className="text-lg">{isEdit ? 'Edit Variant' : 'Create Variant'}</DialogTitle>
+          <DialogTitle className="text-lg">{isEdit ? 'Edit Style' : 'Create Style'}</DialogTitle>
         </DialogHeader>
 
         {error && (
@@ -487,10 +487,23 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
+              <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+              {isLoading ? (
+                'Saving...'
+              ) : isEdit ? (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Update
+                </>
+              ) : (
+                <>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create
+                </>
+              )}
             </Button>
           </DialogFooter>
         </form>

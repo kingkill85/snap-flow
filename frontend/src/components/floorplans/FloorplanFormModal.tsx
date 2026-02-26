@@ -189,7 +189,7 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit Floorplan' : 'Add New Floorplan'}</DialogTitle>
+          <DialogTitle>{isEdit ? 'Edit Floorplan' : 'Create Floorplan'}</DialogTitle>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -288,7 +288,7 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
               ) : (
                 <>
                   {isEdit ? <Pencil className="mr-2 h-4 w-4" /> : <Upload className="mr-2 h-4 w-4" />}
-                  {isEdit ? 'Save Changes' : 'Upload Floorplan'}
+                  {isEdit ? 'Update' : 'Create'}
                 </>
               )}
             </Button>

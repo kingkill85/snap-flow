@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, FolderPlus, Pencil } from 'lucide-react';
+import { Loader2, FolderPlus, Save, X } from 'lucide-react';
 import type { Project, CreateProjectDTO, UpdateProjectDTO } from '@/services/project';
 
 interface ProjectFormModalProps {
@@ -116,7 +116,7 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit Project' : 'Create New Project'}</DialogTitle>
+          <DialogTitle>{isEdit ? 'Edit Project' : 'Create Project'}</DialogTitle>
           <DialogDescription>
             {isEdit ? 'Update project details below.' : 'Fill in the details to create a new project.'}
           </DialogDescription>
@@ -211,6 +211,7 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
+              <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting}>
@@ -221,8 +222,8 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
                 </>
               ) : (
                 <>
-                  {isEdit ? <Pencil className="mr-2 h-4 w-4" /> : <FolderPlus className="mr-2 h-4 w-4" />}
-                  {isEdit ? 'Save Changes' : 'Create Project'}
+                  {isEdit ? <Save className="mr-2 h-4 w-4" /> : <FolderPlus className="mr-2 h-4 w-4" />}
+                  {isEdit ? 'Update' : 'Create'}
                 </>
               )}
             </Button>

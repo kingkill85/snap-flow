@@ -11,7 +11,7 @@ import {
 import { categoryService, type Category } from '@/services/category';
 import { useDebounce } from '@/hooks/useDebounce';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -323,7 +323,7 @@ const ItemManagement = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Item Management</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Product Management</h1>
           <p className="text-muted-foreground">Manage products and their details</p>
         </div>
         <div className="flex gap-2">
@@ -333,7 +333,7 @@ const ItemManagement = () => {
           </Button>
           <Button onClick={() => openItemModal()}>
             <Plus className="mr-2 h-4 w-4" />
-            Add Item
+            Add Product
           </Button>
         </div>
       </div>
@@ -353,7 +353,7 @@ const ItemManagement = () => {
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder="Search items..."
+                  placeholder="Search products..."
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
@@ -388,8 +388,7 @@ const ItemManagement = () => {
 
       {/* Items Table */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Items</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-end">
           <div className="flex items-center space-x-2">
             <Switch
               id="show-inactive"
@@ -511,25 +510,25 @@ const ItemManagement = () => {
                                   <Badge variant="secondary" className="mr-2">
                                     {variants.length}
                                   </Badge>
-                                  Variants
+                                  Styles
                                 </h4>
                                 <Button 
                                   size="sm" 
                                   variant="outline"
                                   onClick={() => openVariantModal(item)}
                                 >
-                                  <Plus className="mr-1 h-3 w-3" /> Add Variant
+                                  <Plus className="mr-1 h-3 w-3" /> Add Style
                                 </Button>
                               </div>
                               
                               {isLoadingVar ? (
                                 <div className="text-center py-4">
                                   <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
-                                  <span className="text-sm text-muted-foreground">Loading variants...</span>
+                                  <span className="text-sm text-muted-foreground">Loading styles...</span>
                                 </div>
                               ) : variants.length === 0 ? (
                                 <div className="text-center py-4 text-muted-foreground text-sm">
-                                  No variants found.
+                                  No styles found.
                                 </div>
                               ) : (
                                 <table className="w-full">
@@ -637,7 +636,7 @@ const ItemManagement = () => {
       </Card>
 
       <ConfirmDeleteModal
-        title="Delete Item"
+        title="Delete Product"
         itemName={itemToDelete?.name || ''}
         isOpen={showDeleteModal}
         onClose={() => {
@@ -648,7 +647,7 @@ const ItemManagement = () => {
       />
 
       <ConfirmDeleteModal
-        title="Delete Variant"
+        title="Delete Style"
         itemName={variantToDelete?.style_name || ''}
         warningText="This action cannot be undone. The variant will be permanently removed."
         isOpen={showDeleteVariantModal}

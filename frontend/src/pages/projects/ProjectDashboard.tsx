@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronLeft, ChevronRight, FileDown, Receipt } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronLeft, ChevronRight, FileDown, Receipt, X, Trash2 } from 'lucide-react';
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { ConfiguratorCanvas, ItemPalette, BOMPanel } from '@/components/configurator';
 import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
@@ -744,9 +744,11 @@ const ProjectDashboard = () => {
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowDeleteFloorplanModal(false)}>
+                <X className="mr-2 h-4 w-4" />
                 Cancel
               </Button>
               <Button variant="destructive" onClick={handleDeleteFloorplan}>
+                <Trash2 className="mr-2 h-4 w-4" />
                 Delete
               </Button>
             </div>

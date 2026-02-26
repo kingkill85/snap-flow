@@ -109,8 +109,8 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
         </div>
         <div className="flex-1 flex items-center justify-center p-4 text-muted-foreground text-center">
           <div>
-            <p>No items in BOM yet.</p>
-            <p className="text-sm mt-1">Drag items from the product panel to the canvas to add them.</p>
+            <p>No products in BOM yet.</p>
+            <p className="text-sm mt-1">Drag products from the product panel to the canvas to add them.</p>
           </div>
         </div>
       </div>
@@ -121,7 +121,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
     <div className={`flex flex-col h-full ${className}`}>
       <div className="px-4 py-3 border-b border-border/50 bg-muted/20">
         <div className="flex justify-between items-center">
-          <span className="text-sm text-muted-foreground">{bom.groups.length} item groups</span>
+          <span className="text-sm text-muted-foreground">{bom.groups.length} product groups</span>
           <Button
             variant="outline"
             size="sm"
@@ -210,7 +210,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
                   <p className="font-medium text-sm truncate">
                     {group.mainEntry.item_name}
                     {!group.isAvailable && (
-                      <span title="Item no longer available in catalog">
+                      <span title="Product no longer available in catalog">
                         <AlertCircle className="h-4 w-4 text-destructive inline-block ml-2" />
                       </span>
                     )}
