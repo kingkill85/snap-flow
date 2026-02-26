@@ -868,10 +868,6 @@ export function ConfiguratorCanvas({
   const scaledScaleX = scaleX * zoom;
   const scaledScaleY = scaleY * zoom;
 
-  // Determine if panning is possible (zoomed in OR image larger than container)
-  const canPan = zoom > 1 || (containerRef.current && imageDisplaySize.width * zoom > containerRef.current.clientWidth) || 
-                 (containerRef.current && imageDisplaySize.height * zoom > containerRef.current.clientHeight);
-
   // Zoom functions
   const handleZoomIn = () => {
     setZoom(prev => Math.min(ZOOM_MAX, prev + ZOOM_STEP));
@@ -886,13 +882,9 @@ export function ConfiguratorCanvas({
     setPan({ x: 0, y: 0 });
   };
 
-  // Pan functions
+  // Pan functions - always allow panning
   const startPan = (e: React.MouseEvent) => {
-    // Allow panning when zoomed in OR when image is larger than container
-    const container = containerRef.current;
-    const canPan = zoom > 1 || (container && imageDisplaySize.width * zoom > container.clientWidth) || 
-                   (container && imageDisplaySize.height * zoom > container.clientHeight);
-    if (e.button !== 1 && !canPan) return;
+    if (e.button !== 1) return; // Only allow middle mouse button panning
     e.preventDefault();
     e.stopPropagation();
     setIsPanning(true);
@@ -943,15 +935,9 @@ export function ConfiguratorCanvas({
     }
   };
 
-  // Arrow key panning
+  // Arrow key panning - always allow
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Allow panning when zoomed in OR when image is larger than container
-      const container = containerRef.current;
-      const canPan = zoom > 1 || (container && imageDisplaySize.width * zoom > container.clientWidth) || 
-                     (container && imageDisplaySize.height * zoom > container.clientHeight);
-      if (!canPan) return;
-      
       const panStep = 50;
       switch (e.key) {
         case 'ArrowLeft':
@@ -1020,7 +1006,7 @@ export function ConfiguratorCanvas({
         onWheel={handleWheel}
         className={`relative w-full h-full flex items-start justify-center transition-colors ${
           isOver ? 'bg-primary/5' : 'bg-background'
-        } ${isPanning ? 'cursor-grabbing' : canPan ? 'cursor-grab' : 'cursor-default'}`}
+        } ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
         style={{ touchAction: 'none' }}
       >
         {floorplan.image_path ? (
