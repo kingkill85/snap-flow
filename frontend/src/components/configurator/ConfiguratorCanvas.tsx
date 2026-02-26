@@ -982,8 +982,8 @@ export function ConfiguratorCanvas({
         style={{ touchAction: 'none' }}
       >
         {floorplan.image_path ? (
-          <div className="flex h-full w-full items-center justify-center">
-            <div className="relative" style={imageWrapperStyle}>
+          <div className="flex h-full w-full items-start justify-center overflow-visible">
+            <div className="relative flex-shrink-0" style={imageWrapperStyle}>
               {isImageLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
