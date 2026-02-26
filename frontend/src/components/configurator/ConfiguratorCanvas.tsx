@@ -883,14 +883,13 @@ export function ConfiguratorCanvas({
     setPan({ x: 0, y: 0 });
   };
 
-  // Pan functions - allow left-click or middle-click panning
+  // Pan functions - only pan with Ctrl/Cmd + mouse movement
   const startPan = (e: React.MouseEvent) => {
+    // Only pan when holding Ctrl or Cmd key
+    if (!e.ctrlKey && !e.metaKey) return;
+    
     // Allow left click (0) or middle click (1), but not right click (2)
     if (e.button !== 0 && e.button !== 1) return;
-    
-    // Don't pan if clicking on a placement (let the placement handle it)
-    const target = e.target as HTMLElement;
-    if (target.closest('[data-placement]')) return;
     
     e.preventDefault();
     e.stopPropagation();
@@ -942,28 +941,33 @@ export function ConfiguratorCanvas({
     }
   };
 
-  // Arrow key panning - always allow
+  // Arrow key panning - only with Ctrl/Cmd
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Only pan when holding Ctrl or Cmd
+      if (!e.ctrlKey && !e.metaKey) return;
+      
       const panStep = 50;
       switch (e.key) {
         case 'ArrowLeft':
+          e.preventDefault();
           setPan(prev => ({ ...prev, x: prev.x + panStep }));
           break;
         case 'ArrowRight':
+          e.preventDefault();
           setPan(prev => ({ ...prev, x: prev.x - panStep }));
           break;
         case 'ArrowUp':
+          e.preventDefault();
           setPan(prev => ({ ...prev, y: prev.y + panStep }));
           break;
         case 'ArrowDown':
+          e.preventDefault();
           setPan(prev => ({ ...prev, y: prev.y - panStep }));
           break;
         case '0':
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            handleResetZoom();
-          }
+          e.preventDefault();
+          handleResetZoom();
           break;
       }
     };
@@ -1013,7 +1017,7 @@ export function ConfiguratorCanvas({
         onWheel={handleWheel}
         className={`relative w-full h-full flex items-start justify-center transition-colors ${
           isOver ? 'bg-primary/5' : 'bg-background'
-        } ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+        } ${isPanning ? 'cursor-grabbing' : 'cursor-default'}`}
         style={{ touchAction: 'none' }}
       >
         {floorplan.image_path ? (
@@ -1124,7 +1128,7 @@ export function ConfiguratorCanvas({
 
         {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Click & drag to pan
+          Click item to select • Drag corners to resize • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan
         </div>
 
         <PlacementEditModal
