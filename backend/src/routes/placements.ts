@@ -11,8 +11,8 @@ import { authMiddleware } from '../middleware/auth.ts';
 async function cleanupEmptyBomEntry(bomEntryId: number): Promise<void> {
   const count = await placementRepository.countByBomEntry(bomEntryId);
   if (count === 0) {
-    // No more placements, delete the BOM entry (cascade will handle children)
-    await bomEntryRepository.delete(bomEntryId);
+    // No more placements, delete the BOM entry with image cleanup
+    await bomService.deleteBomEntry(bomEntryId);
   }
 }
 

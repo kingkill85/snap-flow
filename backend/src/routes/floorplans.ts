@@ -198,6 +198,23 @@ floorplanRoutes.delete('/:id', authMiddleware, async (c) => {
 
     console.log(`[Floorplan] Found floorplan: ${floorplan.name}, image_path: ${floorplan.image_path}`);
 
+    // Collect BOM entry picture paths before deletion
+    const bomEntries = await bomEntryRepository.findByFloorplan(id);
+    const picturePathsToCleanup: string[] = [];
+    for (const entry of bomEntries) {
+      if (entry.picture_path && entry.picture_path.startsWith('projects/')) {
+        picturePathsToCleanup.push(entry.picture_path);
+      }
+      // Also collect children's picture paths
+      const children = await bomEntryRepository.findChildren(entry.id);
+      for (const child of children) {
+        if (child.picture_path && child.picture_path.startsWith('projects/')) {
+          picturePathsToCleanup.push(child.picture_path);
+        }
+      }
+    }
+    console.log(`[Floorplan] Found ${picturePathsToCleanup.length} BOM images to cleanup`);
+
     // Delete image file
     if (floorplan.image_path) {
       try {
@@ -214,6 +231,20 @@ floorplanRoutes.delete('/:id', authMiddleware, async (c) => {
     }
 
     await floorplanRepository.delete(id);
+    console.log(`[Floorplan] Deleted floorplan ${id} and its BOM entries from database`);
+
+    // Clean up BOM images that are no longer referenced
+    for (const picturePath of picturePathsToCleanup) {
+      try {
+        const otherEntries = await bomEntryRepository.findByPicturePath(picturePath);
+        if (otherEntries.length === 0) {
+          await fileStorageService.deleteFile(picturePath);
+          console.log(`[Floorplan] Cleaned up unused BOM image: ${picturePath}`);
+        }
+      } catch (error) {
+        console.error(`[Floorplan] Failed to clean up BOM image ${picturePath}:`, error);
+      }
+    }
     console.log(`[Floorplan] Successfully deleted floorplan ${id}`);
     
     return c.json({
