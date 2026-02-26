@@ -234,20 +234,6 @@ function DraggablePlacement({
   useEffect(() => {
     if (!isRotating) return;
 
-    let snapEnabled = false;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey) {
-        snapEnabled = true;
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (!e.metaKey && !e.ctrlKey) {
-        snapEnabled = false;
-      }
-    };
-
     const handleMouseMove = (e: MouseEvent) => {
       const { angleOffset, centerX, centerY } = rotationStartRef.current;
 
@@ -266,7 +252,7 @@ function DraggablePlacement({
       }
 
       // Snap to 15-degree increments when Cmd/Ctrl is held
-      if (snapEnabled) {
+      if (e.metaKey || e.ctrlKey) {
         newRotation = Math.round(newRotation / 15) * 15;
       }
 
@@ -282,14 +268,10 @@ function DraggablePlacement({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
     };
   }, [isRotating, onRotate]);
 
