@@ -234,6 +234,20 @@ function DraggablePlacement({
   useEffect(() => {
     if (!isRotating) return;
 
+    let snapEnabled = false;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        snapEnabled = true;
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!e.metaKey && !e.ctrlKey) {
+        snapEnabled = false;
+      }
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
       const { angleOffset, centerX, centerY } = rotationStartRef.current;
 
@@ -251,6 +265,11 @@ function DraggablePlacement({
         newRotation += 360;
       }
 
+      // Snap to 15-degree increments when Cmd/Ctrl is held
+      if (snapEnabled) {
+        newRotation = Math.round(newRotation / 15) * 15;
+      }
+
       onRotate(newRotation);
     };
 
@@ -263,10 +282,14 @@ function DraggablePlacement({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
   }, [isRotating, onRotate]);
 
@@ -1261,7 +1284,7 @@ export function ConfiguratorCanvas({
 
         {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize • Drag ↻ to rotate • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan
+          Click item to select • Drag corners to resize • Drag ↻ to rotate • Cmd/Ctrl+drag ↻ for 15° snap • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan
         </div>
 
         <PlacementEditModal
