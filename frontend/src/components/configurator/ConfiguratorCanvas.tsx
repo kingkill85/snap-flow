@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { Pencil, X, Loader2, AlertCircle } from 'lucide-react';
+import { Pencil, X, Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import type { Floorplan } from '@/services/floorplan';
 import type { Placement } from '@/services/placement';
 import type { Item } from '@/services/item';
@@ -35,6 +35,7 @@ interface CanvasProps {
   onPlacementDelete: (id: number) => void;
   onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number; item_variant_id?: number; addon_ids?: number[] }) => void;
   isResizingRef?: React.MutableRefObject<boolean>;
+  zoomRef?: React.MutableRefObject<{ zoom: number; pan: { x: number; y: number } }>;
 }
 
 interface DraggablePlacementProps {
@@ -736,6 +737,7 @@ export function ConfiguratorCanvas({
   onPlacementDelete,
   onPlacementUpdate,
   isResizingRef,
+  zoomRef,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -746,6 +748,39 @@ export function ConfiguratorCanvas({
   const { setNodeRef, isOver } = useDroppable({
     id: `canvas-${floorplan.id}`,
   });
+
+  // Zoom and pan state
+  const [zoom, setZoomState] = useState(1);
+  const [pan, setPanState] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef({ x: 0, y: 0 });
+  const ZOOM_MIN = 0.25;
+  const ZOOM_MAX = 3.0;
+  const ZOOM_STEP = 0.25;
+
+  // Wrap setters to also update zoomRef
+  const setZoom = useCallback((value: number | ((prev: number) => number)) => {
+    setZoomState(value);
+    if (zoomRef) {
+      const newZoom = typeof value === 'function' ? value(zoomRef.current.zoom) : value;
+      zoomRef.current.zoom = newZoom;
+    }
+  }, [zoomRef]);
+
+  const setPan = useCallback((value: { x: number; y: number } | ((prev: { x: number; y: number }) => { x: number; y: number })) => {
+    setPanState(value);
+    if (zoomRef) {
+      const newPan = typeof value === 'function' ? value(zoomRef.current.pan) : value;
+      zoomRef.current.pan = newPan;
+    }
+  }, [zoomRef]);
+
+  // Initialize zoomRef
+  useEffect(() => {
+    if (zoomRef) {
+      zoomRef.current = { zoom, pan };
+    }
+  }, [zoomRef]);
 
   // Update cache buster when floorplan changes to force image reload
   useEffect(() => {
@@ -829,6 +864,80 @@ export function ConfiguratorCanvas({
   const scaleX = imageNaturalSize.width > 0 ? imageDisplaySize.width / imageNaturalSize.width : 1;
   const scaleY = imageNaturalSize.height > 0 ? imageDisplaySize.height / imageNaturalSize.height : 1;
 
+  // Apply zoom to scales
+  const scaledScaleX = scaleX * zoom;
+  const scaledScaleY = scaleY * zoom;
+
+  // Zoom functions
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(ZOOM_MAX, prev + ZOOM_STEP));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(ZOOM_MIN, prev - ZOOM_STEP));
+  };
+
+  const handleResetZoom = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  // Pan functions
+  const startPan = (e: React.MouseEvent) => {
+    // Only pan on middle mouse button or when zoomed in
+    if (e.button !== 1 && zoom <= 1) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsPanning(true);
+    panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+  };
+
+  const handlePanMove = (e: React.MouseEvent) => {
+    if (!isPanning) return;
+    e.preventDefault();
+    setPan({
+      x: e.clientX - panStartRef.current.x,
+      y: e.clientY - panStartRef.current.y,
+    });
+  };
+
+  const stopPan = () => {
+    setIsPanning(false);
+  };
+
+  // Arrow key panning
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only pan when zoomed in
+      if (zoom <= 1) return;
+      
+      const panStep = 50;
+      switch (e.key) {
+        case 'ArrowLeft':
+          setPan(prev => ({ ...prev, x: prev.x + panStep }));
+          break;
+        case 'ArrowRight':
+          setPan(prev => ({ ...prev, x: prev.x - panStep }));
+          break;
+        case 'ArrowUp':
+          setPan(prev => ({ ...prev, y: prev.y + panStep }));
+          break;
+        case 'ArrowDown':
+          setPan(prev => ({ ...prev, y: prev.y - panStep }));
+          break;
+        case '0':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            handleResetZoom();
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [zoom]);
+
   const handleCanvasClick = () => {
     setSelectedPlacementId(null);
   };
@@ -840,8 +949,9 @@ export function ConfiguratorCanvas({
   const imageUrl = `/uploads/${floorplan.image_path}?v=${imageCacheBuster}`;
   const imageWrapperStyle = imageDisplaySize.width > 0 && imageDisplaySize.height > 0
     ? {
-        width: `${imageDisplaySize.width}px`,
-        height: `${imageDisplaySize.height}px`,
+        width: `${imageDisplaySize.width * zoom}px`,
+        height: `${imageDisplaySize.height * zoom}px`,
+        transform: `translate(${pan.x}px, ${pan.y}px)`,
       }
     : {
         width: 'auto',
@@ -862,9 +972,13 @@ export function ConfiguratorCanvas({
         ref={setNodeRef}
         data-canvas-id={floorplan.id}
         onClick={handleCanvasClick}
+        onMouseDown={startPan}
+        onMouseMove={handlePanMove}
+        onMouseUp={stopPan}
+        onMouseLeave={stopPan}
         className={`relative w-full h-full flex items-start justify-center transition-colors ${
           isOver ? 'bg-primary/5' : 'bg-background'
-        }`}
+        } ${isPanning ? 'cursor-grabbing' : zoom > 1 ? 'cursor-grab' : 'cursor-default'}`}
         style={{ touchAction: 'none' }}
       >
         {floorplan.image_path ? (
@@ -917,8 +1031,8 @@ export function ConfiguratorCanvas({
                       onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
                       onEdit={() => setEditingPlacement(placement)}
                       parentIsResizingRef={isResizingRef}
-                      scaleX={scaleX}
-                      scaleY={scaleY}
+                      scaleX={scaledScaleX}
+                      scaleY={scaledScaleY}
                       maxNaturalWidth={imageNaturalSize.width}
                       maxNaturalHeight={imageNaturalSize.height}
                       isNew={isNewPlacement}
@@ -934,8 +1048,49 @@ export function ConfiguratorCanvas({
           </div>
         )}
 
+        {/* Zoom Controls */}
+        <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-50">
+          <div className="bg-background/90 border rounded-lg shadow-lg p-2 flex flex-col gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleZoomIn}
+              disabled={zoom >= ZOOM_MAX}
+              title="Zoom in"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleZoomOut}
+              disabled={zoom <= ZOOM_MIN}
+              title="Zoom out"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <div className="h-px bg-border my-1" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleResetZoom}
+              title="Reset zoom (Ctrl+0)"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="bg-background/90 border rounded-lg shadow-lg px-2 py-1 text-center">
+            <span className="text-xs font-medium">{Math.round(zoom * 100)}%</span>
+          </div>
+        </div>
+
+        {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
           Click item to select • Drag corners to resize • Click 🗑 to delete • Click ✎ to edit
+          {zoom > 1 && ' • Middle-click or hold space to pan • Arrow keys to pan'}
         </div>
 
         <PlacementEditModal

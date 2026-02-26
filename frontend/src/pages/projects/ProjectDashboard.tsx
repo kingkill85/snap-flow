@@ -57,6 +57,7 @@ const ProjectDashboard = () => {
   const itemSizeMemory = useRef<Map<number, { width: number; height: number }>>(new Map());
   const itemVariantMemory = useRef<Map<number, { variant_id: number; addon_ids: number[] }>>(new Map());
   const isResizingRef = useRef(false);
+  const canvasZoomRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -275,15 +276,17 @@ const ProjectDashboard = () => {
         const activeRect = active.rect.current?.translated;
         
         if (activeRect) {
+          const { zoom, pan } = canvasZoomRef.current;
           const scaleX = floorplanImage.naturalWidth > 0
-            ? floorplanImage.clientWidth / floorplanImage.naturalWidth
-            : 1;
+            ? (floorplanImage.clientWidth / floorplanImage.naturalWidth) * zoom
+            : zoom;
           const scaleY = floorplanImage.naturalHeight > 0
-            ? floorplanImage.clientHeight / floorplanImage.naturalHeight
-            : 1;
+            ? (floorplanImage.clientHeight / floorplanImage.naturalHeight) * zoom
+            : zoom;
           
-          const screenX = Math.max(0, activeRect.left - imageRect.left);
-          const screenY = Math.max(0, activeRect.top - imageRect.top);
+          // Adjust for pan offset and convert to natural coordinates
+          const screenX = Math.max(0, activeRect.left - imageRect.left - pan.x);
+          const screenY = Math.max(0, activeRect.top - imageRect.top - pan.y);
           const newX = screenX / scaleX;
           const newY = screenY / scaleY;
           
@@ -321,12 +324,13 @@ const ProjectDashboard = () => {
           const imageRect = floorplanImage.getBoundingClientRect();
           const activeRect = active.rect.current?.translated;
           
+          const { zoom, pan } = canvasZoomRef.current;
           const scaleX = floorplanImage.naturalWidth > 0
-            ? floorplanImage.clientWidth / floorplanImage.naturalWidth
-            : 1;
+            ? (floorplanImage.clientWidth / floorplanImage.naturalWidth) * zoom
+            : zoom;
           const scaleY = floorplanImage.naturalHeight > 0
-            ? floorplanImage.clientHeight / floorplanImage.naturalHeight
-            : 1;
+            ? (floorplanImage.clientHeight / floorplanImage.naturalHeight) * zoom
+            : zoom;
           
           let screenX: number;
           let screenY: number;
@@ -339,8 +343,12 @@ const ProjectDashboard = () => {
             screenY = event.delta.y;
           }
           
-          screenX = Math.max(0, Math.min(screenX, imageRect.width - 100));
-          screenY = Math.max(0, Math.min(screenY, imageRect.height - 100));
+          // Adjust for pan offset and convert to natural coordinates
+          screenX = screenX - pan.x;
+          screenY = screenY - pan.y;
+          
+          screenX = Math.max(0, Math.min(screenX, imageRect.width * zoom - 100));
+          screenY = Math.max(0, Math.min(screenY, imageRect.height * zoom - 100));
           
           const dropX = screenX / scaleX;
           const dropY = screenY / scaleY;
@@ -608,6 +616,7 @@ const ProjectDashboard = () => {
                         onPlacementUpdate={handlePlacementUpdate}
                         onPlacementDelete={handlePlacementDelete}
                         isResizingRef={isResizingRef}
+                        zoomRef={canvasZoomRef}
                       />
                     </div>
                   </div>
