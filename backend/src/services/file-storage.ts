@@ -116,15 +116,29 @@ export class FileStorageService {
   /**
    * Delete a file
    */
-  async deleteFile(relativePath: string): Promise<void> {
+  async deleteFile(relativePath: string): Promise<boolean> {
+    const fullPath = `${this.uploadDir}/${relativePath}`;
+    console.log(`[FileStorage] Attempting to delete: ${fullPath}`);
+    
     try {
-      const fullPath = `${this.uploadDir}/${relativePath}`;
+      // Check if file exists first
+      const exists = await this.fileExists(relativePath);
+      if (!exists) {
+        console.log(`[FileStorage] File not found (already deleted?): ${fullPath}`);
+        return false;
+      }
+      
       await Deno.remove(fullPath);
+      console.log(`[FileStorage] Successfully deleted: ${fullPath}`);
+      return true;
     } catch (error) {
       // File might not exist, which is fine
-      if (!(error instanceof Deno.errors.NotFound)) {
-        throw error;
+      if (error instanceof Deno.errors.NotFound) {
+        console.log(`[FileStorage] File not found during deletion: ${fullPath}`);
+        return false;
       }
+      console.error(`[FileStorage] Error deleting file ${fullPath}:`, error);
+      throw error;
     }
   }
 

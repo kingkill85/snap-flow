@@ -77,11 +77,23 @@ function getEnvVarAsNumber(name: string, defaultValue?: number): number {
   return num;
 }
 
+function resolveAbsolutePath(path: string): string {
+  if (path.startsWith('/')) {
+    return path;
+  }
+  if (path.startsWith('./') || path.startsWith('../')) {
+    // Resolve relative to backend root (one level up from src/config/)
+    const backendRoot = new URL('../../', import.meta.url).pathname;
+    return new URL(path, `file://${backendRoot}`).pathname;
+  }
+  return path;
+}
+
 export const env: Env = {
   PORT: getEnvVarAsNumber('PORT', 8000),
   DATABASE_URL: getEnvVar('DATABASE_URL', './data/database.sqlite'),
   JWT_SECRET: getEnvVar('JWT_SECRET'),
-  UPLOAD_DIR: getEnvVar('UPLOAD_DIR', './uploads'),
+  UPLOAD_DIR: resolveAbsolutePath(getEnvVar('UPLOAD_DIR', './uploads')),
   CORS_ORIGIN: getEnvVar('CORS_ORIGIN', 'http://localhost:5173'),
   NODE_ENV: (getEnvVar('NODE_ENV', 'development') as Env['NODE_ENV']),
 };

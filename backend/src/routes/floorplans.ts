@@ -187,19 +187,34 @@ floorplanRoutes.put('/:id', authMiddleware, uploadMiddleware('floorplans', { max
 // DELETE /floorplans/:id - Delete floorplan
 floorplanRoutes.delete('/:id', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
+  console.log(`[Floorplan] Delete request for floorplan ID: ${id}`);
 
   try {
     const floorplan = await floorplanRepository.findById(id);
     if (!floorplan) {
+      console.log(`[Floorplan] Floorplan ${id} not found`);
       return c.json({ error: 'Floorplan not found' }, 404);
     }
 
+    console.log(`[Floorplan] Found floorplan: ${floorplan.name}, image_path: ${floorplan.image_path}`);
+
     // Delete image file
     if (floorplan.image_path) {
-      await fileStorageService.deleteFile(floorplan.image_path);
+      try {
+        const deleted = await fileStorageService.deleteFile(floorplan.image_path);
+        if (!deleted) {
+          console.warn(`[Floorplan] Warning: Could not delete image file for floorplan ${id}: ${floorplan.image_path}`);
+        }
+      } catch (fileError) {
+        console.error(`[Floorplan] Error deleting image file for floorplan ${id}:`, fileError);
+        // Continue with deletion even if file removal fails
+      }
+    } else {
+      console.log(`[Floorplan] No image_path for floorplan ${id}`);
     }
 
     await floorplanRepository.delete(id);
+    console.log(`[Floorplan] Successfully deleted floorplan ${id}`);
     
     return c.json({
       message: 'Floorplan deleted successfully',
