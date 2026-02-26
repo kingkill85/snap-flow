@@ -783,6 +783,44 @@ export function ConfiguratorCanvas({
     }
   }, [zoomRef]);
 
+  // Native wheel event listener for zoom (uses passive: false to prevent browser default)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleNativeWheel = (e: WheelEvent) => {
+      // Check for Cmd (Mac) or Ctrl (Windows/Linux)
+      if (!e.metaKey && !e.ctrlKey) return;
+      
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+      const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
+      
+      if (newZoom !== zoom) {
+        setZoom(newZoom);
+        
+        // Zoom towards mouse position
+        const rect = container.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left - rect.width / 2;
+        const mouseY = e.clientY - rect.top - rect.height / 2;
+        
+        const zoomRatio = newZoom / zoom;
+        setPan(prev => ({
+          x: prev.x * zoomRatio + mouseX * (1 - zoomRatio),
+          y: prev.y * zoomRatio + mouseY * (1 - zoomRatio),
+        }));
+      }
+    };
+
+    container.addEventListener('wheel', handleNativeWheel, { passive: false });
+    
+    return () => {
+      container.removeEventListener('wheel', handleNativeWheel);
+    };
+  }, [zoom, setZoom, setPan, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP]);
+
   // Update cache buster when floorplan changes to force image reload
   useEffect(() => {
     setImageCacheBuster(Date.now());
@@ -910,37 +948,6 @@ export function ConfiguratorCanvas({
     setIsPanning(false);
   };
 
-  // Wheel zoom handler (Cmd/Ctrl + wheel)
-  const handleWheel = (e: React.WheelEvent) => {
-    // Check for Cmd (Mac) or Ctrl (Windows/Linux)
-    if (!e.metaKey && !e.ctrlKey) return;
-    
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-    const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
-    
-    if (newZoom !== zoom) {
-      setZoom(newZoom);
-      
-      // Zoom towards mouse position
-      const container = containerRef.current;
-      if (container && zoom !== 1) {
-        const rect = container.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left - rect.width / 2;
-        const mouseY = e.clientY - rect.top - rect.height / 2;
-        
-        // Adjust pan to zoom towards mouse
-        const zoomRatio = newZoom / zoom;
-        setPan(prev => ({
-          x: prev.x * zoomRatio + mouseX * (1 - zoomRatio),
-          y: prev.y * zoomRatio + mouseY * (1 - zoomRatio),
-        }));
-      }
-    }
-  };
-
   // Arrow key panning - only with Ctrl/Cmd
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1014,7 +1021,6 @@ export function ConfiguratorCanvas({
         onMouseMove={handlePanMove}
         onMouseUp={stopPan}
         onMouseLeave={stopPan}
-        onWheel={handleWheel}
         className={`relative w-full h-full flex items-start justify-center transition-colors ${
           isOver ? 'bg-primary/5' : 'bg-background'
         } ${isPanning ? 'cursor-grabbing' : 'cursor-default'}`}
