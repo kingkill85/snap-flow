@@ -888,26 +888,33 @@ export function ConfiguratorCanvas({
     const handleNativeWheel = (e: WheelEvent) => {
       // Check for Cmd (Mac) or Ctrl (Windows/Linux)
       if (!e.metaKey && !e.ctrlKey) return;
-      
+
       e.preventDefault();
       e.stopPropagation();
-      
+
       const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
       const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
-      
+
       if (newZoom !== zoom) {
-        setZoom(newZoom);
-        
         // Zoom towards mouse position
+        // Calculate mouse position relative to the container center
         const rect = container.getBoundingClientRect();
         const mouseX = e.clientX - rect.left - rect.width / 2;
         const mouseY = e.clientY - rect.top - rect.height / 2;
-        
-        const zoomRatio = newZoom / zoom;
-        setPan(prev => ({
-          x: prev.x * zoomRatio + mouseX * (1 - zoomRatio),
-          y: prev.y * zoomRatio + mouseY * (1 - zoomRatio),
-        }));
+
+        // Calculate the world point under the mouse before zoom
+        // worldPoint = (mouseScreen - pan) / zoom
+        const worldX = (mouseX - pan.x) / zoom;
+        const worldY = (mouseY - pan.y) / zoom;
+
+        // After zoom, adjust pan so the same world point is under the mouse
+        // mouseScreen = worldPoint * newZoom + newPan
+        // newPan = mouseScreen - worldPoint * newZoom
+        const newPanX = mouseX - worldX * newZoom;
+        const newPanY = mouseY - worldY * newZoom;
+
+        setZoom(newZoom);
+        setPan({ x: newPanX, y: newPanY });
       }
     };
 
