@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import type { Category } from '@/services/category';
+import { X, Save, Plus } from 'lucide-react';
 
 interface CategoryFormModalProps {
   category: Category | null;
@@ -98,10 +99,23 @@ export function CategoryFormModal({ category, isOpen, onClose, onSubmit }: Categ
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
+              <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+              {isLoading ? (
+                'Saving...'
+              ) : isEdit ? (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Update
+                </>
+              ) : (
+                <>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create
+                </>
+              )}
             </Button>
           </DialogFooter>
         </form>

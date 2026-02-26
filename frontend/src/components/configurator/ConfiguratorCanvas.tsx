@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { Pencil, X, Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw, RotateCw } from 'lucide-react';
+import { Pencil, X, Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw, RotateCw, Save, Trash2 } from 'lucide-react';
 import type { Floorplan } from '@/services/floorplan';
 import type { Placement } from '@/services/placement';
 import type { Item } from '@/services/item';
@@ -578,7 +578,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
           <div className="space-y-4">
             <Alert variant="destructive" className="mb-4">
               <AlertDescription>
-                This item is no longer available in the catalog. You can delete this placement, but you cannot edit it.
+                This product is no longer available in the catalog. You can delete this placement, but you cannot edit it.
               </AlertDescription>
             </Alert>
 
@@ -611,7 +611,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                       const mainEntry = group?.mainEntry;
                       return (
                         <>
-                          <p className="font-medium">{mainEntry?.item_name || 'Unknown Item'}</p>
+                          <p className="font-medium">{mainEntry?.item_name || 'Unknown Product'}</p>
                           <p className="text-sm text-muted-foreground">
                             {mainEntry?.model_number}
                             {mainEntry?.style_name && ` - ${mainEntry.style_name}`}
@@ -804,6 +804,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
           {isItemUnavailable ? (
             <>
               <Button variant="outline" onClick={onClose}>
+                <X className="mr-2 h-4 w-4" />
                 Cancel
               </Button>
               <Button
@@ -813,20 +814,26 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                   onClose();
                 }}
               >
+                <Trash2 className="mr-2 h-4 w-4" />
                 Delete Placement
               </Button>
             </>
           ) : (
             <>
               <Button variant="outline" onClick={onClose}>
+                <X className="mr-2 h-4 w-4" />
                 Cancel
               </Button>
               <Button
                 onClick={handleSave}
                 disabled={isLoading || isSaving || !selectedVariantId}
               >
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Changes
+                {isSaving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Update
               </Button>
             </>
           )}

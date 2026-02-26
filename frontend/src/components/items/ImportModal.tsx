@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
-import { Upload, Loader2, CheckCircle, AlertCircle, FileSpreadsheet, FileText } from 'lucide-react';
+import { Upload, Loader2, CheckCircle, AlertCircle, FileSpreadsheet, FileText, X, Check } from 'lucide-react';
 import { itemService } from '@/services/item';
 
 interface ImportModalProps {
@@ -237,8 +237,8 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
               <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
                 <li>Categories will be synced (new ones created, missing ones deactivated)</li>
                 <li>Items will be updated or created based on model numbers</li>
-                <li>Variants with images will be synced</li>
-                <li>Items/variants not in Excel will be deactivated (not deleted)</li>
+                <li>Styles with images will be synced</li>
+                <li>Items/styles not in Excel will be deactivated (not deleted)</li>
                 <li>Excel is the source of truth - existing data will be overwritten</li>
               </ul>
             </div>
@@ -339,7 +339,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
 
               <Card className="border">
                 <CardContent className="p-4">
-                  <h4 className="font-semibold mb-3">Variants</h4>
+                  <h4 className="font-semibold mb-3">Styles</h4>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-green-600">Added:</span>
@@ -425,6 +425,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
           {step === 'upload' && (
             <>
               <Button variant="outline" onClick={() => handleClose(false)}>
+                <X className="mr-2 h-4 w-4" />
                 Cancel
               </Button>
               <Button
@@ -449,9 +450,11 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
           {step === 'complete' && (
             <>
               <Button variant="outline" onClick={handleImportAnother}>
+                <Upload className="mr-2 h-4 w-4" />
                 Import Another
               </Button>
               <Button onClick={() => handleClose(true)}>
+                <Check className="mr-2 h-4 w-4" />
                 Done
               </Button>
             </>

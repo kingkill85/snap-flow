@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { categoryService, type Category } from '@/services/category';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -132,8 +132,7 @@ const CategoryManagement = () => {
       )}
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Categories</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-end">
           <div className="flex items-center space-x-2">
             <Switch
               id="show-inactive"

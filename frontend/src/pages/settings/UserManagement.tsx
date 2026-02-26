@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { userService, type CreateUserDTO, type UpdateUserDTO } from '@/services/user';
 import type { User } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -112,9 +112,7 @@ const UserManagement = () => {
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Users</CardTitle>
-        </CardHeader>
+        <CardHeader />
         <CardContent>
           <Table>
             <TableHeader>

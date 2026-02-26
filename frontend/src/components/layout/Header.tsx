@@ -65,9 +65,9 @@ const Header = () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem asChild>
-                    <Link to="/catalog/items" className="flex items-center gap-2">
+                    <Link to="/catalog/products" className="flex items-center gap-2">
                       <LayoutGrid className="h-4 w-4" />
-                      Items
+                      Products
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>

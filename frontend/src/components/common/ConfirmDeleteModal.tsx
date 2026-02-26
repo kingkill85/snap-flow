@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, X, Trash2 } from 'lucide-react';
 
 interface ConfirmDeleteModalProps {
   title: string;
@@ -52,9 +52,11 @@ export function ConfirmDeleteModal({
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
+            <X className="mr-2 h-4 w-4" />
             Cancel
           </Button>
           <Button type="button" variant="destructive" onClick={handleConfirm}>
+            <Trash2 className="mr-2 h-4 w-4" />
             Delete
           </Button>
         </DialogFooter>

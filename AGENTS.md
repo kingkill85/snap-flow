@@ -337,6 +337,64 @@ Use this consistent pattern for Edit/Delete buttons:
 5. Wrap in `flex gap-2` container
 6. Edit button comes before Delete button
 
+### UI Terminology Mapping
+
+The frontend uses user-friendly terms that map to backend/code terminology:
+
+| UI Term | Code/Backend Term |
+|---------|------------------|
+| **Products** | `items` (Item, ItemVariant) |
+| **Styles** | `variants` (ItemVariant) |
+| **Catalog** | `items` (with variants) |
+
+**Example:** When users see "Product Management", the code uses `itemService`, `Item` type, and `/items` API endpoints. When users see "Styles", the code uses `ItemVariant` type and variant-related functions.
+
+### Modal Button Consistency
+
+All modal action buttons must follow this pattern for consistency:
+
+**Button Labels:**
+- Create mode: "Create"
+- Edit mode: "Update"
+- Cancel: "Cancel"
+- Delete: "Delete"
+
+**Icons (mr-2 h-4 w-4):**
+- Create: `Plus` or `FolderPlus` icon
+- Update: `Save` icon  
+- Cancel: `X` icon
+- Delete: `Trash2` icon
+
+**Example:**
+```tsx
+<DialogFooter>
+  <Button type="button" variant="outline" onClick={onClose}>
+    <X className="mr-2 h-4 w-4" />
+    Cancel
+  </Button>
+  <Button type="submit" disabled={isLoading}>
+    {isLoading ? (
+      'Saving...'
+    ) : isEdit ? (
+      <>
+        <Save className="mr-2 h-4 w-4" />
+        Update
+      </>
+    ) : (
+      <>
+        <Plus className="mr-2 h-4 w-4" />
+        Create
+      </>
+    )}
+  </Button>
+</DialogFooter>
+```
+
+**Modal Titles:**
+- Create: "Create {Entity}"
+- Edit: "Edit {Entity}"
+- Examples: "Create Product", "Edit Style", "Create User"
+
 ## Project Structure
 
 ```

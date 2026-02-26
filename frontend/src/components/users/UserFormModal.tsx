@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { X, Save, Plus } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -169,10 +170,23 @@ export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModal
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
+              <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+              {isLoading ? (
+                'Saving...'
+              ) : isEdit ? (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Update
+                </>
+              ) : (
+                <>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create
+                </>
+              )}
             </Button>
           </DialogFooter>
         </form>
