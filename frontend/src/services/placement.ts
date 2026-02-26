@@ -11,6 +11,7 @@ export interface Placement {
   y: number;
   width: number;
   height: number;
+  rotation: number;  // Rotation in degrees (0-360)
   created_at: string;
 }
 
@@ -21,6 +22,7 @@ export interface CreatePlacementDTO {
   y: number;
   width: number;
   height: number;
+  rotation?: number;  // Optional, defaults to 0
 }
 
 export interface UpdatePlacementDTO {
@@ -28,6 +30,7 @@ export interface UpdatePlacementDTO {
   y?: number;
   width?: number;
   height?: number;
+  rotation?: number;
 }
 
 export const placementService = {

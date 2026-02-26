@@ -9,7 +9,7 @@ import type { Placement, CreatePlacementDTO, UpdatePlacementDTO } from '../model
 export class PlacementRepository {
   async findAll(): Promise<Placement[]> {
     const result = getDb().queryEntries(`
-      SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.created_at,
+      SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.rotation, p.created_at,
              b.floorplan_id, b.item_id, b.variant_id as item_variant_id
       FROM placements p
       JOIN project_bom b ON p.bom_id = b.id
@@ -20,7 +20,7 @@ export class PlacementRepository {
 
   async findByFloorplan(floorplanId: number): Promise<Placement[]> {
     const result = getDb().queryEntries(`
-      SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.created_at,
+      SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.rotation, p.created_at,
              b.floorplan_id, b.item_id, b.variant_id as item_variant_id,
              b.picture_path as item_variant_image_path
       FROM placements p
@@ -33,7 +33,7 @@ export class PlacementRepository {
 
   async findById(id: number): Promise<Placement | null> {
     const result = getDb().queryEntries(`
-      SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.created_at,
+      SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.rotation, p.created_at,
              b.floorplan_id, b.item_id, b.variant_id as item_variant_id
       FROM placements p
       JOIN project_bom b ON p.bom_id = b.id
@@ -44,7 +44,7 @@ export class PlacementRepository {
 
   async findByBomEntry(bomId: number): Promise<Placement[]> {
     const result = getDb().queryEntries(`
-      SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.created_at,
+      SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.rotation, p.created_at,
              b.floorplan_id, b.item_id, b.variant_id as item_variant_id
       FROM placements p
       JOIN project_bom b ON p.bom_id = b.id
@@ -56,15 +56,16 @@ export class PlacementRepository {
 
   async create(data: CreatePlacementDTO): Promise<Placement> {
     const result = getDb().queryEntries(`
-      INSERT INTO placements (bom_id, x, y, width, height)
-      VALUES (?, ?, ?, ?, ?)
-      RETURNING id, bom_id, x, y, width, height, created_at
+      INSERT INTO placements (bom_id, x, y, width, height, rotation)
+      VALUES (?, ?, ?, ?, ?, ?)
+      RETURNING id, bom_id, x, y, width, height, rotation, created_at
     `, [
       data.floorplan_id, // This should be bom_id now
       data.x,
       data.y,
       data.width,
       data.height,
+      data.rotation ?? 0.0,
     ]);
 
     const inserted = result[0] as Record<string, unknown>;
@@ -75,15 +76,16 @@ export class PlacementRepository {
 
   async createWithBomEntry(bomId: number, data: Omit<CreatePlacementDTO, 'floorplan_id' | 'item_variant_id'>): Promise<Placement> {
     const result = getDb().queryEntries(`
-      INSERT INTO placements (bom_id, x, y, width, height)
-      VALUES (?, ?, ?, ?, ?)
-      RETURNING id, bom_id, x, y, width, height, created_at
+      INSERT INTO placements (bom_id, x, y, width, height, rotation)
+      VALUES (?, ?, ?, ?, ?, ?)
+      RETURNING id, bom_id, x, y, width, height, rotation, created_at
     `, [
       bomId,
       data.x,
       data.y,
       data.width,
       data.height,
+      data.rotation ?? 0.0,
     ]);
 
     const inserted = result[0] as Record<string, unknown>;
@@ -110,6 +112,10 @@ export class PlacementRepository {
       sets.push('height = ?');
       values.push(data.height);
     }
+    if (data.rotation !== undefined) {
+      sets.push('rotation = ?');
+      values.push(data.rotation);
+    }
     if (data.bom_id !== undefined) {
       sets.push('bom_id = ?');
       values.push(data.bom_id);
@@ -125,7 +131,7 @@ export class PlacementRepository {
       UPDATE placements
       SET ${sets.join(', ')}
       WHERE id = ?
-      RETURNING id, bom_id, x, y, width, height, created_at
+      RETURNING id, bom_id, x, y, width, height, rotation, created_at
     `, values);
 
     if (result.length === 0) return null;
@@ -162,7 +168,7 @@ export class PlacementRepository {
 
   async findByBomId(bomId: number): Promise<Placement[]> {
     const result = getDb().queryEntries(`
-      SELECT id, bom_id, x, y, width, height, created_at
+      SELECT id, bom_id, x, y, width, height, rotation, created_at
       FROM placements
       WHERE bom_id = ?
     `, [bomId]);
