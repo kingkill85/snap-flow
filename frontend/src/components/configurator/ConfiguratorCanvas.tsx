@@ -206,6 +206,7 @@ function DraggablePlacement({
       ref={setNodeRef}
       {...(isSelected ? {} : listeners)}
       {...attributes}
+      data-placement="true"
       style={{
         ...style,
         position: 'absolute',
@@ -882,9 +883,15 @@ export function ConfiguratorCanvas({
     setPan({ x: 0, y: 0 });
   };
 
-  // Pan functions - always allow panning
+  // Pan functions - allow left-click or middle-click panning
   const startPan = (e: React.MouseEvent) => {
-    if (e.button !== 1) return; // Only allow middle mouse button panning
+    // Allow left click (0) or middle click (1), but not right click (2)
+    if (e.button !== 0 && e.button !== 1) return;
+    
+    // Don't pan if clicking on a placement (let the placement handle it)
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-placement]')) return;
+    
     e.preventDefault();
     e.stopPropagation();
     setIsPanning(true);
