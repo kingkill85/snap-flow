@@ -15,7 +15,7 @@ const Home = () => {
         </p>
         <div className="flex items-center justify-center gap-4">
           <Button size="lg" asChild>
-            <Link to="/projects">Get Started</Link>
+            <Link to="/projects" state={{ openCreateModal: true }}>Get Started</Link>
           </Button>
           <Button size="lg" variant="outline" asChild>
             <Link to="/projects">View Projects</Link>
