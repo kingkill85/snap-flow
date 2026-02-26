@@ -905,6 +905,37 @@ export function ConfiguratorCanvas({
     setIsPanning(false);
   };
 
+  // Wheel zoom handler (Cmd/Ctrl + wheel)
+  const handleWheel = (e: React.WheelEvent) => {
+    // Check for Cmd (Mac) or Ctrl (Windows/Linux)
+    if (!e.metaKey && !e.ctrlKey) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+    const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
+    
+    if (newZoom !== zoom) {
+      setZoom(newZoom);
+      
+      // Zoom towards mouse position
+      const container = containerRef.current;
+      if (container && zoom !== 1) {
+        const rect = container.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left - rect.width / 2;
+        const mouseY = e.clientY - rect.top - rect.height / 2;
+        
+        // Adjust pan to zoom towards mouse
+        const zoomRatio = newZoom / zoom;
+        setPan(prev => ({
+          x: prev.x * zoomRatio + mouseX * (1 - zoomRatio),
+          y: prev.y * zoomRatio + mouseY * (1 - zoomRatio),
+        }));
+      }
+    }
+  };
+
   // Arrow key panning
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -976,6 +1007,7 @@ export function ConfiguratorCanvas({
         onMouseMove={handlePanMove}
         onMouseUp={stopPan}
         onMouseLeave={stopPan}
+        onWheel={handleWheel}
         className={`relative w-full h-full flex items-start justify-center transition-colors ${
           isOver ? 'bg-primary/5' : 'bg-background'
         } ${isPanning ? 'cursor-grabbing' : zoom > 1 ? 'cursor-grab' : 'cursor-default'}`}
@@ -1089,8 +1121,8 @@ export function ConfiguratorCanvas({
 
         {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize • Click 🗑 to delete • Click ✎ to edit
-          {zoom > 1 && ' • Middle-click or hold space to pan • Arrow keys to pan'}
+          Click item to select • Drag corners to resize • Click 🗑 to delete • Click ✎ to edit • Cmd+wheel to zoom
+          {zoom > 1 && ' • Click & drag to pan • Arrow keys to pan'}
         </div>
 
         <PlacementEditModal
