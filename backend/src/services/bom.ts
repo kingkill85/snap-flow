@@ -4,6 +4,7 @@ import { floorplanRepository } from '../repositories/floorplan.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { itemRepository } from '../repositories/item.ts';
 import { variantAddonRepository } from '../repositories/variant-addon.ts';
+import { fileStorageService } from './file-storage.ts';
 import type { ProjectBom, CreateBomEntryDTO } from '../models/index.ts';
 
 export interface BomGroup {
@@ -12,6 +13,7 @@ export interface BomGroup {
   quantity: number;
   totalPrice: number;
   bomEntryIds: number[]; // All BOM entry IDs in this group (for edit modal matching)
+  isAvailable: boolean; // Whether the item/variant still exists in catalog
 }
 
 export interface FloorplanBom {
@@ -41,6 +43,37 @@ export interface ChangeReport {
  * Handles business logic for BOM operations
  */
 export class BomService {
+  /**
+   * Helper method to copy variant/addon image to project folder
+   */
+  private async copyImageToProject(
+    projectId: number,
+    bomEntryId: number,
+    sourceImagePath: string | null | undefined
+  ): Promise<string | null> {
+    if (!sourceImagePath) {
+      return null;
+    }
+
+    try {
+      const fileName = sourceImagePath.split('/').pop() || 'image.jpg';
+      const newFileName = `${bomEntryId}-${fileName}`;
+      const destSubdir = `projects/${projectId}/bom-images`;
+      
+      const newPath = await fileStorageService.copyFile(
+        sourceImagePath,
+        destSubdir,
+        newFileName
+      );
+      
+      return newPath;
+    } catch (error) {
+      console.error('Failed to copy image to project folder:', error);
+      // Fallback to original path if copy fails
+      return sourceImagePath;
+    }
+  }
+
   /**
    * Create a new BOM entry for a placement
    * Creates main entry + required addon children
@@ -72,7 +105,7 @@ export class BomService {
       throw new Error('Item not found');
     }
 
-    // Create main BOM entry
+    // Create main BOM entry (without image path initially)
     const mainEntry = await bomEntryRepository.create({
       project_id: projectId,
       floorplan_id: floorplanId,
@@ -83,14 +116,31 @@ export class BomService {
       style_name: variant.style_name,
       model_number: item.base_model_number || `${variant.style_name}`,
       unit_price: variant.price,
-      picture_path: variant.image_path,
+      picture_path: null, // Will update after copying image
     });
 
-    // Create required addon children (only required addons)
+    // Copy variant image to project folder and update entry
+    const copiedImagePath = await this.copyImageToProject(
+      projectId,
+      mainEntry.id,
+      variant.image_path
+    );
+    
+    if (copiedImagePath) {
+      await bomEntryRepository.update(mainEntry.id, {
+        picture_path: copiedImagePath
+      });
+      mainEntry.picture_path = copiedImagePath;
+    }
+
+    // Create required addon children (only active required addons)
     const allAddons = await variantAddonRepository.findByVariantId(variantId);
     console.log(`Found ${allAddons.length} addons for variant ${variantId}`);
-    const requiredAddons = allAddons.filter(addon => addon.is_required);
-    console.log(`Found ${requiredAddons.length} required addons`);
+    const requiredAddons = allAddons.filter(addon => 
+      addon.is_required && 
+      addon.addon_variant?.is_active
+    );
+    console.log(`Found ${requiredAddons.length} active required addons`);
     for (const addon of requiredAddons) {
       console.log(`Processing addon:`, addon);
       if (!addon.addon_variant) {
@@ -104,7 +154,8 @@ export class BomService {
         continue;
       }
 
-      await bomEntryRepository.create({
+      // Create addon entry (without image path initially)
+      const addonEntry = await bomEntryRepository.create({
         project_id: projectId,
         floorplan_id: floorplanId,
         item_id: addon.addon_variant.item_id,
@@ -114,8 +165,21 @@ export class BomService {
         style_name: addon.addon_variant.style_name,
         model_number: addonItem.base_model_number || '',
         unit_price: addon.addon_variant.price,
-        picture_path: addon.addon_variant.image_path,
+        picture_path: null, // Will update after copying image
       });
+
+      // Copy addon image to project folder and update entry
+      const addonCopiedPath = await this.copyImageToProject(
+        projectId,
+        addonEntry.id,
+        addon.addon_variant.image_path
+      );
+      
+      if (addonCopiedPath) {
+        await bomEntryRepository.update(addonEntry.id, {
+          picture_path: addonCopiedPath
+        });
+      }
       
       console.log(`  Created addon: ${addonItem.name}`);
     }
@@ -147,6 +211,13 @@ export class BomService {
       throw new Error('Item not found');
     }
 
+    // Copy new variant image to project folder
+    const copiedImagePath = await this.copyImageToProject(
+      entry.project_id,
+      bomEntryId,
+      newVariant.image_path
+    );
+
     // Update main entry with new variant and snapshots
     const updated = await bomEntryRepository.update(bomEntryId, {
       variant_id: newVariantId,
@@ -154,7 +225,7 @@ export class BomService {
       style_name: newVariant.style_name,
       model_number: item.base_model_number || `${newVariant.style_name}`,
       unit_price: newVariant.price,
-      picture_path: newVariant.image_path,
+      picture_path: copiedImagePath,
     });
 
     if (!updated) {
@@ -167,15 +238,20 @@ export class BomService {
       await bomEntryRepository.delete(child.id);
     }
 
-    // Create new addon children for new variant
-    const requiredAddons = await variantAddonRepository.findByVariantId(newVariantId);
+    // Create new addon children for new variant (only active required addons)
+    const allAddons = await variantAddonRepository.findByVariantId(newVariantId);
+    const requiredAddons = allAddons.filter(addon => 
+      addon.is_required && 
+      addon.addon_variant?.is_active
+    );
     for (const addon of requiredAddons) {
       if (!addon.addon_variant) continue;
 
       const addonItem = await itemRepository.findById(addon.addon_variant.item_id);
       if (!addonItem) continue;
 
-      await bomEntryRepository.create({
+      // Create addon entry (without image path initially)
+      const addonEntry = await bomEntryRepository.create({
         project_id: entry.project_id,
         floorplan_id: entry.floorplan_id,
         item_id: addon.addon_variant.item_id,
@@ -185,8 +261,21 @@ export class BomService {
         style_name: addon.addon_variant.style_name,
         model_number: addonItem.base_model_number || '',
         unit_price: addon.addon_variant.price,
-        picture_path: addon.addon_variant.image_path,
+        picture_path: null, // Will update after copying image
       });
+
+      // Copy addon image to project folder and update entry
+      const addonCopiedPath = await this.copyImageToProject(
+        entry.project_id,
+        addonEntry.id,
+        addon.addon_variant.image_path
+      );
+      
+      if (addonCopiedPath) {
+        await bomEntryRepository.update(addonEntry.id, {
+          picture_path: addonCopiedPath
+        });
+      }
     }
 
     return updated;
@@ -240,8 +329,22 @@ export class BomService {
       style_name: newVariant.style_name,
       model_number: item.base_model_number || `${newVariant.style_name}`,
       unit_price: newVariant.price,
-      picture_path: newVariant.image_path,
+      picture_path: null, // Will update after copying image
     });
+
+    // Copy variant image to project folder and update entry
+    const copiedImagePath = await this.copyImageToProject(
+      floorplan.project_id,
+      newMainEntry.id,
+      newVariant.image_path
+    );
+    
+    if (copiedImagePath) {
+      await bomEntryRepository.update(newMainEntry.id, {
+        picture_path: copiedImagePath
+      });
+      newMainEntry.picture_path = copiedImagePath;
+    }
 
     // Create all selected addons for this new entry
     for (const addonVariantId of selectedAddonIds) {
@@ -251,7 +354,8 @@ export class BomService {
       const addonItem = await itemRepository.findById(addonVariant.item_id);
       if (!addonItem) continue;
 
-      await bomEntryRepository.create({
+      // Create addon entry (without image path initially)
+      const addonEntry = await bomEntryRepository.create({
         project_id: floorplan.project_id,
         floorplan_id: floorplanId,
         item_id: addonVariant.item_id,
@@ -261,8 +365,21 @@ export class BomService {
         style_name: addonVariant.style_name,
         model_number: addonItem.base_model_number || '',
         unit_price: addonVariant.price,
-        picture_path: addonVariant.image_path,
+        picture_path: null, // Will update after copying image
       });
+
+      // Copy addon image to project folder and update entry
+      const addonCopiedPath = await this.copyImageToProject(
+        floorplan.project_id,
+        addonEntry.id,
+        addonVariant.image_path
+      );
+      
+      if (addonCopiedPath) {
+        await bomEntryRepository.update(addonEntry.id, {
+          picture_path: addonCopiedPath
+        });
+      }
     }
 
     // Update placement to reference the BOM entry (new or existing)
@@ -295,6 +412,7 @@ export class BomService {
       children: ProjectBom[];
       quantity: number;
       bomEntryIds: number[];
+      isAvailable: boolean;
     }>();
     
     for (const mainEntry of mainEntries) {
@@ -303,6 +421,47 @@ export class BomService {
       
       // Get placement count (quantity)
       const quantity = await bomEntryRepository.getPlacementCount(mainEntry.id);
+      
+      // Check if item/variant is still available in catalog
+      let isAvailable = true;
+      if (mainEntry.item_id && mainEntry.variant_id) {
+        const item = await itemRepository.findById(mainEntry.item_id);
+        // Convert is_active to boolean (SQLite returns 0/1)
+        const itemIsActive = item ? Boolean(item.is_active) : false;
+        if (!item || !itemIsActive) {
+          isAvailable = false;
+        } else {
+          const variant = await itemVariantRepository.findById(mainEntry.variant_id);
+          // Variant repository already converts is_active to boolean
+          if (!variant || !variant.is_active) {
+            isAvailable = false;
+          }
+        }
+      } else {
+        // No item_id or variant_id means item was deleted
+        isAvailable = false;
+      }
+      
+      // Check availability for each child addon
+      for (const child of children) {
+        let childIsAvailable = true;
+        if (child.item_id && child.variant_id) {
+          const childItem = await itemRepository.findById(child.item_id);
+          const childItemIsActive = childItem ? Boolean(childItem.is_active) : false;
+          if (!childItem || !childItemIsActive) {
+            childIsAvailable = false;
+          } else {
+            const childVariant = await itemVariantRepository.findById(child.variant_id);
+            if (!childVariant || !childVariant.is_active) {
+              childIsAvailable = false;
+            }
+          }
+        } else {
+          childIsAvailable = false;
+        }
+        // Add is_available property to child
+        (child as any).is_available = childIsAvailable;
+      }
       
       // Create a unique key based on variant + sorted addon variant IDs
       // This groups identical configurations together
@@ -321,12 +480,13 @@ export class BomService {
           children,
           quantity,
           bomEntryIds: [mainEntry.id],
+          isAvailable,
         });
       }
     }
 
     // Convert map to groups array
-    const groups: BomGroup[] = Array.from(groupMap.values()).map(({ mainEntry, children, quantity, bomEntryIds }) => {
+    const groups: BomGroup[] = Array.from(groupMap.values()).map(({ mainEntry, children, quantity, bomEntryIds, isAvailable }) => {
       const mainTotal = mainEntry.unit_price * quantity;
       const childrenTotal = children.reduce((sum, child) => sum + child.unit_price, 0) * quantity;
       const totalPrice = mainTotal + childrenTotal;
@@ -337,6 +497,7 @@ export class BomService {
         quantity,
         totalPrice,
         bomEntryIds,
+        isAvailable,
       };
     });
 
@@ -379,10 +540,44 @@ export class BomService {
 
   /**
    * Delete a BOM entry and all its placements
-   * Cascade delete handles children
+   * Cascade delete handles children, also cleans up copied images
    */
   async deleteBomEntry(bomEntryId: number): Promise<void> {
+    // Get the entry and its children before deleting
+    const entry = await bomEntryRepository.findById(bomEntryId);
+    if (!entry) {
+      return; // Already deleted or doesn't exist
+    }
+    
+    const children = await bomEntryRepository.findChildren(bomEntryId);
+    const allEntries = [entry, ...children];
+    
+    // Collect all picture paths that need cleanup
+    const picturePathsToCheck: string[] = [];
+    for (const e of allEntries) {
+      if (e.picture_path && e.picture_path.startsWith('projects/')) {
+        picturePathsToCheck.push(e.picture_path);
+      }
+    }
+    
+    // Delete the BOM entries (this also cascades to placements)
     await bomEntryRepository.delete(bomEntryId);
+    
+    // Clean up images that are no longer referenced
+    for (const picturePath of picturePathsToCheck) {
+      try {
+        // Check if any other BOM entries still use this image
+        const otherEntries = await bomEntryRepository.findByPicturePath(picturePath);
+        if (otherEntries.length === 0) {
+          // Safe to delete the image file
+          await fileStorageService.deleteFile(picturePath);
+          console.log(`Cleaned up unused image: ${picturePath}`);
+        }
+      } catch (error) {
+        console.error(`Failed to clean up image ${picturePath}:`, error);
+        // Continue with other images even if one fails
+      }
+    }
   }
 
   /**

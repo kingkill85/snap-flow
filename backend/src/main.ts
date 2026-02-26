@@ -5,6 +5,7 @@ import { logger } from 'hono/logger';
 import { serveStatic } from 'hono/deno';
 import { env } from './config/env.ts';
 import { runMigrations } from './scripts/migrate.ts';
+import { runBomImageMigration } from './services/bom-image-migration.ts';
 import authRoutes from './routes/auth.ts';
 import userRoutes from './routes/users.ts';
 import categoryRoutes from './routes/categories.ts';
@@ -202,6 +203,16 @@ if (import.meta.main) {
   } catch (error) {
     console.error('❌ Migration failed:', error);
     Deno.exit(1);
+  }
+
+  // Run BOM image migration (copies catalog images to project folders)
+  // This is idempotent and only processes entries that haven't been migrated yet
+  console.log('🖼️ Checking for BOM image migrations...');
+  try {
+    await runBomImageMigration();
+  } catch (error) {
+    console.error('❌ BOM image migration failed:', error);
+    // Don't exit - image migration failure shouldn't prevent server startup
   }
 
   // Seed admin user on first run

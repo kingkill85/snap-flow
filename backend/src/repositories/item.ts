@@ -118,13 +118,18 @@ export class ItemRepository {
       return null;
     }
 
-    const item = result[0] as unknown as Item;
+    const item = result[0] as any;
+    
+    // Convert is_active to boolean (SQLite stores as 0/1)
+    if (item && item.is_active !== undefined) {
+      item.is_active = Boolean(item.is_active);
+    }
 
     if (includeRelations) {
       item.variants = await itemVariantRepository.findByItemId(id);
     }
 
-    return item;
+    return item as unknown as Item;
   }
 
   async findByBaseModelNumber(baseModelNumber: string): Promise<Item | null> {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { FloorplanBom, ChangeReport } from '@/services/bom';
 import { bomService } from '@/services/bom';
@@ -181,7 +181,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
           const hasChildren = group.children.length > 0;
           
           return (
-            <Card key={group.mainEntry.id} className="mb-2 border-border/50 shadow-none">
+            <Card key={group.mainEntry.id} className={`mb-2 border-border/50 shadow-none ${!group.isAvailable ? 'bg-destructive/5' : ''}`}>
               <div 
                 className="flex items-center gap-3 cursor-pointer p-3"
                 onClick={() => hasChildren && toggleGroup(group.mainEntry.id)}
@@ -209,6 +209,11 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">
                     {group.mainEntry.item_name}
+                    {!group.isAvailable && (
+                      <span title="Item no longer available in catalog">
+                        <AlertCircle className="h-4 w-4 text-destructive inline-block ml-2" />
+                      </span>
+                    )}
                     {group.mainEntry.style_name && (
                       <span className="text-muted-foreground"> - {group.mainEntry.style_name}</span>
                     )}
@@ -265,6 +270,11 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-xs truncate">
                             {child.item_name}
+                            {child.is_available === false && (
+                              <span title="Add-on no longer available in catalog">
+                                <AlertCircle className="h-3 w-3 text-destructive inline-block ml-1" />
+                              </span>
+                            )}
                             {child.style_name && (
                               <span className="text-muted-foreground"> - {child.style_name}</span>
                             )}
