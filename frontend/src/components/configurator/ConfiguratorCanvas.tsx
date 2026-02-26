@@ -900,44 +900,49 @@ export function ConfiguratorCanvas({
       const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
       const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
 
-      if (newZoom !== zoom && imageRef.current && imageDisplaySize.width > 0) {
-        // Zoom towards mouse position
-        const containerRect = container.getBoundingClientRect();
-        const containerCenterX = containerRect.left + containerRect.width / 2;
-        const containerTopY = containerRect.top;
-        
-        // Current image width
-        const imageWidth = imageDisplaySize.width * zoom;
-        
-        // Image is horizontally centered, vertically at top
-        // Image top-left = (containerCenterX - imageWidth/2 + pan.x, containerTopY + pan.y)
-        const imageLeft = containerCenterX - imageWidth / 2 + pan.x;
-        const imageTop = containerTopY + pan.y;
-        
-        // Mouse position relative to image top-left
-        const mouseX = e.clientX - imageLeft;
-        const mouseY = e.clientY - imageTop;
-        
-        // Content point under mouse (in content coordinates, 0 to imageDisplaySize)
-        const contentX = mouseX / zoom;
-        const contentY = mouseY / zoom;
-        
-        // New image width
-        const newImageWidth = imageDisplaySize.width * newZoom;
-        
-        // New image top-left position
-        const newImageLeft = containerCenterX - newImageWidth / 2;
-        const newImageTop = containerTopY;
-        
-        // We want the content point to be at the same screen position
-        // screenX = newImageLeft + contentX * newZoom + newPan.x
-        // So: newPan.x = screenX - newImageLeft - contentX * newZoom
-        // But screenX = e.clientX, so:
-        const newPanX = e.clientX - newImageLeft - contentX * newZoom;
-        const newPanY = e.clientY - newImageTop - contentY * newZoom;
+      if (newZoom !== zoom) {
+        if (imageRef.current && imageDisplaySize.width > 0) {
+          // Zoom towards mouse position
+          const containerRect = container.getBoundingClientRect();
+          const containerCenterX = containerRect.left + containerRect.width / 2;
+          const containerTopY = containerRect.top;
+          
+          // Current image width
+          const imageWidth = imageDisplaySize.width * zoom;
+          
+          // Image is horizontally centered, vertically at top
+          // Image top-left = (containerCenterX - imageWidth/2 + pan.x, containerTopY + pan.y)
+          const imageLeft = containerCenterX - imageWidth / 2 + pan.x;
+          const imageTop = containerTopY + pan.y;
+          
+          // Mouse position relative to image top-left
+          const mouseX = e.clientX - imageLeft;
+          const mouseY = e.clientY - imageTop;
+          
+          // Content point under mouse (in content coordinates, 0 to imageDisplaySize)
+          const contentX = mouseX / zoom;
+          const contentY = mouseY / zoom;
+          
+          // New image width
+          const newImageWidth = imageDisplaySize.width * newZoom;
+          
+          // New image top-left position
+          const newImageLeft = containerCenterX - newImageWidth / 2;
+          const newImageTop = containerTopY;
+          
+          // We want the content point to be at the same screen position
+          // screenX = newImageLeft + contentX * newZoom + newPan.x
+          // So: newPan.x = screenX - newImageLeft - contentX * newZoom
+          // But screenX = e.clientX, so:
+          const newPanX = e.clientX - newImageLeft - contentX * newZoom;
+          const newPanY = e.clientY - newImageTop - contentY * newZoom;
 
-        setZoom(newZoom);
-        setPan({ x: newPanX, y: newPanY });
+          setZoom(newZoom);
+          setPan({ x: newPanX, y: newPanY });
+        } else {
+          // Image not loaded yet, just change zoom without mouse positioning
+          setZoom(newZoom);
+        }
       }
     };
 
