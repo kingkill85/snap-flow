@@ -895,23 +895,24 @@ export function ConfiguratorCanvas({
       const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
       const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
 
-      if (newZoom !== zoom) {
+      if (newZoom !== zoom && imageRef.current) {
         // Zoom towards mouse position
-        // Calculate mouse position relative to the container center
-        const rect = container.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left - rect.width / 2;
-        const mouseY = e.clientY - rect.top - rect.height / 2;
+        // Get the image element's current position on screen
+        const imageRect = imageRef.current.getBoundingClientRect();
 
-        // Calculate the world point under the mouse before zoom
-        // worldPoint = (mouseScreen - pan) / zoom
-        const worldX = (mouseX - pan.x) / zoom;
-        const worldY = (mouseY - pan.y) / zoom;
+        // Calculate mouse position relative to the image's top-left corner
+        const mouseX = e.clientX - imageRect.left;
+        const mouseY = e.clientY - imageRect.top;
 
-        // After zoom, adjust pan so the same world point is under the mouse
-        // mouseScreen = worldPoint * newZoom + newPan
-        // newPan = mouseScreen - worldPoint * newZoom
-        const newPanX = mouseX - worldX * newZoom;
-        const newPanY = mouseY - worldY * newZoom;
+        // After zoom, adjust pan so the same content point is under the mouse
+        // The content point at new zoom would be at: contentX * newZoom
+        // We want that to be at mouse position, so: newPan = mouseX - contentX * newZoom
+        // But since we're zooming the image itself (not the content), the pan stays the same
+        // Actually we need to adjust pan to compensate for the zoom origin being at (0,0)
+        // New pan = old pan + mouseX * (1 - newZoom/oldZoom)
+        const zoomRatio = newZoom / zoom;
+        const newPanX = pan.x + mouseX * (1 - zoomRatio);
+        const newPanY = pan.y + mouseY * (1 - zoomRatio);
 
         setZoom(newZoom);
         setPan({ x: newPanX, y: newPanY });
