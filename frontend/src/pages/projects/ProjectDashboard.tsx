@@ -272,26 +272,32 @@ const ProjectDashboard = () => {
           return;
         }
         
-        const imageRect = floorplanImage.getBoundingClientRect();
-        const activeRect = active.rect.current?.translated;
-        
-        if (activeRect) {
-          // clientWidth already includes zoom transform, don't multiply by zoom again
-          const scaleX = floorplanImage.naturalWidth > 0
-            ? floorplanImage.clientWidth / floorplanImage.naturalWidth
-            : 1;
-          const scaleY = floorplanImage.naturalHeight > 0
-            ? floorplanImage.clientHeight / floorplanImage.naturalHeight
-            : 1;
-          
-          // getBoundingClientRect already includes transforms, so no need to adjust for pan
-          const screenX = Math.max(0, activeRect.left - imageRect.left);
-          const screenY = Math.max(0, activeRect.top - imageRect.top);
-          const newX = screenX / scaleX;
-          const newY = screenY / scaleY;
-          
-          handlePlacementUpdate(placementId, { x: newX, y: newY });
-        }
+        // Use delta to calculate new position relative to original position
+        // This avoids issues with rotated elements having different bounding boxes
+        const scaleX = floorplanImage.naturalWidth > 0
+          ? floorplanImage.clientWidth / floorplanImage.naturalWidth
+          : 1;
+        const scaleY = floorplanImage.naturalHeight > 0
+          ? floorplanImage.clientHeight / floorplanImage.naturalHeight
+          : 1;
+
+        // Calculate position change in natural coordinates
+        const deltaX = event.delta.x / scaleX;
+        const deltaY = event.delta.y / scaleY;
+
+        // New position = original position + delta
+        const newX = placement.x + deltaX;
+        const newY = placement.y + deltaY;
+
+        console.log('Drop with delta:', {
+          delta: { x: event.delta.x, y: event.delta.y },
+          scaleX,
+          deltaNatural: { x: deltaX, y: deltaY },
+          original: { x: placement.x, y: placement.y },
+          new: { x: newX, y: newY },
+        });
+
+        handlePlacementUpdate(placementId, { x: newX, y: newY });
       }
       setActiveDragItem(null);
       return;
