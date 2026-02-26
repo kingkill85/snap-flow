@@ -95,6 +95,9 @@ function DraggablePlacement({
     data: {
       placement,
       type: 'placement',
+      // Include dimensions so drop calculation can account for grab offset
+      width: placement.width * scaleX,
+      height: placement.height * scaleY,
     },
     disabled: isResizing || isSelected,
   });
