@@ -9,6 +9,7 @@ import {
   type UpdateVariantDTO,
 } from '@/services/item';
 import { categoryService, type Category } from '@/services/category';
+import { useDebounce } from '@/hooks/useDebounce';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -56,6 +57,7 @@ const ItemManagement = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -112,7 +114,7 @@ const ItemManagement = () => {
         
         const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
         if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
-        if (searchQuery) filter.search = searchQuery;
+        if (debouncedSearchQuery) filter.search = debouncedSearchQuery;
         if (showInactive) filter.include_inactive = true;
 
         const result = await itemService.getAll(
@@ -134,7 +136,7 @@ const ItemManagement = () => {
     
     fetchItems();
     return () => controller.abort();
-  }, [selectedCategory, searchQuery, currentPage, showInactive]);
+  }, [selectedCategory, debouncedSearchQuery, currentPage, showInactive]);
 
   // Clear variant cache when showInactive changes to force refetch with correct filter
   useEffect(() => {
@@ -181,7 +183,7 @@ const ItemManagement = () => {
     // Refresh items
     const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
     if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
-    if (searchQuery) filter.search = searchQuery;
+    if (debouncedSearchQuery) filter.search = debouncedSearchQuery;
     if (showInactive) filter.include_inactive = true;
     
     const result = await itemService.getAll(
@@ -239,7 +241,7 @@ const ItemManagement = () => {
     // Refresh items
     const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
     if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
-    if (searchQuery) filter.search = searchQuery;
+    if (debouncedSearchQuery) filter.search = debouncedSearchQuery;
     if (showInactive) filter.include_inactive = true;
     
     const result = await itemService.getAll(
@@ -307,7 +309,7 @@ const ItemManagement = () => {
     // Refresh items after import
     const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
     if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
-    if (searchQuery) filter.search = searchQuery;
+    if (debouncedSearchQuery) filter.search = debouncedSearchQuery;
     if (showInactive) filter.include_inactive = true;
     
     itemService.getAll(filter, { page: currentPage, limit: itemsPerPage })
