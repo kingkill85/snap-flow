@@ -212,3 +212,151 @@ Deno.test('Placement - validation errors', async (t) => {
     assertEquals(response.status, 404);
   });
 });
+
+Deno.test('Placement - duplicate endpoint', async (t) => {
+  const token = await getAuthToken();
+  
+  // Create project
+  const project = await projectRepository.create({
+    name: 'Duplicate Test Project',
+    customer_name: 'Test Customer',
+    customer_address: '123 Test St',
+    status: 'active',
+  });
+  const projectId = project.id;
+
+  // Create floorplan
+  const floorplan = await floorplanRepository.create({
+    project_id: projectId,
+    name: 'Test Floor',
+    image_path: 'floorplans/test.jpg',
+  });
+  const floorplanId = floorplan.id;
+
+  // Create category
+  const category = await categoryRepository.create({ name: 'Test Category' });
+  const categoryId = category.id;
+
+  // Create item
+  const item = await itemRepository.create({
+    category_id: categoryId,
+    name: 'Test Item',
+    description: 'Test description',
+    base_model_number: 'TEST-001',
+    dimensions: '100x100',
+    is_active: true,
+  });
+  const itemId = item.id;
+
+  // Create variant
+  const variant = await itemVariantRepository.create({
+    item_id: itemId,
+    style_name: 'Default',
+    price: 29.99,
+    image_path: 'items/test.jpg',
+  });
+  const variantId = variant.id;
+
+  // Create original placement
+  const createResponse = await testRequest('/api/placements', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      floorplan_id: floorplanId,
+      item_variant_id: variantId,
+      x: 100,
+      y: 150,
+      width: 50,
+      height: 50,
+      rotation: 45,
+    }),
+  });
+
+  const createData = await parseJSON(createResponse);
+  const originalPlacementId = createData.data.id;
+  const originalBomId = createData.data.bom_id;
+
+  await t.step('Duplicate placement successfully', async () => {
+    const response = await testRequest(`/api/placements/${originalPlacementId}/duplicate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        x: 200,
+        y: 250,
+      }),
+    });
+
+    assertEquals(response.status, 201);
+    const data = await parseJSON(response);
+    assertExists(data.data.id);
+    assertEquals(data.data.x, 200);
+    assertEquals(data.data.y, 250);
+    assertEquals(data.data.width, 50);
+    assertEquals(data.data.height, 50);
+    // Rotation should be copied from original
+    assertEquals(data.data.rotation, 45);
+    assertEquals(data.data.floorplan_id, floorplanId);
+    assertEquals(data.data.item_variant_id, variantId);
+    // Should have a new BOM ID (not the same as original)
+    assertExists(data.data.bom_id);
+    assertEquals(data.data.bom_id !== originalBomId, true);
+  });
+
+  await t.step('Verify both placements exist after duplicate', async () => {
+    const response = await testRequest(`/api/placements?floorplan_id=${floorplanId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    assertEquals(response.status, 200);
+    const data = await parseJSON(response);
+    assertEquals(data.data.length, 2);
+    
+    // Verify original placement still exists
+    const original = data.data.find((p: any) => p.id === originalPlacementId);
+    assertExists(original);
+    assertEquals(original.x, 100);
+    assertEquals(original.y, 150);
+  });
+
+  await t.step('Duplicate non-existent placement returns 404', async () => {
+    const response = await testRequest('/api/placements/99999/duplicate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        x: 200,
+        y: 250,
+      }),
+    });
+
+    assertEquals(response.status, 404);
+    const data = await parseJSON(response);
+    assertExists(data.error);
+  });
+
+  await t.step('Duplicate with missing coordinates returns 400', async () => {
+    const response = await testRequest(`/api/placements/${originalPlacementId}/duplicate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
+    });
+
+    assertEquals(response.status, 400);
+    const data = await parseJSON(response);
+    assertExists(data.error);
+  });
+});

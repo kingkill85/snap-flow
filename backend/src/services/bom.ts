@@ -581,6 +581,82 @@ export class BomService {
   }
 
   /**
+   * Duplicate a BOM entry with all its children
+   * Creates a complete copy of the BOM hierarchy (main entry + addons)
+   */
+  async duplicateBomEntry(bomEntryId: number): Promise<ProjectBom> {
+    // Get the original main entry
+    const originalEntry = await bomEntryRepository.findById(bomEntryId);
+    if (!originalEntry) {
+      throw new Error('BOM entry not found');
+    }
+
+    // Get all children (addons) of the original entry
+    const originalChildren = await bomEntryRepository.findChildren(bomEntryId);
+
+    // Create new main BOM entry (copy of original)
+    const newMainEntry = await bomEntryRepository.create({
+      project_id: originalEntry.project_id,
+      floorplan_id: originalEntry.floorplan_id,
+      item_id: originalEntry.item_id,
+      variant_id: originalEntry.variant_id,
+      parent_bom_id: null,
+      item_name: originalEntry.item_name,
+      style_name: originalEntry.style_name,
+      model_number: originalEntry.model_number || '',
+      unit_price: originalEntry.unit_price,
+      picture_path: null, // Will update after copying image
+    });
+
+    // Copy main entry image to project folder
+    if (originalEntry.picture_path) {
+      const copiedImagePath = await this.copyImageToProject(
+        originalEntry.project_id,
+        newMainEntry.id,
+        originalEntry.picture_path
+      );
+      if (copiedImagePath) {
+        await bomEntryRepository.update(newMainEntry.id, {
+          picture_path: copiedImagePath
+        });
+        newMainEntry.picture_path = copiedImagePath;
+      }
+    }
+
+    // Create child entries for each addon
+    for (const originalChild of originalChildren) {
+      const newChildEntry = await bomEntryRepository.create({
+        project_id: originalChild.project_id,
+        floorplan_id: originalChild.floorplan_id,
+        item_id: originalChild.item_id,
+        variant_id: originalChild.variant_id,
+        parent_bom_id: newMainEntry.id,
+        item_name: originalChild.item_name,
+        style_name: originalChild.style_name,
+        model_number: originalChild.model_number || '',
+        unit_price: originalChild.unit_price,
+        picture_path: null, // Will update after copying image
+      });
+
+      // Copy addon image to project folder
+      if (originalChild.picture_path) {
+        const copiedChildImagePath = await this.copyImageToProject(
+          originalChild.project_id,
+          newChildEntry.id,
+          originalChild.picture_path
+        );
+        if (copiedChildImagePath) {
+          await bomEntryRepository.update(newChildEntry.id, {
+            picture_path: copiedChildImagePath
+          });
+        }
+      }
+    }
+
+    return newMainEntry;
+  }
+
+  /**
    * Update BOM snapshots from current catalog data
    * Returns change report
    */
