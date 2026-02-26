@@ -906,39 +906,20 @@ export function ConfiguratorCanvas({
       if (newZoom !== zoom) {
         if (imageRef.current && imageDisplaySize.width > 0) {
           // Zoom towards mouse position
-          const containerRect = container.getBoundingClientRect();
-          const containerCenterX = containerRect.left + containerRect.width / 2;
-          const containerTopY = containerRect.top;
-          
-          // Current image width
-          const imageWidth = imageDisplaySize.width * zoom;
-          
-          // Image is horizontally centered, vertically at top
-          // Image top-left = (containerCenterX - imageWidth/2 + pan.x, containerTopY + pan.y)
-          const imageLeft = containerCenterX - imageWidth / 2 + pan.x;
-          const imageTop = containerTopY + pan.y;
-          
-          // Mouse position relative to image top-left
-          const mouseX = e.clientX - imageLeft;
-          const mouseY = e.clientY - imageTop;
-          
-          // Content point under mouse (in content coordinates, 0 to imageDisplaySize)
-          const contentX = mouseX / zoom;
-          const contentY = mouseY / zoom;
-          
-          // New image width
-          const newImageWidth = imageDisplaySize.width * newZoom;
-          
-          // New image top-left position
-          const newImageLeft = containerCenterX - newImageWidth / 2;
-          const newImageTop = containerTopY;
-          
-          // We want the content point to be at the same screen position
-          // screenX = newImageLeft + contentX * newZoom + newPan.x
-          // So: newPan.x = screenX - newImageLeft - contentX * newZoom
-          // But screenX = e.clientX, so:
-          const newPanX = e.clientX - newImageLeft - contentX * newZoom;
-          const newPanY = e.clientY - newImageTop - contentY * newZoom;
+          // The image is centered via flexbox, then transformed by pan
+          // We need to adjust pan so the content under the mouse stays under it
+
+          const imageRect = imageRef.current.getBoundingClientRect();
+
+          // Mouse position relative to image center (accounting for current pan and flexbox centering)
+          const mouseFromImageCenterX = e.clientX - (imageRect.left + imageRect.width / 2);
+          const mouseFromImageCenterY = e.clientY - (imageRect.top + imageRect.height / 2);
+
+          // When zoom changes, the distance from center to mouse changes by zoom ratio
+          // We need to adjust pan to compensate: newPan = oldPan + mouseOffset * (1 - zoomRatio)
+          const zoomRatio = newZoom / zoom;
+          const newPanX = pan.x + mouseFromImageCenterX * (1 - zoomRatio);
+          const newPanY = pan.y + mouseFromImageCenterY * (1 - zoomRatio);
 
           setZoom(newZoom);
           setPan({ x: newPanX, y: newPanY });
