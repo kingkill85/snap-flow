@@ -37,7 +37,7 @@ describe('VariantFormModal', () => {
       />
     );
 
-    expect(screen.getByText('Create Variant')).toBeInTheDocument();
+    expect(screen.getByText('Create Style')).toBeInTheDocument();
     expect(screen.getByLabelText(/style name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/price/i)).toBeInTheDocument();
   });
@@ -53,7 +53,7 @@ describe('VariantFormModal', () => {
       />
     );
 
-    expect(screen.getByText('Edit Variant')).toBeInTheDocument();
+    expect(screen.getByText('Edit Style')).toBeInTheDocument();
     expect(screen.getByDisplayValue('White')).toBeInTheDocument();
     expect(screen.getByDisplayValue('29.99')).toBeInTheDocument();
   });

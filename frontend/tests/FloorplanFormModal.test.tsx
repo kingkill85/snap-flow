@@ -36,7 +36,7 @@ describe('FloorplanFormModal', () => {
     );
 
     await waitFor(() => {
-      expect(document.body.textContent).toContain('Add New Floorplan');
+      expect(document.body.textContent).toContain('Create Floorplan');
     });
   });
 
@@ -87,7 +87,7 @@ describe('FloorplanFormModal', () => {
       />
     );
 
-    const submitButton = await screen.findByRole('button', { name: /upload floorplan/i });
+      const submitButton = await screen.findByRole('button', { name: /create/i });
     await userEvent.click(submitButton);
 
     // onSubmit should not be called when validation fails
@@ -359,7 +359,7 @@ describe('FloorplanFormModal', () => {
       });
 
       // Submit the form
-      const submitButton = await screen.findByRole('button', { name: /upload floorplan/i });
+    const submitButton = await screen.findByRole('button', { name: /create/i });
       await userEvent.click(submitButton);
 
       // Verify submission with file

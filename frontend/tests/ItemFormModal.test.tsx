@@ -41,7 +41,7 @@ describe('ItemFormModal', () => {
 
     // Dialog renders in a portal, so check document.body
     await waitFor(() => {
-      expect(document.body.textContent).toContain('Create Item');
+      expect(document.body.textContent).toContain('Create Product');
     });
   });
 
@@ -57,7 +57,7 @@ describe('ItemFormModal', () => {
     );
 
     await waitFor(() => {
-      expect(document.body.textContent).toContain('Edit Item');
+      expect(document.body.textContent).toContain('Edit Product');
     });
   });
 

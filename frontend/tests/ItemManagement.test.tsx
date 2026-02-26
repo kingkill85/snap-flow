@@ -104,11 +104,11 @@ describe('ItemManagement', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Item Management')).toBeInTheDocument();
+      expect(screen.getByText('Product Management')).toBeInTheDocument();
     });
 
     expect(screen.getByText('Manage products and their details')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /add item/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add product/i })).toBeInTheDocument();
   });
 
   it('fetches and displays items', async () => {
@@ -127,7 +127,7 @@ describe('ItemManagement', () => {
     expect(screen.getByText('SC-100')).toBeInTheDocument();
   });
 
-  it('opens create item modal when add item clicked', async () => {
+  it('opens create product modal when add product clicked', async () => {
     render(
       <BrowserRouter>
         <ItemManagement />
@@ -136,11 +136,11 @@ describe('ItemManagement', () => {
 
     // Wait for the page to load
     await waitFor(() => {
-      expect(screen.getByText('Item Management')).toBeInTheDocument();
+      expect(screen.getByText('Product Management')).toBeInTheDocument();
     });
 
-    // Find and click the Add Item button
-    const addButton = screen.getByRole('button', { name: /add item/i });
+    // Find and click the Add Product button
+    const addButton = screen.getByRole('button', { name: /add product/i });
     await userEvent.click(addButton);
 
     // Modal should open - check for any modal content
