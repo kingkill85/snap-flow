@@ -31,7 +31,7 @@ const Header = () => {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="px-6">
-        <div className="flex h-16 items-center justify-between">
+        <div className="flex h-12 items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
             <span className="text-3xl font-extrabold text-primary tracking-tight">
@@ -63,7 +63,12 @@ const Header = () => {
                     <ChevronDown className="h-4 w-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent 
+                  align="start" 
+                  side="bottom"
+                  sideOffset={16}
+                  className="min-w-[--radix-dropdown-menu-trigger-width] rounded-t-none border-t-0 shadow-none"
+                >
                   <DropdownMenuItem asChild>
                     <Link to="/catalog/products" className="flex items-center gap-2">
                       <LayoutGrid className="h-4 w-4" />
@@ -88,7 +93,12 @@ const Header = () => {
                     <ChevronDown className="h-4 w-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent 
+                  align="start" 
+                  side="bottom"
+                  sideOffset={16}
+                  className="min-w-[--radix-dropdown-menu-trigger-width] rounded-t-none border-t-0 shadow-none"
+                >
                   <DropdownMenuItem asChild>
                     <Link to="/settings/users" className="flex items-center gap-2">
                       <Settings className="h-4 w-4" />
