@@ -198,24 +198,32 @@ function DraggablePlacement({
       let newWidth = width;
       let newHeight = height;
 
+      // Snap to 5px increments when Ctrl is held during resize
+      const snapToGrid = (value: number) => {
+        if (e.ctrlKey || e.metaKey) {
+          return Math.round(value / 5) * 5;
+        }
+        return value;
+      };
+
       switch (corner) {
         case 'se':
-          newWidth = Math.max(30, Math.min(300, width + deltaX));
-          newHeight = Math.max(30, Math.min(300, height + deltaY));
+          newWidth = snapToGrid(Math.max(30, Math.min(300, width + deltaX)));
+          newHeight = snapToGrid(Math.max(30, Math.min(300, height + deltaY)));
           break;
         case 'sw':
-          newWidth = Math.max(30, Math.min(300, width - deltaX));
-          newHeight = Math.max(30, Math.min(300, height + deltaY));
+          newWidth = snapToGrid(Math.max(30, Math.min(300, width - deltaX)));
+          newHeight = snapToGrid(Math.max(30, Math.min(300, height + deltaY)));
           newX = placementX + (width - newWidth);
           break;
         case 'ne':
-          newWidth = Math.max(30, Math.min(300, width + deltaX));
-          newHeight = Math.max(30, Math.min(300, height - deltaY));
+          newWidth = snapToGrid(Math.max(30, Math.min(300, width + deltaX)));
+          newHeight = snapToGrid(Math.max(30, Math.min(300, height - deltaY)));
           newY = placementY + (height - newHeight);
           break;
         case 'nw':
-          newWidth = Math.max(30, Math.min(300, width - deltaX));
-          newHeight = Math.max(30, Math.min(300, height - deltaY));
+          newWidth = snapToGrid(Math.max(30, Math.min(300, width - deltaX)));
+          newHeight = snapToGrid(Math.max(30, Math.min(300, height - deltaY)));
           newX = placementX + (width - newWidth);
           newY = placementY + (height - newHeight);
           break;
@@ -1344,7 +1352,7 @@ export function ConfiguratorCanvas({
 
         {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize • Drag ↻ to rotate • Cmd/Ctrl+drag ↻ for 15° snap • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan • Ctrl+drag item to duplicate
+          Click item to select • Drag corners to resize (Ctrl for 5px snap) • Drag ↻ to rotate (Ctrl for 15° snap) • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan • Ctrl+drag item to duplicate
         </div>
 
         <PlacementEditModal
