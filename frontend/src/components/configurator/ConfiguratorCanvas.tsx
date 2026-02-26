@@ -906,39 +906,46 @@ export function ConfiguratorCanvas({
       if (newZoom !== zoom) {
         if (imageRef.current && imageDisplaySize.width > 0) {
           // Zoom towards mouse position
+          // Get the image's actual position on screen
+          const imageRect = imageRef.current.getBoundingClientRect();
+
+          // Mouse position relative to image top-left corner
+          const mouseX = e.clientX - imageRect.left;
+          const mouseY = e.clientY - imageRect.top;
+
+          // Content point under mouse (in image content coordinates 0-1)
+          // mouseX = contentX * imageWidth = contentX * (imageDisplaySize.width * zoom)
+          const contentX = mouseX / (imageDisplaySize.width * zoom);
+          const contentY = mouseY / (imageDisplaySize.height * zoom);
+
+          // After zoom, the image will have new dimensions due to flexbox centering
+          // The natural top-left would shift, but we add pan to compensate
+          // We want: newScreenX = newImageLeft + contentX * newWidth + newPanX = mouseX
+          // The flexbox centering means: newImageLeft = containerCenter - newWidth/2
+          // So: newPanX = mouseX - (containerCenter - newWidth/2) - contentX * newWidth
+          // But pan is relative to centered position, so:
+          // newPanX = mouseX - contentX * newWidth - (containerCenter - newWidth/2) + (containerCenter - newWidth/2)
+          // Actually simpler: pan is the offset from the centered position
+          // Visual position = centeredPosition + pan
+          // We want visual position of content point = mouse position
+          // centeredPosition + pan + content * zoom = mouse
+          // pan = mouse - centeredPosition - content * zoom
+          // After zoom: newPan = mouse - newCenteredPosition - content * newZoom
+
+          // Get container center
           const containerRect = container.getBoundingClientRect();
           const containerCenterX = containerRect.left + containerRect.width / 2;
           const containerTopY = containerRect.top;
-          
-          // Current image width
-          const imageWidth = imageDisplaySize.width * zoom;
-          
-          // Image is horizontally centered, vertically at top
-          // Image top-left = (containerCenterX - imageWidth/2 + pan.x, containerTopY + pan.y)
-          const imageLeft = containerCenterX - imageWidth / 2 + pan.x;
-          const imageTop = containerTopY + pan.y;
-          
-          // Mouse position relative to image top-left
-          const mouseX = e.clientX - imageLeft;
-          const mouseY = e.clientY - imageTop;
-          
-          // Content point under mouse (in content coordinates, 0 to imageDisplaySize)
-          const contentX = mouseX / zoom;
-          const contentY = mouseY / zoom;
-          
-          // New image width
-          const newImageWidth = imageDisplaySize.width * newZoom;
-          
-          // New image top-left position
-          const newImageLeft = containerCenterX - newImageWidth / 2;
-          const newImageTop = containerTopY;
-          
-          // We want the content point to be at the same screen position
-          // screenX = newImageLeft + contentX * newZoom + newPan.x
-          // So: newPan.x = screenX - newImageLeft - contentX * newZoom
-          // But screenX = e.clientX, so:
-          const newPanX = e.clientX - newImageLeft - contentX * newZoom;
-          const newPanY = e.clientY - newImageTop - contentY * newZoom;
+
+          // New centered position (where image would be without pan)
+          const newWidth = imageDisplaySize.width * newZoom;
+          const newHeight = imageDisplaySize.height * newZoom;
+          const newCenteredX = containerCenterX - newWidth / 2;
+          const newCenteredY = containerTopY;
+
+          // New pan to keep content point under mouse
+          const newPanX = e.clientX - (newCenteredX + contentX * newWidth);
+          const newPanY = e.clientY - (newCenteredY + contentY * newHeight);
 
           setZoom(newZoom);
           setPan({ x: newPanX, y: newPanY });
