@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
@@ -81,13 +81,15 @@ describe('Header', () => {
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
 
     // Wait for auth to load
     await waitFor(() => {
@@ -105,13 +107,15 @@ describe('Header', () => {
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByText('John Doe')).toBeInTheDocument();
@@ -125,13 +129,15 @@ describe('Header', () => {
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByText('jane')).toBeInTheDocument();
@@ -145,13 +151,15 @@ describe('Header', () => {
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByText('admin')).toBeInTheDocument();
@@ -165,13 +173,15 @@ describe('Header', () => {
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument();
@@ -189,13 +199,15 @@ describe('Header', () => {
     const { authService } = await import('@/services/auth');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Regular User')).toBeInTheDocument();
@@ -214,13 +226,15 @@ describe('Header', () => {
     authService.getCurrentUser.mockResolvedValue(mockUser);
     authService.logout.mockResolvedValue(undefined);
 
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Test User')).toBeInTheDocument();
@@ -276,13 +290,15 @@ describe('Header', () => {
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Test User')).toBeInTheDocument();

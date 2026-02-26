@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { AuthProvider } from '@/context/AuthContext';
@@ -41,23 +41,25 @@ describe('ProtectedRoute', () => {
     authService.getAccessToken.mockReturnValue(null);
     authService.getRefreshToken.mockReturnValue(null);
 
-    render(
-      <MemoryRouter initialEntries={['/protected']}>
-        <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<div>Login Page</div>} />
-            <Route
-              path="/protected"
-              element={
-                <ProtectedRoute>
-                  <div>Protected Content</div>
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </AuthProvider>
-      </MemoryRouter>
-    );
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={['/protected']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<div>Login Page</div>} />
+              <Route
+                path="/protected"
+                element={
+                  <ProtectedRoute>
+                    <div>Protected Content</div>
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      );
+    });
 
     // Should redirect to login
     expect(screen.getByText('Login Page')).toBeInTheDocument();
@@ -68,6 +70,8 @@ describe('ProtectedRoute', () => {
     const { authService } = await import('@/services/auth');
     authService.getAccessToken.mockReturnValue('valid-token');
     authService.getRefreshToken.mockReturnValue('refresh-token');
+    // Delay the user resolution so loading spinner is visible
+    authService.getCurrentUser.mockImplementation(() => new Promise(() => {}));
 
     render(
       <MemoryRouter initialEntries={['/protected']}>
@@ -98,26 +102,30 @@ describe('ProtectedRoute', () => {
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
-    render(
-      <MemoryRouter initialEntries={['/admin']}>
-        <AuthProvider>
-          <Routes>
-            <Route path="/" element={<div>Home Page</div>} />
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute requireAdmin>
-                  <div>Admin Content</div>
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </AuthProvider>
-      </MemoryRouter>
-    );
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={['/admin']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/" element={<div>Home Page</div>} />
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <div>Admin Content</div>
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      );
+    });
 
     // Wait for auth check to complete
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
 
     // Should redirect to home
     expect(screen.getByText('Home Page')).toBeInTheDocument();
@@ -132,26 +140,30 @@ describe('ProtectedRoute', () => {
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
-    render(
-      <MemoryRouter initialEntries={['/protected']}>
-        <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<div>Login Page</div>} />
-            <Route
-              path="/protected"
-              element={
-                <ProtectedRoute>
-                  <div>Protected Content</div>
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </AuthProvider>
-      </MemoryRouter>
-    );
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={['/protected']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<div>Login Page</div>} />
+              <Route
+                path="/protected"
+                element={
+                  <ProtectedRoute>
+                    <div>Protected Content</div>
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      );
+    });
 
     // Wait for auth check to complete
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
 
     // Should show protected content
     expect(screen.getByText('Protected Content')).toBeInTheDocument();
@@ -165,26 +177,30 @@ describe('ProtectedRoute', () => {
     authService.getRefreshToken.mockReturnValue('refresh-token');
     authService.getCurrentUser.mockResolvedValue(mockUser);
 
-    render(
-      <MemoryRouter initialEntries={['/admin']}>
-        <AuthProvider>
-          <Routes>
-            <Route path="/" element={<div>Home Page</div>} />
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute requireAdmin>
-                  <div>Admin Content</div>
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </AuthProvider>
-      </MemoryRouter>
-    );
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={['/admin']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/" element={<div>Home Page</div>} />
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <div>Admin Content</div>
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      );
+    });
 
     // Wait for auth check to complete
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
 
     // Should show admin content
     expect(screen.getByText('Admin Content')).toBeInTheDocument();
