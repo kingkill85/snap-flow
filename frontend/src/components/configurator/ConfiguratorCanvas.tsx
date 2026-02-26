@@ -1030,7 +1030,7 @@ export function ConfiguratorCanvas({
                 src={imageUrl}
                 alt={floorplan.name}
                 data-floorplan-image="true"
-                className="block h-full w-full object-contain cursor-crosshair select-none"
+                className="block h-full w-full object-contain select-none"
                 onLoad={updateImageSize}
                 onError={() => {
                   console.error('Failed to load floorplan image:', imageUrl);
