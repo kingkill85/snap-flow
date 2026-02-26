@@ -87,6 +87,9 @@ export class FloorplanRepository {
   }
 
   async delete(id: number): Promise<void> {
+    // First delete all BOM entries for this floorplan (cascades to placements)
+    getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ?`, [id]);
+    // Then delete the floorplan
     getDb().query(`DELETE FROM floorplans WHERE id = ?`, [id]);
   }
 
