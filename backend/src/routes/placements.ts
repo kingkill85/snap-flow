@@ -20,13 +20,13 @@ const placementRoutes = new Hono();
 
 // Validation schemas
 const createPlacementSchema = z.object({
-  floorplan_id: z.number().int().positive(),
-  item_variant_id: z.number().int().positive(),
+  floorplan_id: z.number(),
+  item_variant_id: z.number(),
   x: z.number(),
   y: z.number(),
   width: z.number().positive(),
   height: z.number().positive(),
-  rotation: z.number().min(0).max(360).optional(),
+  rotation: z.number().min(0).max(359.99).optional(),
 });
 
 const updatePlacementSchema = z.object({
@@ -34,7 +34,7 @@ const updatePlacementSchema = z.object({
   y: z.number().optional(),
   width: z.number().positive().optional(),
   height: z.number().positive().optional(),
-  rotation: z.number().min(0).max(360).optional(),
+  rotation: z.number().min(0).max(359.99).optional(),
 });
 
 const bulkUpdateSchema = z.object({
@@ -98,6 +98,7 @@ placementRoutes.post('/', authMiddleware, zValidator('json', createPlacementSche
       y: data.y,
       width: data.width,
       height: data.height,
+      rotation: data.rotation ?? 0,
     });
 
     return c.json({
@@ -256,6 +257,44 @@ placementRoutes.post('/bulk-update', authMiddleware, zValidator('json', bulkUpda
     });
   } catch (error) {
     console.error('Bulk update placements error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// POST /placements/:id/duplicate - Duplicate a placement with all its BOM entries
+const duplicatePlacementSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+});
+
+placementRoutes.post('/:id/duplicate', authMiddleware, zValidator('json', duplicatePlacementSchema), async (c) => {
+  const id = parseInt(c.req.param('id'));
+  const { x, y } = c.req.valid('json');
+
+  try {
+    const placement = await placementRepository.findById(id);
+    if (!placement) {
+      return c.json({ error: 'Placement not found' }, 404);
+    }
+
+    // Duplicate the BOM entry (main + all children/addons)
+    const newBomEntry = await bomService.duplicateBomEntry(placement.bom_id);
+
+    // Create new placement with same dimensions/rotation but new position
+    const newPlacement = await placementRepository.createWithBomEntry(newBomEntry.id, {
+      x,
+      y,
+      width: placement.width,
+      height: placement.height,
+      rotation: placement.rotation,
+    });
+
+    return c.json({
+      data: newPlacement,
+      message: 'Placement duplicated successfully',
+    }, 201);
+  } catch (error) {
+    console.error('Duplicate placement error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

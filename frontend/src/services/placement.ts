@@ -81,4 +81,9 @@ export const placementService = {
       signal,
     });
   },
+
+  async duplicate(id: number, x: number, y: number, signal?: AbortSignal): Promise<Placement> {
+    const response = await api.post(`/placements/${id}/duplicate`, { x, y }, { signal });
+    return response.data.data;
+  },
 };

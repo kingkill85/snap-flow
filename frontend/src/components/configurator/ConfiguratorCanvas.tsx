@@ -21,10 +21,11 @@ import { bomService } from '@/services/bom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 // CSS keyframes for fade-in animation (50ms for snappy feel)
+// Note: Don't use transform in animation as it conflicts with placement rotation
 const fadeInKeyframes = `
 @keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 `;
 
@@ -36,6 +37,8 @@ interface CanvasProps {
   onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number; rotation?: number; item_variant_id?: number; addon_ids?: number[] }) => void;
   isResizingRef?: React.MutableRefObject<boolean>;
   zoomRef?: React.MutableRefObject<{ zoom: number; pan: { x: number; y: number } }>;
+  scaleRef?: React.MutableRefObject<{ scaleX: number; scaleY: number }>;
+  isDuplicating?: boolean;
 }
 
 interface DraggablePlacementProps {
@@ -53,6 +56,8 @@ interface DraggablePlacementProps {
   maxNaturalWidth: number;
   maxNaturalHeight: number;
   isNew?: boolean;
+  isCtrlPressed?: boolean;
+  isDuplicating?: boolean;
 }
 
 interface AddonWithVariant {
@@ -84,6 +89,8 @@ function DraggablePlacement({
   maxNaturalWidth,
   maxNaturalHeight,
   isNew,
+  isCtrlPressed,
+  isDuplicating,
 }: DraggablePlacementProps) {
   const [isResizing, setIsResizing] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
@@ -98,13 +105,17 @@ function DraggablePlacement({
       // Include dimensions so drop calculation can account for grab offset
       width: placement.width * scaleX,
       height: placement.height * scaleY,
+      isCtrlPressed,
     },
     disabled: isResizing || isSelected,
   });
 
   const dragTransform = transform ? CSS.Translate.toString(transform) : '';
   const rotationTransform = `rotate(${placement.rotation || 0}deg)`;
-  const combinedTransform = dragTransform ? `${dragTransform} ${rotationTransform}` : rotationTransform;
+  // When duplicating, don't move the original - let DragOverlay handle the visual
+  const combinedTransform = (isDuplicating && isDragging) 
+    ? rotationTransform 
+    : dragTransform ? `${dragTransform} ${rotationTransform}` : rotationTransform;
 
   const handleClick = (e: React.MouseEvent) => {
     if (isResizing) return;
@@ -249,9 +260,12 @@ function DraggablePlacement({
       // +90 because the rotation handle is positioned at the top (-top-14)
       // which is at -90 degrees from the right (0 degrees)
 
-      // Ensure rotation is in 0-360 range
+      // Ensure rotation is in 0-359 range (360 = 0)
       if (newRotation < 0) {
         newRotation += 360;
+      }
+      if (newRotation >= 360) {
+        newRotation = 0;
       }
 
       // Snap to 15-degree increments when Cmd/Ctrl is held
@@ -309,7 +323,7 @@ function DraggablePlacement({
         isSelected
           ? 'ring-2 ring-destructive shadow-lg z-50'
           : 'border-2 border-primary overflow-hidden'
-      } ${isDragging ? 'cursor-grabbing z-50' : isResizing ? 'cursor-nwse-resize z-50' : 'cursor-move'}`}
+      } ${isDragging ? (isCtrlPressed ? 'cursor-copy z-50' : 'cursor-grabbing z-50') : isResizing ? 'cursor-nwse-resize z-50' : isSelected ? 'cursor-default' : isCtrlPressed ? 'cursor-copy' : 'cursor-move'}`}
       title={displayName}
       onClick={handleClick}
     >
@@ -385,7 +399,7 @@ function DraggablePlacement({
           />
 
           <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-black/75 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap">
-            {Math.round(placement.width)}×{Math.round(placement.height)} • {Math.round(placement.rotation || 0)}°
+            {Math.round(placement.width)}×{Math.round(placement.height)} • {Math.round((placement.rotation || 0) % 360)}°
           </div>
         </>
       )}
@@ -677,7 +691,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                   Size: {Math.round(placement.width)} × {Math.round(placement.height)}
                 </p>
                 <p className="text-muted-foreground">
-                  Rotation: {Math.round(placement.rotation || 0)}°
+                  Rotation: {Math.round((placement.rotation || 0) % 360)}°
                 </p>
               </div>
             )}
@@ -793,7 +807,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                   Size: {Math.round(placement.width)} × {Math.round(placement.height)}
                 </p>
                 <p className="text-muted-foreground">
-                  Rotation: {Math.round(placement.rotation || 0)}°
+                  Rotation: {Math.round((placement.rotation || 0) % 360)}°
                 </p>
               </div>
             )}
@@ -851,6 +865,8 @@ export function ConfiguratorCanvas({
   onPlacementUpdate,
   isResizingRef,
   zoomRef,
+  scaleRef,
+  isDuplicating,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -861,6 +877,31 @@ export function ConfiguratorCanvas({
   const { setNodeRef, isOver } = useDroppable({
     id: `canvas-${floorplan.id}`,
   });
+
+  // Track Ctrl key state for duplicate functionality
+  const [isCtrlPressed, setIsCtrlPressed] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') {
+        setIsCtrlPressed(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') {
+        setIsCtrlPressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   // Zoom and pan state
   const [zoom, setZoomState] = useState(1);
@@ -1056,6 +1097,13 @@ export function ConfiguratorCanvas({
   const scaledScaleX = scaleX * zoom;
   const scaledScaleY = scaleY * zoom;
 
+  // Update scaleRef for DragOverlay sizing
+  useEffect(() => {
+    if (scaleRef) {
+      scaleRef.current = { scaleX: scaledScaleX, scaleY: scaledScaleY };
+    }
+  }, [scaleRef, scaledScaleX, scaledScaleY]);
+
   // Zoom functions
   const handleZoomIn = () => {
     setZoom(prev => Math.min(ZOOM_MAX, prev + ZOOM_STEP));
@@ -1074,6 +1122,12 @@ export function ConfiguratorCanvas({
   const startPan = (e: React.MouseEvent) => {
     // Only pan when holding Ctrl or Cmd key
     if (!e.ctrlKey && !e.metaKey) return;
+    
+    // Don't pan if clicking on a placement (to allow Ctrl+drag duplicate)
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-placement="true"]')) {
+      return;
+    }
     
     // Allow left click (0) or middle click (1), but not right click (2)
     if (e.button !== 0 && e.button !== 1) return;
@@ -1235,6 +1289,8 @@ export function ConfiguratorCanvas({
                       maxNaturalWidth={imageNaturalSize.width}
                       maxNaturalHeight={imageNaturalSize.height}
                       isNew={isNewPlacement}
+                      isCtrlPressed={isCtrlPressed}
+                      isDuplicating={isDuplicating}
                     />
                   );
                 })}
@@ -1288,7 +1344,7 @@ export function ConfiguratorCanvas({
 
         {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize • Drag ↻ to rotate • Cmd/Ctrl+drag ↻ for 15° snap • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan
+          Click item to select • Drag corners to resize • Drag ↻ to rotate • Cmd/Ctrl+drag ↻ for 15° snap • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan • Ctrl+drag item to duplicate
         </div>
 
         <PlacementEditModal

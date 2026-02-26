@@ -42,6 +42,8 @@ const ProjectDashboard = () => {
   const [showNotFound, setShowNotFound] = useState(false);
   const [error, setError] = useState('');
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
+  const [activeDragPlacement, setActiveDragPlacement] = useState<Placement | null>(null);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [placementsVersion, setPlacementsVersion] = useState(0);
   const [projectTotal, setProjectTotal] = useState<number>(0);
   const [isLoadingTotal, setIsLoadingTotal] = useState(false);
@@ -58,6 +60,7 @@ const ProjectDashboard = () => {
   const itemVariantMemory = useRef<Map<number, { variant_id: number; addon_ids: number[] }>>(new Map());
   const isResizingRef = useRef(false);
   const canvasZoomRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
+  const canvasScaleRef = useRef({ scaleX: 1, scaleY: 1 });
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -234,6 +237,15 @@ const ProjectDashboard = () => {
       if (itemData?.item) {
         setActiveDragItem(itemData.item);
       }
+    } else if (activeId.startsWith('placement-')) {
+      const placementId = parseInt(activeId.replace('placement-', ''));
+      const placement = placements.find(p => p.id === placementId);
+      if (placement) {
+        const activeData = event.active.data.current as { isCtrlPressed?: boolean } | undefined;
+        const isCtrlPressed = activeData?.isCtrlPressed ?? false;
+        setActiveDragPlacement(placement);
+        setIsDuplicating(isCtrlPressed);
+      }
     }
   };
 
@@ -247,6 +259,8 @@ const ProjectDashboard = () => {
     
     if (!over || !activeFloorplan) {
       setActiveDragItem(null);
+      setActiveDragPlacement(null);
+      setIsDuplicating(false);
       return;
     }
     
@@ -262,6 +276,8 @@ const ProjectDashboard = () => {
         if (!canvasElement) {
           console.error('Canvas element not found');
           setActiveDragItem(null);
+          setActiveDragPlacement(null);
+          setIsDuplicating(false);
           return;
         }
         
@@ -269,6 +285,8 @@ const ProjectDashboard = () => {
         if (!floorplanImage) {
           console.error('Floorplan image not found');
           setActiveDragItem(null);
+          setActiveDragPlacement(null);
+          setIsDuplicating(false);
           return;
         }
         
@@ -289,17 +307,35 @@ const ProjectDashboard = () => {
         const newX = placement.x + deltaX;
         const newY = placement.y + deltaY;
 
+        // Use isDuplicating state captured at drag start instead of reading from drag data
+        // This allows releasing Ctrl after starting the drag
         console.log('Drop with delta:', {
           delta: { x: event.delta.x, y: event.delta.y },
           scaleX,
           deltaNatural: { x: deltaX, y: deltaY },
           original: { x: placement.x, y: placement.y },
           new: { x: newX, y: newY },
+          isDuplicating,
         });
 
-        handlePlacementUpdate(placementId, { x: newX, y: newY });
+        if (isDuplicating) {
+          // Duplicate the placement with BOM entries
+          try {
+            await placementService.duplicate(placementId, newX, newY);
+            // Refresh placements to show the new duplicate
+            await fetchPlacements(activeFloorplan.id);
+            setPlacementsVersion(prev => prev + 1);
+          } catch (err) {
+            console.error('Failed to duplicate placement:', err);
+          }
+        } else {
+          // Normal move - update placement position
+          handlePlacementUpdate(placementId, { x: newX, y: newY });
+        }
       }
       setActiveDragItem(null);
+      setActiveDragPlacement(null);
+      setIsDuplicating(false);
       return;
     }
     
@@ -316,6 +352,8 @@ const ProjectDashboard = () => {
             console.error('Canvas element not found');
             setIsDropping(false);
             setActiveDragItem(null);
+            setActiveDragPlacement(null);
+            setIsDuplicating(false);
             return;
           }
           
@@ -324,6 +362,8 @@ const ProjectDashboard = () => {
             console.error('Floorplan image not found');
             setIsDropping(false);
             setActiveDragItem(null);
+            setActiveDragPlacement(null);
+            setIsDuplicating(false);
             return;
           }
           
@@ -377,6 +417,8 @@ const ProjectDashboard = () => {
             // Clear drag item - placement will appear with fade-in animation
             setIsDropping(false);
             setActiveDragItem(null);
+            setActiveDragPlacement(null);
+            setIsDuplicating(false);
             return;
           }
           
@@ -389,6 +431,8 @@ const ProjectDashboard = () => {
     }
     
     setActiveDragItem(null);
+    setActiveDragPlacement(null);
+    setIsDuplicating(false);
   };
 
   const handleSubmitFloorplan = async (data: CreateFloorplanDTO | { name?: string; sort_order?: number }, image?: File) => {
@@ -623,6 +667,8 @@ const ProjectDashboard = () => {
                         onPlacementDelete={handlePlacementDelete}
                         isResizingRef={isResizingRef}
                         zoomRef={canvasZoomRef}
+                        scaleRef={canvasScaleRef}
+                        isDuplicating={isDuplicating}
                       />
                     </div>
                   </div>
@@ -712,6 +758,29 @@ const ProjectDashboard = () => {
               ) : (
                 <div className="w-full h-full bg-muted flex items-center justify-center text-xs text-muted-foreground">
                   No img
+                </div>
+              )}
+            </div>
+          )}
+          {activeDragPlacement && isDuplicating && !isDropping && (
+            <div 
+              className="border-2 border-primary rounded bg-background/80 shadow-xl cursor-copy overflow-hidden"
+              style={{ 
+                width: activeDragPlacement.width * canvasScaleRef.current.scaleX, 
+                height: activeDragPlacement.height * canvasScaleRef.current.scaleY,
+                transform: `rotate(${activeDragPlacement.rotation || 0}deg)`,
+                transformOrigin: 'center center',
+              }}
+            >
+              {activeDragPlacement.item_variant_image_path ? (
+                <img
+                  src={`/uploads/${activeDragPlacement.item_variant_image_path}`}
+                  alt="Copy"
+                  className="w-full h-full object-contain bg-muted"
+                />
+              ) : (
+                <div className="w-full h-full bg-muted flex items-center justify-center text-xs text-muted-foreground">
+                  Copy
                 </div>
               )}
             </div>
