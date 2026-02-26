@@ -1121,7 +1121,7 @@ export function ConfiguratorCanvas({
 
         {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize • Click 🗑 to delete • Click ✎ to edit • Cmd+wheel to zoom
+          Click item to select • Drag corners to resize • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom
           {zoom > 1 && ' • Click & drag to pan • Arrow keys to pan'}
         </div>
 
