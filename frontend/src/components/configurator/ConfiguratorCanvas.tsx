@@ -69,12 +69,12 @@ interface AddonWithVariant {
   };
 }
 
-function DraggablePlacement({ 
-  placement, 
-  item, 
-  isSelected, 
-  onSelect, 
-  onDelete, 
+function DraggablePlacement({
+  placement,
+  item,
+  isSelected,
+  onSelect,
+  onDelete,
   onResize,
   onRotate,
   onEdit,
@@ -88,7 +88,7 @@ function DraggablePlacement({
   const [isResizing, setIsResizing] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0, placementX: 0, placementY: 0, corner: '' });
-  const rotationStartRef = useRef({ startAngle: 0, initialRotation: 0, centerX: 0, centerY: 0 });
+  const rotationStartRef = useRef({ startAngle: 0, angleOffset: 0, centerX: 0, centerY: 0 });
   
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `placement-${placement.id}`,
@@ -99,15 +99,9 @@ function DraggablePlacement({
     disabled: isResizing || isSelected,
   });
 
-  const style = transform
-    ? {
-        transform: CSS.Translate.toString(transform),
-        zIndex: isResizing ? 200 : 100,
-      }
-    : { 
-        zIndex: isResizing ? 200 : isDragging ? 100 : 1,
-        animation: isNew ? 'fadeIn 50ms ease-out' : undefined,
-      };
+  const dragTransform = transform ? CSS.Translate.toString(transform) : '';
+  const rotationTransform = `rotate(${placement.rotation || 0}deg)`;
+  const combinedTransform = dragTransform ? `${dragTransform} ${rotationTransform}` : rotationTransform;
 
   const handleClick = (e: React.MouseEvent) => {
     if (isResizing) return;
@@ -139,24 +133,38 @@ function DraggablePlacement({
     e.stopPropagation();
     e.preventDefault();
     setIsRotating(true);
-    
+
     if (parentIsResizingRef) {
       parentIsResizingRef.current = true;
     }
 
-    // Calculate center of the placement in screen coordinates
-    const placementElement = e.currentTarget.parentElement?.parentElement;
+    // Get the placement element (parent of rotation handle)
+    const rotationHandle = e.currentTarget;
+    const placementElement = rotationHandle.parentElement;
+
     if (placementElement) {
+      // Get the actual visual center of the rotated element
       const rect = placementElement.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
-      
-      // Calculate initial angle from center to mouse
-      const startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
-      
+
+      // Calculate the angle from center to the rotation handle itself
+      // This gives us the current "handle angle"
+      const handleRect = rotationHandle.getBoundingClientRect();
+      const handleCenterX = handleRect.left + handleRect.width / 2;
+      const handleCenterY = handleRect.top + handleRect.height / 2;
+      const handleAngle = Math.atan2(handleCenterY - centerY, handleCenterX - centerX) * (180 / Math.PI);
+
+      // Calculate the angle from center to mouse
+      const mouseAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
+
+      // The offset is the difference between mouse angle and handle angle
+      // This accounts for where on the handle the user clicked
+      const angleOffset = mouseAngle - handleAngle;
+
       rotationStartRef.current = {
-        startAngle,
-        initialRotation: placement.rotation || 0,
+        startAngle: mouseAngle,
+        angleOffset,
         centerX,
         centerY,
       };
@@ -227,22 +235,22 @@ function DraggablePlacement({
     if (!isRotating) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const { startAngle, initialRotation, centerX, centerY } = rotationStartRef.current;
-      
+      const { angleOffset, centerX, centerY } = rotationStartRef.current;
+
       // Calculate current angle from center to mouse
       const currentAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
-      
-      // Calculate delta (change in angle)
-      let deltaAngle = currentAngle - startAngle;
-      
-      // Calculate new rotation
-      let newRotation = (initialRotation + deltaAngle) % 360;
-      
+
+      // The rotation is the current angle minus the offset
+      // This makes the item rotate so the handle points toward the mouse
+      let newRotation = (currentAngle - angleOffset + 90) % 360;
+      // +90 because the rotation handle is positioned at the top (-top-14)
+      // which is at -90 degrees from the right (0 degrees)
+
       // Ensure rotation is in 0-360 range
       if (newRotation < 0) {
         newRotation += 360;
       }
-      
+
       onRotate(newRotation);
     };
 
@@ -279,14 +287,15 @@ function DraggablePlacement({
       {...attributes}
       data-placement="true"
       style={{
-        ...style,
         position: 'absolute',
         left: placement.x * scaleX,
         top: placement.y * scaleY,
         width: placement.width * scaleX,
         height: placement.height * scaleY,
-        transform: `rotate(${placement.rotation || 0}deg)`,
+        transform: combinedTransform,
         transformOrigin: 'center center',
+        zIndex: isResizing ? 200 : isDragging ? 100 : isNew ? 1 : 1,
+        animation: isNew ? 'fadeIn 50ms ease-out' : undefined,
       }}
       className={`rounded select-none group ${
         isSelected
