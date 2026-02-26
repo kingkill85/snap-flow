@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, X, Trash2 } from 'lucide-react';
+import { AlertTriangle, X, Trash2, Info } from 'lucide-react';
 
 interface ConfirmDeleteModalProps {
   title: string;
@@ -16,6 +16,8 @@ interface ConfirmDeleteModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => Promise<void>;
+  disabled?: boolean;
+  disabledMessage?: string;
 }
 
 export function ConfirmDeleteModal({
@@ -25,6 +27,8 @@ export function ConfirmDeleteModal({
   isOpen,
   onClose,
   onConfirm,
+  disabled = false,
+  disabledMessage,
 }: ConfirmDeleteModalProps) {
   const handleConfirm = async () => {
     await onConfirm();
@@ -35,16 +39,18 @@ export function ConfirmDeleteModal({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-destructive">
-            <AlertTriangle className="h-5 w-5" />
+          <DialogTitle className={`flex items-center gap-2 ${disabled ? 'text-amber-600' : 'text-destructive'}`}>
+            {disabled ? <Info className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
             {title}
           </DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete <strong>{itemName}</strong>? This action cannot be undone.
+            {disabled
+              ? disabledMessage
+              : `Are you sure you want to delete ${itemName ? <strong>{itemName}</strong> : 'this item'}? This action cannot be undone.`}
           </DialogDescription>
         </DialogHeader>
 
-        {warningText && (
+        {!disabled && warningText && (
           <div className="bg-muted p-3 rounded-md text-sm text-muted-foreground">
             {warningText}
           </div>
@@ -55,7 +61,12 @@ export function ConfirmDeleteModal({
             <X className="mr-2 h-4 w-4" />
             Cancel
           </Button>
-          <Button type="button" variant="destructive" onClick={handleConfirm}>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={handleConfirm}
+            disabled={disabled}
+          >
             <Trash2 className="mr-2 h-4 w-4" />
             Delete
           </Button>

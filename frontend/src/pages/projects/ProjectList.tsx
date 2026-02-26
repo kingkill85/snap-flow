@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { projectService, type Project, type CreateProjectDTO, type UpdateProjectDTO } from '@/services/project';
+import { floorplanService } from '@/services/floorplan';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
@@ -46,6 +47,7 @@ const ProjectList = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [floorplanCount, setFloorplanCount] = useState<number>(0);
 
   const fetchProjects = async (signal?: AbortSignal, isSearch = false) => {
     try {
@@ -122,8 +124,14 @@ const ProjectList = () => {
     setShowFormModal(true);
   };
 
-  const openDeleteModal = (project: Project) => {
+  const openDeleteModal = async (project: Project) => {
     setProjectToDelete(project);
+    try {
+      const floorplans = await floorplanService.getAll(project.id);
+      setFloorplanCount(floorplans.length);
+    } catch {
+      setFloorplanCount(0);
+    }
     setShowDeleteModal(true);
   };
 
@@ -292,15 +300,18 @@ const ProjectList = () => {
       />
 
       <ConfirmDeleteModal
-        title="Delete Project"
+        title={floorplanCount > 0 ? 'Cannot Delete Project' : 'Delete Project'}
         itemName={projectToDelete?.name || ''}
-        warningText="This will permanently delete the project and all associated floorplans. This action cannot be undone."
+        warningText={floorplanCount > 0 ? undefined : 'This will permanently delete the project. This action cannot be undone.'}
         isOpen={showDeleteModal}
         onClose={() => {
           setShowDeleteModal(false);
           setProjectToDelete(null);
+          setFloorplanCount(0);
         }}
         onConfirm={handleDeleteProject}
+        disabled={floorplanCount > 0}
+        disabledMessage={`This project has ${floorplanCount} floorplan${floorplanCount === 1 ? '' : 's'} and cannot be deleted. Please delete all floorplans first.`}
       />
     </div>
   );
