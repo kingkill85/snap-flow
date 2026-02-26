@@ -599,6 +599,36 @@ export async function runMigrations(): Promise<void> {
           
         PRAGMA foreign_keys = ON;
       `
+    },
+    {
+      name: '027_add_placement_rotation',
+      sql: `
+        -- Add rotation column to placements table
+        -- Allows placements to be rotated on the canvas (0-360 degrees)
+        
+        PRAGMA foreign_keys = OFF;
+        
+        CREATE TABLE placements_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bom_id INTEGER REFERENCES project_bom(id) ON DELETE CASCADE,
+          x REAL NOT NULL,
+          y REAL NOT NULL,
+          width REAL NOT NULL,
+          height REAL NOT NULL,
+          rotation REAL NOT NULL DEFAULT 0.0 CHECK(rotation >= 0 AND rotation < 360),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        INSERT INTO placements_new (id, bom_id, x, y, width, height, rotation, created_at)
+        SELECT id, bom_id, x, y, width, height, 0.0, created_at FROM placements;
+        
+        DROP TABLE placements;
+        ALTER TABLE placements_new RENAME TO placements;
+        
+        CREATE INDEX idx_placements_bom ON placements(bom_id);
+        
+        PRAGMA foreign_keys = ON;
+      `
     }
   ];
 

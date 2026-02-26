@@ -137,6 +137,7 @@ export interface UpdatePlacementDTO {
   y?: number | undefined;
   width?: number | undefined;
   height?: number | undefined;
+  rotation?: number | undefined;
   bom_id?: number | undefined;
 }
 
@@ -205,6 +206,7 @@ export interface Placement {
   y: number;
   width: number;
   height: number;
+  rotation: number;  // Rotation in degrees (0-360)
   created_at: string;
   // Joined data
   item_variant?: ItemVariant;
@@ -217,6 +219,7 @@ export interface CreatePlacementDTO {
   y: number;
   width: number;
   height: number;
+  rotation?: number;  // Optional, defaults to 0
 }
 
 // Project BOM (Bill of Materials)

@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { Pencil, X, Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Pencil, X, Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw, RotateCw } from 'lucide-react';
 import type { Floorplan } from '@/services/floorplan';
 import type { Placement } from '@/services/placement';
 import type { Item } from '@/services/item';
@@ -33,7 +33,7 @@ interface CanvasProps {
   placements: Placement[];
   items: Item[];
   onPlacementDelete: (id: number) => void;
-  onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number; item_variant_id?: number; addon_ids?: number[] }) => void;
+  onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number; rotation?: number; item_variant_id?: number; addon_ids?: number[] }) => void;
   isResizingRef?: React.MutableRefObject<boolean>;
   zoomRef?: React.MutableRefObject<{ zoom: number; pan: { x: number; y: number } }>;
 }
@@ -45,6 +45,7 @@ interface DraggablePlacementProps {
   onSelect: () => void;
   onDelete: () => void;
   onResize: (x: number, y: number, width: number, height: number) => void;
+  onRotate: (rotation: number) => void;
   onEdit: () => void;
   parentIsResizingRef?: React.MutableRefObject<boolean>;
   scaleX: number;
@@ -75,6 +76,7 @@ function DraggablePlacement({
   onSelect, 
   onDelete, 
   onResize,
+  onRotate,
   onEdit,
   parentIsResizingRef,
   scaleX,
@@ -84,7 +86,9 @@ function DraggablePlacement({
   isNew,
 }: DraggablePlacementProps) {
   const [isResizing, setIsResizing] = useState(false);
+  const [isRotating, setIsRotating] = useState(false);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0, placementX: 0, placementY: 0, corner: '' });
+  const rotationStartRef = useRef({ startAngle: 0, initialRotation: 0, centerX: 0, centerY: 0 });
   
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `placement-${placement.id}`,
@@ -129,6 +133,34 @@ function DraggablePlacement({
       placementY: placement.y,
       corner,
     };
+  };
+
+  const startRotate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setIsRotating(true);
+    
+    if (parentIsResizingRef) {
+      parentIsResizingRef.current = true;
+    }
+
+    // Calculate center of the placement in screen coordinates
+    const placementElement = e.currentTarget.parentElement?.parentElement;
+    if (placementElement) {
+      const rect = placementElement.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      
+      // Calculate initial angle from center to mouse
+      const startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
+      
+      rotationStartRef.current = {
+        startAngle,
+        initialRotation: placement.rotation || 0,
+        centerX,
+        centerY,
+      };
+    }
   };
 
   useEffect(() => {
@@ -191,6 +223,45 @@ function DraggablePlacement({
     };
   }, [isResizing, onResize, scaleX, scaleY, maxNaturalWidth, maxNaturalHeight]);
 
+  useEffect(() => {
+    if (!isRotating) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const { startAngle, initialRotation, centerX, centerY } = rotationStartRef.current;
+      
+      // Calculate current angle from center to mouse
+      const currentAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
+      
+      // Calculate delta (change in angle)
+      let deltaAngle = currentAngle - startAngle;
+      
+      // Calculate new rotation
+      let newRotation = (initialRotation + deltaAngle) % 360;
+      
+      // Ensure rotation is in 0-360 range
+      if (newRotation < 0) {
+        newRotation += 360;
+      }
+      
+      onRotate(newRotation);
+    };
+
+    const handleMouseUp = () => {
+      setIsRotating(false);
+      if (parentIsResizingRef) {
+        parentIsResizingRef.current = false;
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isRotating, onRotate]);
+
   const variant = item?.variants?.find(v => v.id === placement.item_variant_id);
   const imageUrl = placement.item_variant_image_path 
     ? `/uploads/${placement.item_variant_image_path}` 
@@ -214,6 +285,8 @@ function DraggablePlacement({
         top: placement.y * scaleY,
         width: placement.width * scaleX,
         height: placement.height * scaleY,
+        transform: `rotate(${placement.rotation || 0}deg)`,
+        transformOrigin: 'center center',
       }}
       className={`rounded select-none group ${
         isSelected
@@ -261,6 +334,15 @@ function DraggablePlacement({
           </button>
 
           <div
+            className="absolute -top-14 left-1/2 -translate-x-1/2 p-2 bg-primary border-2 border-background rounded-full cursor-grab shadow-md z-50 transition-transform hover:scale-110"
+            onMouseDown={(e) => startRotate(e)}
+            onPointerDown={(e) => { e.stopPropagation(); }}
+            title="Drag to rotate"
+          >
+            <RotateCw className="w-3 h-3 text-primary-foreground" />
+          </div>
+
+          <div
             className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-primary border-2 border-background rounded-full cursor-nw-resize shadow-md z-50"
             onMouseDown={(e) => startResize(e, 'nw')}
             onPointerDown={(e) => { e.stopPropagation(); }}
@@ -286,7 +368,7 @@ function DraggablePlacement({
           />
 
           <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-black/75 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap">
-            {Math.round(placement.width)}×{Math.round(placement.height)}
+            {Math.round(placement.width)}×{Math.round(placement.height)} • {Math.round(placement.rotation || 0)}°
           </div>
         </>
       )}
@@ -577,6 +659,9 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                 <p className="text-muted-foreground">
                   Size: {Math.round(placement.width)} × {Math.round(placement.height)}
                 </p>
+                <p className="text-muted-foreground">
+                  Rotation: {Math.round(placement.rotation || 0)}°
+                </p>
               </div>
             )}
           </div>
@@ -689,6 +774,9 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                 </p>
                 <p className="text-muted-foreground">
                   Size: {Math.round(placement.width)} × {Math.round(placement.height)}
+                </p>
+                <p className="text-muted-foreground">
+                  Rotation: {Math.round(placement.rotation || 0)}°
                 </p>
               </div>
             )}
@@ -991,6 +1079,10 @@ export function ConfiguratorCanvas({
     onPlacementUpdate(placementId, { x, y, width, height });
   };
 
+  const handleRotate = (placementId: number, rotation: number) => {
+    onPlacementUpdate(placementId, { rotation });
+  };
+
   const imageUrl = `/uploads/${floorplan.image_path}?v=${imageCacheBuster}`;
   const imageWrapperStyle = imageDisplaySize.width > 0 && imageDisplaySize.height > 0
     ? {
@@ -1074,6 +1166,7 @@ export function ConfiguratorCanvas({
                         setSelectedPlacementId(null);
                       }}
                       onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
+                      onRotate={(rotation) => handleRotate(placement.id, rotation)}
                       onEdit={() => setEditingPlacement(placement)}
                       parentIsResizingRef={isResizingRef}
                       scaleX={scaledScaleX}
@@ -1134,7 +1227,7 @@ export function ConfiguratorCanvas({
 
         {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan
+          Click item to select • Drag corners to resize • Drag ↻ to rotate • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan
         </div>
 
         <PlacementEditModal

@@ -26,6 +26,7 @@ const createPlacementSchema = z.object({
   y: z.number(),
   width: z.number().positive(),
   height: z.number().positive(),
+  rotation: z.number().min(0).max(360).optional(),
 });
 
 const updatePlacementSchema = z.object({
@@ -33,6 +34,7 @@ const updatePlacementSchema = z.object({
   y: z.number().optional(),
   width: z.number().positive().optional(),
   height: z.number().positive().optional(),
+  rotation: z.number().min(0).max(360).optional(),
 });
 
 const bulkUpdateSchema = z.object({
