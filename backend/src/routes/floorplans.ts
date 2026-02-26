@@ -71,8 +71,9 @@ floorplanRoutes.get('/:id', authMiddleware, async (c) => {
 
 // POST /floorplans - Create floorplan with image upload
 floorplanRoutes.post('/', authMiddleware, uploadMiddleware('floorplans', { maxImageWidth: 1920 }), async (c) => {
+  const uploadResult = c.get('uploadResult');
+  
   try {
-    const uploadResult = c.get('uploadResult');
     const formData = c.get('formData');
 
     if (!uploadResult || !uploadResult.success) {
@@ -80,6 +81,7 @@ floorplanRoutes.post('/', authMiddleware, uploadMiddleware('floorplans', { maxIm
     }
 
     if (!formData) {
+      await fileStorageService.deleteFile(uploadResult.filePath!);
       return c.json({ error: 'No form data provided' }, 400);
     }
 
@@ -112,6 +114,14 @@ floorplanRoutes.post('/', authMiddleware, uploadMiddleware('floorplans', { maxIm
       message: 'Floorplan created successfully',
     }, 201);
   } catch (error) {
+    // Clean up uploaded file on any error
+    if (uploadResult?.success && uploadResult.filePath) {
+      try {
+        await fileStorageService.deleteFile(uploadResult.filePath);
+      } catch (cleanupError) {
+        console.error('Failed to clean up uploaded file:', cleanupError);
+      }
+    }
     console.error('Create floorplan error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }

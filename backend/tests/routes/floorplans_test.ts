@@ -288,6 +288,22 @@ Deno.test('Floorplan - reorder functionality', async (t) => {
     assertEquals(listData.data[1].id, fp1Id);
     assertEquals(listData.data[2].id, fp2Id);
   });
+
+  // Clean up floorplans and their images
+  await t.step('Clean up test floorplans', async () => {
+    await testRequest(`/api/floorplans/${fp1Id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    await testRequest(`/api/floorplans/${fp2Id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    await testRequest(`/api/floorplans/${fp3Id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+  });
 });
 
 Deno.test('Floorplan - authentication required', async (t) => {
