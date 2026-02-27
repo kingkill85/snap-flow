@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronLeft, ChevronRight, FileDown, Receipt, X, Trash2 } from 'lucide-react';
-import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, type DragMoveEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { ConfiguratorCanvas, ItemPalette, BOMPanel } from '@/components/configurator';
 import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
 import {
@@ -44,6 +44,7 @@ const ProjectDashboard = () => {
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
   const [activeDragPlacement, setActiveDragPlacement] = useState<Placement | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
+  const [dragDelta, setDragDelta] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [placementsVersion, setPlacementsVersion] = useState(0);
   const [projectTotal, setProjectTotal] = useState<number>(0);
   const [isLoadingTotal, setIsLoadingTotal] = useState(false);
@@ -249,6 +250,12 @@ const ProjectDashboard = () => {
     }
   };
 
+  const handleDragMove = (event: DragMoveEvent) => {
+    if (isDuplicating) {
+      setDragDelta({ x: event.delta.x, y: event.delta.y });
+    }
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     
@@ -433,6 +440,7 @@ const ProjectDashboard = () => {
     setActiveDragItem(null);
     setActiveDragPlacement(null);
     setIsDuplicating(false);
+    setDragDelta({ x: 0, y: 0 });
   };
 
   const handleSubmitFloorplan = async (data: CreateFloorplanDTO | { name?: string; sort_order?: number }, image?: File) => {
@@ -566,6 +574,7 @@ const ProjectDashboard = () => {
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
       >
         <div className="flex-1 flex overflow-hidden">
@@ -768,7 +777,7 @@ const ProjectDashboard = () => {
               style={{ 
                 width: activeDragPlacement.width * canvasScaleRef.current.scaleX, 
                 height: activeDragPlacement.height * canvasScaleRef.current.scaleY,
-                transform: `rotate(${activeDragPlacement.rotation || 0}deg)`,
+                transform: `translate(${dragDelta.x}px, ${dragDelta.y}px) rotate(${activeDragPlacement.rotation || 0}deg)`,
                 transformOrigin: 'center center',
               }}
             >

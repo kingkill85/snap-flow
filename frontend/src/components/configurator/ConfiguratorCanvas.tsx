@@ -112,7 +112,8 @@ function DraggablePlacement({
 
   const dragTransform = transform ? CSS.Translate.toString(transform) : '';
   const rotationTransform = `rotate(${placement.rotation || 0}deg)`;
-  // When duplicating, don't move the original - let DragOverlay handle the visual
+  // When duplicating, don't move the original - keep it in place
+  // The DragOverlay will show the item following the cursor
   const combinedTransform = (isDuplicating && isDragging) 
     ? rotationTransform 
     : dragTransform ? `${dragTransform} ${rotationTransform}` : rotationTransform;
