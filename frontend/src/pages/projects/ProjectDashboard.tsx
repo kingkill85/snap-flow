@@ -768,6 +768,9 @@ const ProjectDashboard = () => {
               style={{ 
                 width: activeDragPlacement.width * canvasScaleRef.current.scaleX, 
                 height: activeDragPlacement.height * canvasScaleRef.current.scaleY,
+                // Offset by half dimensions to center on cursor
+                marginLeft: -(activeDragPlacement.width * canvasScaleRef.current.scaleX / 2),
+                marginTop: -(activeDragPlacement.height * canvasScaleRef.current.scaleY / 2),
                 transform: `rotate(${activeDragPlacement.rotation || 0}deg)`,
                 transformOrigin: 'center center',
               }}
