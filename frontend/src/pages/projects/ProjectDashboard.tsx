@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronLeft, ChevronRight, FileDown, Receipt, X, Trash2 } from 'lucide-react';
-import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, type DragMoveEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { ConfiguratorCanvas, ItemPalette, BOMPanel } from '@/components/configurator';
 import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
 import {
@@ -44,7 +44,7 @@ const ProjectDashboard = () => {
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
   const [activeDragPlacement, setActiveDragPlacement] = useState<Placement | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
-  const [dragOverlayOffset, setDragOverlayOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragGrabPointRef = useRef<{ x: number; y: number } | null>(null);
   const [placementsVersion, setPlacementsVersion] = useState(0);
   const [projectTotal, setProjectTotal] = useState<number>(0);
   const [isLoadingTotal, setIsLoadingTotal] = useState(false);
@@ -246,18 +246,15 @@ const ProjectDashboard = () => {
         const isCtrlPressed = activeData?.isCtrlPressed ?? false;
         setActiveDragPlacement(placement);
         setIsDuplicating(isCtrlPressed);
+        
+        // Store the grab point for positioning the DragOverlay
+        if (isCtrlPressed && event.activatorEvent && 'clientX' in event.activatorEvent) {
+          dragGrabPointRef.current = {
+            x: (event.activatorEvent as MouseEvent).clientX,
+            y: (event.activatorEvent as MouseEvent).clientY
+          };
+        }
       }
-    }
-  };
-
-  const handleDragMove = (event: DragMoveEvent) => {
-    const { active, delta } = event;
-    const activeId = active.id.toString();
-    
-    if (activeId.startsWith('placement-') && isDuplicating) {
-      // Track the delta for the DragOverlay positioning
-      // The DragOverlay needs to follow the cursor
-      setDragOverlayOffset({ x: delta.x, y: delta.y });
     }
   };
 
@@ -273,7 +270,6 @@ const ProjectDashboard = () => {
       setActiveDragItem(null);
       setActiveDragPlacement(null);
       setIsDuplicating(false);
-      setDragOverlayOffset({ x: 0, y: 0 });
       return;
     }
     
@@ -291,7 +287,6 @@ const ProjectDashboard = () => {
           setActiveDragItem(null);
           setActiveDragPlacement(null);
           setIsDuplicating(false);
-          setDragOverlayOffset({ x: 0, y: 0 });
           return;
         }
         
@@ -301,7 +296,6 @@ const ProjectDashboard = () => {
           setActiveDragItem(null);
           setActiveDragPlacement(null);
           setIsDuplicating(false);
-          setDragOverlayOffset({ x: 0, y: 0 });
           return;
         }
         
@@ -351,7 +345,6 @@ const ProjectDashboard = () => {
       setActiveDragItem(null);
       setActiveDragPlacement(null);
       setIsDuplicating(false);
-      setDragOverlayOffset({ x: 0, y: 0 });
       return;
     }
     
@@ -370,7 +363,6 @@ const ProjectDashboard = () => {
             setActiveDragItem(null);
             setActiveDragPlacement(null);
             setIsDuplicating(false);
-            setDragOverlayOffset({ x: 0, y: 0 });
             return;
           }
           
@@ -381,7 +373,6 @@ const ProjectDashboard = () => {
             setActiveDragItem(null);
             setActiveDragPlacement(null);
             setIsDuplicating(false);
-            setDragOverlayOffset({ x: 0, y: 0 });
             return;
           }
           
@@ -437,7 +428,6 @@ const ProjectDashboard = () => {
             setActiveDragItem(null);
             setActiveDragPlacement(null);
             setIsDuplicating(false);
-            setDragOverlayOffset({ x: 0, y: 0 });
             return;
           }
           
@@ -452,7 +442,7 @@ const ProjectDashboard = () => {
     setActiveDragItem(null);
     setActiveDragPlacement(null);
     setIsDuplicating(false);
-    setDragOverlayOffset({ x: 0, y: 0 });
+    dragGrabPointRef.current = null;
   };
 
   const handleSubmitFloorplan = async (data: CreateFloorplanDTO | { name?: string; sort_order?: number }, image?: File) => {
@@ -586,7 +576,6 @@ const ProjectDashboard = () => {
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
-        onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
       >
         <div className="flex-1 flex overflow-hidden">
@@ -789,7 +778,13 @@ const ProjectDashboard = () => {
               style={{ 
                 width: activeDragPlacement.width * canvasScaleRef.current.scaleX, 
                 height: activeDragPlacement.height * canvasScaleRef.current.scaleY,
-                transform: `translate(${dragOverlayOffset.x}px, ${dragOverlayOffset.y}px) rotate(${activeDragPlacement.rotation || 0}deg)`,
+                marginLeft: dragGrabPointRef.current 
+                  ? -(activeDragPlacement.width * canvasScaleRef.current.scaleX / 2)
+                  : 0,
+                marginTop: dragGrabPointRef.current
+                  ? -(activeDragPlacement.height * canvasScaleRef.current.scaleY / 2)  
+                  : 0,
+                transform: `rotate(${activeDragPlacement.rotation || 0}deg)`,
                 transformOrigin: 'center center',
               }}
             >
