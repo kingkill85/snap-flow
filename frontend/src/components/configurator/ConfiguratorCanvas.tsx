@@ -112,10 +112,11 @@ function DraggablePlacement({
 
   const dragTransform = transform ? CSS.Translate.toString(transform) : '';
   const rotationTransform = `rotate(${placement.rotation || 0}deg)`;
-  // When duplicating, don't move the original - let DragOverlay handle the visual
-  const combinedTransform = (isDuplicating && isDragging) 
-    ? rotationTransform 
-    : dragTransform ? `${dragTransform} ${rotationTransform}` : rotationTransform;
+  // For all drags (including duplication), element moves with cursor
+  // The copy is now a separate placement that moves normally
+  const combinedTransform = dragTransform 
+    ? `${dragTransform} ${rotationTransform}` 
+    : rotationTransform;
 
   const handleClick = (e: React.MouseEvent) => {
     if (isResizing) return;
@@ -330,7 +331,9 @@ function DraggablePlacement({
       className={`rounded select-none group ${
         isSelected
           ? 'ring-2 ring-destructive shadow-lg z-50'
-          : 'border-2 border-primary overflow-hidden'
+          : isDuplicating && isDragging
+            ? 'border-2 border-dashed border-primary overflow-hidden'
+            : 'border-2 border-primary overflow-hidden'
       } ${isDragging ? (isCtrlPressed ? 'cursor-copy z-50' : 'cursor-grabbing z-50') : isResizing ? 'cursor-nwse-resize z-50' : isSelected ? 'cursor-default' : isCtrlPressed ? 'cursor-copy' : 'cursor-move'}`}
       title={displayName}
       onClick={handleClick}

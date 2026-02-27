@@ -243,8 +243,30 @@ const ProjectDashboard = () => {
       if (placement) {
         const activeData = event.active.data.current as { isCtrlPressed?: boolean } | undefined;
         const isCtrlPressed = activeData?.isCtrlPressed ?? false;
-        setActiveDragPlacement(placement);
-        setIsDuplicating(isCtrlPressed);
+        
+        if (isCtrlPressed && activeFloorplan) {
+          // Duplicate immediately on Ctrl+drag start
+          // Create copy at same position, then drag the copy
+          placementService.duplicate(placementId, placement.x, placement.y)
+            .then((newPlacement) => {
+              // Switch to dragging the new copy
+              setActiveDragPlacement(newPlacement);
+              setIsDuplicating(true);
+              // Refresh placements to include the new one
+              fetchPlacements(activeFloorplan.id);
+              setPlacementsVersion(prev => prev + 1);
+            })
+            .catch((err) => {
+              console.error('Failed to duplicate placement:', err);
+              // Fall back to dragging original
+              setActiveDragPlacement(placement);
+              setIsDuplicating(false);
+            });
+        } else {
+          // Normal drag
+          setActiveDragPlacement(placement);
+          setIsDuplicating(false);
+        }
       }
     }
   };
@@ -319,15 +341,8 @@ const ProjectDashboard = () => {
         });
 
         if (isDuplicating) {
-          // Duplicate the placement with BOM entries
-          try {
-            await placementService.duplicate(placementId, newX, newY);
-            // Refresh placements to show the new duplicate
-            await fetchPlacements(activeFloorplan.id);
-            setPlacementsVersion(prev => prev + 1);
-          } catch (err) {
-            console.error('Failed to duplicate placement:', err);
-          }
+          // The copy was already created in dragStart, just update its position
+          handlePlacementUpdate(placementId, { x: newX, y: newY });
         } else {
           // Normal move - update placement position
           handlePlacementUpdate(placementId, { x: newX, y: newY });
@@ -746,7 +761,7 @@ const ProjectDashboard = () => {
           </div>
         </div>
         
-        {/* Drag Overlay - use dropAnimation=null to prevent fly-back, only show when not dropping */}
+        {/* Drag Overlay - only for items from palette, not for duplication */}
         <DragOverlay dropAnimation={null}>
           {activeDragItem && !isDropping && (
             <div className="border-2 border-primary rounded bg-background shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
@@ -759,29 +774,6 @@ const ProjectDashboard = () => {
               ) : (
                 <div className="w-full h-full bg-muted flex items-center justify-center text-xs text-muted-foreground">
                   No img
-                </div>
-              )}
-            </div>
-          )}
-          {activeDragPlacement && isDuplicating && !isDropping && (
-            <div 
-              className="border-2 border-primary rounded bg-background/80 shadow-xl cursor-copy overflow-hidden"
-              style={{ 
-                width: activeDragPlacement.width * canvasScaleRef.current.scaleX, 
-                height: activeDragPlacement.height * canvasScaleRef.current.scaleY,
-                transform: `rotate(${activeDragPlacement.rotation || 0}deg)`,
-                transformOrigin: 'center center',
-              }}
-            >
-              {activeDragPlacement.item_variant_image_path ? (
-                <img
-                  src={`/uploads/${activeDragPlacement.item_variant_image_path}`}
-                  alt="Copy"
-                  className="w-full h-full object-contain bg-muted"
-                />
-              ) : (
-                <div className="w-full h-full bg-muted flex items-center justify-center text-xs text-muted-foreground">
-                  Copy
                 </div>
               )}
             </div>
