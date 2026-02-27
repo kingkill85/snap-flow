@@ -112,7 +112,10 @@ function DraggablePlacement({
 
   const dragTransform = transform ? CSS.Translate.toString(transform) : '';
   const rotationTransform = `rotate(${placement.rotation || 0}deg)`;
-  const combinedTransform = dragTransform ? `${dragTransform} ${rotationTransform}` : rotationTransform;
+  // When duplicating, don't move the original - let DragOverlay handle the visual
+  const combinedTransform = (isDuplicating && isDragging) 
+    ? rotationTransform 
+    : dragTransform ? `${dragTransform} ${rotationTransform}` : rotationTransform;
 
   const handleClick = (e: React.MouseEvent) => {
     if (isResizing) return;
