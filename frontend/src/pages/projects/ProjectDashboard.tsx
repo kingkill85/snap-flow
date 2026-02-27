@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronLeft, ChevronRight, FileDown, Receipt, X, Trash2 } from 'lucide-react';
-import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors, pointerWithin } from '@dnd-kit/core';
+import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { ConfiguratorCanvas, ItemPalette, BOMPanel } from '@/components/configurator';
 import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
 import {
@@ -26,29 +26,6 @@ const generateProjectNumber = (project: Project): string => {
   const customerName = project.customer_name || 'Unknown';
   const address = project.customer_address || 'No Address';
   return `${formattedDate}_${customerName}_${address}`;
-};
-
-/**
- * Calculate new position for a dragged placement
- * Converts screen delta to natural coordinates
- */
-export const calculateDragPosition = (
-  currentX: number,
-  currentY: number,
-  deltaX: number,
-  deltaY: number,
-  scaleX: number,
-  scaleY: number
-): { x: number; y: number } => {
-  // Convert screen delta to natural coordinates
-  const naturalDeltaX = deltaX / scaleX;
-  const naturalDeltaY = deltaY / scaleY;
-
-  // New position = current position + delta
-  return {
-    x: currentX + naturalDeltaX,
-    y: currentY + naturalDeltaY,
-  };
 };
 
 const ProjectDashboard = () => {
@@ -322,24 +299,20 @@ const ProjectDashboard = () => {
           ? floorplanImage.clientHeight / floorplanImage.naturalHeight
           : 1;
 
-        // Calculate new position using the utility function
-        const { x: newX, y: newY } = calculateDragPosition(
-          placement.x,
-          placement.y,
-          event.delta.x,
-          event.delta.y,
-          scaleX,
-          scaleY
-        );
+        // Calculate position change in natural coordinates
+        const deltaX = event.delta.x / scaleX;
+        const deltaY = event.delta.y / scaleY;
+
+        // New position = original position + delta
+        const newX = placement.x + deltaX;
+        const newY = placement.y + deltaY;
 
         // Use isDuplicating state captured at drag start instead of reading from drag data
         // This allows releasing Ctrl after starting the drag
-        const deltaNaturalX = event.delta.x / scaleX;
-        const deltaNaturalY = event.delta.y / scaleY;
         console.log('Drop with delta:', {
           delta: { x: event.delta.x, y: event.delta.y },
           scaleX,
-          deltaNatural: { x: deltaNaturalX, y: deltaNaturalY },
+          deltaNatural: { x: deltaX, y: deltaY },
           original: { x: placement.x, y: placement.y },
           new: { x: newX, y: newY },
           isDuplicating,
@@ -594,7 +567,6 @@ const ProjectDashboard = () => {
         sensors={sensors}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        collisionDetection={pointerWithin}
       >
         <div className="flex-1 flex overflow-hidden">
           {/* Left Side - Canvas Area */}
