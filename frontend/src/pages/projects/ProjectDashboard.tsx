@@ -245,21 +245,21 @@ const ProjectDashboard = () => {
         const isCtrlPressed = activeData?.isCtrlPressed ?? false;
         
         if (isCtrlPressed && activeFloorplan) {
-          // Duplicate immediately on Ctrl+drag start
-          // Create copy at same position, then drag the copy
+          // Show the original immediately so there's no visual void
+          setActiveDragPlacement(placement);
+          setIsDuplicating(true);
+          
+          // Then create the copy and switch to it
           placementService.duplicate(placementId, placement.x, placement.y)
             .then((newPlacement) => {
               // Switch to dragging the new copy
               setActiveDragPlacement(newPlacement);
-              setIsDuplicating(true);
-              // Refresh placements to include the new one
               fetchPlacements(activeFloorplan.id);
               setPlacementsVersion(prev => prev + 1);
             })
             .catch((err) => {
               console.error('Failed to duplicate placement:', err);
-              // Fall back to dragging original
-              setActiveDragPlacement(placement);
+              // Keep dragging the original on error
               setIsDuplicating(false);
             });
         } else {
