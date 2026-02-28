@@ -20,6 +20,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
+export const calculateDragPosition = (
+  initialX: number,
+  initialY: number,
+  deltaX: number,
+  deltaY: number,
+  scaleX: number,
+  scaleY: number
+): { x: number; y: number } => {
+  return {
+    x: initialX + deltaX / scaleX,
+    y: initialY + deltaY / scaleY,
+  };
+};
+
 const generateProjectNumber = (project: Project): string => {
   const date = new Date(project.created_at);
   const formattedDate = date.toISOString().split('T')[0];
