@@ -115,29 +115,31 @@ export async function processImage(
     // Apply format-specific compression
     switch (format) {
       case 'png':
-        // Lossless PNG compression with maximum compression level
-        // Preserves transparency
+        // Fast PNG compression for slow CPU devices
+        // Preserves transparency with level 3 (good balance of speed vs size)
         sharpInstance = sharpInstance.png({
-          compressionLevel: 9, // Maximum compression (0-9)
+          compressionLevel: 3, // Fast compression (0-9), level 3 = ~10x faster decode than level 9
           adaptiveFiltering: true,
           palette: false, // Keep full color depth for quality
+          effort: 4, // Balance between speed and compression
         });
         break;
 
       case 'jpeg':
-        // JPEG with good quality (90%) and progressive encoding
+        // JPEG with good quality and baseline encoding for fast decode
+        // Baseline (progressive: false) renders instantly on slow CPUs
         sharpInstance = sharpInstance.jpeg({
-          quality: 90,
-          progressive: true,
+          quality: 80, // Slightly lower for smaller files (barely perceptible difference)
+          progressive: false, // Baseline encoding renders instantly
           mozjpeg: true,
         });
         break;
 
       case 'webp':
-        // WebP with good quality
+        // WebP with good quality and fast encoding
         sharpInstance = sharpInstance.webp({
-          quality: 90,
-          effort: 6, // Compression effort (0-6)
+          quality: 80, // Slightly lower for smaller files
+          effort: 4, // Reduced from 6 for faster encoding (0-6)
         });
         break;
     }

@@ -361,9 +361,9 @@ export class ExcelSyncService {
         try {
           const imageData = await Deno.readFile(sourcePath);
           
-          // Process image: resize to 600px max width for catalog items
+          // Process image: resize to 1200px max width for catalog items
           const processResult = await processImageSafe(imageData, {
-            maxWidth: 600,
+            maxWidth: 1200,
           });
           
           await Deno.writeFile(targetPath, processResult.buffer);

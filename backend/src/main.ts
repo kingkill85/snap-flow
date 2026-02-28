@@ -134,6 +134,24 @@ app.get('/uploads/*', async (c: Context) => {
     c.header('Content-Length', stat.size.toString());
     c.header('Access-Control-Allow-Origin', '*');
     
+    // Add aggressive caching for processed images
+    // Immutable flag tells browser the file content never changes
+    c.header('Cache-Control', 'public, max-age=31536000, immutable');
+    
+    // Add ETag for cache validation
+    if (stat.mtime) {
+      const etag = `"${stat.mtime.getTime().toString(36)}-${stat.size.toString(36)}"`;
+      c.header('ETag', etag);
+      c.header('Last-Modified', stat.mtime.toUTCString());
+      
+      // Check if client has cached version
+      const ifNoneMatch = c.req.header('If-None-Match');
+      if (ifNoneMatch === etag) {
+        file.close();
+        return c.body(null, 304); // Not Modified
+      }
+    }
+    
     return c.body(file.readable);
   } catch (error) {
     if (error instanceof Deno.errors.NotFound) {

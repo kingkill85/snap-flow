@@ -417,7 +417,7 @@ itemRoutes.post(
   '/:id/variants',
   authMiddleware,
   adminMiddleware,
-  uploadMiddleware('items', { maxImageWidth: 600 }),
+  uploadMiddleware('items', { maxImageWidth: 1200 }),
   async (c) => {
     try {
       const itemId = parseInt(c.req.param('id'));
@@ -487,7 +487,7 @@ itemRoutes.put(
   '/:id/variants/:variantId',
   authMiddleware,
   adminMiddleware,
-  uploadMiddleware('items', { maxImageWidth: 600 }),
+  uploadMiddleware('items', { maxImageWidth: 1200 }),
   async (c) => {
     try {
       const itemId = parseInt(c.req.param('id'));
