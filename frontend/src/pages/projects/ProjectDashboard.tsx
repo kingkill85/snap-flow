@@ -56,7 +56,7 @@ const ProjectDashboard = () => {
   const [showNotFound, setShowNotFound] = useState(false);
   const [error, setError] = useState('');
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
-  const [activeDragPlacement, setActiveDragPlacement] = useState<Placement | null>(null);
+  const [, setActiveDragPlacement] = useState<Placement | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [placementsVersion, setPlacementsVersion] = useState(0);
   const [projectTotal, setProjectTotal] = useState<number>(0);
