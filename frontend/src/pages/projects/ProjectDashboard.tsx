@@ -5,6 +5,7 @@ import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/ser
 import { placementService, type Placement, type CreatePlacementDTO } from '@/services/placement';
 import { itemService, type Item } from '@/services/item';
 import { bomService } from '@/services/bom';
+import type { InvoiceSettings } from '@/services/invoice-settings';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -13,6 +14,7 @@ import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronL
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors, pointerWithin } from '@dnd-kit/core';
 import { ConfiguratorCanvas, ItemPalette, BOMPanel } from '@/components/configurator';
 import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
+import { InvoiceSettingsModal, InvoiceSummary } from '@/components/invoice';
 import {
   Dialog,
   DialogContent,
@@ -69,6 +71,10 @@ const ProjectDashboard = () => {
   const [showDeleteFloorplanModal, setShowDeleteFloorplanModal] = useState(false);
   const [floorplanToDelete, setFloorplanToDelete] = useState<Floorplan | null>(null);
 
+  // Invoice settings state
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings | null>(null);
+
   // Session-based memory for item sizes
   const itemSizeMemory = useRef<Map<number, { width: number; height: number }>>(new Map());
   const itemVariantMemory = useRef<Map<number, { variant_id: number; addon_ids: number[] }>>(new Map());
@@ -97,6 +103,16 @@ const ProjectDashboard = () => {
       setProject(projectData);
       setFloorplans(floorplansData);
       setItems(itemsResult.items);
+      
+      // Extract invoice settings from project data
+      setInvoiceSettings({
+        discount_percentage: projectData.discount_percentage,
+        discount_usd: projectData.discount_usd,
+        services_percentage: projectData.services_percentage,
+        services_usd: projectData.services_usd,
+        local_currency_code: projectData.local_currency_code,
+        exchange_rate: projectData.exchange_rate,
+      });
       
       if (floorplansData.length > 0) {
         if (!activeFloorplan) {
@@ -532,6 +548,10 @@ const ProjectDashboard = () => {
     setShowDeleteFloorplanModal(true);
   };
 
+  const handleSaveInvoiceSettings = (settings: InvoiceSettings) => {
+    setInvoiceSettings(settings);
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -738,20 +758,21 @@ const ProjectDashboard = () => {
               </TabsContent>
             </Tabs>
 
-            {/* Project Total & Actions */}
+            {/* Project Total & Invoice */}
             <div className="border-t p-4 bg-muted/30">
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-sm font-medium text-muted-foreground">Project Total:</span>
-                <span className="text-xl font-bold">
-                  {isLoadingTotal ? (
-                    <span className="text-muted-foreground">...</span>
-                  ) : (
-                    `$${projectTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  )}
-                </span>
-              </div>
+              {isLoadingTotal ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : (
+                <InvoiceSummary
+                  bomTotal={projectTotal}
+                  settings={invoiceSettings}
+                  onConfigure={() => setShowInvoiceModal(true)}
+                />
+              )}
 
-              <div className="space-y-2">
+              <div className="space-y-2 mt-4">
                 <Button
                   variant="outline"
                   size="sm"
@@ -765,7 +786,7 @@ const ProjectDashboard = () => {
                   variant="outline"
                   size="sm"
                   className="w-full"
-                  disabled
+                  disabled={!invoiceSettings || (invoiceSettings.discount_usd === 0 && invoiceSettings.services_usd === 0 && invoiceSettings.exchange_rate === 0)}
                 >
                   <Receipt className="mr-2 h-4 w-4" />
                   Create Invoice (PDF)
@@ -805,6 +826,16 @@ const ProjectDashboard = () => {
           setFloorplanToEdit(null);
         }}
         onSubmit={handleSubmitFloorplan}
+      />
+
+      {/* Invoice Settings Modal */}
+      <InvoiceSettingsModal
+        projectId={projectId}
+        bomTotal={projectTotal}
+        isOpen={showInvoiceModal}
+        onClose={() => setShowInvoiceModal(false)}
+        onSave={handleSaveInvoiceSettings}
+        initialSettings={invoiceSettings || undefined}
       />
 
       {/* Delete Floorplan Modal */}

@@ -151,6 +151,13 @@ export interface Project {
   customer_phone: string | null;
   customer_address: string | null;
   created_at: string;
+  // Invoice settings
+  discount_percentage: number;
+  discount_usd: number;
+  services_percentage: number;
+  services_usd: number;
+  local_currency_code: string;
+  exchange_rate: number;
 }
 
 export interface CreateProjectDTO {
@@ -169,6 +176,28 @@ export interface UpdateProjectDTO {
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
+}
+
+export interface UpdateInvoiceSettingsDTO {
+  discount_percentage?: number | undefined;
+  discount_usd?: number | undefined;
+  services_percentage?: number | undefined;
+  services_usd?: number | undefined;
+  local_currency_code?: string | undefined;
+  exchange_rate?: number | undefined;
+}
+
+export interface InvoiceCalculationResult {
+  bomTotal: number;
+  discountAmount: number;
+  discountPercentage: number;
+  servicesAmount: number;
+  servicesPercentage: number;
+  totalAfterDiscount: number;
+  grandTotalUsd: number;
+  grandTotalLocal: number;
+  localCurrencyCode: string;
+  exchangeRate: number;
 }
 
 // Floorplan

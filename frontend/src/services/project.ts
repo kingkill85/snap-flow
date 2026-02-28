@@ -9,6 +9,13 @@ export interface Project {
   customer_phone: string | null;
   customer_address: string | null;
   created_at: string;
+  // Invoice settings
+  discount_percentage: number;
+  discount_usd: number;
+  services_percentage: number;
+  services_usd: number;
+  local_currency_code: string;
+  exchange_rate: number;
 }
 
 export interface CreateProjectDTO {
