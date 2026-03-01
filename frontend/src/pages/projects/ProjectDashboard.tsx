@@ -880,11 +880,9 @@ const ProjectDashboard = () => {
             placementWidth = Math.max(5, Math.min(500, placementWidth));
             placementHeight = Math.max(5, Math.min(500, placementHeight));
             
-            // Calculate scale factors to match what will be shown on the floorplan
+            // Scale the overlay to match the visual size on canvas
+            // canvasScaleRef already includes zoom factor from ConfiguratorCanvas
             const { scaleX, scaleY } = canvasScaleRef.current;
-            const zoom = canvasZoomRef.current.zoom;
-            const scaleTransformX = scaleX * zoom;
-            const scaleTransformY = scaleY * zoom;
             
             return (
               <div 
@@ -892,8 +890,8 @@ const ProjectDashboard = () => {
                 style={{ 
                   width: `${placementWidth}px`, 
                   height: `${placementHeight}px`,
-                  transform: `scale(${scaleTransformX}, ${scaleTransformY})`,
-                  transformOrigin: 'center center'
+                  transform: `scale(${scaleX}, ${scaleY})`,
+                  transformOrigin: 'top left'
                 }}
               >
                 {activeDragItem.preview_image ? (
