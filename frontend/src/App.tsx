@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
 import { ThemeProvider } from '@/context/ThemeContext';
+import { SyncProvider } from '@/context/SyncContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import Layout from '@/components/layout/Layout';
 
@@ -19,8 +20,9 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
+        <SyncProvider>
+          <BrowserRouter>
+            <Routes>
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
             
@@ -56,7 +58,8 @@ function App() {
             {/* 404 */}
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </BrowserRouter>
+          </BrowserRouter>
+        </SyncProvider>
       </AuthProvider>
     </ThemeProvider>
   );

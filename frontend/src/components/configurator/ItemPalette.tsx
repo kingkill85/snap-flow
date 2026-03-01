@@ -20,7 +20,7 @@ function DraggableItem({ item }: DraggableItemProps) {
     },
   });
 
-  const imageUrl = item.preview_image ? `/uploads/${item.preview_image}` : null;
+  const imageUrl = item.preview_image ? itemService.getImageUrl(item.preview_image) : null;
 
   return (
     <div

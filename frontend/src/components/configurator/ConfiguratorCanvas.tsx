@@ -303,11 +303,11 @@ function DraggablePlacement({
 
   const variant = item?.variants?.find(v => v.id === placement.item_variant_id);
   const imageUrl = placement.item_variant_image_path 
-    ? `/uploads/${placement.item_variant_image_path}` 
+    ? itemService.getImageUrl(placement.item_variant_image_path)
     : variant?.image_path 
-    ? `/uploads/${variant.image_path}` 
+    ? itemService.getImageUrl(variant.image_path)
     : item?.preview_image 
-    ? `/uploads/${item.preview_image}` 
+    ? itemService.getImageUrl(item.preview_image)
     : null;
   const displayName = item?.name || 'Unknown';
 
@@ -616,9 +616,12 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                       g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
                     );
                     const mainEntry = group?.mainEntry;
-                    return mainEntry?.picture_path ? (
+                    const mainEntryImageUrl = mainEntry?.picture_path 
+                      ? itemService.getImageUrl(mainEntry.picture_path)
+                      : null;
+                    return mainEntryImageUrl ? (
                       <img
-                        src={`/uploads/${mainEntry.picture_path}`}
+                        src={mainEntryImageUrl}
                         alt={mainEntry.item_name}
                         className="w-20 h-20 object-contain rounded bg-white"
                       />
@@ -665,7 +668,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                         <div className="flex items-center gap-3">
                           {child.picture_path ? (
                             <img
-                              src={`/uploads/${child.picture_path}`}
+                              src={itemService.getImageUrl(child.picture_path)}
                               alt={child.item_name}
                               className="w-10 h-10 object-contain rounded bg-white flex-shrink-0"
                             />
@@ -714,7 +717,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                 <div className="flex items-start gap-3">
                   {selectedVariant?.image_path ? (
                     <img
-                      src={`/uploads/${selectedVariant.image_path}`}
+                      src={itemService.getImageUrl(selectedVariant.image_path)}
                       alt={item.name}
                       className="w-20 h-20 object-contain rounded bg-white"
                     />
@@ -767,7 +770,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                       <div className="flex items-center gap-3">
                         {addon.addon_variant.image_path ? (
                           <img
-                            src={`/uploads/${addon.addon_variant.image_path}`}
+                            src={itemService.getImageUrl(addon.addon_variant.image_path)}
                             alt={addon.addon_variant.item_name}
                             className="w-10 h-10 object-contain rounded bg-white flex-shrink-0"
                           />
