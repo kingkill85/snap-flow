@@ -644,34 +644,31 @@ const ProjectDashboard = () => {
   }
 
   return (
-    <div className="fixed inset-0 top-16 flex flex-col">
+    <div className="fixed inset-0 top-12 flex flex-col">
       {/* Project Header */}
-      <div className="bg-card border-b px-4 py-3 flex items-center gap-4 flex-shrink-0">
-        <Button variant="outline" size="sm" onClick={() => navigate('/projects')}>
-          <ArrowLeft className="mr-1 h-4 w-4" />
-          Back
+      <div className="bg-card border-b px-2 flex items-center gap-2 flex-shrink-0 h-8">
+        <Button variant="ghost" size="icon" className="h-6 w-6 p-0" onClick={() => navigate('/projects')}>
+          <ArrowLeft className="h-3 w-3" />
         </Button>
-        <div className="h-6 w-px bg-border"></div>
-        <div className="text-sm text-muted-foreground">
-          {generateProjectNumber(project)}
-        </div>
-        <div className="h-6 w-px bg-border"></div>
-        <div className="font-medium">{project.name}</div>
-        <div className="h-6 w-px bg-border"></div>
-        <div className="text-sm text-muted-foreground">{project.customer_name}</div>
-        <div className="h-6 w-px bg-border"></div>
+        <div className="h-4 w-px bg-border"></div>
+        <div className="text-sm text-muted-foreground leading-none">{generateProjectNumber(project)}</div>
+        <div className="h-4 w-px bg-border"></div>
+        <div className="font-medium text-sm truncate max-w-[200px] leading-none">{project.name}</div>
+        <div className="h-4 w-px bg-border"></div>
+        <div className="text-sm text-muted-foreground truncate max-w-[150px] leading-none">{project.customer_name}</div>
+        <div className="h-4 w-px bg-border"></div>
         {project.status === 'active' ? (
-          <span className="inline-flex items-center text-green-600 text-sm">
+          <span className="inline-flex items-center text-green-600 text-sm leading-none">
             <CheckCircle className="w-4 h-4 mr-1" />
             Active
           </span>
         ) : project.status === 'completed' ? (
-          <span className="inline-flex items-center text-blue-600 text-sm">
+          <span className="inline-flex items-center text-blue-600 text-sm leading-none">
             <CheckCircle className="w-4 h-4 mr-1" />
             Completed
           </span>
         ) : (
-          <span className="inline-flex items-center text-destructive text-sm">
+          <span className="inline-flex items-center text-destructive text-sm leading-none">
             <XCircle className="w-4 h-4 mr-1" />
             Cancelled
           </span>
