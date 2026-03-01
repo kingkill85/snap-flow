@@ -1,14 +1,43 @@
 import { assertEquals } from 'https://deno.land/std@0.208.0/assert/mod.ts';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
+import { hashPassword } from '../../src/services/password.ts';
 
 // Setup test database before all tests
 await setupTestDatabase();
 
 // Import after database setup
+const { userRepository } = await import('../../src/repositories/user.ts');
 const { projectRepository } = await import('../../src/repositories/project.ts');
 
+async function getAuthToken(): Promise<string> {
+  clearDatabase();
+  
+  // Create user
+  const passwordHash = hashPassword('password123');
+  await userRepository.create({
+    email: 'test@example.com',
+    password_hash: passwordHash,
+    role: 'user',
+  });
+
+  // Login
+  const loginResponse = await testRequest('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'test@example.com',
+      password: 'password123',
+    }),
+  });
+
+  const loginData = await parseJSON(loginResponse);
+  return loginData.data.accessToken;
+}
+
 Deno.test('PUT /projects/:id/invoice-settings - should update invoice settings', async () => {
+  const token = await getAuthToken();
+  
   // Create a test project
   const project = await projectRepository.create({
     name: 'Test Project',
@@ -16,9 +45,12 @@ Deno.test('PUT /projects/:id/invoice-settings - should update invoice settings',
   });
   
   try {
-    const response = await testRequest(`/projects/${project.id}/invoice-settings`, {
+    const response = await testRequest(`/api/projects/${project.id}/invoice-settings`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify({
         discount_percentage: 10,
         discount_usd: 100,
@@ -45,9 +77,14 @@ Deno.test('PUT /projects/:id/invoice-settings - should update invoice settings',
 });
 
 Deno.test('PUT /projects/:id/invoice-settings - should return 404 for non-existent project', async () => {
-  const response = await testRequest('/projects/99999/invoice-settings', {
+  const token = await getAuthToken();
+  
+  const response = await testRequest('/api/projects/99999/invoice-settings', {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
     body: JSON.stringify({
       discount_percentage: 10,
       discount_usd: 100,
@@ -61,6 +98,8 @@ Deno.test('PUT /projects/:id/invoice-settings - should return 404 for non-existe
 });
 
 Deno.test('PUT /projects/:id/invoice-settings - should handle partial updates', async () => {
+  const token = await getAuthToken();
+  
   const project = await projectRepository.create({
     name: 'Test Project Partial',
     customer_name: 'Test Customer',
@@ -68,9 +107,12 @@ Deno.test('PUT /projects/:id/invoice-settings - should handle partial updates', 
   
   try {
     // First update
-    await testRequest(`/projects/${project.id}/invoice-settings`, {
+    await testRequest(`/api/projects/${project.id}/invoice-settings`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify({
         discount_percentage: 10,
         discount_usd: 100,
@@ -78,9 +120,12 @@ Deno.test('PUT /projects/:id/invoice-settings - should handle partial updates', 
     });
     
     // Partial update
-    const response = await testRequest(`/projects/${project.id}/invoice-settings`, {
+    const response = await testRequest(`/api/projects/${project.id}/invoice-settings`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify({
         services_usd: 200,
       }),
@@ -99,6 +144,8 @@ Deno.test('PUT /projects/:id/invoice-settings - should handle partial updates', 
 });
 
 Deno.test('GET /projects/:id/invoice-calculation - should return calculated invoice', async () => {
+  const token = await getAuthToken();
+  
   const project = await projectRepository.create({
     name: 'Test Project Calc',
     customer_name: 'Test Customer',
@@ -115,7 +162,11 @@ Deno.test('GET /projects/:id/invoice-calculation - should return calculated invo
   });
   
   try {
-    const response = await testRequest(`/projects/${project.id}/invoice-calculation`);
+    const response = await testRequest(`/api/projects/${project.id}/invoice-calculation`, {
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+      },
+    });
     
     assertEquals(response.status, 200);
     
@@ -130,7 +181,13 @@ Deno.test('GET /projects/:id/invoice-calculation - should return calculated invo
 });
 
 Deno.test('GET /currency/exchange-rate/:code - should return exchange rate', async () => {
-  const response = await testRequest('/currency/exchange-rate/PKR');
+  const token = await getAuthToken();
+  
+  const response = await testRequest('/api/currency/exchange-rate/PKR', {
+    headers: { 
+      'Authorization': `Bearer ${token}`,
+    },
+  });
   
   assertEquals(response.status, 200);
   
