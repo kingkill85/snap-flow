@@ -6,6 +6,7 @@ import { Loader2, ChevronDown, ChevronRight, RefreshCw, AlertCircle } from 'luci
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { FloorplanBom, ChangeReport } from '@/services/bom';
 import { bomService } from '@/services/bom';
+import { itemService } from '@/services/item';
 
 interface BOMPanelProps {
   floorplanId: number;
@@ -195,7 +196,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
                 <div className="w-12 h-12 bg-muted rounded flex-shrink-0 overflow-hidden">
                   {group.mainEntry.picture_path ? (
                     <img
-                      src={`/uploads/${group.mainEntry.picture_path}`}
+                      src={itemService.getImageUrl(group.mainEntry.picture_path)}
                       alt={group.mainEntry.item_name}
                       className="w-full h-full object-contain"
                     />
@@ -257,7 +258,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
                         <div className="w-12 h-12 bg-muted rounded flex-shrink-0 overflow-hidden">
                           {child.picture_path ? (
                             <img
-                              src={`/uploads/${child.picture_path}`}
+                              src={itemService.getImageUrl(child.picture_path)}
                               alt={child.item_name}
                               className="w-full h-full object-contain"
                             />
