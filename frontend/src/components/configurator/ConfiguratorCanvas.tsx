@@ -574,10 +574,12 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
   const [error, setError] = useState('');
   const [isItemUnavailable, setIsItemUnavailable] = useState(false);
   const [bomData, setBomData] = useState<any>(null);
+  const lastAddonFetchKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     const loadItemData = async () => {
       if (!placement) {
+        lastAddonFetchKeyRef.current = null;
         setItem(null);
         setVariants([]);
         setAddons([]);
@@ -587,6 +589,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
       }
 
       try {
+        lastAddonFetchKeyRef.current = null;
         setIsLoading(true);
         setError('');
         setIsItemUnavailable(false);
@@ -628,25 +631,24 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
             setItem(itemData);
             setVariants([]);
             setAddons([]);
-          } else {
-            // Check if current variant is in the available variants list
-            // If not, it means the variant is inactive or deleted
-            const currentVariant = itemData.variants?.find(v => v.id === placement.item_variant_id);
+            } else {
+              // Check if current variant is in the available variants list
+              // If not, it means the variant is inactive or deleted
+              const currentVariant = itemData.variants?.find(v => v.id === placement.item_variant_id);
             if (!currentVariant) {
               // Variant is not in active list - it's unavailable
               setIsItemUnavailable(true);
               setItem(itemData);
               setVariants(itemData.variants || []);
               setAddons([]);
-            } else {
-              setItem(itemData);
-              setVariants(itemData.variants || []);
-              
-              // Fetch addons for current variant
-              const addonData = await variantAddonService.getByVariant(placement.item_id, placement.item_variant_id);
-              setAddons(addonData);
+              } else {
+                setItem(itemData);
+                setVariants(itemData.variants || []);
+                // Add-ons are loaded by the selectedVariantId effect below.
+                // Keeping it in one place avoids duplicate requests on modal open.
+                setAddons([]);
+              }
             }
-          }
         } catch (err: any) {
           // Item not found (404) or other error - item has been deleted
           console.error('Failed to load item data:', err);
@@ -670,7 +672,31 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
     const loadAddons = async () => {
       if (!selectedVariantId || !placement) return;
 
+      // Unavailable/inactive/deleted items are read-only and should not fetch add-ons
+      if (isItemUnavailable) {
+        setAddons([]);
+        return;
+      }
+
+      // Variant may not exist in active list (inactive/deleted), avoid 404 request
+      const variantExists = variants.some(v => v.id === selectedVariantId);
+      if (!variantExists) {
+        setAddons([]);
+        return;
+      }
+
+      const fetchKey = `${placement.id}:${selectedVariantId}`;
+
+      // Avoid duplicate requests for the same placement+variant combination
+      if (lastAddonFetchKeyRef.current === fetchKey) {
+        if (originalVariantId !== null && selectedVariantId === originalVariantId) {
+          setSelectedAddons(new Set(originalAddons));
+        }
+        return;
+      }
+
       try {
+        lastAddonFetchKeyRef.current = fetchKey;
         const addonData = await variantAddonService.getByVariant(placement.item_id, selectedVariantId);
         setAddons(addonData);
 
@@ -682,11 +708,13 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
         }
       } catch (err) {
         console.error('Failed to load addons:', err);
+        // Allow retry if request failed
+        lastAddonFetchKeyRef.current = null;
       }
     };
 
     loadAddons();
-  }, [selectedVariantId, placement, originalVariantId, originalAddons]);
+  }, [selectedVariantId, placement, originalVariantId, originalAddons, isItemUnavailable, variants]);
 
   const handleAddonToggle = (addonId: number) => {
     setSelectedAddons(prev => {
@@ -900,27 +928,27 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                       className={`flex items-center justify-between p-2 rounded-lg border ${
                         addon.is_required ? 'bg-primary/5 border-primary/20' : 'bg-background border-border'
                       } ${!addon.addon_variant.is_active ? 'opacity-60 bg-muted/30' : ''}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {addon.addon_variant.image_path ? (
-                          <img
-                            src={itemService.getImageUrl(addon.addon_variant.image_path)}
-                            alt={addon.addon_variant.item_name}
-                            className="w-10 h-10 object-contain rounded bg-white flex-shrink-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Checkbox
+                            checked={selectedAddons.has(addon.addon_variant.id)}
+                            onCheckedChange={() => handleAddonToggle(addon.addon_variant.id)}
+                            disabled={!addon.addon_variant.is_active}
+                          />
+                          {addon.addon_variant.image_path ? (
+                            <img
+                              src={itemService.getImageUrl(addon.addon_variant.image_path)}
+                              alt={addon.addon_variant.item_name}
+                              className="w-10 h-10 object-contain rounded bg-white flex-shrink-0"
                           />
                         ) : (
-                          <div className="w-10 h-10 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs flex-shrink-0">
-                            No img
-                          </div>
-                        )}
-                        <Checkbox
-                          checked={selectedAddons.has(addon.addon_variant.id)}
-                          onCheckedChange={() => handleAddonToggle(addon.addon_variant.id)}
-                          disabled={!addon.addon_variant.is_active}
-                        />
-                        <div>
-                          <p className="font-medium text-sm">
-                            {addon.addon_variant.item_name}
+                            <div className="w-10 h-10 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs flex-shrink-0">
+                              No img
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-medium text-sm">
+                              {addon.addon_variant.item_name}
                             {!addon.addon_variant.is_active && (
                               <span title="Add-on no longer available" className="ml-1">
                                 <AlertCircle className="h-3 w-3 text-destructive inline-block" />
