@@ -196,8 +196,8 @@ export const itemService = {
     return response.data.data;
   },
 
-  getImageUrl(imagePath: string | null): string | null {
-    if (!imagePath) return null;
+  getImageUrl(imagePath: string | null): string | undefined {
+    if (!imagePath) return undefined;
     // Use the sync timestamp for cache busting
     // This ensures all users see the same images after Excel sync
     const cacheBuster = globalSyncTimestamp || Date.now();
