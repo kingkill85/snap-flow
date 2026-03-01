@@ -898,7 +898,7 @@ const ProjectDashboard = () => {
               >
                 {activeDragItem.preview_image ? (
                   <img
-                    src={`/uploads/${activeDragItem.preview_image}`}
+                    src={itemService.getImageUrl(activeDragItem.preview_image)}
                     alt={activeDragItem.name}
                     className="w-full h-full object-fill bg-muted"
                   />
