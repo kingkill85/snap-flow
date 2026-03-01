@@ -142,7 +142,7 @@ export function SummaryTab({
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center" data-testid="loading-spinner">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );

@@ -22,26 +22,25 @@ class InvoiceCalculationService {
    * @returns Calculated invoice breakdown
    */
   calculate(bomTotal: number, settings: InvoiceSettings): InvoiceCalculationResult {
-    // Ensure non-negative values
-    const safeBomTotal = Math.max(0, bomTotal);
-    const discountAmount = Math.max(0, settings.discount_usd);
-    const servicesAmount = Math.max(0, settings.services_usd);
-    const exchangeRate = Math.max(0, settings.exchange_rate);
+    // Allow negative values
+    const discountAmount = settings.discount_usd;
+    const servicesAmount = settings.services_usd;
+    const exchangeRate = settings.exchange_rate;
 
     // Calculate totals
-    const totalAfterDiscount = safeBomTotal - discountAmount;
+    const totalAfterDiscount = bomTotal - discountAmount;
     const grandTotalUsd = totalAfterDiscount + servicesAmount;
     const grandTotalLocal = grandTotalUsd * exchangeRate;
 
     return {
-      bomTotal: safeBomTotal,
+      bomTotal,
       discountAmount,
       discountPercentage: settings.discount_percentage,
       servicesAmount,
       servicesPercentage: settings.services_percentage,
-      totalAfterDiscount: Math.max(0, totalAfterDiscount),
-      grandTotalUsd: Math.max(0, grandTotalUsd),
-      grandTotalLocal: Math.max(0, grandTotalLocal),
+      totalAfterDiscount,
+      grandTotalUsd,
+      grandTotalLocal,
       localCurrencyCode: settings.local_currency_code,
       exchangeRate,
     };
