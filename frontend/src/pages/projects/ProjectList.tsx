@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { projectService, type Project, type CreateProjectDTO, type UpdateProjectDTO } from '@/services/project';
 import { floorplanService } from '@/services/floorplan';
@@ -48,6 +48,7 @@ const ProjectList = () => {
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [floorplanCount, setFloorplanCount] = useState<number>(0);
+  const hasInitializedSearchRef = useRef(false);
 
   const fetchProjects = async (signal?: AbortSignal, isSearch = false) => {
     try {
@@ -76,18 +77,32 @@ const ProjectList = () => {
     }
   };
 
+  // Initial load
   useEffect(() => {
     const controller = new AbortController();
     fetchProjects(controller.signal);
-    return () => controller.abort();
+
+    return () => {
+      controller.abort();
+    };
   }, []);
 
-  // Debounce search
+  // Debounced search
   useEffect(() => {
+    if (!hasInitializedSearchRef.current) {
+      hasInitializedSearchRef.current = true;
+      return;
+    }
+
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetchProjects(undefined, true);
+      fetchProjects(controller.signal, true);
     }, 300);
-    return () => clearTimeout(timer);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [searchQuery]);
 
   // Open create modal if navigated from Home "Get Started"

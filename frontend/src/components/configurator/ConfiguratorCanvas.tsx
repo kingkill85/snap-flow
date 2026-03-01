@@ -94,7 +94,22 @@ function DraggablePlacement({
 }: DraggablePlacementProps) {
   const [isResizing, setIsResizing] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
-  const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0, placementX: 0, placementY: 0, corner: '' });
+  const resizeStartRef = useRef({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    anchorX: 0,
+    anchorY: 0,
+    draggedCornerX: 0,
+    draggedCornerY: 0,
+    signX: 1,
+    signY: 1,
+    axisUX: 1,
+    axisUY: 0,
+    axisVX: 0,
+    axisVY: 1,
+  });
   const aspectRatioRef = useRef(1);
   const rotationStartRef = useRef({ startAngle: 0, angleOffset: 0, centerX: 0, centerY: 0 });
   
@@ -129,7 +144,7 @@ function DraggablePlacement({
     onSelect();
   };
 
-  const startResize = (e: React.MouseEvent, visualCorner: string) => {
+  const startResize = (e: React.MouseEvent, visualCorner: 'nw' | 'ne' | 'sw' | 'se') => {
     e.stopPropagation();
     e.preventDefault();
     setIsResizing(true);
@@ -141,36 +156,48 @@ function DraggablePlacement({
     // Store current aspect ratio for locked mode
     aspectRatioRef.current = placement.width / placement.height;
 
-    // Map visual corner to logical corner based on rotation
-    // The visual corner is what the user sees on screen after rotation
-    // The logical corner is the actual corner in unrotated element space
-    const rotation = (placement.rotation || 0) % 360;
-    let logicalCorner = visualCorner;
-    
-    // Map based on rotation quadrant
-    if (rotation >= 45 && rotation < 135) {
-      // 90° rotation: NW->NE, NE->SE, SE->SW, SW->NW
-      const cornerMap: Record<string, string> = { nw: 'ne', ne: 'se', se: 'sw', sw: 'nw' };
-      logicalCorner = cornerMap[visualCorner] || visualCorner;
-    } else if (rotation >= 135 && rotation < 225) {
-      // 180° rotation: NW->SE, SE->NW, NE->SW, SW->NE
-      const cornerMap: Record<string, string> = { nw: 'se', se: 'nw', ne: 'sw', sw: 'ne' };
-      logicalCorner = cornerMap[visualCorner] || visualCorner;
-    } else if (rotation >= 225 && rotation < 315) {
-      // 270° rotation: NW->SW, SW->SE, SE->NE, NE->NW
-      const cornerMap: Record<string, string> = { nw: 'sw', sw: 'se', se: 'ne', ne: 'nw' };
-      logicalCorner = cornerMap[visualCorner] || visualCorner;
-    }
-    // 0-45° and 315-360°: no change
+    const cornerSigns: Record<'nw' | 'ne' | 'sw' | 'se', { x: 1 | -1; y: 1 | -1 }> = {
+      nw: { x: -1, y: -1 },
+      ne: { x: 1, y: -1 },
+      sw: { x: -1, y: 1 },
+      se: { x: 1, y: 1 },
+    };
+
+    const signs = cornerSigns[visualCorner];
+    const radians = ((placement.rotation || 0) * Math.PI) / 180;
+    const axisUX = Math.cos(radians);
+    const axisUY = Math.sin(radians);
+    const axisVX = -Math.sin(radians);
+    const axisVY = Math.cos(radians);
+
+    const centerX = placement.x + placement.width / 2;
+    const centerY = placement.y + placement.height / 2;
+
+    const draggedLocalX = signs.x * (placement.width / 2);
+    const draggedLocalY = signs.y * (placement.height / 2);
+    const anchorLocalX = -draggedLocalX;
+    const anchorLocalY = -draggedLocalY;
+
+    const draggedCornerX = centerX + (draggedLocalX * axisUX) + (draggedLocalY * axisVX);
+    const draggedCornerY = centerY + (draggedLocalX * axisUY) + (draggedLocalY * axisVY);
+    const anchorX = centerX + (anchorLocalX * axisUX) + (anchorLocalY * axisVX);
+    const anchorY = centerY + (anchorLocalX * axisUY) + (anchorLocalY * axisVY);
 
     resizeStartRef.current = {
       x: e.clientX,
       y: e.clientY,
       width: placement.width,
       height: placement.height,
-      placementX: placement.x,
-      placementY: placement.y,
-      corner: logicalCorner,
+      anchorX,
+      anchorY,
+      draggedCornerX,
+      draggedCornerY,
+      signX: signs.x,
+      signY: signs.y,
+      axisUX,
+      axisUY,
+      axisVX,
+      axisVY,
     };
   };
 
@@ -220,12 +247,25 @@ function DraggablePlacement({
     if (!isResizing) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const { x, y, width, height, placementX, placementY, corner } = resizeStartRef.current;
+      const {
+        x,
+        y,
+        width,
+        height,
+        anchorX,
+        anchorY,
+        draggedCornerX,
+        draggedCornerY,
+        signX,
+        signY,
+        axisUX,
+        axisUY,
+        axisVX,
+        axisVY,
+      } = resizeStartRef.current;
       const deltaX = (e.clientX - x) / scaleX;
       const deltaY = (e.clientY - y) / scaleY;
 
-      let newX = placementX;
-      let newY = placementY;
       let newWidth = width;
       let newHeight = height;
 
@@ -240,101 +280,72 @@ function DraggablePlacement({
         return value;
       };
 
-      // Calculate new dimensions based on resize direction
+      // Mouse target for dragged corner in floorplan natural coordinates
+      const targetDraggedX = draggedCornerX + deltaX;
+      const targetDraggedY = draggedCornerY + deltaY;
+
+      // Vector from fixed anchor corner to dragged corner in world space
+      const vectorX = targetDraggedX - anchorX;
+      const vectorY = targetDraggedY - anchorY;
+
+      // Convert to local (unrotated) placement space
+      const localX = (vectorX * axisUX) + (vectorY * axisUY);
+      const localY = (vectorX * axisVX) + (vectorY * axisVY);
+
+      // Signed deltas to avoid corner flipping
+      const widthRaw = signX * localX;
+      const heightRaw = signY * localY;
+
+      const clampSize = (value: number) => Math.max(5, Math.min(500, value));
+
+      // Calculate new dimensions based on resize mode
       if (shiftHeld) {
-        // Free resize - stretch to any dimensions
-        switch (corner) {
-          case 'se':
-            newWidth = snapToGrid(Math.max(5, Math.min(500, width + deltaX)));
-            newHeight = snapToGrid(Math.max(5, Math.min(500, height + deltaY)));
-            break;
-          case 'sw':
-            newWidth = snapToGrid(Math.max(5, Math.min(500, width - deltaX)));
-            newHeight = snapToGrid(Math.max(5, Math.min(500, height + deltaY)));
-            newX = placementX + (width - newWidth);
-            break;
-          case 'ne':
-            newWidth = snapToGrid(Math.max(5, Math.min(500, width + deltaX)));
-            newHeight = snapToGrid(Math.max(5, Math.min(500, height - deltaY)));
-            newY = placementY + (height - newHeight);
-            break;
-          case 'nw':
-            newWidth = snapToGrid(Math.max(5, Math.min(500, width - deltaX)));
-            newHeight = snapToGrid(Math.max(5, Math.min(500, height - deltaY)));
-            newX = placementX + (width - newWidth);
-            newY = placementY + (height - newHeight);
-            break;
-        }
+        // Free resize - allow independent width/height changes
+        newWidth = snapToGrid(clampSize(widthRaw));
+        newHeight = snapToGrid(clampSize(heightRaw));
       } else {
-        // Maintain aspect ratio - calculate resize based on movement magnitude
-        // Use the larger of abs(deltaX) or abs(deltaY * ratio) to determine scale
+        // Maintain aspect ratio by scaling along the diagonal from anchor to dragged corner
         const currentRatio = aspectRatioRef.current;
-        
-        // Calculate scale factor based on how far the mouse moved
-        // For SE: both deltas positive = grow
-        // For SW: deltaX negative, deltaY positive = grow if moving left/down
-        // For NE: deltaX positive, deltaY negative = grow if moving right/up
-        // For NW: both deltas negative = grow if moving left/up
-        const deltaMagnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-        
-        // Determine resize direction based on corner (using unrotated deltas)
-        let resizeDirection = 1;
-        switch (corner) {
-          case 'se':
-            resizeDirection = (deltaX > 0 || deltaY > 0) ? 1 : -1;
-            break;
-          case 'sw':
-            resizeDirection = (deltaX < 0 || deltaY > 0) ? 1 : -1;
-            break;
-          case 'ne':
-            resizeDirection = (deltaX > 0 || deltaY < 0) ? 1 : -1;
-            break;
-          case 'nw':
-            resizeDirection = (deltaX < 0 || deltaY < 0) ? 1 : -1;
-            break;
+        const diagonalX = signX * width;
+        const diagonalY = signY * height;
+        const diagonalLengthSquared = (diagonalX * diagonalX) + (diagonalY * diagonalY);
+
+        let scale = 1;
+        if (diagonalLengthSquared > 0) {
+          scale = ((localX * diagonalX) + (localY * diagonalY)) / diagonalLengthSquared;
         }
-        
-        const sizeDelta = deltaMagnitude * resizeDirection;
-        
-        // Apply size change to both dimensions maintaining aspect ratio
-        let newWidthRaw = width + sizeDelta;
-        let newHeightRaw = newWidthRaw / currentRatio;
-        
-        // Clamp width first, then adjust height to maintain aspect ratio
-        if (newWidthRaw > 500) {
-          newWidthRaw = 500;
-          newHeightRaw = newWidthRaw / currentRatio;
-        } else if (newWidthRaw < 5) {
-          newWidthRaw = 5;
-          newHeightRaw = newWidthRaw / currentRatio;
+
+        let scaledWidth = clampSize(width * scale);
+        let scaledHeight = scaledWidth / currentRatio;
+
+        if (scaledHeight > 500) {
+          scaledHeight = 500;
+          scaledWidth = scaledHeight * currentRatio;
+        } else if (scaledHeight < 5) {
+          scaledHeight = 5;
+          scaledWidth = scaledHeight * currentRatio;
         }
-        
-        // If height is out of bounds after width clamping, clamp height and adjust width
-        if (newHeightRaw > 500) {
-          newHeightRaw = 500;
-          newWidthRaw = newHeightRaw * currentRatio;
-        } else if (newHeightRaw < 5) {
-          newHeightRaw = 5;
-          newWidthRaw = newHeightRaw * currentRatio;
-        }
-        
-        newWidth = snapToGrid(newWidthRaw);
-        newHeight = snapToGrid(newHeightRaw);
-        
-        // Adjust position for corners that resize from top/left
-        switch (corner) {
-          case 'sw':
-            newX = placementX + (width - newWidth);
-            break;
-          case 'ne':
-            newY = placementY + (height - newHeight);
-            break;
-          case 'nw':
-            newX = placementX + (width - newWidth);
-            newY = placementY + (height - newHeight);
-            break;
+
+        newWidth = e.ctrlKey || e.metaKey ? snapToGrid(scaledWidth) : scaledWidth;
+        newHeight = newWidth / currentRatio;
+
+        if (newHeight > 500) {
+          newHeight = 500;
+          newWidth = newHeight * currentRatio;
+        } else if (newHeight < 5) {
+          newHeight = 5;
+          newWidth = newHeight * currentRatio;
         }
       }
+
+      // Rebuild center from fixed opposite corner (anchor) + new half extents
+      const anchorLocalX = -signX * (newWidth / 2);
+      const anchorLocalY = -signY * (newHeight / 2);
+      const centerX = anchorX - ((anchorLocalX * axisUX) + (anchorLocalY * axisVX));
+      const centerY = anchorY - ((anchorLocalX * axisUY) + (anchorLocalY * axisVY));
+
+      let newX = centerX - (newWidth / 2);
+      let newY = centerY - (newHeight / 2);
 
       if (maxNaturalWidth > 0 && maxNaturalHeight > 0) {
         newX = Math.max(0, Math.min(newX, maxNaturalWidth - newWidth));
@@ -563,10 +574,12 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
   const [error, setError] = useState('');
   const [isItemUnavailable, setIsItemUnavailable] = useState(false);
   const [bomData, setBomData] = useState<any>(null);
+  const lastAddonFetchKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     const loadItemData = async () => {
       if (!placement) {
+        lastAddonFetchKeyRef.current = null;
         setItem(null);
         setVariants([]);
         setAddons([]);
@@ -576,6 +589,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
       }
 
       try {
+        lastAddonFetchKeyRef.current = null;
         setIsLoading(true);
         setError('');
         setIsItemUnavailable(false);
@@ -617,25 +631,24 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
             setItem(itemData);
             setVariants([]);
             setAddons([]);
-          } else {
-            // Check if current variant is in the available variants list
-            // If not, it means the variant is inactive or deleted
-            const currentVariant = itemData.variants?.find(v => v.id === placement.item_variant_id);
+            } else {
+              // Check if current variant is in the available variants list
+              // If not, it means the variant is inactive or deleted
+              const currentVariant = itemData.variants?.find(v => v.id === placement.item_variant_id);
             if (!currentVariant) {
               // Variant is not in active list - it's unavailable
               setIsItemUnavailable(true);
               setItem(itemData);
               setVariants(itemData.variants || []);
               setAddons([]);
-            } else {
-              setItem(itemData);
-              setVariants(itemData.variants || []);
-              
-              // Fetch addons for current variant
-              const addonData = await variantAddonService.getByVariant(placement.item_id, placement.item_variant_id);
-              setAddons(addonData);
+              } else {
+                setItem(itemData);
+                setVariants(itemData.variants || []);
+                // Add-ons are loaded by the selectedVariantId effect below.
+                // Keeping it in one place avoids duplicate requests on modal open.
+                setAddons([]);
+              }
             }
-          }
         } catch (err: any) {
           // Item not found (404) or other error - item has been deleted
           console.error('Failed to load item data:', err);
@@ -659,7 +672,31 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
     const loadAddons = async () => {
       if (!selectedVariantId || !placement) return;
 
+      // Unavailable/inactive/deleted items are read-only and should not fetch add-ons
+      if (isItemUnavailable) {
+        setAddons([]);
+        return;
+      }
+
+      // Variant may not exist in active list (inactive/deleted), avoid 404 request
+      const variantExists = variants.some(v => v.id === selectedVariantId);
+      if (!variantExists) {
+        setAddons([]);
+        return;
+      }
+
+      const fetchKey = `${placement.id}:${selectedVariantId}`;
+
+      // Avoid duplicate requests for the same placement+variant combination
+      if (lastAddonFetchKeyRef.current === fetchKey) {
+        if (originalVariantId !== null && selectedVariantId === originalVariantId) {
+          setSelectedAddons(new Set(originalAddons));
+        }
+        return;
+      }
+
       try {
+        lastAddonFetchKeyRef.current = fetchKey;
         const addonData = await variantAddonService.getByVariant(placement.item_id, selectedVariantId);
         setAddons(addonData);
 
@@ -671,11 +708,13 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
         }
       } catch (err) {
         console.error('Failed to load addons:', err);
+        // Allow retry if request failed
+        lastAddonFetchKeyRef.current = null;
       }
     };
 
     loadAddons();
-  }, [selectedVariantId, placement, originalVariantId, originalAddons]);
+  }, [selectedVariantId, placement, originalVariantId, originalAddons, isItemUnavailable, variants]);
 
   const handleAddonToggle = (addonId: number) => {
     setSelectedAddons(prev => {
@@ -889,27 +928,27 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                       className={`flex items-center justify-between p-2 rounded-lg border ${
                         addon.is_required ? 'bg-primary/5 border-primary/20' : 'bg-background border-border'
                       } ${!addon.addon_variant.is_active ? 'opacity-60 bg-muted/30' : ''}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {addon.addon_variant.image_path ? (
-                          <img
-                            src={itemService.getImageUrl(addon.addon_variant.image_path)}
-                            alt={addon.addon_variant.item_name}
-                            className="w-10 h-10 object-contain rounded bg-white flex-shrink-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Checkbox
+                            checked={selectedAddons.has(addon.addon_variant.id)}
+                            onCheckedChange={() => handleAddonToggle(addon.addon_variant.id)}
+                            disabled={!addon.addon_variant.is_active}
+                          />
+                          {addon.addon_variant.image_path ? (
+                            <img
+                              src={itemService.getImageUrl(addon.addon_variant.image_path)}
+                              alt={addon.addon_variant.item_name}
+                              className="w-10 h-10 object-contain rounded bg-white flex-shrink-0"
                           />
                         ) : (
-                          <div className="w-10 h-10 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs flex-shrink-0">
-                            No img
-                          </div>
-                        )}
-                        <Checkbox
-                          checked={selectedAddons.has(addon.addon_variant.id)}
-                          onCheckedChange={() => handleAddonToggle(addon.addon_variant.id)}
-                          disabled={!addon.addon_variant.is_active}
-                        />
-                        <div>
-                          <p className="font-medium text-sm">
-                            {addon.addon_variant.item_name}
+                            <div className="w-10 h-10 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs flex-shrink-0">
+                              No img
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-medium text-sm">
+                              {addon.addon_variant.item_name}
                             {!addon.addon_variant.is_active && (
                               <span title="Add-on no longer available" className="ml-1">
                                 <AlertCircle className="h-3 w-3 text-destructive inline-block" />
