@@ -631,6 +631,18 @@ export async function runMigrations(): Promise<void> {
       `
     },
     {
+      name: '028_add_invoice_settings_to_projects',
+      sql: `
+        -- Add invoice configuration columns to projects table
+        ALTER TABLE projects ADD COLUMN discount_percentage REAL DEFAULT 0;
+        ALTER TABLE projects ADD COLUMN discount_usd REAL DEFAULT 0;
+        ALTER TABLE projects ADD COLUMN services_percentage REAL DEFAULT 0;
+        ALTER TABLE projects ADD COLUMN services_usd REAL DEFAULT 0;
+        ALTER TABLE projects ADD COLUMN local_currency_code TEXT DEFAULT 'PKR';
+        ALTER TABLE projects ADD COLUMN exchange_rate REAL DEFAULT 0;
+      `
+    },
+    {
       name: '029_add_app_settings',
       sql: `
         -- Create app_settings table for global configuration

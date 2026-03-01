@@ -5,6 +5,8 @@ import { projectRepository } from '../repositories/project.ts';
 import { floorplanRepository } from '../repositories/floorplan.ts';
 import { authMiddleware } from '../middleware/auth.ts';
 import { bomService } from '../services/bom.ts';
+import { currencyService } from '../services/currency.ts';
+import { invoiceCalculationService } from '../services/invoice-calculation.ts';
 import type { CreateProjectDTO } from '../models/index.ts';
 
 // Extend Hono context types
@@ -191,6 +193,74 @@ projectRoutes.delete('/:id', authMiddleware, async (c) => {
     });
   } catch (error) {
     console.error('Delete project error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Validation schema for updating invoice settings
+const updateInvoiceSettingsSchema = z.object({
+  discount_percentage: z.number().min(0).max(100).optional(),
+  discount_usd: z.number().min(0).optional(),
+  services_percentage: z.number().min(0).max(100).optional(),
+  services_usd: z.number().min(0).optional(),
+  local_currency_code: z.string().min(3).max(3).optional(),
+  exchange_rate: z.number().min(0).optional(),
+  google_exchange_rate: z.number().min(0).optional(),
+});
+
+// PUT /projects/:id/invoice-settings - Update invoice configuration
+projectRoutes.put('/:id/invoice-settings', authMiddleware, zValidator('json', updateInvoiceSettingsSchema), async (c) => {
+  const id = parseInt(c.req.param('id'));
+  const data = c.req.valid('json');
+
+  try {
+    // Check if project exists
+    const project = await projectRepository.findById(id);
+    if (!project) {
+      return c.json({ error: 'Project not found' }, 404);
+    }
+
+    const updatedProject = await projectRepository.updateInvoiceSettings(id, data);
+
+    return c.json({
+      data: updatedProject,
+      message: 'Invoice settings updated successfully',
+    });
+  } catch (error) {
+    console.error('Update invoice settings error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// GET /projects/:id/invoice-calculation - Get calculated invoice totals
+projectRoutes.get('/:id/invoice-calculation', authMiddleware, async (c) => {
+  const id = parseInt(c.req.param('id'));
+
+  try {
+    // Check if project exists
+    const project = await projectRepository.findById(id);
+    if (!project) {
+      return c.json({ error: 'Project not found' }, 404);
+    }
+
+    // Get BOM total
+    const { totalPrice: bomTotal } = await bomService.getProjectTotal(id);
+
+    // Calculate invoice totals
+    const calculation = invoiceCalculationService.calculate(bomTotal, {
+      discount_percentage: project.discount_percentage,
+      discount_usd: project.discount_usd,
+      services_percentage: project.services_percentage,
+      services_usd: project.services_usd,
+      exchange_rate: project.exchange_rate,
+      local_currency_code: project.local_currency_code,
+    });
+
+    return c.json({
+      data: calculation,
+    });
+  } catch (error) {
+    console.error('Get invoice calculation error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

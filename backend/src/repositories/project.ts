@@ -1,5 +1,5 @@
 import { getDb } from '../config/database.ts';
-import type { Project, CreateProjectDTO, UpdateProjectDTO } from '../models/index.ts';
+import type { Project, CreateProjectDTO, UpdateProjectDTO, UpdateInvoiceSettingsDTO } from '../models/index.ts';
 
 /**
  * Project Repository
@@ -8,7 +8,9 @@ import type { Project, CreateProjectDTO, UpdateProjectDTO } from '../models/inde
 export class ProjectRepository {
   async findAll(search?: string): Promise<Project[]> {
     let sql = `
-      SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at 
+      SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
+             discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
+             exchange_rate
       FROM projects 
     `;
     const params: (string | number)[] = [];
@@ -27,7 +29,9 @@ export class ProjectRepository {
 
   async findById(id: number): Promise<Project | null> {
     const result = getDb().queryEntries(`
-      SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at 
+      SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
+             discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
+             exchange_rate
       FROM projects 
       WHERE id = ?
     `, [id]);
@@ -36,7 +40,9 @@ export class ProjectRepository {
 
   async findByNameAndCustomer(name: string, customerName: string, excludeId?: number): Promise<Project | null> {
     let sql = `
-      SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at 
+      SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
+             discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
+             exchange_rate
       FROM projects 
       WHERE name = ? AND customer_name = ?
     `;
@@ -56,7 +62,9 @@ export class ProjectRepository {
       const result = getDb().queryEntries(`
         INSERT INTO projects (name, status, customer_name, customer_email, customer_phone, customer_address) 
         VALUES (?, ?, ?, ?, ?, ?)
-        RETURNING id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at
+        RETURNING id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
+                  discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
+                  exchange_rate
       `, [
         data.name, 
         data.status || 'active',
@@ -134,7 +142,9 @@ export class ProjectRepository {
         UPDATE projects 
         SET ${sets.join(', ')} 
         WHERE id = ?
-        RETURNING id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at
+        RETURNING id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
+                  discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
+                  exchange_rate
       `, values);
 
       return result.length > 0 ? (result[0] as unknown as Project) : null;
@@ -150,6 +160,53 @@ export class ProjectRepository {
 
   async delete(id: number): Promise<void> {
     getDb().query(`DELETE FROM projects WHERE id = ?`, [id]);
+  }
+
+  async updateInvoiceSettings(id: number, data: UpdateInvoiceSettingsDTO): Promise<Project | null> {
+    const sets: string[] = [];
+    const values: (string | number | null)[] = [];
+
+    if (data.discount_percentage !== undefined) {
+      sets.push('discount_percentage = ?');
+      values.push(data.discount_percentage);
+    }
+    if (data.discount_usd !== undefined) {
+      sets.push('discount_usd = ?');
+      values.push(data.discount_usd);
+    }
+    if (data.services_percentage !== undefined) {
+      sets.push('services_percentage = ?');
+      values.push(data.services_percentage);
+    }
+    if (data.services_usd !== undefined) {
+      sets.push('services_usd = ?');
+      values.push(data.services_usd);
+    }
+    if (data.local_currency_code !== undefined) {
+      sets.push('local_currency_code = ?');
+      values.push(data.local_currency_code);
+    }
+    if (data.exchange_rate !== undefined) {
+      sets.push('exchange_rate = ?');
+      values.push(data.exchange_rate);
+    }
+
+    if (sets.length === 0) {
+      return this.findById(id);
+    }
+
+    values.push(id);
+
+    const result = getDb().queryEntries(`
+      UPDATE projects 
+      SET ${sets.join(', ')} 
+      WHERE id = ?
+      RETURNING id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
+                discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
+                exchange_rate
+    `, values);
+
+    return result.length > 0 ? (result[0] as unknown as Project) : null;
   }
 }
 
