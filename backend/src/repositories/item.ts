@@ -73,7 +73,7 @@ export class ItemRepository {
         i.created_at, 
         i.is_active,
         (SELECT iv.image_path FROM item_variants iv 
-         WHERE iv.item_id = i.id
+         WHERE iv.item_id = i.id AND iv.is_active = true
          ORDER BY iv.sort_order ASC, iv.id ASC 
          LIMIT 1) as preview_image
       FROM items i
