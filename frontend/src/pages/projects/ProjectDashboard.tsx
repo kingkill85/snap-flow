@@ -10,12 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronLeft, ChevronRight, FileDown, Receipt, X, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors, pointerWithin } from '@dnd-kit/core';
 import { ConfiguratorCanvas, ItemPalette, BOMPanel } from '@/components/configurator';
 import type { ItemPaletteRef } from '@/components/configurator';
 import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
-import { InvoiceSettingsModal, InvoiceSummary } from '@/components/invoice';
+import { InvoiceSettingsModal, SummaryTab } from '@/components/invoice';
 import {
   Dialog,
   DialogContent,
@@ -64,7 +64,6 @@ const ProjectDashboard = () => {
   const [isCtrlDraggingItem, setIsCtrlDraggingItem] = useState(false);
   const [placementsVersion, setPlacementsVersion] = useState(0);
   const [projectTotal, setProjectTotal] = useState<number>(0);
-  const [isLoadingTotal, setIsLoadingTotal] = useState(false);
   const [isDropping, setIsDropping] = useState(false);
   
   // Floorplan modal state
@@ -76,6 +75,9 @@ const ProjectDashboard = () => {
   // Invoice settings state
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings | null>(null);
+
+  // Active tab state for right panel
+  const [activeTab, setActiveTab] = useState('products');
 
   // Session-based memory for item sizes
   const itemSizeMemory = useRef<Map<number, { width: number; height: number }>>(new Map());
@@ -158,13 +160,10 @@ const ProjectDashboard = () => {
 
   const fetchProjectTotal = async (signal?: AbortSignal) => {
     try {
-      setIsLoadingTotal(true);
       const data = await bomService.getProjectTotal(projectId, signal);
       setProjectTotal(data.totalPrice);
     } catch (err) {
       console.error('Failed to load project total:', err);
-    } finally {
-      setIsLoadingTotal(false);
     }
   };
 
@@ -616,6 +615,8 @@ const ProjectDashboard = () => {
 
   const handleSaveInvoiceSettings = (settings: InvoiceSettings) => {
     setInvoiceSettings(settings);
+    // Switch to Summary tab after saving
+    setActiveTab('summary');
   };
 
   if (isLoading) {
@@ -793,15 +794,18 @@ const ProjectDashboard = () => {
             )}
           </div>
 
-          {/* Right Side - Products/BOM Panel */}
+          {/* Right Side - Products/BOM/Summary Panel */}
           <div className="w-[400px] flex-shrink-0 bg-card border-l flex flex-col h-full">
-            <Tabs defaultValue="products" className="flex flex-col flex-1 min-h-0">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
               <TabsList className="w-full justify-start rounded-none border-b bg-muted/30 px-4 py-2 flex-shrink-0">
                 <TabsTrigger value="products" className="data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:font-medium data-[state=inactive]:text-muted-foreground data-[state=inactive]:border-transparent data-[state=inactive]:hover:text-foreground rounded-none bg-transparent shadow-none border-0 px-3 py-2">
                   Products
                 </TabsTrigger>
                 <TabsTrigger value="bom" className="data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:font-medium data-[state=inactive]:text-muted-foreground data-[state=inactive]:border-transparent data-[state=inactive]:hover:text-foreground rounded-none bg-transparent shadow-none border-0 px-3 py-2">
                   Bill of Materials
+                </TabsTrigger>
+                <TabsTrigger value="summary" className="data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:font-medium data-[state=inactive]:text-muted-foreground data-[state=inactive]:border-transparent data-[state=inactive]:hover:text-foreground rounded-none bg-transparent shadow-none border-0 px-3 py-2">
+                  Summary
                 </TabsTrigger>
               </TabsList>
               
@@ -822,43 +826,28 @@ const ProjectDashboard = () => {
                   </div>
                 )}
               </TabsContent>
+
+              <TabsContent value="summary" className="flex-1 m-0 overflow-hidden">
+                <SummaryTab
+                  floorplans={floorplans}
+                  invoiceSettings={invoiceSettings}
+                  onConfigureInvoice={() => setShowInvoiceModal(true)}
+                  placementsVersion={placementsVersion}
+                />
+              </TabsContent>
             </Tabs>
 
-            {/* Project Total & Invoice */}
-            <div className="border-t p-4 bg-muted/30">
-              {isLoadingTotal ? (
-                <div className="flex justify-center py-4">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            {/* Project Total - shown in Products and BOM tabs */}
+            {(activeTab === 'products' || activeTab === 'bom') && (
+              <div className="border-t p-4 bg-muted/30">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-muted-foreground">Project Total:</span>
+                  <span className="text-xl font-bold">
+                    ${projectTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                 </div>
-              ) : (
-                <InvoiceSummary
-                  bomTotal={projectTotal}
-                  settings={invoiceSettings}
-                  onConfigure={() => setShowInvoiceModal(true)}
-                />
-              )}
-
-              <div className="space-y-2 mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  disabled
-                >
-                  <FileDown className="mr-2 h-4 w-4" />
-                  Generate Presentation (PDF)
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  disabled={!invoiceSettings || (invoiceSettings.discount_usd === 0 && invoiceSettings.services_usd === 0 && invoiceSettings.exchange_rate === 0)}
-                >
-                  <Receipt className="mr-2 h-4 w-4" />
-                  Create Invoice (PDF)
-                </Button>
               </div>
-            </div>
+            )}
           </div>
         </div>
         

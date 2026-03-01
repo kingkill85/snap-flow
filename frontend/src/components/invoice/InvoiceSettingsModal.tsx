@@ -23,6 +23,16 @@ interface InvoiceSettingsModalProps {
   initialSettings?: InvoiceSettings;
 }
 
+// Form data with string values for better input handling
+interface FormData {
+  discount_percentage: string;
+  discount_usd: string;
+  services_percentage: string;
+  services_usd: string;
+  local_currency_code: string;
+  exchange_rate: string;
+}
+
 export function InvoiceSettingsModal({
   projectId,
   bomTotal,
@@ -31,59 +41,83 @@ export function InvoiceSettingsModal({
   onSave,
   initialSettings,
 }: InvoiceSettingsModalProps) {
-  const [formData, setFormData] = useState<InvoiceSettings>({
-    discount_percentage: 0,
-    discount_usd: 0,
-    services_percentage: 0,
-    services_usd: 0,
+  const [formData, setFormData] = useState<FormData>({
+    discount_percentage: '',
+    discount_usd: '',
+    services_percentage: '',
+    services_usd: '',
     local_currency_code: 'PKR',
-    exchange_rate: 0,
+    exchange_rate: '',
   });
   const [googleRate, setGoogleRate] = useState<number>(0);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
 
+  // Helper to convert number to string for display
+  const numToStr = (val: number): string => {
+    return val === 0 ? '' : val.toString();
+  };
+
+  // Helper to convert string to number
+  const strToNum = (val: string): number => {
+    const parsed = parseFloat(val);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
   // Initialize form data when modal opens
   useEffect(() => {
     if (isOpen) {
       if (initialSettings) {
-        setFormData(initialSettings);
+        setFormData({
+          discount_percentage: numToStr(initialSettings.discount_percentage),
+          discount_usd: numToStr(initialSettings.discount_usd),
+          services_percentage: numToStr(initialSettings.services_percentage),
+          services_usd: numToStr(initialSettings.services_usd),
+          local_currency_code: initialSettings.local_currency_code,
+          exchange_rate: numToStr(initialSettings.exchange_rate),
+        });
       } else {
         setFormData({
-          discount_percentage: 0,
-          discount_usd: 0,
-          services_percentage: 0,
-          services_usd: 0,
+          discount_percentage: '',
+          discount_usd: '',
+          services_percentage: '',
+          services_usd: '',
           local_currency_code: 'PKR',
-          exchange_rate: 0,
+          exchange_rate: '',
         });
       }
       setError('');
     }
   }, [initialSettings, isOpen]);
 
-  // Calculate reference values
+  // Calculate reference values (using numeric values)
+  const discountPercentage = strToNum(formData.discount_percentage);
+  const discountUsd = strToNum(formData.discount_usd);
+  const servicesPercentage = strToNum(formData.services_percentage);
+  const servicesUsd = strToNum(formData.services_usd);
+  const exchangeRate = strToNum(formData.exchange_rate);
+
   const discountReference = useMemo(() => {
-    return bomTotal * (formData.discount_percentage / 100);
-  }, [bomTotal, formData.discount_percentage]);
+    return bomTotal * (discountPercentage / 100);
+  }, [bomTotal, discountPercentage]);
 
   const servicesReference = useMemo(() => {
-    return bomTotal * (formData.services_percentage / 100);
-  }, [bomTotal, formData.services_percentage]);
+    return bomTotal * (servicesPercentage / 100);
+  }, [bomTotal, servicesPercentage]);
 
   // Calculate totals
   const totalAfterDiscount = useMemo(() => {
-    return Math.max(0, bomTotal - formData.discount_usd);
-  }, [bomTotal, formData.discount_usd]);
+    return Math.max(0, bomTotal - discountUsd);
+  }, [bomTotal, discountUsd]);
 
   const grandTotalUsd = useMemo(() => {
-    return totalAfterDiscount + formData.services_usd;
-  }, [totalAfterDiscount, formData.services_usd]);
+    return totalAfterDiscount + servicesUsd;
+  }, [totalAfterDiscount, servicesUsd]);
 
   const grandTotalLocal = useMemo(() => {
-    return grandTotalUsd * formData.exchange_rate;
-  }, [grandTotalUsd, formData.exchange_rate]);
+    return grandTotalUsd * exchangeRate;
+  }, [grandTotalUsd, exchangeRate]);
 
   const handleFetchGoogleRate = async () => {
     setIsFetchingRate(true);
@@ -104,12 +138,12 @@ export function InvoiceSettingsModal({
 
     try {
       const savedSettings = await invoiceSettingsService.saveSettings(projectId, {
-        discount_percentage: formData.discount_percentage,
-        discount_usd: formData.discount_usd,
-        services_percentage: formData.services_percentage,
-        services_usd: formData.services_usd,
+        discount_percentage: discountPercentage,
+        discount_usd: discountUsd,
+        services_percentage: servicesPercentage,
+        services_usd: servicesUsd,
         local_currency_code: formData.local_currency_code,
-        exchange_rate: formData.exchange_rate,
+        exchange_rate: exchangeRate,
       });
       onSave(savedSettings);
       onClose();
@@ -142,12 +176,6 @@ export function InvoiceSettingsModal({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* BOM Total Display */}
-          <div className="bg-muted/50 p-3 rounded-md">
-            <Label className="text-muted-foreground">BOM Total (All Floors)</Label>
-            <div className="text-lg font-semibold">${formatCurrency(bomTotal)} USD</div>
-          </div>
-
           {/* Discount Section */}
           <div className="space-y-4">
             <h4 className="text-sm font-semibold text-primary">Discount</h4>
@@ -160,10 +188,12 @@ export function InvoiceSettingsModal({
                   min="0"
                   max="100"
                   step="0.01"
+                  placeholder="0"
                   value={formData.discount_percentage}
                   onChange={(e) =>
-                    setFormData({ ...formData, discount_percentage: parseFloat(e.target.value) || 0 })
+                    setFormData({ ...formData, discount_percentage: e.target.value })
                   }
+                  className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
               <div className="space-y-2">
@@ -179,10 +209,12 @@ export function InvoiceSettingsModal({
                   type="number"
                   min="0"
                   step="0.01"
+                  placeholder="0"
                   value={formData.discount_usd}
                   onChange={(e) =>
-                    setFormData({ ...formData, discount_usd: parseFloat(e.target.value) || 0 })
+                    setFormData({ ...formData, discount_usd: e.target.value })
                   }
+                  className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
             </div>
@@ -204,10 +236,12 @@ export function InvoiceSettingsModal({
                   min="0"
                   max="100"
                   step="0.01"
+                  placeholder="0"
                   value={formData.services_percentage}
                   onChange={(e) =>
-                    setFormData({ ...formData, services_percentage: parseFloat(e.target.value) || 0 })
+                    setFormData({ ...formData, services_percentage: e.target.value })
                   }
+                  className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
               <div className="space-y-2">
@@ -223,10 +257,12 @@ export function InvoiceSettingsModal({
                   type="number"
                   min="0"
                   step="0.01"
+                  placeholder="0"
                   value={formData.services_usd}
                   onChange={(e) =>
-                    setFormData({ ...formData, services_usd: parseFloat(e.target.value) || 0 })
+                    setFormData({ ...formData, services_usd: e.target.value })
                   }
+                  className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
             </div>
@@ -268,10 +304,12 @@ export function InvoiceSettingsModal({
                   type="number"
                   min="0"
                   step="0.01"
+                  placeholder="0"
                   value={formData.exchange_rate}
                   onChange={(e) =>
-                    setFormData({ ...formData, exchange_rate: parseFloat(e.target.value) || 0 })
+                    setFormData({ ...formData, exchange_rate: e.target.value })
                   }
+                  className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
             </div>
@@ -284,23 +322,23 @@ export function InvoiceSettingsModal({
             <h4 className="text-sm font-semibold mb-3">Preview</h4>
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">BOM Total:</span>
+                <span className="text-muted-foreground">Project Total:</span>
                 <span>${formatCurrency(bomTotal)} USD</span>
               </div>
-              {formData.discount_usd > 0 && (
+              {discountUsd > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">
-                    Discount ({formData.discount_percentage}%):
+                    Discount:
                   </span>
-                  <span className="text-destructive">-${formatCurrency(formData.discount_usd)} USD</span>
+                  <span className="text-destructive">-${formatCurrency(discountUsd)} USD</span>
                 </div>
               )}
-              {formData.services_usd > 0 && (
+              {servicesUsd > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">
-                    Services ({formData.services_percentage}%):
+                    Services:
                   </span>
-                  <span className="text-green-600">+${formatCurrency(formData.services_usd)} USD</span>
+                  <span className="text-green-600">+${formatCurrency(servicesUsd)} USD</span>
                 </div>
               )}
               <Separator className="my-2" />
@@ -308,7 +346,7 @@ export function InvoiceSettingsModal({
                 <span>Grand Total USD:</span>
                 <span>${formatCurrency(grandTotalUsd)} USD</span>
               </div>
-              {formData.exchange_rate > 0 && (
+              {exchangeRate > 0 && (
                 <div className="flex justify-between font-semibold">
                   <span>Grand Total {formData.local_currency_code}:</span>
                   <span>
