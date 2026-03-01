@@ -95,6 +95,7 @@ function DraggablePlacement({
   const [isResizing, setIsResizing] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0, placementX: 0, placementY: 0, corner: '' });
+  const aspectRatioRef = useRef(1);
   const rotationStartRef = useRef({ startAngle: 0, angleOffset: 0, centerX: 0, centerY: 0 });
   
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -128,11 +129,14 @@ function DraggablePlacement({
     e.stopPropagation();
     e.preventDefault();
     setIsResizing(true);
-    
+
     if (parentIsResizingRef) {
       parentIsResizingRef.current = true;
     }
-    
+
+    // Store current aspect ratio for locked mode
+    aspectRatioRef.current = placement.width / placement.height;
+
     resizeStartRef.current = {
       x: e.clientX,
       y: e.clientY,
@@ -193,11 +197,14 @@ function DraggablePlacement({
       const { x, y, width, height, placementX, placementY, corner } = resizeStartRef.current;
       const deltaX = (e.clientX - x) / scaleX;
       const deltaY = (e.clientY - y) / scaleY;
-      
+
       let newX = placementX;
       let newY = placementY;
       let newWidth = width;
       let newHeight = height;
+
+      // Track Shift key for aspect ratio lock
+      const shiftHeld = e.shiftKey;
 
       // Snap to 5px increments when Ctrl is held during resize
       const snapToGrid = (value: number) => {
@@ -207,27 +214,66 @@ function DraggablePlacement({
         return value;
       };
 
-      switch (corner) {
-        case 'se':
-          newWidth = snapToGrid(Math.max(30, Math.min(300, width + deltaX)));
-          newHeight = snapToGrid(Math.max(30, Math.min(300, height + deltaY)));
-          break;
-        case 'sw':
-          newWidth = snapToGrid(Math.max(30, Math.min(300, width - deltaX)));
-          newHeight = snapToGrid(Math.max(30, Math.min(300, height + deltaY)));
-          newX = placementX + (width - newWidth);
-          break;
-        case 'ne':
-          newWidth = snapToGrid(Math.max(30, Math.min(300, width + deltaX)));
-          newHeight = snapToGrid(Math.max(30, Math.min(300, height - deltaY)));
-          newY = placementY + (height - newHeight);
-          break;
-        case 'nw':
-          newWidth = snapToGrid(Math.max(30, Math.min(300, width - deltaX)));
-          newHeight = snapToGrid(Math.max(30, Math.min(300, height - deltaY)));
-          newX = placementX + (width - newWidth);
-          newY = placementY + (height - newHeight);
-          break;
+      // Calculate new dimensions based on resize direction
+      if (shiftHeld) {
+        // Free resize - stretch to any dimensions
+        switch (corner) {
+          case 'se':
+            newWidth = snapToGrid(Math.max(30, Math.min(300, width + deltaX)));
+            newHeight = snapToGrid(Math.max(30, Math.min(300, height + deltaY)));
+            break;
+          case 'sw':
+            newWidth = snapToGrid(Math.max(30, Math.min(300, width - deltaX)));
+            newHeight = snapToGrid(Math.max(30, Math.min(300, height + deltaY)));
+            newX = placementX + (width - newWidth);
+            break;
+          case 'ne':
+            newWidth = snapToGrid(Math.max(30, Math.min(300, width + deltaX)));
+            newHeight = snapToGrid(Math.max(30, Math.min(300, height - deltaY)));
+            newY = placementY + (height - newHeight);
+            break;
+          case 'nw':
+            newWidth = snapToGrid(Math.max(30, Math.min(300, width - deltaX)));
+            newHeight = snapToGrid(Math.max(30, Math.min(300, height - deltaY)));
+            newX = placementX + (width - newWidth);
+            newY = placementY + (height - newHeight);
+            break;
+        }
+      } else {
+        // Maintain aspect ratio - calculate resize based on diagonal movement
+        const currentRatio = aspectRatioRef.current;
+        // Calculate diagonal distance moved from the starting corner
+        const diagonalDelta = Math.sqrt(deltaX * deltaX + deltaY * deltaY) * Math.sign(deltaX + deltaY);
+        const baseSize = Math.sqrt(width * width + height * height);
+        const newDiagonal = Math.max(30, Math.min(424, baseSize + diagonalDelta)); // 424 is diagonal of 300x300 max
+
+        // Calculate new width/height maintaining aspect ratio
+        // If ratio = w/h, then w = ratio * h, and diagonal = sqrt(w² + h²) = h * sqrt(ratio² + 1)
+        const calculatedHeight = newDiagonal / Math.sqrt(currentRatio * currentRatio + 1);
+        const calculatedWidth = calculatedHeight * currentRatio;
+
+        switch (corner) {
+          case 'se':
+            newWidth = snapToGrid(Math.max(30, Math.min(300, calculatedWidth)));
+            newHeight = snapToGrid(Math.max(30, Math.min(300, calculatedHeight)));
+            break;
+          case 'sw':
+            newWidth = snapToGrid(Math.max(30, Math.min(300, calculatedWidth)));
+            newHeight = snapToGrid(Math.max(30, Math.min(300, calculatedHeight)));
+            newX = placementX + (width - newWidth);
+            break;
+          case 'ne':
+            newWidth = snapToGrid(Math.max(30, Math.min(300, calculatedWidth)));
+            newHeight = snapToGrid(Math.max(30, Math.min(300, calculatedHeight)));
+            newY = placementY + (height - newHeight);
+            break;
+          case 'nw':
+            newWidth = snapToGrid(Math.max(30, Math.min(300, calculatedWidth)));
+            newHeight = snapToGrid(Math.max(30, Math.min(300, calculatedHeight)));
+            newX = placementX + (width - newWidth);
+            newY = placementY + (height - newHeight);
+            break;
+        }
       }
 
       if (maxNaturalWidth > 0 && maxNaturalHeight > 0) {
@@ -342,7 +388,7 @@ function DraggablePlacement({
         <img
           src={imageUrl}
           alt={displayName}
-          className="w-full h-full object-contain relative z-10"
+          className="w-full h-full object-fill relative z-10"
           draggable={false}
         />
       ) : (
@@ -1358,7 +1404,7 @@ export function ConfiguratorCanvas({
 
         {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize (Ctrl for 5px snap) • Drag ↻ to rotate (Ctrl for 15° snap) • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan • Ctrl+drag item to duplicate
+          Click item to select • Drag corners to resize (Shift to stretch, Ctrl for 5px snap) • Drag ↻ to rotate (Ctrl for 15° snap) • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan • Ctrl+drag item to duplicate
         </div>
 
         <PlacementEditModal
