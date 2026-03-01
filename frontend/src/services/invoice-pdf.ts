@@ -126,7 +126,7 @@ export const generateInvoicePDF = (data: InvoicePdfData): void => {
   // Render single table
   autoTable(doc, {
     startY: 45,
-    head: [['#', 'Item Description', 'Qty', { content: 'Unit Price', styles: { halign: 'right' } }, { content: 'Total', styles: { halign: 'right' } }]],
+    head: [['#', 'Product', 'Qty', { content: 'Unit Price', styles: { halign: 'right' } }, { content: 'Total', styles: { halign: 'right' } }]],
     body: tableBody,
     theme: 'grid',
     headStyles: {
