@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import type { Item } from '@/services/item';
 import { itemService } from '@/services/item';
@@ -12,13 +12,39 @@ interface DraggableItemProps {
 }
 
 function DraggableItem({ item }: DraggableItemProps) {
+  const [isCtrlPressed, setIsCtrlPressed] = useState(false);
+  
   const { attributes, listeners, setNodeRef } = useDraggable({
     id: `item-${item.id}`,
     data: {
-      item,
+      itemId: item.id,
       type: 'item',
+      isCtrlPressed,
     },
   });
+
+  // Track Ctrl key state
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        setIsCtrlPressed(true);
+      }
+    };
+    
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!e.ctrlKey && !e.metaKey) {
+        setIsCtrlPressed(false);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   const imageUrl = item.preview_image ? itemService.getImageUrl(item.preview_image) : null;
 
@@ -52,15 +78,64 @@ function DraggableItem({ item }: DraggableItemProps) {
   );
 }
 
+export interface ItemPaletteRef {
+  getImageAspectRatio: (imagePath: string) => number | null;
+}
+
 interface ItemPaletteProps {
   className?: string;
 }
 
-export function ItemPalette({ className = '' }: ItemPaletteProps) {
+export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function ItemPalette({ className = '' }, ref) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // Cache for image aspect ratios (image_path -> aspect_ratio)
+  const imageAspectRatios = useRef<Map<string, number>>(new Map());
+
+  // Expose aspect ratio getter to parent
+  useImperativeHandle(ref, () => ({
+    getImageAspectRatio: (imagePath: string) => {
+      return imageAspectRatios.current.get(imagePath) ?? null;
+    },
+  }));
+
+  // Preload images and calculate aspect ratios
+  const preloadImages = (itemsToLoad: Item[]) => {
+    itemsToLoad.forEach(item => {
+      // Check preview image
+      if (item.preview_image) {
+        const imageUrl = itemService.getImageUrl(item.preview_image);
+        if (imageUrl) {
+          const img = new Image();
+          img.onload = () => {
+            if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+              imageAspectRatios.current.set(item.preview_image!, img.naturalWidth / img.naturalHeight);
+            }
+          };
+          img.src = imageUrl;
+        }
+      }
+      
+      // Check variant images
+      item.variants?.forEach(variant => {
+        if (variant.image_path) {
+          const imageUrl = itemService.getImageUrl(variant.image_path);
+          if (imageUrl) {
+            const img = new Image();
+            img.onload = () => {
+              if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                imageAspectRatios.current.set(variant.image_path!, img.naturalWidth / img.naturalHeight);
+              }
+            };
+            img.src = imageUrl;
+          }
+        }
+      });
+    });
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -72,6 +147,10 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
         ]);
         setCategories(categoriesData.filter(c => c.is_active !== false));
         setItems(itemsResult.items);
+        
+        // Preload images and cache aspect ratios
+        preloadImages(itemsResult.items);
+        
         setError('');
       } catch (err: any) {
         setError(err.message || 'Failed to load products');
@@ -128,4 +207,4 @@ export function ItemPalette({ className = '' }: ItemPaletteProps) {
       </div>
     </div>
   );
-}
+});

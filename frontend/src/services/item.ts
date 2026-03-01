@@ -198,9 +198,9 @@ export const itemService = {
 
   getImageUrl(imagePath: string | null): string | undefined {
     if (!imagePath) return undefined;
-    // Use the sync timestamp for cache busting
-    // This ensures all users see the same images after Excel sync
-    const cacheBuster = globalSyncTimestamp || Date.now();
-    return `/uploads/${imagePath}?t=${cacheBuster}`;
+    // Only use cache buster when there's been an Excel sync
+    // This prevents images from reloading on every render
+    const cacheBuster = globalSyncTimestamp > 0 ? globalSyncTimestamp : null;
+    return cacheBuster ? `/uploads/${imagePath}?t=${cacheBuster}` : `/uploads/${imagePath}`;
   },
 };
