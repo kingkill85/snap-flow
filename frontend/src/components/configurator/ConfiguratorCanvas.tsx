@@ -34,7 +34,7 @@ interface CanvasProps {
   placements: Placement[];
   items: Item[];
   onPlacementDelete: (id: number) => void;
-  onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number; rotation?: number; item_variant_id?: number; addon_ids?: number[] }) => void;
+  onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number; rotation?: number; item_variant_id?: number; addon_ids?: number[] }, isFinal?: boolean) => void;
   isResizingRef?: React.MutableRefObject<boolean>;
   zoomRef?: React.MutableRefObject<{ zoom: number; pan: { x: number; y: number } }>;
   scaleRef?: React.MutableRefObject<{ scaleX: number; scaleY: number }>;
@@ -47,8 +47,8 @@ interface DraggablePlacementProps {
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
-  onResize: (x: number, y: number, width: number, height: number) => void;
-  onRotate: (rotation: number) => void;
+  onResize: (x: number, y: number, width: number, height: number, isFinal?: boolean) => void;
+  onRotate: (rotation: number, isFinal?: boolean) => void;
   onEdit: () => void;
   parentIsResizingRef?: React.MutableRefObject<boolean>;
   scaleX: number;
@@ -95,12 +95,17 @@ function DraggablePlacement({
   const [isResizing, setIsResizing] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0, placementX: 0, placementY: 0, corner: '' });
+  const aspectRatioRef = useRef(1);
   const rotationStartRef = useRef({ startAngle: 0, angleOffset: 0, centerX: 0, centerY: 0 });
+  
+  // Track pending values during resize/rotate for final update
+  const pendingResizeRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const pendingRotationRef = useRef<number | null>(null);
   
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `placement-${placement.id}`,
     data: {
-      placement,
+      placementId: placement.id,
       type: 'placement',
       // Include dimensions so drop calculation can account for grab offset
       width: placement.width * scaleX,
@@ -124,15 +129,40 @@ function DraggablePlacement({
     onSelect();
   };
 
-  const startResize = (e: React.MouseEvent, corner: string) => {
+  const startResize = (e: React.MouseEvent, visualCorner: string) => {
     e.stopPropagation();
     e.preventDefault();
     setIsResizing(true);
-    
+
     if (parentIsResizingRef) {
       parentIsResizingRef.current = true;
     }
+
+    // Store current aspect ratio for locked mode
+    aspectRatioRef.current = placement.width / placement.height;
+
+    // Map visual corner to logical corner based on rotation
+    // The visual corner is what the user sees on screen after rotation
+    // The logical corner is the actual corner in unrotated element space
+    const rotation = (placement.rotation || 0) % 360;
+    let logicalCorner = visualCorner;
     
+    // Map based on rotation quadrant
+    if (rotation >= 45 && rotation < 135) {
+      // 90° rotation: NW->NE, NE->SE, SE->SW, SW->NW
+      const cornerMap: Record<string, string> = { nw: 'ne', ne: 'se', se: 'sw', sw: 'nw' };
+      logicalCorner = cornerMap[visualCorner] || visualCorner;
+    } else if (rotation >= 135 && rotation < 225) {
+      // 180° rotation: NW->SE, SE->NW, NE->SW, SW->NE
+      const cornerMap: Record<string, string> = { nw: 'se', se: 'nw', ne: 'sw', sw: 'ne' };
+      logicalCorner = cornerMap[visualCorner] || visualCorner;
+    } else if (rotation >= 225 && rotation < 315) {
+      // 270° rotation: NW->SW, SW->SE, SE->NE, NE->NW
+      const cornerMap: Record<string, string> = { nw: 'sw', sw: 'se', se: 'ne', ne: 'nw' };
+      logicalCorner = cornerMap[visualCorner] || visualCorner;
+    }
+    // 0-45° and 315-360°: no change
+
     resizeStartRef.current = {
       x: e.clientX,
       y: e.clientY,
@@ -140,7 +170,7 @@ function DraggablePlacement({
       height: placement.height,
       placementX: placement.x,
       placementY: placement.y,
-      corner,
+      corner: logicalCorner,
     };
   };
 
@@ -193,11 +223,14 @@ function DraggablePlacement({
       const { x, y, width, height, placementX, placementY, corner } = resizeStartRef.current;
       const deltaX = (e.clientX - x) / scaleX;
       const deltaY = (e.clientY - y) / scaleY;
-      
+
       let newX = placementX;
       let newY = placementY;
       let newWidth = width;
       let newHeight = height;
+
+      // Track Shift key for aspect ratio lock
+      const shiftHeld = e.shiftKey;
 
       // Snap to 5px increments when Ctrl is held during resize
       const snapToGrid = (value: number) => {
@@ -207,27 +240,100 @@ function DraggablePlacement({
         return value;
       };
 
-      switch (corner) {
-        case 'se':
-          newWidth = snapToGrid(Math.max(30, Math.min(300, width + deltaX)));
-          newHeight = snapToGrid(Math.max(30, Math.min(300, height + deltaY)));
-          break;
-        case 'sw':
-          newWidth = snapToGrid(Math.max(30, Math.min(300, width - deltaX)));
-          newHeight = snapToGrid(Math.max(30, Math.min(300, height + deltaY)));
-          newX = placementX + (width - newWidth);
-          break;
-        case 'ne':
-          newWidth = snapToGrid(Math.max(30, Math.min(300, width + deltaX)));
-          newHeight = snapToGrid(Math.max(30, Math.min(300, height - deltaY)));
-          newY = placementY + (height - newHeight);
-          break;
-        case 'nw':
-          newWidth = snapToGrid(Math.max(30, Math.min(300, width - deltaX)));
-          newHeight = snapToGrid(Math.max(30, Math.min(300, height - deltaY)));
-          newX = placementX + (width - newWidth);
-          newY = placementY + (height - newHeight);
-          break;
+      // Calculate new dimensions based on resize direction
+      if (shiftHeld) {
+        // Free resize - stretch to any dimensions
+        switch (corner) {
+          case 'se':
+            newWidth = snapToGrid(Math.max(5, Math.min(500, width + deltaX)));
+            newHeight = snapToGrid(Math.max(5, Math.min(500, height + deltaY)));
+            break;
+          case 'sw':
+            newWidth = snapToGrid(Math.max(5, Math.min(500, width - deltaX)));
+            newHeight = snapToGrid(Math.max(5, Math.min(500, height + deltaY)));
+            newX = placementX + (width - newWidth);
+            break;
+          case 'ne':
+            newWidth = snapToGrid(Math.max(5, Math.min(500, width + deltaX)));
+            newHeight = snapToGrid(Math.max(5, Math.min(500, height - deltaY)));
+            newY = placementY + (height - newHeight);
+            break;
+          case 'nw':
+            newWidth = snapToGrid(Math.max(5, Math.min(500, width - deltaX)));
+            newHeight = snapToGrid(Math.max(5, Math.min(500, height - deltaY)));
+            newX = placementX + (width - newWidth);
+            newY = placementY + (height - newHeight);
+            break;
+        }
+      } else {
+        // Maintain aspect ratio - calculate resize based on movement magnitude
+        // Use the larger of abs(deltaX) or abs(deltaY * ratio) to determine scale
+        const currentRatio = aspectRatioRef.current;
+        
+        // Calculate scale factor based on how far the mouse moved
+        // For SE: both deltas positive = grow
+        // For SW: deltaX negative, deltaY positive = grow if moving left/down
+        // For NE: deltaX positive, deltaY negative = grow if moving right/up
+        // For NW: both deltas negative = grow if moving left/up
+        const deltaMagnitude = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        // Determine resize direction based on corner (using unrotated deltas)
+        let resizeDirection = 1;
+        switch (corner) {
+          case 'se':
+            resizeDirection = (deltaX > 0 || deltaY > 0) ? 1 : -1;
+            break;
+          case 'sw':
+            resizeDirection = (deltaX < 0 || deltaY > 0) ? 1 : -1;
+            break;
+          case 'ne':
+            resizeDirection = (deltaX > 0 || deltaY < 0) ? 1 : -1;
+            break;
+          case 'nw':
+            resizeDirection = (deltaX < 0 || deltaY < 0) ? 1 : -1;
+            break;
+        }
+        
+        const sizeDelta = deltaMagnitude * resizeDirection;
+        
+        // Apply size change to both dimensions maintaining aspect ratio
+        let newWidthRaw = width + sizeDelta;
+        let newHeightRaw = newWidthRaw / currentRatio;
+        
+        // Clamp width first, then adjust height to maintain aspect ratio
+        if (newWidthRaw > 500) {
+          newWidthRaw = 500;
+          newHeightRaw = newWidthRaw / currentRatio;
+        } else if (newWidthRaw < 5) {
+          newWidthRaw = 5;
+          newHeightRaw = newWidthRaw / currentRatio;
+        }
+        
+        // If height is out of bounds after width clamping, clamp height and adjust width
+        if (newHeightRaw > 500) {
+          newHeightRaw = 500;
+          newWidthRaw = newHeightRaw * currentRatio;
+        } else if (newHeightRaw < 5) {
+          newHeightRaw = 5;
+          newWidthRaw = newHeightRaw * currentRatio;
+        }
+        
+        newWidth = snapToGrid(newWidthRaw);
+        newHeight = snapToGrid(newHeightRaw);
+        
+        // Adjust position for corners that resize from top/left
+        switch (corner) {
+          case 'sw':
+            newX = placementX + (width - newWidth);
+            break;
+          case 'ne':
+            newY = placementY + (height - newHeight);
+            break;
+          case 'nw':
+            newX = placementX + (width - newWidth);
+            newY = placementY + (height - newHeight);
+            break;
+        }
       }
 
       if (maxNaturalWidth > 0 && maxNaturalHeight > 0) {
@@ -235,13 +341,22 @@ function DraggablePlacement({
         newY = Math.max(0, Math.min(newY, maxNaturalHeight - newHeight));
       }
 
-      onResize(newX, newY, newWidth, newHeight);
+      // Store pending values and update UI optimistically (isFinal=false)
+      pendingResizeRef.current = { x: newX, y: newY, width: newWidth, height: newHeight };
+      onResize(newX, newY, newWidth, newHeight, false);
     };
 
     const handleMouseUp = () => {
       setIsResizing(false);
       if (parentIsResizingRef) {
         parentIsResizingRef.current = false;
+      }
+      
+      // Send final update to database with isFinal=true
+      if (pendingResizeRef.current) {
+        const { x, y, width, height } = pendingResizeRef.current;
+        onResize(x, y, width, height, true);
+        pendingResizeRef.current = null;
       }
     };
 
@@ -282,13 +397,21 @@ function DraggablePlacement({
         newRotation = Math.round(newRotation / 15) * 15;
       }
 
-      onRotate(newRotation);
+      // Store pending value and update UI optimistically (isFinal=false)
+      pendingRotationRef.current = newRotation;
+      onRotate(newRotation, false);
     };
 
     const handleMouseUp = () => {
       setIsRotating(false);
       if (parentIsResizingRef) {
         parentIsResizingRef.current = false;
+      }
+      
+      // Send final update to database with isFinal=true
+      if (pendingRotationRef.current !== null) {
+        onRotate(pendingRotationRef.current, true);
+        pendingRotationRef.current = null;
       }
     };
 
@@ -303,11 +426,11 @@ function DraggablePlacement({
 
   const variant = item?.variants?.find(v => v.id === placement.item_variant_id);
   const imageUrl = placement.item_variant_image_path 
-    ? `/uploads/${placement.item_variant_image_path}` 
+    ? itemService.getImageUrl(placement.item_variant_image_path)
     : variant?.image_path 
-    ? `/uploads/${variant.image_path}` 
+    ? itemService.getImageUrl(variant.image_path)
     : item?.preview_image 
-    ? `/uploads/${item.preview_image}` 
+    ? itemService.getImageUrl(item.preview_image)
     : null;
   const displayName = item?.name || 'Unknown';
 
@@ -342,7 +465,7 @@ function DraggablePlacement({
         <img
           src={imageUrl}
           alt={displayName}
-          className="w-full h-full object-contain relative z-10"
+          className="w-full h-full object-fill relative z-10"
           draggable={false}
         />
       ) : (
@@ -616,9 +739,12 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                       g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
                     );
                     const mainEntry = group?.mainEntry;
-                    return mainEntry?.picture_path ? (
+                    const mainEntryImageUrl = mainEntry?.picture_path 
+                      ? itemService.getImageUrl(mainEntry.picture_path)
+                      : null;
+                    return mainEntryImageUrl ? (
                       <img
-                        src={`/uploads/${mainEntry.picture_path}`}
+                        src={mainEntryImageUrl}
                         alt={mainEntry.item_name}
                         className="w-20 h-20 object-contain rounded bg-white"
                       />
@@ -665,7 +791,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                         <div className="flex items-center gap-3">
                           {child.picture_path ? (
                             <img
-                              src={`/uploads/${child.picture_path}`}
+                              src={itemService.getImageUrl(child.picture_path)}
                               alt={child.item_name}
                               className="w-10 h-10 object-contain rounded bg-white flex-shrink-0"
                             />
@@ -714,7 +840,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                 <div className="flex items-start gap-3">
                   {selectedVariant?.image_path ? (
                     <img
-                      src={`/uploads/${selectedVariant.image_path}`}
+                      src={itemService.getImageUrl(selectedVariant.image_path)}
                       alt={item.name}
                       className="w-20 h-20 object-contain rounded bg-white"
                     />
@@ -767,7 +893,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                       <div className="flex items-center gap-3">
                         {addon.addon_variant.image_path ? (
                           <img
-                            src={`/uploads/${addon.addon_variant.image_path}`}
+                            src={itemService.getImageUrl(addon.addon_variant.image_path)}
                             alt={addon.addon_variant.item_name}
                             className="w-10 h-10 object-contain rounded bg-white flex-shrink-0"
                           />
@@ -1201,12 +1327,16 @@ export function ConfiguratorCanvas({
     setSelectedPlacementId(null);
   };
 
-  const handleResize = (placementId: number, x: number, y: number, width: number, height: number) => {
-    onPlacementUpdate(placementId, { x, y, width, height });
+  const handleResize = (placementId: number, x: number, y: number, width: number, height: number, isFinal?: boolean) => {
+    // Always send to parent for optimistic UI updates
+    // The parent (ProjectDashboard) will handle whether to save to DB based on isFinal
+    onPlacementUpdate(placementId, { x, y, width, height }, isFinal);
   };
 
-  const handleRotate = (placementId: number, rotation: number) => {
-    onPlacementUpdate(placementId, { rotation });
+  const handleRotate = (placementId: number, rotation: number, isFinal?: boolean) => {
+    // Always send to parent for optimistic UI updates
+    // The parent (ProjectDashboard) will handle whether to save to DB based on isFinal
+    onPlacementUpdate(placementId, { rotation }, isFinal);
   };
 
   const imageUrl = `/uploads/${floorplan.image_path}?v=${imageCacheBuster}`;
@@ -1291,8 +1421,8 @@ export function ConfiguratorCanvas({
                         onPlacementDelete(placement.id);
                         setSelectedPlacementId(null);
                       }}
-                      onResize={(x, y, width, height) => handleResize(placement.id, x, y, width, height)}
-                      onRotate={(rotation) => handleRotate(placement.id, rotation)}
+                      onResize={(x, y, width, height, isFinal) => handleResize(placement.id, x, y, width, height, isFinal)}
+                      onRotate={(rotation, isFinal) => handleRotate(placement.id, rotation, isFinal)}
                       onEdit={() => setEditingPlacement(placement)}
                       parentIsResizingRef={isResizingRef}
                       scaleX={scaledScaleX}
@@ -1355,7 +1485,7 @@ export function ConfiguratorCanvas({
 
         {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize (Ctrl for 5px snap) • Drag ↻ to rotate (Ctrl for 15° snap) • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan • Ctrl+drag item to duplicate
+          Click item to select • Drag corners to resize (Shift to stretch, Ctrl for 5px snap) • Drag ↻ to rotate (Ctrl for 15° snap) • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan • Ctrl+drag item to duplicate
         </div>
 
         <PlacementEditModal

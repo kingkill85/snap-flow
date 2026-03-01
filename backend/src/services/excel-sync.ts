@@ -2,6 +2,7 @@ import * as xlsx from 'xlsx';
 import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { categoryRepository } from '../repositories/category.ts';
+import { settingsRepository } from '../repositories/settings.ts';
 import { fileStorageService } from './file-storage.ts';
 import { processImageSafe } from './image-processing.ts';
 import type { Item, ItemVariant } from '../models/index.ts';
@@ -142,6 +143,8 @@ export class ExcelSyncService {
       // Phase 4: Sync Variant Addons
       await this.syncVariantAddons(groupedItems, itemIdMap, result);
 
+      // Set last sync timestamp for image cache busting
+      await settingsRepository.setLastSyncTimestamp(Date.now());
       this.log(result, '✅ Sync completed successfully!', 'complete');
 
     } catch (error) {

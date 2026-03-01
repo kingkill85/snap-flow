@@ -75,6 +75,18 @@ export interface PaginatedItemsResult {
   limit: number;
 }
 
+// Global sync timestamp for image cache busting
+// Updated by SyncContext after Excel sync
+let globalSyncTimestamp = 0;
+
+export function setGlobalSyncTimestamp(timestamp: number): void {
+  globalSyncTimestamp = timestamp;
+}
+
+export function getGlobalSyncTimestamp(): number {
+  return globalSyncTimestamp;
+}
+
 export const itemService = {
   async getAll(
     filter?: ItemFilter,
@@ -184,11 +196,11 @@ export const itemService = {
     return response.data.data;
   },
 
-  getImageUrl(imagePath: string | null, bustCache?: boolean): string | null {
-    if (!imagePath) return null;
-    if (bustCache) {
-      return `/uploads/${imagePath}?t=${Date.now()}`;
-    }
-    return `/uploads/${imagePath}`;
+  getImageUrl(imagePath: string | null): string | undefined {
+    if (!imagePath) return undefined;
+    // Only use cache buster when there's been an Excel sync
+    // This prevents images from reloading on every render
+    const cacheBuster = globalSyncTimestamp > 0 ? globalSyncTimestamp : null;
+    return cacheBuster ? `/uploads/${imagePath}?t=${cacheBuster}` : `/uploads/${imagePath}`;
   },
 };

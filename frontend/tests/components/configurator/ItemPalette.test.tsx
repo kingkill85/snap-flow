@@ -10,6 +10,7 @@ import type { Category } from '@/services/category';
 vi.mock('@/services/item', () => ({
   itemService: {
     getAll: vi.fn(),
+    getImageUrl: vi.fn((path: string) => `/uploads/${path}`),
   },
 }));
 

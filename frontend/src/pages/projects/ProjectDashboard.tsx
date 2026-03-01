@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronLeft, ChevronRight, FileDown, Receipt, X, Trash2 } from 'lucide-react';
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors, pointerWithin } from '@dnd-kit/core';
 import { ConfiguratorCanvas, ItemPalette, BOMPanel } from '@/components/configurator';
+import type { ItemPaletteRef } from '@/components/configurator';
 import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
 import { InvoiceSettingsModal, InvoiceSummary } from '@/components/invoice';
 import {
@@ -60,6 +61,7 @@ const ProjectDashboard = () => {
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
   const [, setActiveDragPlacement] = useState<Placement | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
+  const [isCtrlDraggingItem, setIsCtrlDraggingItem] = useState(false);
   const [placementsVersion, setPlacementsVersion] = useState(0);
   const [projectTotal, setProjectTotal] = useState<number>(0);
   const [isLoadingTotal, setIsLoadingTotal] = useState(false);
@@ -81,6 +83,9 @@ const ProjectDashboard = () => {
   const isResizingRef = useRef(false);
   const canvasZoomRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
   const canvasScaleRef = useRef({ scaleX: 1, scaleY: 1 });
+  
+  // Ref to access ItemPalette's aspect ratio cache
+  const itemPaletteRef = useRef<ItemPaletteRef>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -182,12 +187,13 @@ const ProjectDashboard = () => {
     fetchProjectTotal(controller.signal);
   }, [projectId, placementsVersion]);
 
-  const handlePlacementCreate = async (placement: { x: number; y: number; width?: number; height?: number; item_id: number; item_variant_id: number; addon_ids?: number[] }) => {
+  const handlePlacementCreate = async (placement: { x: number; y: number; width?: number; height?: number; item_id: number; item_variant_id: number; addon_ids?: number[]; ignoreDefaults?: boolean }) => {
     if (!activeFloorplan) return;
     
-    const storedSize = itemSizeMemory.current.get(placement.item_id);
-    const width = placement.width ?? storedSize?.width ?? 60;
-    const height = placement.height ?? storedSize?.height ?? 60;
+    // Use explicit dimensions if provided (calculated in handleDragEnd)
+    // Otherwise fall back to defaults
+    const width = placement.width ?? 60;
+    const height = placement.height ?? 60;
     
     const createData: CreatePlacementDTO = {
       floorplan_id: activeFloorplan.id,
@@ -204,11 +210,23 @@ const ProjectDashboard = () => {
       await placementService.updateBom(newPlacement.id, placement.item_variant_id, placement.addon_ids);
     }
     
+    // Only save size to memory if NOT ignoring defaults (Ctrl+drag)
+    // This prevents Ctrl+drag from updating the "default" size
+    if (!placement.ignoreDefaults) {
+      itemSizeMemory.current.set(placement.item_id, { width, height });
+    }
+    
     await fetchPlacements(activeFloorplan.id);
     setPlacementsVersion(prev => prev + 1);
   };
 
-  const handlePlacementUpdate = async (id: number, placement: { x?: number; y?: number; width?: number; height?: number; item_variant_id?: number; addon_ids?: number[] }) => {
+  const handlePlacementUpdate = async (id: number, placement: { x?: number; y?: number; width?: number; height?: number; item_variant_id?: number; addon_ids?: number[]; rotation?: number }, isFinal?: boolean) => {
+    // Always update local state for optimistic UI feedback (immediate visual update)
+    setPlacements(prev => prev.map(p => 
+      p.id === id ? { ...p, ...placement } : p
+    ));
+    
+    // Handle variant/BOM updates - these always save immediately
     if (placement.item_variant_id !== undefined) {
       try {
         await placementService.updateBom(id, placement.item_variant_id, placement.addon_ids || []);
@@ -232,10 +250,7 @@ const ProjectDashboard = () => {
       }
     }
     
-    setPlacements(prev => prev.map(p => 
-      p.id === id ? { ...p, ...placement } : p
-    ));
-    
+    // Store size in memory if width/height changed (for new placements)
     if (placement.width !== undefined || placement.height !== undefined) {
       const updatedPlacement = placements.find(p => p.id === id);
       if (updatedPlacement) {
@@ -248,7 +263,11 @@ const ProjectDashboard = () => {
       }
     }
     
-    await placementService.update(id, placement);
+    // Only save to database when isFinal is true or undefined (for backward compatibility)
+    // During resize/rotate operations, isFinal will be false until mouseup
+    if (isFinal !== false) {
+      await placementService.update(id, placement);
+    }
   };
 
   const handlePlacementDelete = async (id: number) => {
@@ -263,9 +282,18 @@ const ProjectDashboard = () => {
     const activeId = event.active.id.toString();
     
     if (activeId.startsWith('item-')) {
-      const itemData = event.active.data.current as { item: Item } | undefined;
-      if (itemData?.item) {
-        setActiveDragItem(itemData.item);
+      const itemData = event.active.data.current as { itemId: number } | undefined;
+      // Check if Ctrl is currently being held (using event or window)
+      const isCtrlPressed = event.activatorEvent ? 
+        (event.activatorEvent as MouseEvent).ctrlKey || (event.activatorEvent as MouseEvent).metaKey : 
+        false;
+      
+      if (itemData?.itemId) {
+        const item = items.find(i => i.id === itemData.itemId);
+        if (item) {
+          setActiveDragItem(item);
+          setIsCtrlDraggingItem(isCtrlPressed);
+        }
       }
     } else if (activeId.startsWith('placement-')) {
       const placementId = parseInt(activeId.replace('placement-', ''));
@@ -361,15 +389,6 @@ const ProjectDashboard = () => {
 
         // Use isDuplicating state captured at drag start instead of reading from drag data
         // This allows releasing Ctrl after starting the drag
-        console.log('Drop with delta:', {
-          delta: { x: event.delta.x, y: event.delta.y },
-          scaleX,
-          deltaNatural: { x: deltaX, y: deltaY },
-          original: { x: placement.x, y: placement.y },
-          new: { x: newX, y: newY },
-          isDuplicating,
-        });
-
         if (isDuplicating) {
           // The copy was already created in dragStart, just update its position
           handlePlacementUpdate(placementId, { x: newX, y: newY });
@@ -385,9 +404,9 @@ const ProjectDashboard = () => {
     }
     
     if (activeId.startsWith('item-') && overId.startsWith('canvas-')) {
-      const itemData = active.data.current as { item: Item } | undefined;
+      const itemData = active.data.current as { itemId: number } | undefined;
       
-      if (itemData?.item) {
+      if (itemData?.itemId) {
         try {
           // Hide overlay immediately to prevent fly-back animation
           setIsDropping(true);
@@ -444,20 +463,68 @@ const ProjectDashboard = () => {
           const dropX = screenX / scaleX;
           const dropY = screenY / scaleY;
           
-          const fullItem = await itemService.getById(itemData.item.id);
+          // Look up item from existing items array (no API call needed)
+          const fullItem = items.find(i => i.id === itemData.itemId);
           
-          const storedConfig = itemVariantMemory.current.get(itemData.item.id);
+          if (!fullItem) {
+            console.error('Item not found in local state:', itemData.itemId);
+            setIsDropping(false);
+            return;
+          }
+          
+          // Check if Ctrl was pressed during drag start (ignore all defaults)
+          // Use the state we set in handleDragStart
+          const ignoreDefaults = isCtrlDraggingItem;
+          
+          // Select variant to use
+          const storedConfig = ignoreDefaults ? undefined : itemVariantMemory.current.get(itemData.itemId);
           const variantToUse = storedConfig?.variant_id
             ? fullItem.variants?.find(v => v.id === storedConfig.variant_id)
             : fullItem.variants?.[0];
           
           if (variantToUse) {
+            // Calculate dimensions based on whether Ctrl was pressed
+            let placementWidth = 60;
+            let placementHeight = 60;
+            
+            if (!ignoreDefaults) {
+              // Use stored size if available
+              const storedSize = itemSizeMemory.current.get(itemData.itemId);
+              if (storedSize) {
+                placementWidth = storedSize.width;
+                placementHeight = storedSize.height;
+              } else {
+                // Calculate from aspect ratio
+                if (fullItem.preview_image && itemPaletteRef.current) {
+                  const aspectRatio = itemPaletteRef.current.getImageAspectRatio(fullItem.preview_image);
+                  if (aspectRatio) {
+                    placementWidth = 60 * aspectRatio;
+                  }
+                }
+              }
+            } else {
+              // Ctrl pressed - use default or aspect ratio only
+              if (fullItem.preview_image && itemPaletteRef.current) {
+                const aspectRatio = itemPaletteRef.current.getImageAspectRatio(fullItem.preview_image);
+                if (aspectRatio) {
+                  placementWidth = 60 * aspectRatio;
+                }
+              }
+            }
+            
+            // Clamp dimensions
+            placementWidth = Math.max(5, Math.min(500, placementWidth));
+            placementHeight = Math.max(5, Math.min(500, placementHeight));
+            
             await handlePlacementCreate({
               x: dropX,
               y: dropY,
-              item_id: itemData.item.id,
+              width: placementWidth,
+              height: placementHeight,
+              item_id: itemData.itemId,
               item_variant_id: variantToUse.id,
-              addon_ids: storedConfig?.addon_ids,
+              addon_ids: ignoreDefaults ? undefined : storedConfig?.addon_ids,
+              ignoreDefaults,
             });
             // Clear drag item - placement will appear with fade-in animation
             setIsDropping(false);
@@ -466,8 +533,6 @@ const ProjectDashboard = () => {
             setIsDuplicating(false);
             return;
           }
-          
-          setIsDropping(false);
         } catch (err) {
           console.error('Failed to create placement:', err);
           setIsDropping(false);
@@ -478,6 +543,7 @@ const ProjectDashboard = () => {
     setActiveDragItem(null);
     setActiveDragPlacement(null);
     setIsDuplicating(false);
+    setIsCtrlDraggingItem(false);
   };
 
   const handleSubmitFloorplan = async (data: CreateFloorplanDTO | { name?: string; sort_order?: number }, image?: File) => {
@@ -740,7 +806,7 @@ const ProjectDashboard = () => {
               </TabsList>
               
               <TabsContent value="products" className="flex-1 m-0 overflow-hidden">
-                <ItemPalette className="h-full border-0" />
+                <ItemPalette ref={itemPaletteRef} className="h-full border-0" />
               </TabsContent>
               
               <TabsContent value="bom" className="flex-1 m-0 overflow-hidden">
@@ -798,21 +864,71 @@ const ProjectDashboard = () => {
         
         {/* Drag Overlay - only for items from palette, not for duplication */}
         <DragOverlay dropAnimation={null}>
-          {activeDragItem && !isDropping && (
-            <div className="border-2 border-primary rounded bg-background shadow-xl cursor-grabbing overflow-hidden" style={{ width: '100px', height: '100px' }}>
-              {activeDragItem.preview_image ? (
-                <img
-                  src={`/uploads/${activeDragItem.preview_image}`}
-                  alt={activeDragItem.name}
-                  className="w-full h-full object-contain bg-muted"
-                />
-              ) : (
-                <div className="w-full h-full bg-muted flex items-center justify-center text-xs text-muted-foreground">
-                  No img
-                </div>
-              )}
-            </div>
-          )}
+          {activeDragItem && !isDropping && (() => {
+            // Calculate dimensions to match what the placement will be
+            let placementWidth = 60;
+            let placementHeight = 60;
+            
+            // Check if Ctrl is being held (ignore defaults)
+            if (!isCtrlDraggingItem) {
+              // Check if there's a stored size for this item (from previous resize)
+              const storedSize = itemSizeMemory.current.get(activeDragItem.id);
+              if (storedSize) {
+                // Use the stored size directly
+                placementWidth = storedSize.width;
+                placementHeight = storedSize.height;
+              } else {
+                // No stored size - calculate from aspect ratio
+                // Default placement height is 60, width is calculated from aspect ratio
+                if (activeDragItem.preview_image && itemPaletteRef.current) {
+                  const aspectRatio = itemPaletteRef.current.getImageAspectRatio(activeDragItem.preview_image);
+                  if (aspectRatio) {
+                    placementWidth = 60 * aspectRatio;
+                  }
+                }
+              }
+            } else {
+              // Ctrl is held - use default 60x60 or calculate from aspect ratio only
+              if (activeDragItem.preview_image && itemPaletteRef.current) {
+                const aspectRatio = itemPaletteRef.current.getImageAspectRatio(activeDragItem.preview_image);
+                if (aspectRatio) {
+                  placementWidth = 60 * aspectRatio;
+                }
+              }
+            }
+            
+            // Clamp dimensions to placement limits (5-500px)
+            placementWidth = Math.max(5, Math.min(500, placementWidth));
+            placementHeight = Math.max(5, Math.min(500, placementHeight));
+            
+            // Scale the overlay to match the visual size on canvas
+            // canvasScaleRef already includes zoom factor from ConfiguratorCanvas
+            const { scaleX, scaleY } = canvasScaleRef.current;
+            
+            return (
+              <div 
+                className="border-2 border-primary rounded bg-background shadow-xl cursor-grabbing overflow-hidden" 
+                style={{ 
+                  width: `${placementWidth}px`, 
+                  height: `${placementHeight}px`,
+                  transform: `scale(${scaleX}, ${scaleY})`,
+                  transformOrigin: 'top left'
+                }}
+              >
+                {activeDragItem.preview_image ? (
+                  <img
+                    src={itemService.getImageUrl(activeDragItem.preview_image)}
+                    alt={activeDragItem.name}
+                    className="w-full h-full object-fill bg-muted"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-muted flex items-center justify-center text-xs text-muted-foreground">
+                    No img
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </DragOverlay>
       </DndContext>
 
