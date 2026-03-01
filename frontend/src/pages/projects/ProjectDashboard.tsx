@@ -826,6 +826,9 @@ const ProjectDashboard = () => {
 
               <TabsContent value="summary" className="flex-1 m-0 overflow-hidden">
                 <SummaryTab
+                  projectName={project?.name || ''}
+                  projectNumber={generateProjectNumber(project)}
+                  customerName={project?.customer_name || ''}
                   floorplans={floorplans}
                   invoiceSettings={invoiceSettings}
                   onConfigureInvoice={() => setShowInvoiceModal(true)}

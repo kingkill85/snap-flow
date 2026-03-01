@@ -3,10 +3,21 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Settings, FileDown, Receipt, Loader2 } from 'lucide-react';
 import { bomService } from '@/services/bom';
+import { generateInvoicePDF } from '@/services/invoice-pdf';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { Floorplan } from '@/services/floorplan';
 
+interface FloorplanItem {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
 interface SummaryTabProps {
+  projectName: string;
+  projectNumber: string;
+  customerName: string;
   floorplans: Floorplan[];
   invoiceSettings: InvoiceSettings | null;
   onConfigureInvoice: () => void;
@@ -16,10 +27,14 @@ interface SummaryTabProps {
 interface FloorplanTotal {
   floorplan: Floorplan;
   total: number;
+  items: FloorplanItem[];
   isLoading: boolean;
 }
 
 export function SummaryTab({
+  projectName,
+  projectNumber,
+  customerName,
   floorplans,
   invoiceSettings,
   onConfigureInvoice,
@@ -39,18 +54,26 @@ export function SummaryTab({
           floorplans.map((fp) => ({
             floorplan: fp,
             total: 0,
+            items: [],
             isLoading: true,
           }))
         );
 
-        // Fetch totals for all floorplans in parallel
+        // Fetch totals and items for all floorplans in parallel
         const totals = await Promise.all(
           floorplans.map(async (floorplan) => {
             try {
               const bom = await bomService.getBomForFloorplan(floorplan.id);
+              const items = bom.groups.map((group) => ({
+                name: `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`,
+                quantity: group.quantity,
+                unitPrice: group.totalPrice / group.quantity, // Calculate unit price including add-ons
+                total: group.totalPrice,
+              }));
               return {
                 floorplan,
                 total: bom.totalPrice,
+                items,
                 isLoading: false,
               };
             } catch (err) {
@@ -58,6 +81,7 @@ export function SummaryTab({
               return {
                 floorplan,
                 total: 0,
+                items: [],
                 isLoading: false,
               };
             }
@@ -100,6 +124,21 @@ export function SummaryTab({
     invoiceSettings.services_usd > 0 ||
     invoiceSettings.exchange_rate > 0
   );
+
+  const handleGenerateInvoice = () => {
+    generateInvoicePDF({
+      projectName,
+      projectNumber,
+      customerName,
+      floorplanTotals: floorplanTotals.map(ft => ({
+        floorplan: ft.floorplan,
+        total: ft.total,
+        items: ft.items,
+      })),
+      projectTotal,
+      invoiceSettings,
+    });
+  };
 
   if (isLoading) {
     return (
@@ -235,6 +274,7 @@ export function SummaryTab({
               size="sm"
               className="w-full"
               disabled={!hasInvoiceSettings}
+              onClick={handleGenerateInvoice}
             >
               <Receipt className="mr-2 h-4 w-4" />
               Create Invoice (PDF)
