@@ -1,7 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { Pencil, X, Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw, RotateCw, Save, Trash2 } from 'lucide-react';
+import { Pencil, X, Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw, RotateCw, Save, Trash2, Download } from 'lucide-react';
 import type { Floorplan } from '@/services/floorplan';
 import type { Placement } from '@/services/placement';
 import type { Item } from '@/services/item';
@@ -18,6 +18,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { itemService, type ItemVariant } from '@/services/item';
 import { variantAddonService } from '@/services/variant-addon';
 import { bomService } from '@/services/bom';
+import { exportFloorplanImage } from '@/services/floorplan-export';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 // CSS keyframes for fade-in animation (50ms for snappy feel)
@@ -1294,6 +1295,15 @@ export function ConfiguratorCanvas({
     setPan({ x: 0, y: 0 });
   };
 
+  const handleExportImage = async () => {
+    try {
+      await exportFloorplanImage(floorplan, placements, items);
+    } catch (err) {
+      console.error('Failed to export floorplan:', err);
+      // Could add toast notification here
+    }
+  };
+
   // Pan functions - only pan with Ctrl/Cmd + mouse movement
   const startPan = (e: React.MouseEvent) => {
     // Only pan when holding Ctrl or Cmd key
@@ -1516,6 +1526,16 @@ export function ConfiguratorCanvas({
             >
               <RotateCcw className="h-4 w-4" />
             </Button>
+            <div className="h-px bg-border my-1" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleExportImage}
+              title="Export floorplan image"
+            >
+              <Download className="h-4 w-4" />
+            </Button>
           </div>
           <div className="bg-background/90 border rounded-lg shadow-lg px-2 py-1 text-center">
             <span className="text-xs font-medium">{Math.round(zoom * 100)}%</span>
@@ -1524,7 +1544,7 @@ export function ConfiguratorCanvas({
 
         {/* Help text */}
         <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize (Shift to stretch, Ctrl for 5px snap) • Drag ↻ to rotate (Ctrl for 15° snap) • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan • Ctrl+drag item to duplicate
+          Click item to select • Drag corners to resize (Shift to stretch, Ctrl for 5px snap) • Drag ↻ to rotate (Ctrl for 15° snap) • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan • Ctrl+drag item to duplicate • Click ⬇ to export image
         </div>
 
         <PlacementEditModal
