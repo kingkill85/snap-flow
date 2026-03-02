@@ -9,7 +9,6 @@ import {
   AlignmentType,
   BorderStyle,
   Packer,
-  HeadingLevel,
 } from 'docx';
 import type { InvoiceSettings } from './invoice-settings';
 import type { Floorplan } from './floorplan';
@@ -90,7 +89,6 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
 
   // Calculate column widths
   const numFloorplanCols = floorplans.length;
-  const totalCols = 4 + numFloorplanCols; // # + Item + [floors] + TotalQty + UnitPrice + Total
   const floorplanWidthPercent = 12; // Each floorplan column gets ~12%
   const itemWidthPercent = 28 - (numFloorplanCols * 2); // Adjust item width based on floor count
   const fixedWidthPercent = 8; // For #, TotalQty, UnitPrice, Total columns
