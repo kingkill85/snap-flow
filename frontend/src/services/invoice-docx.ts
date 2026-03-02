@@ -218,16 +218,13 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           borders: createBorder,
         }),
         new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: '', font: 'Calibri' })] })],
-          borders: createBorder,
-        }),
-        new TableCell({
           children: [
             new Paragraph({
               children: [new TextRun({ text: `$${data.projectTotal.toLocaleString('en-US')}`, bold: true, font: 'Calibri' })],
               alignment: AlignmentType.RIGHT,
             }),
           ],
+          columnSpan: 2,
           borders: createBorder,
         }),
       ],
@@ -250,16 +247,13 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
             borders: createBorder,
           }),
           new TableCell({
-            children: [new Paragraph({ children: [new TextRun({ text: '', font: 'Calibri' })] })],
-            borders: createBorder,
-          }),
-          new TableCell({
             children: [
               new Paragraph({
                 children: [new TextRun({ text: `-$${discount.toLocaleString('en-US')}`, bold: true, color: 'FF0000', font: 'Calibri' })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
+            columnSpan: 2,
             borders: createBorder,
           }),
         ],
@@ -281,16 +275,13 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
             borders: createBorder,
           }),
           new TableCell({
-            children: [new Paragraph({ children: [new TextRun({ text: '', font: 'Calibri' })] })],
-            borders: createBorder,
-          }),
-          new TableCell({
             children: [
               new Paragraph({
                 children: [new TextRun({ text: `$${afterDiscount.toLocaleString('en-US')}`, bold: true, font: 'Calibri' })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
+            columnSpan: 2,
             borders: createBorder,
           }),
         ],
@@ -314,16 +305,13 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
             borders: createBorder,
           }),
           new TableCell({
-            children: [new Paragraph({ children: [new TextRun({ text: '', font: 'Calibri' })] })],
-            borders: createBorder,
-          }),
-          new TableCell({
             children: [
               new Paragraph({
                 children: [new TextRun({ text: `$${services.toLocaleString('en-US')}`, bold: true, font: 'Calibri' })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
+            columnSpan: 2,
             borders: createBorder,
           }),
         ],
@@ -346,16 +334,13 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           borders: createBorder,
         }),
         new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: '', font: 'Calibri' })] })],
-          borders: createBorder,
-        }),
-        new TableCell({
           children: [
             new Paragraph({
               children: [new TextRun({ text: `$${grandTotalUsd.toLocaleString('en-US')}`, bold: true, size: 20, font: 'Calibri' })],
               alignment: AlignmentType.RIGHT,
             }),
           ],
+          columnSpan: 2,
           borders: createBorder,
         }),
       ],
