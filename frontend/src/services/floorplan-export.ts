@@ -76,6 +76,10 @@ async function drawPlacement(
   }
 
   const imageUrl = itemService.getImageUrl(imagePath);
+  if (!imageUrl) {
+    drawPlaceholder(ctx, placement);
+    return;
+  }
   const image = await loadImage(imageUrl);
 
   const centerX = placement.x + placement.width / 2;
