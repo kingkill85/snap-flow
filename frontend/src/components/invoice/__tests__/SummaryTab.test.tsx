@@ -16,6 +16,7 @@ vi.mock('@/services/bom', () => ({
             style_name: 'Black',
             unit_price: 100,
           },
+          children: [],
           quantity: 5,
           totalPrice: 500,
         },
@@ -25,6 +26,7 @@ vi.mock('@/services/bom', () => ({
             style_name: null,
             unit_price: 250,
           },
+          children: [],
           quantity: 2,
           totalPrice: 500,
         },
@@ -33,8 +35,8 @@ vi.mock('@/services/bom', () => ({
   },
 }));
 
-vi.mock('@/services/invoice-pdf', () => ({
-  generateInvoicePDF: vi.fn(),
+vi.mock('@/services/invoice-docx', () => ({
+  generateInvoiceDOCX: vi.fn().mockResolvedValue(undefined),
 }));
 
 const mockFloorplans: Floorplan[] = [
@@ -154,7 +156,7 @@ describe('SummaryTab', () => {
     expect(mockOnConfigure).toHaveBeenCalledTimes(1);
   });
 
-  it('displays PDF buttons when invoice is configured', async () => {
+  it('displays DOCX buttons when invoice is configured', async () => {
     render(
       <SummaryTab
         projectName="Test Project"
@@ -169,7 +171,7 @@ describe('SummaryTab', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Edit Invoice Settings')).toBeInTheDocument();
-      expect(screen.getByText('Create Invoice (PDF)')).toBeInTheDocument();
+      expect(screen.getByText('Create Invoice (DOCX)')).toBeInTheDocument();
     });
   });
 

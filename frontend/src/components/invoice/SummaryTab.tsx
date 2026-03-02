@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Settings, FileDown, Receipt, Loader2 } from 'lucide-react';
 import { bomService } from '@/services/bom';
-import { generateInvoicePDF } from '@/services/invoice-pdf';
+import { generateInvoiceDOCX } from '@/services/invoice-docx';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { Floorplan } from '@/services/floorplan';
 
@@ -64,12 +64,53 @@ export function SummaryTab({
           floorplans.map(async (floorplan) => {
             try {
               const bom = await bomService.getBomForFloorplan(floorplan.id);
-              const items = bom.groups.map((group) => ({
-                name: `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`,
-                quantity: group.quantity,
-                unitPrice: group.totalPrice / group.quantity, // Calculate unit price including add-ons
-                total: group.totalPrice,
-              }));
+              const items: FloorplanItem[] = [];
+              const itemTotals = new Map<string, { quantity: number; unitPrice: number; total: number }>();
+
+              bom.groups.forEach((group) => {
+                // Add main entry (aggregate if same item appears in multiple groups)
+                const mainName = `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`;
+                const existingMain = itemTotals.get(mainName);
+                const mainTotal = group.mainEntry.unit_price * group.quantity;
+                if (existingMain) {
+                  existingMain.quantity += group.quantity;
+                  existingMain.total += mainTotal;
+                } else {
+                  itemTotals.set(mainName, {
+                    quantity: group.quantity,
+                    unitPrice: group.mainEntry.unit_price,
+                    total: mainTotal,
+                  });
+                }
+
+                // Add children (add-ons) as separate line items (also aggregate)
+                group.children.forEach((child) => {
+                  const childName = `${child.item_name}${child.style_name ? ` (${child.style_name})` : ''}`;
+                  const existingChild = itemTotals.get(childName);
+                  const childTotal = child.unit_price * group.quantity;
+                  if (existingChild) {
+                    existingChild.quantity += group.quantity;
+                    existingChild.total += childTotal;
+                  } else {
+                    itemTotals.set(childName, {
+                      quantity: group.quantity,
+                      unitPrice: child.unit_price,
+                      total: childTotal,
+                    });
+                  }
+                });
+              });
+
+              // Convert map to array
+              itemTotals.forEach((totals, name) => {
+                items.push({
+                  name,
+                  quantity: totals.quantity,
+                  unitPrice: totals.unitPrice,
+                  total: totals.total,
+                });
+              });
+
               return {
                 floorplan,
                 total: bom.totalPrice,
@@ -125,8 +166,8 @@ export function SummaryTab({
     invoiceSettings.exchange_rate > 0
   );
 
-  const handleGenerateInvoice = () => {
-    generateInvoicePDF({
+  const handleGenerateInvoice = async () => {
+    await generateInvoiceDOCX({
       projectName,
       projectNumber,
       customerName,
@@ -277,7 +318,7 @@ export function SummaryTab({
               onClick={handleGenerateInvoice}
             >
               <Receipt className="mr-2 h-4 w-4" />
-              Create Invoice (PDF)
+              Create Invoice (DOCX)
             </Button>
           </>
         )}
