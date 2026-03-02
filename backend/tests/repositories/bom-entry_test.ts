@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, type assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 
 // Setup test database before all tests

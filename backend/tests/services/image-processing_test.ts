@@ -1,4 +1,4 @@
-import { assertEquals, assertNotEquals } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, type assertNotEquals } from 'https://deno.land/std@0.208.0/assert/mod.ts';
 import { processImageSafe } from '../../src/services/image-processing.ts';
 
 // Create a minimal 100x100 PNG image buffer for testing

@@ -1,4 +1,4 @@
-import { create, verify, getNumericDate } from 'djwt';
+import { create, verify, type getNumericDate } from 'djwt';
 import { env } from '../config/env.ts';
 
 const JWT_SECRET = env.JWT_SECRET;

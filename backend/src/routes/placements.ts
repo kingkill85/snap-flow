@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { placementRepository } from '../repositories/placement.ts';
-import { bomEntryRepository } from '../repositories/bom-entry.ts';
+import type { bomEntryRepository } from '../repositories/bom-entry.ts';
 import { bomService } from '../services/bom.ts';
 import { floorplanRepository } from '../repositories/floorplan.ts';
 import { authMiddleware } from '../middleware/auth.ts';

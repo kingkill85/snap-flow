@@ -1,6 +1,6 @@
 import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
-import { hashPassword } from '../../src/services/password.ts';
+import type { hashPassword } from '../../src/services/password.ts';
 
 // Setup test database before all tests
 await setupTestDatabase();

@@ -2,15 +2,15 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { userRepository } from '../repositories/user.ts';
-import { hashPassword, comparePassword } from '../services/password.ts';
+import { type hashPassword, comparePassword } from '../services/password.ts';
 import { generateToken } from '../services/jwt.ts';
 import {
   createRefreshToken,
   verifyRefreshToken,
-  revokeRefreshToken,
+  type revokeRefreshToken,
   revokeAllUserTokens,
 } from '../services/refresh-token.ts';
-import { authMiddleware, adminMiddleware } from '../middleware/auth.ts';
+import { authMiddleware, type adminMiddleware } from '../middleware/auth.ts';
 import { loginRateLimit, refreshRateLimit } from '../middleware/rate-limit.ts';
 
 const authRoutes = new Hono();

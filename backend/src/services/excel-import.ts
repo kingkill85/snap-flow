@@ -2,7 +2,7 @@ import * as xlsx from 'xlsx';
 import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { categoryRepository } from '../repositories/category.ts';
-import { fileStorageService } from './file-storage.ts';
+import type { fileStorageService } from './file-storage.ts';
 import type { Item, ItemVariant } from '../models/index.ts';
 
 /**

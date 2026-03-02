@@ -5,7 +5,7 @@ import { projectRepository } from '../repositories/project.ts';
 import { floorplanRepository } from '../repositories/floorplan.ts';
 import { authMiddleware } from '../middleware/auth.ts';
 import { bomService } from '../services/bom.ts';
-import { currencyService } from '../services/currency.ts';
+import type { currencyService } from '../services/currency.ts';
 import { invoiceCalculationService } from '../services/invoice-calculation.ts';
 import type { CreateProjectDTO } from '../models/index.ts';
 

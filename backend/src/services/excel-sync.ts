@@ -3,7 +3,7 @@ import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { categoryRepository } from '../repositories/category.ts';
 import { settingsRepository } from '../repositories/settings.ts';
-import { fileStorageService } from './file-storage.ts';
+import type { fileStorageService } from './file-storage.ts';
 import { processImageSafe } from './image-processing.ts';
 import type { Item, ItemVariant } from '../models/index.ts';
 import { env } from '../config/env.ts';

@@ -1,4 +1,4 @@
-import { assertEquals, assertNotEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, type assertNotEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { excelSyncService } from '../../src/services/excel-sync.ts';
 import { categoryRepository } from '../../src/repositories/category.ts';

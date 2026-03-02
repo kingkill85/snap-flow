@@ -5,7 +5,7 @@
  */
 
 import { getDb } from '../config/database.ts';
-import { bomEntryRepository } from '../repositories/bom-entry.ts';
+import type { bomEntryRepository } from '../repositories/bom-entry.ts';
 import { fileStorageService } from './file-storage.ts';
 
 interface MigrationProgress {
