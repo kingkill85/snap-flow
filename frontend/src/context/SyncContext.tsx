@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { getLastSyncTimestamp } from '../services/settings';
 import { setGlobalSyncTimestamp } from '../services/item';
+import { authService } from '../services/auth';
 
 interface SyncContextType {
   lastSyncTimestamp: number;
@@ -22,9 +23,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Load timestamp on mount
+  // Load timestamp on mount (only if authenticated)
   useEffect(() => {
-    refreshTimestamp();
+    const token = authService.getAccessToken();
+    if (token) {
+      refreshTimestamp();
+    }
   }, []);
 
   return (

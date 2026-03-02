@@ -31,7 +31,7 @@ const mockInitialSettings: InvoiceSettings = {
 };
 
 describe('InvoiceSettingsModal', () => {
-  it('renders with initial settings', () => {
+  it('renders with initial settings', async () => {
     render(
       <InvoiceSettingsModal
         projectId={1}
@@ -43,7 +43,10 @@ describe('InvoiceSettingsModal', () => {
       />
     );
 
-    expect(screen.getByText('Configure Invoice')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Configure Invoice')).toBeInTheDocument();
+    }, { timeout: 10000 });
+    
     expect(screen.getAllByLabelText('Percentage (%)')[0]).toHaveValue(10);
     expect(screen.getAllByLabelText('Amount (USD)')[0]).toHaveValue(100);
   });

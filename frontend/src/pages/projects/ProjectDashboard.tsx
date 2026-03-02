@@ -386,15 +386,6 @@ const ProjectDashboard = () => {
   };
 
   const handlePlacementDelete = async (id: number) => {
-    // Find the placement being deleted to clear its memory
-    const placementToDelete = placements.find(p => p.id === id);
-    if (placementToDelete) {
-      itemSizeMemory.current.delete(placementToDelete.item_id);
-      itemVariantMemory.current.delete(placementToDelete.item_id);
-      persistSizeMemory();
-      persistVariantMemory();
-    }
-
     // Clean up placement-specific addon tracking
     placementAddons.current.delete(id);
 
