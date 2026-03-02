@@ -16,7 +16,7 @@ import placementRoutes from './routes/placements.ts';
 import currencyRoutes from './routes/currency.ts';
 import settingsRoutes from './routes/settings.ts';
 
-const app = new Hono();
+const app: Hono = new Hono();
 
 // Middleware
 app.use(logger());
