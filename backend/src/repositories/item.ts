@@ -118,8 +118,8 @@ export class ItemRepository {
       return null;
     }
 
-    const item = result[0] as any;
-    
+    const item = result[0] as unknown as Item & Record<string, unknown>;
+
     // Convert is_active to boolean (SQLite stores as 0/1)
     if (item && item.is_active !== undefined) {
       item.is_active = Boolean(item.is_active);
@@ -132,25 +132,25 @@ export class ItemRepository {
     return item as unknown as Item;
   }
 
-  async findByBaseModelNumber(baseModelNumber: string): Promise<Item | null> {
+  findByBaseModelNumber(baseModelNumber: string): Promise<Item | null> {
     const result = getDb().queryEntries(`
       SELECT id, category_id, name, description, base_model_number, dimensions, created_at, is_active
       FROM items
       WHERE base_model_number = ?
     `, [baseModelNumber]);
-    return result.length > 0 ? (result[0] as unknown as Item) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
   }
 
-  async findByName(name: string): Promise<Item | null> {
+  findByName(name: string): Promise<Item | null> {
     const result = getDb().queryEntries(`
       SELECT id, category_id, name, description, base_model_number, dimensions, created_at, is_active
       FROM items
       WHERE name = ?
     `, [name]);
-    return result.length > 0 ? (result[0] as unknown as Item) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
   }
 
-  async findByCategory(categoryId: number, includeInactive = false): Promise<Item[]> {
+  findByCategory(categoryId: number, includeInactive = false): Promise<Item[]> {
     const query = includeInactive
       ? `
         SELECT id, category_id, name, description, base_model_number, dimensions, created_at, is_active
@@ -165,10 +165,10 @@ export class ItemRepository {
         ORDER BY name ASC
       `;
     const result = getDb().queryEntries(query, [categoryId]);
-    return result as unknown as Item[];
+    return Promise.resolve(result as unknown as Item[]);
   }
 
-  async create(data: CreateItemDTO): Promise<Item> {
+  create(data: CreateItemDTO): Promise<Item> {
     const isActive = data.is_active ?? true;
     const result = getDb().queryEntries(`
       INSERT INTO items (category_id, name, description, base_model_number, dimensions, is_active)
@@ -183,10 +183,10 @@ export class ItemRepository {
       isActive,
     ]);
 
-    return result[0] as unknown as Item;
+    return Promise.resolve(result[0] as unknown as Item);
   }
 
-  async update(id: number, data: UpdateItemDTO): Promise<Item | null> {
+  update(id: number, data: UpdateItemDTO): Promise<Item | null> {
     const sets: string[] = [];
     const values: (string | number | boolean | null)[] = [];
 
@@ -228,10 +228,10 @@ export class ItemRepository {
       RETURNING id, category_id, name, description, base_model_number, dimensions, created_at, is_active
     `, values);
 
-    return result.length > 0 ? (result[0] as unknown as Item) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
   }
 
-  async deactivate(id: number): Promise<Item | null> {
+  deactivate(id: number): Promise<Item | null> {
     // Deactivate the item
     const result = getDb().queryEntries(`
       UPDATE items
@@ -241,7 +241,7 @@ export class ItemRepository {
     `, [id]);
 
     if (result.length === 0) {
-      return null;
+      return Promise.resolve(null);
     }
 
     // Cascade: Deactivate all variants of this item
@@ -251,10 +251,10 @@ export class ItemRepository {
       WHERE item_id = ?
     `, [id]);
 
-    return result[0] as unknown as Item;
+    return Promise.resolve(result[0] as unknown as Item);
   }
 
-  async activate(id: number): Promise<Item | null> {
+  activate(id: number): Promise<Item | null> {
     const result = getDb().queryEntries(`
       UPDATE items
       SET is_active = true
@@ -262,7 +262,7 @@ export class ItemRepository {
       RETURNING id, category_id, name, description, base_model_number, dimensions, created_at, is_active
     `, [id]);
 
-    return result.length > 0 ? (result[0] as unknown as Item) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
   }
 
   async delete(id: number): Promise<void> {

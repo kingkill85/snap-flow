@@ -5,7 +5,7 @@ import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { itemRepository } from '../repositories/item.ts';
 import { variantAddonRepository } from '../repositories/variant-addon.ts';
 import { fileStorageService } from './file-storage.ts';
-import type { ProjectBom, CreateBomEntryDTO } from '../models/index.ts';
+import type { ProjectBom } from '../models/index.ts';
 
 export interface BomGroup {
   mainEntry: ProjectBom;
@@ -460,7 +460,7 @@ export class BomService {
           childIsAvailable = false;
         }
         // Add is_available property to child
-        (child as any).is_available = childIsAvailable;
+        (child as ProjectBom).is_available = childIsAvailable;
       }
       
       // Create a unique key based on variant + sorted addon variant IDs

@@ -1,4 +1,4 @@
-import type { Context, Next } from 'hono';
+import type { Context as _Context, Next as _Next } from 'hono';
 import type { UploadResult } from '../middleware/upload.ts';
 
 /**

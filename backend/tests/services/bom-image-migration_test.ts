@@ -1,11 +1,10 @@
-import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, assertExists } from '@std/assert';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 
 // Setup test database before all tests
 await setupTestDatabase();
 
-// Import after database setup
-const { runBomImageMigration } = await import('../../src/services/bom-image-migration.ts');
+
 const { projectRepository } = await import('../../src/repositories/project.ts');
 const { floorplanRepository } = await import('../../src/repositories/floorplan.ts');
 const { categoryRepository } = await import('../../src/repositories/category.ts');

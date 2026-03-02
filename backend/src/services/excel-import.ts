@@ -2,8 +2,7 @@ import * as xlsx from 'xlsx';
 import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { categoryRepository } from '../repositories/category.ts';
-import { fileStorageService } from './file-storage.ts';
-import type { Item, ItemVariant } from '../models/index.ts';
+
 
 /**
  * Excel Import Service
@@ -82,7 +81,7 @@ export class ExcelImportService {
   async parseExcel(filePath: string): Promise<ImportPreview> {
     const workbook = xlsx.readFile(filePath);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const data = xlsx.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+    const data = xlsx.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][];
 
     const errors: ImportError[] = [];
     const warnings: string[] = [];
@@ -273,7 +272,7 @@ export class ExcelImportService {
   /**
    * Parse a single row from Excel
    */
-  private parseRow(row: any[], rowNumber: number): ExcelRow {
+  private parseRow(row: unknown[], rowNumber: number): ExcelRow {
     return {
       rowNumber,
       category: row[0]?.toString().trim() || '',
@@ -282,7 +281,7 @@ export class ExcelImportService {
       modelNumber: row[5]?.toString().trim() || '',
       dimensions: row[6]?.toString().trim() || '',
       style: row[7]?.toString().trim() || '',
-      price: row[9] ? parseFloat(row[9]) : null,
+      price: row[9] ? parseFloat(String(row[9])) : null,
       addon1: row[11]?.toString().trim() || '',
       addon2: row[12]?.toString().trim() || '',
       addon3: row[13]?.toString().trim() || '',
@@ -322,11 +321,11 @@ export class ExcelImportService {
   /**
    * Parse add-ons from a row
    */
-  private async parseAddons(
+  private parseAddons(
     row: ExcelRow,
     previewItem: ImportPreviewItem,
     errors: ImportError[]
-  ): Promise<void> {
+  ): void {
     const addons = [
       { slot: 1, value: row.addon1, required: true },
       { slot: 2, value: row.addon2, required: true },
@@ -382,10 +381,10 @@ export class ExcelImportService {
    * 2. Match based on row position or some identifier
    * 3. Copy images to proper storage location
    */
-  async matchImages(excelFilePath: string, imagesDir: string): Promise<Map<string, string>> {
+  matchImages(_excelFilePath: string, _imagesDir: string): Promise<Map<string, string>> {
     // TODO: Implement image matching logic
     // For now, return empty map
-    return new Map();
+    return Promise.resolve(new Map());
   }
 }
 

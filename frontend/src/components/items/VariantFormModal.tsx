@@ -5,6 +5,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -233,6 +234,11 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
       <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto p-4">
         <DialogHeader className="pb-2">
           <DialogTitle className="text-lg">{isEdit ? 'Edit Style' : 'Create Style'}</DialogTitle>
+          <DialogDescription>
+            {isEdit
+              ? 'Update the style details, pricing, and associated add-ons.'
+              : 'Create a new style variant with pricing and optional add-ons.'}
+          </DialogDescription>
         </DialogHeader>
 
         {error && (

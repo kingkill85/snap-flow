@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import ProjectList from '@/pages/projects/ProjectList';
 import { projectService } from '@/services/project';
@@ -29,7 +29,7 @@ describe('ProjectList', () => {
     vi.clearAllMocks();
   });
 
-  it('renders without crashing', () => {
+  it('renders without crashing', async () => {
     (projectService.getAll as any).mockResolvedValue(mockProjects);
 
     render(
@@ -37,5 +37,10 @@ describe('ProjectList', () => {
         <ProjectList />
       </BrowserRouter>
     );
+
+    // Wait for async operations to complete
+    await waitFor(() => {
+      expect(projectService.getAll).toHaveBeenCalled();
+    });
   });
 });

@@ -6,7 +6,7 @@ import type { VariantAddon, CreateVariantAddonDTO, ItemVariant } from '../models
  * Handles all database operations for variant add-ons (add-ons per variant, not per item)
  */
 export class VariantAddonRepository {
-  async findByVariantId(variantId: number): Promise<VariantAddon[]> {
+  findByVariantId(variantId: number): Promise<VariantAddon[]> {
     const result = getDb().queryEntries(`
       SELECT 
         va.id, va.variant_id, va.addon_variant_id, va.is_optional, va.sort_order, va.created_at,
@@ -19,7 +19,7 @@ export class VariantAddonRepository {
       ORDER BY va.sort_order ASC, va.id ASC
     `, [variantId]);
 
-    return result.map(row => ({
+    return Promise.resolve(result.map(row => ({
       id: row.id,
       variant_id: row.variant_id,
       addon_variant_id: row.addon_variant_id,
@@ -37,19 +37,19 @@ export class VariantAddonRepository {
         created_at: row.created_at,
         is_active: Boolean(row.variant_is_active) && Boolean(row.item_is_active),
       } as ItemVariant,
-    })) as VariantAddon[];
+    })) as VariantAddon[]);
   }
 
-  async findById(id: number): Promise<VariantAddon | null> {
+  findById(id: number): Promise<VariantAddon | null> {
     const result = getDb().queryEntries(`
       SELECT id, variant_id, addon_variant_id, is_optional, sort_order, created_at
       FROM variant_addons
       WHERE id = ?
     `, [id]);
-    return result.length > 0 ? (result[0] as unknown as VariantAddon) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as VariantAddon) : null);
   }
 
-  async create(data: CreateVariantAddonDTO): Promise<VariantAddon> {
+  create(data: CreateVariantAddonDTO): Promise<VariantAddon> {
     const result = getDb().queryEntries(`
       INSERT INTO variant_addons (variant_id, addon_variant_id, is_optional, sort_order)
       VALUES (?, ?, ?, ?)
@@ -62,29 +62,32 @@ export class VariantAddonRepository {
     ]);
 
     const row = result[0];
-    return {
+    return Promise.resolve({
       id: row.id,
       variant_id: row.variant_id,
       addon_variant_id: row.addon_variant_id,
       is_required: !(row.is_optional === 1 || row.is_optional === true),
       sort_order: row.sort_order,
       created_at: row.created_at,
-    } as VariantAddon;
+    } as VariantAddon);
   }
 
-  async delete(id: number): Promise<void> {
+  delete(id: number): Promise<void> {
     getDb().query(`DELETE FROM variant_addons WHERE id = ?`, [id]);
+    return Promise.resolve();
   }
 
-  async deleteByVariantId(variantId: number): Promise<void> {
+  deleteByVariantId(variantId: number): Promise<void> {
     getDb().query(`DELETE FROM variant_addons WHERE variant_id = ?`, [variantId]);
+    return Promise.resolve();
   }
 
-  async deleteByAddonVariantId(addonVariantId: number): Promise<void> {
+  deleteByAddonVariantId(addonVariantId: number): Promise<void> {
     getDb().query(`DELETE FROM variant_addons WHERE addon_variant_id = ?`, [addonVariantId]);
+    return Promise.resolve();
   }
 
-  async addAddonIfNotExists(
+  addAddonIfNotExists(
     variantId: number,
     addonVariantId: number,
     isOptional: boolean
@@ -97,7 +100,7 @@ export class VariantAddonRepository {
     `, [variantId, addonVariantId]);
 
     if (result.length > 0) {
-      return result[0] as unknown as VariantAddon;
+      return Promise.resolve(result[0] as unknown as VariantAddon);
     }
 
     return this.create({

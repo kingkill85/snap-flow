@@ -6,42 +6,42 @@ import type { User, CreateUserDTO, UpdateUserDTO } from '../models/index.ts';
  * Handles all database operations for users
  */
 export class UserRepository {
-  async findAll(): Promise<User[]> {
+  findAll(): Promise<User[]> {
     const result = getDb().queryEntries(`
       SELECT id, email, full_name, role, created_at 
       FROM users 
       ORDER BY created_at DESC
     `);
-    return result as unknown as User[];
+    return Promise.resolve(result as unknown as User[]);
   }
 
-  async findById(id: number): Promise<User | null> {
+  findById(id: number): Promise<User | null> {
     const result = getDb().queryEntries(`
       SELECT id, email, full_name, role, created_at 
       FROM users 
       WHERE id = ?
     `, [id]);
-    return result.length > 0 ? (result[0] as unknown as User) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as User) : null);
   }
 
-  async findByEmail(email: string): Promise<User | null> {
+  findByEmail(email: string): Promise<User | null> {
     const result = getDb().queryEntries(`
       SELECT * FROM users WHERE email = ?
     `, [email]);
-    return result.length > 0 ? (result[0] as unknown as User) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as User) : null);
   }
 
-  async create(data: CreateUserDTO & { password_hash: string }): Promise<User> {
+  create(data: CreateUserDTO & { password_hash: string }): Promise<User> {
     const result = getDb().queryEntries(`
       INSERT INTO users (email, full_name, password_hash, role) 
       VALUES (?, ?, ?, ?)
       RETURNING id, email, full_name, role, created_at
     `, [data.email, data.full_name || null, data.password_hash, data.role || 'user']);
     
-    return result[0] as unknown as User;
+    return Promise.resolve(result[0] as unknown as User);
   }
 
-  async update(id: number, data: UpdateUserDTO): Promise<User | null> {
+  update(id: number, data: UpdateUserDTO): Promise<User | null> {
     const sets: string[] = [];
     const values: (string | undefined | null)[] = [];
 
@@ -75,11 +75,12 @@ export class UserRepository {
       RETURNING id, email, full_name, role, created_at
     `, values);
 
-    return result.length > 0 ? (result[0] as unknown as User) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as User) : null);
   }
 
-  async delete(id: number): Promise<void> {
+  delete(id: number): Promise<void> {
     getDb().query(`DELETE FROM users WHERE id = ?`, [id]);
+    return Promise.resolve();
   }
 }
 

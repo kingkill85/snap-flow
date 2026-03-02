@@ -5,7 +5,7 @@
  */
 
 import { getDb } from '../config/database.ts';
-import { bomEntryRepository } from '../repositories/bom-entry.ts';
+
 import { fileStorageService } from './file-storage.ts';
 
 interface MigrationProgress {
@@ -17,7 +17,7 @@ interface MigrationProgress {
 /**
  * Setup the migration tracking table
  */
-async function setupMigrationTracking(): Promise<void> {
+function setupMigrationTracking(): Promise<void> {
   getDb().execute(`
     CREATE TABLE IF NOT EXISTS bom_image_migration (
       id INTEGER PRIMARY KEY,
@@ -28,12 +28,13 @@ async function setupMigrationTracking(): Promise<void> {
       status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'failed'))
     )
   `);
+  return Promise.resolve();
 }
 
 /**
  * Get all BOM entries that need image migration
  */
-async function getPendingMigrations(): Promise<Array<{
+function getPendingMigrations(): Promise<Array<{
   id: number;
   project_id: number;
   picture_path: string | null;
@@ -49,11 +50,11 @@ async function getPendingMigrations(): Promise<Array<{
     ORDER BY id
   `);
   
-  return result as Array<{
+  return Promise.resolve(result as Array<{
     id: number;
     project_id: number;
     picture_path: string | null;
-  }>;
+  }>);
 }
 
 /**
@@ -100,7 +101,7 @@ async function migrateEntry(
 /**
  * Record migration status
  */
-async function recordMigration(
+function recordMigration(
   entryId: number,
   oldPath: string,
   newPath: string | null,
@@ -111,6 +112,7 @@ async function recordMigration(
     (bom_entry_id, old_picture_path, new_picture_path, status)
     VALUES (?, ?, ?, ?)
   `, [entryId, oldPath, newPath, status]);
+  return Promise.resolve();
 }
 
 /**
@@ -208,10 +210,11 @@ export async function getMigrationStats(): Promise<{
 /**
  * Reset migration (for testing/debugging only)
  */
-export async function resetMigration(): Promise<void> {
+export function resetMigration(): Promise<void> {
   console.log('⚠️ Resetting BOM image migration...');
   
   getDb().execute(`DELETE FROM bom_image_migration`);
   
   console.log('✅ Migration tracking reset');
+  return Promise.resolve();
 }

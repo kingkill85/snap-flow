@@ -6,7 +6,7 @@ import type { Project, CreateProjectDTO, UpdateProjectDTO, UpdateInvoiceSettings
  * Handles all database operations for projects
  */
 export class ProjectRepository {
-  async findAll(search?: string): Promise<Project[]> {
+  findAll(search?: string): Promise<Project[]> {
     let sql = `
       SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
              discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
@@ -24,10 +24,10 @@ export class ProjectRepository {
     sql += ` ORDER BY created_at DESC`;
     
     const result = getDb().queryEntries(sql, params);
-    return result as unknown as Project[];
+    return Promise.resolve(result as unknown as Project[]);
   }
 
-  async findById(id: number): Promise<Project | null> {
+  findById(id: number): Promise<Project | null> {
     const result = getDb().queryEntries(`
       SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
              discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
@@ -35,10 +35,10 @@ export class ProjectRepository {
       FROM projects 
       WHERE id = ?
     `, [id]);
-    return result.length > 0 ? (result[0] as unknown as Project) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Project) : null);
   }
 
-  async findByNameAndCustomer(name: string, customerName: string, excludeId?: number): Promise<Project | null> {
+  findByNameAndCustomer(name: string, customerName: string, excludeId?: number): Promise<Project | null> {
     let sql = `
       SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
              discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
@@ -54,10 +54,10 @@ export class ProjectRepository {
     }
     
     const result = getDb().queryEntries(sql, params);
-    return result.length > 0 ? (result[0] as unknown as Project) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Project) : null);
   }
 
-  async create(data: CreateProjectDTO): Promise<Project> {
+  create(data: CreateProjectDTO): Promise<Project> {
     try {
       const result = getDb().queryEntries(`
         INSERT INTO projects (name, status, customer_name, customer_email, customer_phone, customer_address) 
@@ -74,11 +74,12 @@ export class ProjectRepository {
         data.customer_address || null
       ]);
       
-      return result[0] as unknown as Project;
-    } catch (error: any) {
+      return Promise.resolve(result[0] as unknown as Project);
+    } catch (error: unknown) {
       // Check for unique constraint violation
-      if (error.message?.includes('UNIQUE constraint failed') || 
-          error.message?.includes('idx_projects_unique_name_customer')) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (message.includes('UNIQUE constraint failed') ||
+          message.includes('idx_projects_unique_name_customer')) {
         throw new Error(`A project with the name "${data.name}" already exists for customer "${data.customer_name}"`);
       }
       throw error;
@@ -148,21 +149,23 @@ export class ProjectRepository {
       `, values);
 
       return result.length > 0 ? (result[0] as unknown as Project) : null;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Check for unique constraint violation
-      if (error.message?.includes('UNIQUE constraint failed') || 
-          error.message?.includes('idx_projects_unique_name_customer')) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      if (message.includes('UNIQUE constraint failed') ||
+          message.includes('idx_projects_unique_name_customer')) {
         throw new Error(`A project with the name "${newName}" already exists for customer "${newCustomerName}"`);
       }
       throw error;
     }
   }
 
-  async delete(id: number): Promise<void> {
+  delete(id: number): Promise<void> {
     getDb().query(`DELETE FROM projects WHERE id = ?`, [id]);
+    return Promise.resolve();
   }
 
-  async updateInvoiceSettings(id: number, data: UpdateInvoiceSettingsDTO): Promise<Project | null> {
+  updateInvoiceSettings(id: number, data: UpdateInvoiceSettingsDTO): Promise<Project | null> {
     const sets: string[] = [];
     const values: (string | number | null)[] = [];
 
@@ -206,7 +209,7 @@ export class ProjectRepository {
                 exchange_rate
     `, values);
 
-    return result.length > 0 ? (result[0] as unknown as Project) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Project) : null);
   }
 }
 

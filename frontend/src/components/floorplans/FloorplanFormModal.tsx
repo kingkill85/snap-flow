@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import type { Floorplan, CreateFloorplanDTO } from '@/services/floorplan';
 
@@ -190,6 +191,11 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Edit Floorplan' : 'Create Floorplan'}</DialogTitle>
+          <DialogDescription>
+            {isEdit
+              ? 'Update the floorplan name and image.'
+              : 'Upload a floorplan image and provide a name for the project.'}
+          </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">

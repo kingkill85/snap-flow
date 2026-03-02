@@ -17,7 +17,7 @@ import { hashPassword } from '../services/password.ts';
 const ADMIN_EMAIL = 'admin@snapflow.local';
 const ADMIN_PASSWORD = 'admin123';
 
-async function createAdminUser() {
+function createAdminUser() {
   console.log('Creating emergency admin user...');
   
   try {

@@ -10,7 +10,7 @@
  */
 
 import { getDb } from '../config/database.ts';
-import { bomEntryRepository } from '../repositories/bom-entry.ts';
+
 import { fileStorageService } from '../services/file-storage.ts';
 
 interface MigrationResult {

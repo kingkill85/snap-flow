@@ -4,11 +4,25 @@ import { variantAddonRepository } from './variant-addon.ts';
 import { bomEntryRepository } from './bom-entry.ts';
 
 /**
+ * Raw database row type for item_variants table
+ */
+interface ItemVariantRow {
+  id: number;
+  item_id: number;
+  style_name: string;
+  price: number;
+  image_path: string | null;
+  sort_order: number;
+  created_at: string;
+  is_active: number | boolean;
+}
+
+/**
  * Item Variant Repository
  * Handles all database operations for item variants
  */
 export class ItemVariantRepository {
-  async findByItemId(itemId: number, includeInactive = false): Promise<ItemVariant[]> {
+  findByItemId(itemId: number, includeInactive = false): Promise<ItemVariant[]> {
     const query = includeInactive
       ? `
         SELECT id, item_id, style_name, price, image_path, sort_order, created_at, is_active
@@ -23,27 +37,27 @@ export class ItemVariantRepository {
         ORDER BY sort_order ASC, id ASC
       `;
     const result = getDb().queryEntries(query, [itemId]);
-    return (result as any[]).map(v => ({
+    return Promise.resolve(((result as unknown) as ItemVariantRow[]).map(v => ({
       ...v,
       is_active: Boolean(v.is_active)
-    })) as unknown as ItemVariant[];
+    })) as unknown as ItemVariant[]);
   }
 
-  async findById(id: number): Promise<ItemVariant | null> {
+  findById(id: number): Promise<ItemVariant | null> {
     const result = getDb().queryEntries(`
       SELECT id, item_id, style_name, price, image_path, sort_order, created_at, is_active
       FROM item_variants
       WHERE id = ?
     `, [id]);
-    if (result.length === 0) return null;
-    const variant = result[0] as any;
+    if (result.length === 0) return Promise.resolve(null);
+    const variant = result[0] as unknown as ItemVariantRow;
     if (variant && variant.is_active !== undefined) {
       variant.is_active = Boolean(variant.is_active);
     }
-    return variant as ItemVariant;
+    return Promise.resolve(variant as unknown as ItemVariant);
   }
 
-  async create(data: CreateItemVariantDTO): Promise<ItemVariant> {
+  create(data: CreateItemVariantDTO): Promise<ItemVariant> {
     const isActive = data.is_active ?? true;
     const result = getDb().queryEntries(`
       INSERT INTO item_variants (item_id, style_name, price, image_path, sort_order, is_active)
@@ -59,14 +73,14 @@ export class ItemVariantRepository {
     ]);
 
     // Convert integer is_active to boolean
-    const variant = result[0] as any;
+    const variant = result[0] as unknown as ItemVariantRow;
     if (variant && variant.is_active !== undefined) {
       variant.is_active = Boolean(variant.is_active);
     }
-    return variant as ItemVariant;
+    return Promise.resolve(variant as unknown as ItemVariant);
   }
 
-  async update(id: number, data: { style_name?: string; price?: number; image_path?: string | null; sort_order?: number; is_active?: boolean }): Promise<ItemVariant | null> {
+  update(id: number, data: { style_name?: string; price?: number; image_path?: string | null; sort_order?: number; is_active?: boolean }): Promise<ItemVariant | null> {
     const sets: string[] = [];
     const values: (string | number | boolean | null)[] = [];
 
@@ -104,17 +118,17 @@ export class ItemVariantRepository {
       RETURNING id, item_id, style_name, price, image_path, sort_order, created_at, is_active
     `, values);
 
-    if (result.length === 0) return null;
-    
+    if (result.length === 0) return Promise.resolve(null);
+
     // Convert integer is_active to boolean
-    const variant = result[0] as any;
+    const variant = result[0] as unknown as ItemVariant & Record<string, unknown>;
     if (variant && variant.is_active !== undefined) {
       variant.is_active = Boolean(variant.is_active);
     }
-    return variant as ItemVariant;
+    return Promise.resolve(variant as ItemVariant);
   }
 
-  async deactivate(id: number): Promise<ItemVariant | null> {
+  deactivate(id: number): Promise<ItemVariant | null> {
     const result = getDb().queryEntries(`
       UPDATE item_variants
       SET is_active = false
@@ -122,10 +136,10 @@ export class ItemVariantRepository {
       RETURNING id, item_id, style_name, price, image_path, sort_order, created_at, is_active
     `, [id]);
 
-    return result.length > 0 ? (result[0] as unknown as ItemVariant) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as ItemVariant) : null);
   }
 
-  async activate(id: number): Promise<ItemVariant | null> {
+  activate(id: number): Promise<ItemVariant | null> {
     const result = getDb().queryEntries(`
       UPDATE item_variants
       SET is_active = true
@@ -133,11 +147,12 @@ export class ItemVariantRepository {
       RETURNING id, item_id, style_name, price, image_path, sort_order, created_at, is_active
     `, [id]);
 
-    return result.length > 0 ? (result[0] as unknown as ItemVariant) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as ItemVariant) : null);
   }
 
-  async delete(id: number): Promise<void> {
+  delete(id: number): Promise<void> {
     getDb().query(`DELETE FROM item_variants WHERE id = ?`, [id]);
+    return Promise.resolve();
   }
 
   async deleteByItemId(itemId: number): Promise<void> {
@@ -159,7 +174,7 @@ export class ItemVariantRepository {
     getDb().query(`DELETE FROM item_variants WHERE item_id = ?`, [itemId]);
   }
 
-  async reorder(itemId: number, variantIds: number[]): Promise<void> {
+  reorder(itemId: number, variantIds: number[]): Promise<void> {
     for (let i = 0; i < variantIds.length; i++) {
       getDb().query(`
         UPDATE item_variants
@@ -167,6 +182,7 @@ export class ItemVariantRepository {
         WHERE id = ? AND item_id = ?
       `, [i + 1, variantIds[i], itemId]);
     }
+    return Promise.resolve();
   }
 }
 

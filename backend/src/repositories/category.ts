@@ -6,7 +6,7 @@ import type { Category, CreateCategoryDTO, UpdateCategoryDTO } from '../models/i
  * Handles all database operations for categories
  */
 export class CategoryRepository {
-  async findAll(includeInactive = false): Promise<Category[]> {
+  findAll(includeInactive = false): Promise<Category[]> {
     const query = includeInactive
       ? `
         SELECT id, name, sort_order, is_active 
@@ -20,28 +20,28 @@ export class CategoryRepository {
         ORDER BY sort_order ASC, name ASC
       `;
     const result = getDb().queryEntries(query);
-    return result as unknown as Category[];
+    return Promise.resolve(result as unknown as Category[]);
   }
 
-  async findById(id: number): Promise<Category | null> {
+  findById(id: number): Promise<Category | null> {
     const result = getDb().queryEntries(`
       SELECT id, name, sort_order, is_active 
       FROM categories 
       WHERE id = ?
     `, [id]);
-    return result.length > 0 ? (result[0] as unknown as Category) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Category) : null);
   }
 
-  async findByName(name: string): Promise<Category | null> {
+  findByName(name: string): Promise<Category | null> {
     const result = getDb().queryEntries(`
       SELECT id, name, sort_order, is_active 
       FROM categories 
       WHERE name = ?
     `, [name]);
-    return result.length > 0 ? (result[0] as unknown as Category) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Category) : null);
   }
 
-  async deactivate(id: number): Promise<Category | null> {
+  deactivate(id: number): Promise<Category | null> {
     // Deactivate the category
     const result = getDb().queryEntries(`
       UPDATE categories 
@@ -51,7 +51,7 @@ export class CategoryRepository {
     `, [id]);
     
     if (result.length === 0) {
-      return null;
+      return Promise.resolve(null);
     }
 
     // Cascade: Deactivate all items in this category
@@ -68,10 +68,10 @@ export class CategoryRepository {
       WHERE item_id IN (SELECT id FROM items WHERE category_id = ?)
     `, [id]);
 
-    return result[0] as unknown as Category;
+    return Promise.resolve(result[0] as unknown as Category);
   }
 
-  async activate(id: number): Promise<Category | null> {
+  activate(id: number): Promise<Category | null> {
     const result = getDb().queryEntries(`
       UPDATE categories 
       SET is_active = true 
@@ -79,12 +79,12 @@ export class CategoryRepository {
       RETURNING id, name, sort_order, is_active
     `, [id]);
     
-    return result.length > 0 ? (result[0] as unknown as Category) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Category) : null);
   }
 
-  async getNextSortOrder(): Promise<number> {
+  getNextSortOrder(): Promise<number> {
     const result = getDb().query(`SELECT MAX(sort_order) as max_order FROM categories`);
-    return ((result[0][0] as number) || 0) + 1;
+    return Promise.resolve(((result[0][0] as number) || 0) + 1);
   }
 
   async create(data: CreateCategoryDTO): Promise<Category> {
@@ -100,7 +100,7 @@ export class CategoryRepository {
     return result[0] as unknown as Category;
   }
 
-  async update(id: number, data: UpdateCategoryDTO): Promise<Category | null> {
+  update(id: number, data: UpdateCategoryDTO): Promise<Category | null> {
     const sets: string[] = [];
     const values: (string | number | boolean | undefined)[] = [];
 
@@ -130,18 +130,19 @@ export class CategoryRepository {
       RETURNING id, name, sort_order, is_active
     `, values);
 
-    return result.length > 0 ? (result[0] as unknown as Category) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Category) : null);
   }
 
-  async delete(id: number): Promise<void> {
+  delete(id: number): Promise<void> {
     // Set category_id to NULL for all items in this category (preserve items)
     getDb().query(`UPDATE items SET category_id = NULL WHERE category_id = ?`, [id]);
     
     // Now delete the category
     getDb().query(`DELETE FROM categories WHERE id = ?`, [id]);
+    return Promise.resolve();
   }
 
-  async reorder(categoryIds: number[]): Promise<void> {
+  reorder(categoryIds: number[]): Promise<void> {
     for (let i = 0; i < categoryIds.length; i++) {
       getDb().query(`
         UPDATE categories 
@@ -149,6 +150,7 @@ export class CategoryRepository {
         WHERE id = ?
       `, [i + 1, categoryIds[i]]);
     }
+    return Promise.resolve();
   }
 }
 

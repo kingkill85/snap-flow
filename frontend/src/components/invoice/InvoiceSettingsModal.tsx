@@ -5,6 +5,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -167,6 +168,9 @@ export function InvoiceSettingsModal({
       <DialogContent className="sm:max-w-[550px]">
         <DialogHeader>
           <DialogTitle>Configure Invoice</DialogTitle>
+          <DialogDescription>
+            Customize discount rates, markup percentages, and pricing settings for the project invoice.
+          </DialogDescription>
         </DialogHeader>
 
         {error && (

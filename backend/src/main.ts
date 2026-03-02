@@ -16,7 +16,7 @@ import placementRoutes from './routes/placements.ts';
 import currencyRoutes from './routes/currency.ts';
 import settingsRoutes from './routes/settings.ts';
 
-const app = new Hono();
+const app: Hono = new Hono();
 
 // Middleware
 app.use(logger());
@@ -197,12 +197,12 @@ try {
         const file = await Deno.open(`${frontendPath}/index.html`);
         c.header('Content-Type', 'text/html');
         return c.body(file.readable);
-      } catch (error) {
+      } catch (_error) {
         return c.json({ error: 'Not found' }, 404);
       }
     });
   }
-} catch (error) {
+} catch (_error) {
   // Frontend dist doesn't exist, running in development mode
   console.log('⚠️ Frontend dist not found, running in API-only mode');
   

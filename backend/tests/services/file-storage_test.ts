@@ -1,9 +1,9 @@
-import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, assertExists } from '@std/assert';
 import { fileStorageService } from '../../src/services/file-storage.ts';
 import { env } from '../../src/config/env.ts';
 
 Deno.test('FileStorageService - copyFile', async (t) => {
-  const testUploadDir = env.UPLOAD_DIR || './uploads';
+  const _testUploadDir = env.UPLOAD_DIR || './uploads';
   
   await t.step('copyFile copies file to new location', async () => {
     // Create a test file

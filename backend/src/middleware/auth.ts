@@ -22,7 +22,7 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
     c.set('userRole', payload.role);
     
     await next();
-  } catch (error) {
+  } catch (_error) {
     return c.json({ error: 'Unauthorized - Invalid token' }, 401);
   }
 }
