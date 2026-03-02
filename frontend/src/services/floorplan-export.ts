@@ -14,10 +14,62 @@ const EXPORT_CONFIG = {
   BORDER_WIDTH: 2,
   PLACEHOLDER_BG_COLOR: '#f3f4f6',
   PLACEHOLDER_BORDER_COLOR: '#9ca3af',
-  PRIMARY_COLOR: '#8C00AA',
   IMAGE_LOAD_TIMEOUT: 10000,
   FILENAME_SANITIZE_REGEX: /[^a-zA-Z0-9-_]/g,
 } as const;
+
+/**
+ * Gets the current theme primary color from CSS custom properties.
+ * Falls back to brand purple if CSS variable is not available.
+ */
+function getPrimaryColor(): string {
+  if (typeof document === 'undefined') {
+    return '#8C00AA';
+  }
+  const root = document.documentElement;
+  const primaryHsl = getComputedStyle(root).getPropertyValue('--primary').trim();
+  if (!primaryHsl) {
+    return '#8C00AA';
+  }
+  // Convert HSL to hex (expects format: "H S% L%")
+  const [h, s, l] = primaryHsl.split(' ').map(v => parseFloat(v));
+  return hslToHex(h, s, l);
+}
+
+/**
+ * Converts HSL values to hex color string.
+ */
+function hslToHex(h: number, s: number, l: number): string {
+  const sPercent = s / 100;
+  const lPercent = l / 100;
+  const c = (1 - Math.abs(2 * lPercent - 1)) * sPercent;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = lPercent - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (h >= 0 && h < 60) {
+    r = c; g = x; b = 0;
+  } else if (h >= 60 && h < 120) {
+    r = x; g = c; b = 0;
+  } else if (h >= 120 && h < 180) {
+    r = 0; g = c; b = x;
+  } else if (h >= 180 && h < 240) {
+    r = 0; g = x; b = c;
+  } else if (h >= 240 && h < 300) {
+    r = x; g = 0; b = c;
+  } else if (h >= 300 && h < 360) {
+    r = c; g = 0; b = x;
+  }
+
+  const toHex = (n: number) => {
+    const hex = Math.round((n + m) * 255).toString(16);
+    return hex.length === 1 ? `0${hex}` : hex;
+  };
+
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
 
 interface ImageLoadOptions {
   timeout?: number;
@@ -153,7 +205,7 @@ function drawPlacementImage(
     placement.width,
     placement.height,
     EXPORT_CONFIG.BORDER_RADIUS,
-    { stroke: EXPORT_CONFIG.PRIMARY_COLOR, lineWidth: EXPORT_CONFIG.BORDER_WIDTH }
+    { stroke: getPrimaryColor(), lineWidth: EXPORT_CONFIG.BORDER_WIDTH }
   );
 
   ctx.restore();
