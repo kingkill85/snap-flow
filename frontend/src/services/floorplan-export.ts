@@ -8,6 +8,35 @@ interface ExportOptions {
   backgroundColor?: string;
 }
 
+const EXPORT_CONFIG = {
+  DEFAULT_QUALITY: 0.92,
+  BORDER_RADIUS: 4,
+  BORDER_WIDTH: 2,
+  PLACEHOLDER_BG_COLOR: '#f3f4f6',
+  PLACEHOLDER_BORDER_COLOR: '#9ca3af',
+  PRIMARY_COLOR: '#8C00AA',
+  IMAGE_LOAD_TIMEOUT: 10000,
+  FILENAME_SANITIZE_REGEX: /[^a-zA-Z0-9-_]/g,
+} as const;
+
+interface ImageLoadOptions {
+  timeout?: number;
+  crossOrigin?: string;
+}
+
+/**
+ * Exports a floorplan with placements as a PNG image.
+ *
+ * @param floorplan - The floorplan to export
+ * @param placements - Array of placements to draw on the floorplan
+ * @param items - Array of items with variant data for placement images
+ * @param options - Export configuration options
+ * @param options.quality - PNG compression quality (0-1), defaults to 0.92
+ * @param options.backgroundColor - Optional background color to fill before drawing floorplan
+ * @param visibleCategoryIds - Optional set of category IDs to filter placements
+ * @returns Promise that resolves when download is triggered
+ * @throws Error if canvas context cannot be obtained or image loading fails
+ */
 export async function exportFloorplanImage(
   floorplan: Floorplan,
   placements: Placement[],
@@ -15,9 +44,11 @@ export async function exportFloorplanImage(
   options: ExportOptions = {},
   visibleCategoryIds?: Set<number>
 ): Promise<void> {
-  const { quality = 0.92, backgroundColor } = options;
+  const { quality = EXPORT_CONFIG.DEFAULT_QUALITY, backgroundColor } = options;
 
-  const floorplanImage = await loadImage(`/uploads/${floorplan.image_path}`);
+  const floorplanImage = await loadImage(`/uploads/${floorplan.image_path}`, {
+    timeout: EXPORT_CONFIG.IMAGE_LOAD_TIMEOUT,
+  });
   const canvasWidth = floorplanImage.naturalWidth;
   const canvasHeight = floorplanImage.naturalHeight;
 
@@ -40,7 +71,7 @@ export async function exportFloorplanImage(
   const filteredPlacements = visibleCategoryIds
     ? placements.filter(placement => {
         const item = items.find(i => i.id === placement.item_id);
-        if (!item) return true; // Include unknown items
+        if (!item) return true;
         return visibleCategoryIds.has(item.category_id);
       })
     : placements;
@@ -56,7 +87,7 @@ export async function exportFloorplanImage(
   const dataUrl = canvas.toDataURL('image/png', quality);
 
   const link = document.createElement('a');
-  link.download = `${floorplan.name.replace(/[^a-zA-Z0-9-_]/g, '_')}_floorplan.png`;
+  link.download = `${floorplan.name.replace(EXPORT_CONFIG.FILENAME_SANITIZE_REGEX, '_')}_floorplan.png`;
   link.href = dataUrl;
   document.body.appendChild(link);
   link.click();
@@ -68,17 +99,13 @@ async function drawPlacement(
   placement: Placement,
   items: Item[]
 ): Promise<void> {
-  const item = items.find((i) => i.id === placement.item_id);
-  const variant = item?.variants?.find((v) => v.id === placement.item_variant_id);
+  const item = items.find(i => i.id === placement.item_id);
+  const variant = item?.variants?.find(v => v.id === placement.item_variant_id);
 
-  let imagePath: string | null = null;
-  if (placement.item_variant_image_path) {
-    imagePath = placement.item_variant_image_path;
-  } else if (variant?.image_path) {
-    imagePath = variant.image_path;
-  } else if (item?.preview_image) {
-    imagePath = item.preview_image;
-  }
+  const imagePath = placement.item_variant_image_path
+    ?? variant?.image_path
+    ?? item?.preview_image
+    ?? null;
 
   if (!imagePath) {
     drawPlaceholder(ctx, placement);
@@ -90,8 +117,20 @@ async function drawPlacement(
     drawPlaceholder(ctx, placement);
     return;
   }
-  const image = await loadImage(imageUrl);
 
+  try {
+    const image = await loadImage(imageUrl, { timeout: EXPORT_CONFIG.IMAGE_LOAD_TIMEOUT });
+    drawPlacementImage(ctx, placement, image);
+  } catch {
+    drawPlaceholder(ctx, placement);
+  }
+}
+
+function drawPlacementImage(
+  ctx: CanvasRenderingContext2D,
+  placement: Placement,
+  image: HTMLImageElement
+): void {
   const centerX = placement.x + placement.width / 2;
   const centerY = placement.y + placement.height / 2;
 
@@ -107,77 +146,106 @@ async function drawPlacement(
     placement.height
   );
 
-  // Draw border with rounded corners (matching UI: border-2 border-primary rounded)
-  ctx.strokeStyle = '#8C00AA'; // Primary purple color
-  ctx.lineWidth = 2;
-  const x = -placement.width / 2;
-  const y = -placement.height / 2;
-  const w = placement.width;
-  const h = placement.height;
-  const r = 4; // border-radius: 4px (matching rounded class)
-  
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-  ctx.stroke();
+  drawRoundedRect(
+    ctx,
+    -placement.width / 2,
+    -placement.height / 2,
+    placement.width,
+    placement.height,
+    EXPORT_CONFIG.BORDER_RADIUS,
+    { stroke: EXPORT_CONFIG.PRIMARY_COLOR, lineWidth: EXPORT_CONFIG.BORDER_WIDTH }
+  );
 
   ctx.restore();
 }
 
-function drawPlaceholder(
-  ctx: CanvasRenderingContext2D,
-  placement: Placement
-): void {
+function drawPlaceholder(ctx: CanvasRenderingContext2D, placement: Placement): void {
   const centerX = placement.x + placement.width / 2;
   const centerY = placement.y + placement.height / 2;
+  const halfWidth = placement.width / 2;
+  const halfHeight = placement.height / 2;
 
   ctx.save();
   ctx.translate(centerX, centerY);
   ctx.rotate((placement.rotation * Math.PI) / 180);
 
-  const x = -placement.width / 2;
-  const y = -placement.height / 2;
-  const w = placement.width;
-  const h = placement.height;
-  const r = 4; // border-radius: 4px
-
-  // Draw rounded rectangle fill
-  ctx.fillStyle = '#f3f4f6';
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-  ctx.fill();
-
-  // Draw rounded border
-  ctx.strokeStyle = '#9ca3af';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+  drawRoundedRect(
+    ctx,
+    -halfWidth,
+    -halfHeight,
+    placement.width,
+    placement.height,
+    EXPORT_CONFIG.BORDER_RADIUS,
+    {
+      fill: EXPORT_CONFIG.PLACEHOLDER_BG_COLOR,
+      stroke: EXPORT_CONFIG.PLACEHOLDER_BORDER_COLOR,
+      lineWidth: EXPORT_CONFIG.BORDER_WIDTH,
+    }
+  );
 
   ctx.restore();
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
+interface RoundedRectOptions {
+  fill?: string;
+  stroke?: string;
+  lineWidth?: number;
+}
+
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+  options?: RoundedRectOptions
+): void {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+
+  if (options?.fill) {
+    ctx.fillStyle = options.fill;
+    ctx.fill();
+  }
+
+  if (options?.stroke) {
+    ctx.strokeStyle = options.stroke;
+    ctx.lineWidth = options.lineWidth ?? EXPORT_CONFIG.BORDER_WIDTH;
+    ctx.stroke();
+  }
+}
+
+function loadImage(src: string, options: ImageLoadOptions = {}): Promise<HTMLImageElement> {
+  const { timeout = EXPORT_CONFIG.IMAGE_LOAD_TIMEOUT, crossOrigin = 'anonymous' } = options;
+
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`Failed to load image: ${src}`));
+    img.crossOrigin = crossOrigin;
+
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`Image load timeout: ${src}`));
+    }, timeout);
+
+    img.onload = () => {
+      clearTimeout(timeoutId);
+      resolve(img);
+    };
+
+    img.onerror = () => {
+      clearTimeout(timeoutId);
+      reject(new Error(`Failed to load image: ${src}`));
+    };
+
     img.src = src;
   });
 }
