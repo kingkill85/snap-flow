@@ -100,13 +100,13 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
     new TableCell({
       children: [new Paragraph({ children: [new TextRun({ text: '#', bold: true, font: 'Calibri' })] })],
       width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
-      shading: { fill: '404040' },
+      shading: { fill: 'E0E0E0' },
       borders: createBorder,
     }),
     new TableCell({
-      children: [new Paragraph({ children: [new TextRun({ text: 'Item Description', bold: true, font: 'Calibri', color: 'FFFFFF' })], alignment: AlignmentType.LEFT })],
+      children: [new Paragraph({ children: [new TextRun({ text: 'Item Description', bold: true, font: 'Calibri' })], alignment: AlignmentType.LEFT })],
       width: { size: itemWidthPercent, type: WidthType.PERCENTAGE },
-      shading: { fill: '404040' },
+      shading: { fill: 'E0E0E0' },
       borders: createBorder,
     }),
   ];
@@ -115,9 +115,9 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
   floorplans.forEach((floorplan) => {
     headerCells.push(
       new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: floorplan.name, bold: true, font: 'Calibri', color: 'FFFFFF' })], alignment: AlignmentType.CENTER })],
+        children: [new Paragraph({ children: [new TextRun({ text: floorplan.name, bold: true, font: 'Calibri' })], alignment: AlignmentType.CENTER })],
         width: { size: floorplanWidthPercent, type: WidthType.PERCENTAGE },
-        shading: { fill: '404040' },
+        shading: { fill: 'E0E0E0' },
         borders: createBorder,
       })
     );
@@ -126,21 +126,21 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
   // Add remaining columns
   headerCells.push(
     new TableCell({
-      children: [new Paragraph({ children: [new TextRun({ text: 'Total\nQuantity', bold: true, font: 'Calibri', color: 'FFFFFF' })], alignment: AlignmentType.CENTER })],
+      children: [new Paragraph({ children: [new TextRun({ text: 'Total\nQuantity', bold: true, font: 'Calibri' })], alignment: AlignmentType.CENTER })],
       width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
-      shading: { fill: '404040' },
+      shading: { fill: 'E0E0E0' },
       borders: createBorder,
     }),
     new TableCell({
-      children: [new Paragraph({ children: [new TextRun({ text: 'Unit Price ($)', bold: true, font: 'Calibri', color: 'FFFFFF' })], alignment: AlignmentType.RIGHT })],
+      children: [new Paragraph({ children: [new TextRun({ text: 'Unit Price ($)', bold: true, font: 'Calibri' })], alignment: AlignmentType.RIGHT })],
       width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
-      shading: { fill: '404040' },
+      shading: { fill: 'E0E0E0' },
       borders: createBorder,
     }),
     new TableCell({
-      children: [new Paragraph({ children: [new TextRun({ text: 'Total', bold: true, font: 'Calibri', color: 'FFFFFF' })], alignment: AlignmentType.RIGHT })],
+      children: [new Paragraph({ children: [new TextRun({ text: 'Total', bold: true, font: 'Calibri' })], alignment: AlignmentType.RIGHT })],
       width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
-      shading: { fill: '404040' },
+      shading: { fill: 'E0E0E0' },
       borders: createBorder,
     })
   );
@@ -338,7 +338,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         new TableCell({
           children: [
             new Paragraph({
-              children: [new TextRun({ text: 'Grand Total (USD)', bold: true, size: 22, font: 'Calibri' })],
+              children: [new TextRun({ text: 'Grand Total (USD)', bold: true, size: 20, font: 'Calibri' })],
               alignment: AlignmentType.RIGHT,
             }),
           ],
@@ -352,7 +352,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         new TableCell({
           children: [
             new Paragraph({
-              children: [new TextRun({ text: `$${grandTotalUsd.toLocaleString('en-US')}`, bold: true, size: 22, font: 'Calibri' })],
+              children: [new TextRun({ text: `$${grandTotalUsd.toLocaleString('en-US')}`, bold: true, size: 20, font: 'Calibri' })],
               alignment: AlignmentType.RIGHT,
             }),
           ],
@@ -371,7 +371,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: `Grand Total (${currencyCode})`, bold: true, size: 22, font: 'Calibri' })],
+                children: [new TextRun({ text: `Grand Total (${currencyCode})`, bold: true, size: 20, font: 'Calibri' })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
@@ -389,7 +389,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
                   new TextRun({
                     text: `${currencySymbol} ${Math.round(grandTotalLocal).toLocaleString('en-US')}`,
                     bold: true,
-                    size: 22,
+                    size: 20,
                     font: 'Calibri',
                   }),
                 ],
@@ -414,7 +414,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         document: {
           run: {
             font: 'Calibri',
-            size: 22, // 11pt
+             size: 20, // 10pt
           },
         },
       },
@@ -424,15 +424,15 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         properties: {},
         children: [
           new Paragraph({
-            children: [new TextRun({ text: `Project: ${data.projectName}`, size: 24, bold: true, font: 'Calibri' })],
+            children: [new TextRun({ text: `Project: ${data.projectName}`, size: 22, bold: true, font: 'Calibri' })],
             spacing: { after: 100 },
           }),
           new Paragraph({
-            children: [new TextRun({ text: `Customer: ${data.customerName}`, size: 24, bold: true, font: 'Calibri' })],
+            children: [new TextRun({ text: `Customer: ${data.customerName}`, size: 22, bold: true, font: 'Calibri' })],
             spacing: { after: 100 },
           }),
           new Paragraph({
-            children: [new TextRun({ text: `Ref: ${data.projectNumber}`, size: 24, bold: true, font: 'Calibri' })],
+            children: [new TextRun({ text: `Ref: ${data.projectNumber}`, size: 22, bold: true, font: 'Calibri' })],
             spacing: { after: 200 },
           }),
           table,
