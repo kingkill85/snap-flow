@@ -26,6 +26,14 @@ interface FloorplanTotal {
   items: FloorplanItem[];
 }
 
+interface PivotItem {
+  name: string;
+  floorQuantities: Record<number, number>; // floorplanId -> quantity
+  totalQuantity: number;
+  unitPrice: number;
+  total: number;
+}
+
 interface InvoiceDocxData {
   projectName: string;
   projectNumber: string;
@@ -36,183 +44,164 @@ interface InvoiceDocxData {
 }
 
 const createBorder = {
-  top: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' },
-  bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' },
-  left: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' },
-  right: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' },
+  top: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+  bottom: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+  left: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+  right: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
+};
+
+// Transform data to pivot format
+const transformToPivot = (floorplanTotals: FloorplanTotal[]): { items: PivotItem[], floorplans: Floorplan[] } => {
+  const itemMap = new Map<string, PivotItem>();
+  const floorplans: Floorplan[] = floorplanTotals.map(ft => ft.floorplan);
+
+  floorplanTotals.forEach((floorplanData) => {
+    const floorplanId = floorplanData.floorplan.id;
+
+    floorplanData.items.forEach((item) => {
+      const existingItem = itemMap.get(item.name);
+
+      if (existingItem) {
+        existingItem.floorQuantities[floorplanId] = item.quantity;
+        existingItem.totalQuantity += item.quantity;
+        existingItem.total += item.total;
+      } else {
+        itemMap.set(item.name, {
+          name: item.name,
+          floorQuantities: { [floorplanId]: item.quantity },
+          totalQuantity: item.quantity,
+          unitPrice: item.unitPrice,
+          total: item.total,
+        });
+      }
+    });
+  });
+
+  // Convert map to array and sort by name
+  const items = Array.from(itemMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+  return { items, floorplans };
 };
 
 export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> => {
+  const { items, floorplans } = transformToPivot(data.floorplanTotals);
   const rows: TableRow[] = [];
 
+  // Calculate column widths
+  const numFloorplanCols = floorplans.length;
+  const totalCols = 4 + numFloorplanCols; // # + Item + [floors] + TotalQty + UnitPrice + Total
+  const floorplanWidthPercent = 12; // Each floorplan column gets ~12%
+  const itemWidthPercent = 28 - (numFloorplanCols * 2); // Adjust item width based on floor count
+  const fixedWidthPercent = 8; // For #, TotalQty, UnitPrice, Total columns
+
   // Header row
-  rows.push(
-    new TableRow({
-      children: [
-        new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: '#', bold: true })] })],
-          width: { size: 8, type: WidthType.PERCENTAGE },
-          shading: { fill: 'F0F0F0' },
-          borders: createBorder,
-        }),
-        new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: 'Product', bold: true })] })],
-          width: { size: 47, type: WidthType.PERCENTAGE },
-          shading: { fill: 'F0F0F0' },
-          borders: createBorder,
-        }),
-        new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: 'Qty', bold: true })], alignment: AlignmentType.CENTER })],
-          width: { size: 15, type: WidthType.PERCENTAGE },
-          shading: { fill: 'F0F0F0' },
-          borders: createBorder,
-        }),
-        new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: 'Unit Price', bold: true })], alignment: AlignmentType.RIGHT })],
-          width: { size: 15, type: WidthType.PERCENTAGE },
-          shading: { fill: 'F0F0F0' },
-          borders: createBorder,
-        }),
-        new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: 'Total', bold: true })], alignment: AlignmentType.RIGHT })],
-          width: { size: 15, type: WidthType.PERCENTAGE },
-          shading: { fill: 'F0F0F0' },
-          borders: createBorder,
-        }),
-      ],
-    })
-  );
+  const headerCells: TableCell[] = [
+    new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text: '#', bold: true })] })],
+      width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
+      shading: { fill: 'E0E0E0' },
+      borders: createBorder,
+    }),
+    new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text: 'Item Description', bold: true })], alignment: AlignmentType.LEFT })],
+      width: { size: itemWidthPercent, type: WidthType.PERCENTAGE },
+      shading: { fill: 'E0E0E0' },
+      borders: createBorder,
+    }),
+  ];
 
-  // Add floorplan sections
-  data.floorplanTotals.forEach((floorplanData) => {
-    // Floorplan name row
-    rows.push(
-      new TableRow({
-        children: [
-          new TableCell({
-            children: [
-              new Paragraph({
-                children: [new TextRun({ text: floorplanData.floorplan.name, bold: true })],
-              }),
-            ],
-            columnSpan: 5,
-            borders: createBorder,
-          }),
-        ],
-      })
-    );
-
-    // Items rows
-    if (floorplanData.items.length > 0) {
-      floorplanData.items.forEach((item, idx) => {
-        rows.push(
-          new TableRow({
-            children: [
-              new TableCell({
-                children: [new Paragraph({ children: [new TextRun((idx + 1).toString())], alignment: AlignmentType.CENTER })],
-                borders: createBorder,
-              }),
-              new TableCell({
-                children: [new Paragraph({ children: [new TextRun(item.name)] })],
-                borders: createBorder,
-              }),
-              new TableCell({
-                children: [new Paragraph({ children: [new TextRun(item.quantity.toString())], alignment: AlignmentType.CENTER })],
-                borders: createBorder,
-              }),
-              new TableCell({
-                children: [
-                  new Paragraph({
-                    children: [new TextRun(`$${item.unitPrice.toLocaleString('en-US')}`)],
-                    alignment: AlignmentType.RIGHT,
-                  }),
-                ],
-                borders: createBorder,
-              }),
-              new TableCell({
-                children: [
-                  new Paragraph({
-                    children: [new TextRun(item.total > 0 ? `$${item.total.toLocaleString('en-US')}` : '-')],
-                    alignment: AlignmentType.RIGHT,
-                  }),
-                ],
-                borders: createBorder,
-              }),
-            ],
-          })
-        );
-      });
-    } else {
-      rows.push(
-        new TableRow({
-          children: [
-            new TableCell({
-              children: [new Paragraph({ children: [new TextRun('1')], alignment: AlignmentType.CENTER })],
-              borders: createBorder,
-            }),
-            new TableCell({
-              children: [new Paragraph({ children: [new TextRun('No items')] })],
-              borders: createBorder,
-            }),
-            new TableCell({
-              children: [new Paragraph({ children: [new TextRun('-')], alignment: AlignmentType.CENTER })],
-              borders: createBorder,
-            }),
-            new TableCell({
-              children: [new Paragraph({ children: [new TextRun('-')], alignment: AlignmentType.RIGHT })],
-              borders: createBorder,
-            }),
-            new TableCell({
-              children: [new Paragraph({ children: [new TextRun('-')], alignment: AlignmentType.RIGHT })],
-              borders: createBorder,
-            }),
-          ],
-        })
-      );
-    }
-
-    // Floorplan total row
-    rows.push(
-      new TableRow({
-        children: [
-          new TableCell({
-            children: [
-              new Paragraph({
-                children: [new TextRun({ text: `${floorplanData.floorplan.name} Total (USD)`, bold: true })],
-                alignment: AlignmentType.RIGHT,
-              }),
-            ],
-            columnSpan: 4,
-            borders: createBorder,
-          }),
-          new TableCell({
-            children: [
-              new Paragraph({
-                children: [new TextRun({ text: `$${floorplanData.total.toLocaleString('en-US')}`, bold: true })],
-                alignment: AlignmentType.RIGHT,
-              }),
-            ],
-            borders: createBorder,
-          }),
-        ],
-      })
-    );
-
-    // Empty separator row
-    rows.push(
-      new TableRow({
-        children: [
-          new TableCell({
-            children: [new Paragraph({ children: [new TextRun('')] })],
-            columnSpan: 5,
-            borders: { top: { style: BorderStyle.NIL }, bottom: { style: BorderStyle.NIL }, left: { style: BorderStyle.NIL }, right: { style: BorderStyle.NIL } },
-          }),
-        ],
+  // Add floorplan columns
+  floorplans.forEach((floorplan) => {
+    headerCells.push(
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun({ text: floorplan.name, bold: true })], alignment: AlignmentType.CENTER })],
+        width: { size: floorplanWidthPercent, type: WidthType.PERCENTAGE },
+        shading: { fill: 'E0E0E0' },
+        borders: createBorder,
       })
     );
   });
 
-  // Project total
+  // Add remaining columns
+  headerCells.push(
+    new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text: 'Total Quantity', bold: true })], alignment: AlignmentType.CENTER })],
+      width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
+      shading: { fill: 'E0E0E0' },
+      borders: createBorder,
+    }),
+    new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text: 'Unit Price ($)', bold: true })], alignment: AlignmentType.RIGHT })],
+      width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
+      shading: { fill: 'E0E0E0' },
+      borders: createBorder,
+    }),
+    new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text: 'Total', bold: true })], alignment: AlignmentType.RIGHT })],
+      width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
+      shading: { fill: 'E0E0E0' },
+      borders: createBorder,
+    })
+  );
+
+  rows.push(new TableRow({ children: headerCells }));
+
+  // Data rows
+  items.forEach((item, index) => {
+    const dataCells: TableCell[] = [
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun((index + 1).toString())], alignment: AlignmentType.CENTER })],
+        borders: createBorder,
+      }),
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun(item.name)], alignment: AlignmentType.LEFT })],
+        borders: createBorder,
+      }),
+    ];
+
+    // Add quantity for each floorplan
+    floorplans.forEach((floorplan) => {
+      const qty = item.floorQuantities[floorplan.id] || 0;
+      dataCells.push(
+        new TableCell({
+          children: [new Paragraph({ children: [new TextRun(qty.toString())], alignment: AlignmentType.CENTER })],
+          borders: createBorder,
+        })
+      );
+    });
+
+    // Add total quantity, unit price, and total
+    dataCells.push(
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun(item.totalQuantity.toString())], alignment: AlignmentType.CENTER })],
+        borders: createBorder,
+      }),
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun(`$${item.unitPrice.toLocaleString('en-US')}`)], alignment: AlignmentType.RIGHT })],
+        borders: createBorder,
+      }),
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun(`$${item.total.toLocaleString('en-US')}`)], alignment: AlignmentType.RIGHT })],
+        borders: createBorder,
+      })
+    );
+
+    rows.push(new TableRow({ children: dataCells }));
+  });
+
+  // Calculate summary values
+  const discount = data.invoiceSettings?.discount_usd || 0;
+  const services = data.invoiceSettings?.services_usd || 0;
+  const afterDiscount = data.projectTotal - discount;
+  const grandTotalUsd = afterDiscount + services;
+  const exchangeRate = data.invoiceSettings?.exchange_rate || 0;
+  const grandTotalLocal = grandTotalUsd * exchangeRate;
+  const currencyCode = data.invoiceSettings?.local_currency_code || 'PKR';
+
+  // Summary rows - calculate colspan based on floorplan count
+  const labelColSpan = 1 + numFloorplanCols + 1; // # + floorplans + TotalQty
+
+  // Total for all floors
   rows.push(
     new TableRow({
       children: [
@@ -223,7 +212,11 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
               alignment: AlignmentType.RIGHT,
             }),
           ],
-          columnSpan: 4,
+          columnSpan: labelColSpan,
+          borders: createBorder,
+        }),
+        new TableCell({
+          children: [new Paragraph({ children: [new TextRun('')] })],
           borders: createBorder,
         }),
         new TableCell({
@@ -239,114 +232,29 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
     })
   );
 
-  // Invoice calculations
-  if (data.invoiceSettings) {
-    const discount = data.invoiceSettings.discount_usd || 0;
-    const services = data.invoiceSettings.services_usd || 0;
-    const afterDiscount = data.projectTotal - discount;
-    const grandTotalUsd = afterDiscount + services;
-    const exchangeRate = data.invoiceSettings.exchange_rate || 0;
-    const grandTotalLocal = grandTotalUsd * exchangeRate;
-    const currencyCode = data.invoiceSettings.local_currency_code || 'PKR';
-
-    if (discount > 0) {
-      rows.push(
-        new TableRow({
-          children: [
-            new TableCell({
-              children: [
-                new Paragraph({
-                  children: [new TextRun({ text: 'DISCOUNT', bold: true, color: 'FF0000' })],
-                  alignment: AlignmentType.RIGHT,
-                }),
-              ],
-              columnSpan: 4,
-              borders: createBorder,
-            }),
-            new TableCell({
-              children: [
-                new Paragraph({
-                  children: [new TextRun({ text: `-$${discount.toLocaleString('en-US')}`, bold: true, color: 'FF0000' })],
-                  alignment: AlignmentType.RIGHT,
-                }),
-              ],
-              borders: createBorder,
-            }),
-          ],
-        })
-      );
-      rows.push(
-        new TableRow({
-          children: [
-            new TableCell({
-              children: [
-                new Paragraph({
-                  children: [new TextRun({ text: 'Total after Discount (USD)', bold: true })],
-                  alignment: AlignmentType.RIGHT,
-                }),
-              ],
-              columnSpan: 4,
-              borders: createBorder,
-            }),
-            new TableCell({
-              children: [
-                new Paragraph({
-                  children: [new TextRun({ text: `$${afterDiscount.toLocaleString('en-US')}`, bold: true })],
-                  alignment: AlignmentType.RIGHT,
-                }),
-              ],
-              borders: createBorder,
-            }),
-          ],
-        })
-      );
-    }
-
-    if (services > 0) {
-      rows.push(
-        new TableRow({
-          children: [
-            new TableCell({
-              children: [
-                new Paragraph({
-                  children: [new TextRun({ text: 'System Design, Programming & Commissioning', bold: true })],
-                  alignment: AlignmentType.RIGHT,
-                }),
-              ],
-              columnSpan: 4,
-              borders: createBorder,
-            }),
-            new TableCell({
-              children: [
-                new Paragraph({
-                  children: [new TextRun({ text: `$${services.toLocaleString('en-US')}`, bold: true })],
-                  alignment: AlignmentType.RIGHT,
-                }),
-              ],
-              borders: createBorder,
-            }),
-          ],
-        })
-      );
-    }
-
+  // Discount row
+  if (discount > 0) {
     rows.push(
       new TableRow({
         children: [
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: 'Grand Total (USD)', bold: true, size: 22 })],
+                children: [new TextRun({ text: 'DISCOUNT', bold: true, color: 'FF0000' })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
-            columnSpan: 4,
+            columnSpan: labelColSpan,
+            borders: createBorder,
+          }),
+          new TableCell({
+            children: [new Paragraph({ children: [new TextRun('')] })],
             borders: createBorder,
           }),
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: `$${grandTotalUsd.toLocaleString('en-US')}`, bold: true, size: 22 })],
+                children: [new TextRun({ text: `-$${discount.toLocaleString('en-US')}`, bold: true, color: 'FF0000' })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
@@ -356,40 +264,140 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
       })
     );
 
-    if (exchangeRate > 0) {
-      const currencySymbol = currencyCode === 'PKR' ? 'Rs' : currencyCode;
-      rows.push(
-        new TableRow({
+    // Total after discount
+    rows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: 'Total after Discount (USD)', bold: true })],
+                alignment: AlignmentType.RIGHT,
+              }),
+            ],
+            columnSpan: labelColSpan,
+            borders: createBorder,
+          }),
+          new TableCell({
+            children: [new Paragraph({ children: [new TextRun('')] })],
+            borders: createBorder,
+          }),
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: `$${afterDiscount.toLocaleString('en-US')}`, bold: true })],
+                alignment: AlignmentType.RIGHT,
+              }),
+            ],
+            borders: createBorder,
+          }),
+        ],
+      })
+    );
+  }
+
+  // Services row
+  if (services > 0) {
+    rows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: 'System Design, Programming & Commissioning', bold: true, italics: true })],
+                alignment: AlignmentType.RIGHT,
+              }),
+            ],
+            columnSpan: labelColSpan,
+            borders: createBorder,
+          }),
+          new TableCell({
+            children: [new Paragraph({ children: [new TextRun('')] })],
+            borders: createBorder,
+          }),
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: `$${services.toLocaleString('en-US')}`, bold: true })],
+                alignment: AlignmentType.RIGHT,
+              }),
+            ],
+            borders: createBorder,
+          }),
+        ],
+      })
+    );
+  }
+
+  // Grand Total (USD)
+  rows.push(
+    new TableRow({
+      children: [
+        new TableCell({
           children: [
-            new TableCell({
-              children: [
-                new Paragraph({
-                  children: [new TextRun({ text: `Grand Total (${currencyCode})`, bold: true, size: 22 })],
-                  alignment: AlignmentType.RIGHT,
-                }),
-              ],
-              columnSpan: 4,
-              borders: createBorder,
-            }),
-            new TableCell({
-              children: [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: `${currencySymbol}${Math.round(grandTotalLocal).toLocaleString('en-US')}`,
-                      bold: true,
-                      size: 22,
-                    }),
-                  ],
-                  alignment: AlignmentType.RIGHT,
-                }),
-              ],
-              borders: createBorder,
+            new Paragraph({
+              children: [new TextRun({ text: 'Grand Total (USD)', bold: true, size: 22 })],
+              alignment: AlignmentType.RIGHT,
             }),
           ],
-        })
-      );
-    }
+          columnSpan: labelColSpan,
+          borders: createBorder,
+        }),
+        new TableCell({
+          children: [new Paragraph({ children: [new TextRun('')] })],
+          borders: createBorder,
+        }),
+        new TableCell({
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: `$${grandTotalUsd.toLocaleString('en-US')}`, bold: true, size: 22 })],
+              alignment: AlignmentType.RIGHT,
+            }),
+          ],
+          borders: createBorder,
+        }),
+      ],
+    })
+  );
+
+  // Grand Total (Local Currency)
+  if (exchangeRate > 0) {
+    const currencySymbol = currencyCode === 'PKR' ? 'PKR' : currencyCode;
+    rows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: `Grand Total (${currencyCode})`, bold: true, size: 22 })],
+                alignment: AlignmentType.RIGHT,
+              }),
+            ],
+            columnSpan: labelColSpan,
+            borders: createBorder,
+          }),
+          new TableCell({
+            children: [new Paragraph({ children: [new TextRun('')] })],
+            borders: createBorder,
+          }),
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: `${currencySymbol} ${Math.round(grandTotalLocal).toLocaleString('en-US')}`,
+                    bold: true,
+                    size: 22,
+                  }),
+                ],
+                alignment: AlignmentType.RIGHT,
+              }),
+            ],
+            borders: createBorder,
+          }),
+        ],
+      })
+    );
   }
 
   const table = new Table({

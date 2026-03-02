@@ -64,12 +64,30 @@ export function SummaryTab({
           floorplans.map(async (floorplan) => {
             try {
               const bom = await bomService.getBomForFloorplan(floorplan.id);
-              const items = bom.groups.map((group) => ({
-                name: `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`,
-                quantity: group.quantity,
-                unitPrice: group.totalPrice / group.quantity, // Calculate unit price including add-ons
-                total: group.totalPrice,
-              }));
+              const items: FloorplanItem[] = [];
+
+              bom.groups.forEach((group) => {
+                // Add main entry
+                const mainName = `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`;
+                items.push({
+                  name: mainName,
+                  quantity: group.quantity,
+                  unitPrice: group.mainEntry.unit_price,
+                  total: group.mainEntry.unit_price * group.quantity,
+                });
+
+                // Add children (add-ons) as separate line items
+                group.children.forEach((child) => {
+                  const childName = `${child.item_name}${child.style_name ? ` (${child.style_name})` : ''}`;
+                  items.push({
+                    name: childName,
+                    quantity: group.quantity,
+                    unitPrice: child.unit_price,
+                    total: child.unit_price * group.quantity,
+                  });
+                });
+              });
+
               return {
                 floorplan,
                 total: bom.totalPrice,
