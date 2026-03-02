@@ -379,10 +379,6 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
             borders: createBorder,
           }),
           new TableCell({
-            children: [new Paragraph({ children: [new TextRun({ text: '', font: 'Calibri' })] })],
-            borders: createBorder,
-          }),
-          new TableCell({
             children: [
               new Paragraph({
                 children: [
@@ -396,6 +392,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
                 alignment: AlignmentType.RIGHT,
               }),
             ],
+            columnSpan: 2,
             borders: createBorder,
           }),
         ],
