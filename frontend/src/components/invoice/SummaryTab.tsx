@@ -65,26 +65,49 @@ export function SummaryTab({
             try {
               const bom = await bomService.getBomForFloorplan(floorplan.id);
               const items: FloorplanItem[] = [];
+              const itemTotals = new Map<string, { quantity: number; unitPrice: number; total: number }>();
 
               bom.groups.forEach((group) => {
-                // Add main entry
+                // Add main entry (aggregate if same item appears in multiple groups)
                 const mainName = `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`;
-                items.push({
-                  name: mainName,
-                  quantity: group.quantity,
-                  unitPrice: group.mainEntry.unit_price,
-                  total: group.mainEntry.unit_price * group.quantity,
-                });
+                const existingMain = itemTotals.get(mainName);
+                const mainTotal = group.mainEntry.unit_price * group.quantity;
+                if (existingMain) {
+                  existingMain.quantity += group.quantity;
+                  existingMain.total += mainTotal;
+                } else {
+                  itemTotals.set(mainName, {
+                    quantity: group.quantity,
+                    unitPrice: group.mainEntry.unit_price,
+                    total: mainTotal,
+                  });
+                }
 
-                // Add children (add-ons) as separate line items
+                // Add children (add-ons) as separate line items (also aggregate)
                 group.children.forEach((child) => {
                   const childName = `${child.item_name}${child.style_name ? ` (${child.style_name})` : ''}`;
-                  items.push({
-                    name: childName,
-                    quantity: group.quantity,
-                    unitPrice: child.unit_price,
-                    total: child.unit_price * group.quantity,
-                  });
+                  const existingChild = itemTotals.get(childName);
+                  const childTotal = child.unit_price * group.quantity;
+                  if (existingChild) {
+                    existingChild.quantity += group.quantity;
+                    existingChild.total += childTotal;
+                  } else {
+                    itemTotals.set(childName, {
+                      quantity: group.quantity,
+                      unitPrice: child.unit_price,
+                      total: childTotal,
+                    });
+                  }
+                });
+              });
+
+              // Convert map to array
+              itemTotals.forEach((totals, name) => {
+                items.push({
+                  name,
+                  quantity: totals.quantity,
+                  unitPrice: totals.unitPrice,
+                  total: totals.total,
                 });
               });
 
