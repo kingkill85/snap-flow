@@ -1299,10 +1299,9 @@ export function ConfiguratorCanvas({
 
   const handleExportImage = async () => {
     try {
-      await exportFloorplanImage(floorplan, placements, items);
+      await exportFloorplanImage(floorplan, placements, items, {}, visibleCategoryIds);
     } catch (err) {
       console.error('Failed to export floorplan:', err);
-      // Could add toast notification here
     }
   };
 

@@ -316,4 +316,119 @@ describe('exportFloorplanImage', () => {
 
     expect(mockCanvas.toDataURL).toHaveBeenCalledWith('image/png', 1.0);
   });
+
+  describe('Layer Visibility Filtering', () => {
+    it('should filter placements by visible categories', async () => {
+      const mockItemCategory1: Item = {
+        ...mockItem,
+        id: 1,
+        category_id: 1,
+      };
+
+      const mockItemCategory2: Item = {
+        ...mockItem,
+        id: 2,
+        category_id: 2,
+      };
+
+      const placementCategory1: Placement = {
+        ...mockPlacement,
+        id: 1,
+        item_id: 1,
+      };
+
+      const placementCategory2: Placement = {
+        ...mockPlacement,
+        id: 2,
+        item_id: 2,
+        x: 200,
+        y: 200,
+      };
+
+      const visibleCategoryIds = new Set([1]); // Only category 1 visible
+
+      await exportFloorplanImage(
+        mockFloorplan,
+        [placementCategory1, placementCategory2],
+        [mockItemCategory1, mockItemCategory2],
+        {},
+        visibleCategoryIds
+      );
+
+      // Should only draw one placement (category 1)
+      const drawImageCalls = (mockCtx.drawImage as any).mock.calls;
+      // 1 floorplan + 1 placement from visible category
+      expect(drawImageCalls.length).toBe(2);
+    });
+
+    it('should include all placements when visibleCategoryIds is not provided', async () => {
+      const placement1: Placement = {
+        ...mockPlacement,
+        id: 1,
+      };
+
+      const placement2: Placement = {
+        ...mockPlacement,
+        id: 2,
+        x: 200,
+        y: 200,
+      };
+
+      await exportFloorplanImage(mockFloorplan, [placement1, placement2], [mockItem]);
+
+      // Should draw both placements
+      const drawImageCalls = (mockCtx.drawImage as any).mock.calls;
+      expect(drawImageCalls.length).toBeGreaterThanOrEqual(3); // floorplan + 2 placements
+    });
+
+    it('should include placements with unknown items when filtering', async () => {
+      const placementWithUnknownItem: Placement = {
+        ...mockPlacement,
+        id: 1,
+        item_id: 999, // Unknown item ID
+      };
+
+      const visibleCategoryIds = new Set([1, 2]);
+
+      await exportFloorplanImage(
+        mockFloorplan,
+        [placementWithUnknownItem],
+        [mockItem], // mockItem has id 1, not 999
+        {},
+        visibleCategoryIds
+      );
+
+      // Should draw the placement even though item is not found (shown by default)
+      const drawImageCalls = (mockCtx.drawImage as any).mock.calls;
+      expect(drawImageCalls.length).toBeGreaterThanOrEqual(2); // floorplan + placement
+    });
+
+    it('should exclude placements from hidden categories', async () => {
+      const items: Item[] = [
+        { ...mockItem, id: 1, category_id: 1 },
+        { ...mockItem, id: 2, category_id: 2 },
+        { ...mockItem, id: 3, category_id: 3 },
+      ];
+
+      const placements: Placement[] = [
+        { ...mockPlacement, id: 1, item_id: 1 },
+        { ...mockPlacement, id: 2, item_id: 2 },
+        { ...mockPlacement, id: 3, item_id: 3 },
+      ];
+
+      const visibleCategoryIds = new Set([1, 3]); // Hide category 2
+
+      await exportFloorplanImage(
+        mockFloorplan,
+        placements,
+        items,
+        {},
+        visibleCategoryIds
+      );
+
+      // Should draw floorplan + 2 placements (categories 1 and 3)
+      const drawImageCalls = (mockCtx.drawImage as any).mock.calls;
+      expect(drawImageCalls.length).toBe(3);
+    });
+  });
 });

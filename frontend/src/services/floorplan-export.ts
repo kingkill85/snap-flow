@@ -12,7 +12,8 @@ export async function exportFloorplanImage(
   floorplan: Floorplan,
   placements: Placement[],
   items: Item[],
-  options: ExportOptions = {}
+  options: ExportOptions = {},
+  visibleCategoryIds?: Set<number>
 ): Promise<void> {
   const { quality = 0.92, backgroundColor } = options;
 
@@ -35,7 +36,16 @@ export async function exportFloorplanImage(
 
   ctx.drawImage(floorplanImage, 0, 0, canvasWidth, canvasHeight);
 
-  for (const placement of placements) {
+  // Filter placements by visible categories
+  const filteredPlacements = visibleCategoryIds
+    ? placements.filter(placement => {
+        const item = items.find(i => i.id === placement.item_id);
+        if (!item) return true; // Include unknown items
+        return visibleCategoryIds.has(item.category_id);
+      })
+    : placements;
+
+  for (const placement of filteredPlacements) {
     try {
       await drawPlacement(ctx, placement, items);
     } catch (err) {
