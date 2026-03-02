@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, assertExists } from '@std/assert';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
 import { hashPassword } from '../../src/services/password.ts';
@@ -248,7 +248,7 @@ Deno.test('Auth endpoints - refresh token with valid refresh token', async () =>
 
   const loginData = await parseJSON(loginResponse);
   const refreshToken = loginData.data.refreshToken;
-  const originalAccessToken = loginData.data.accessToken;
+  const _originalAccessToken = loginData.data.accessToken;
 
   // Use refresh token to get new access token
   const refreshResponse = await testRequest('/api/auth/refresh', {

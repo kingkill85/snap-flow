@@ -1,4 +1,4 @@
-import { assertEquals } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals } from '@std/assert';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
 import { hashPassword } from '../../src/services/password.ts';

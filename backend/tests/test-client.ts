@@ -28,6 +28,7 @@ export async function testRequest(
 /**
  * Helper to parse JSON response
  */
-export async function parseJSON(response: Response): Promise<any> {
-  return await response.json();
+// deno-lint-ignore no-explicit-any
+export async function parseJSON<T = any>(response: Response): Promise<T> {
+  return await response.json() as T;
 }

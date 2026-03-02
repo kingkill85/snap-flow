@@ -3,9 +3,7 @@ import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { categoryRepository } from '../repositories/category.ts';
 import { settingsRepository } from '../repositories/settings.ts';
-import type { fileStorageService } from './file-storage.ts';
 import { processImageSafe } from './image-processing.ts';
-import type { Item, ItemVariant } from '../models/index.ts';
 import { env } from '../config/env.ts';
 
 /**
@@ -172,7 +170,7 @@ export class ExcelSyncService {
     
     // Convert to array starting at row 4 (0-indexed: row 3) to skip headers
     // Headers are in row 3 (1-indexed), data starts at row 4 (1-indexed)
-    const data = xlsx.utils.sheet_to_json(sheet, { header: 1, range: 3 }) as any[][];
+    const data = xlsx.utils.sheet_to_json(sheet, { header: 1, range: 3 }) as unknown[][];
     
     const groupedItems: Record<string, GroupedItem> = {};
 
@@ -220,7 +218,7 @@ export class ExcelSyncService {
    * Parse a single row from Excel data
    * Note: When using range: 3, columns shift left by 1 (B becomes index 0)
    */
-  private parseRow(row: any[], rowNumber: number): ExcelRowData {
+  private parseRow(row: unknown[], rowNumber: number): ExcelRowData {
     // Column mapping with range: 3 (data shifted left):
     // Index 0 = Column B (Category)
     // Index 3 = Column E (ItemName)
@@ -357,7 +355,7 @@ export class ExcelSyncService {
       const uploadsDir = './uploads/items/excel-import';
       await Deno.mkdir(uploadsDir, { recursive: true });
       
-      for (const [rowNum, filename] of imageMap) {
+      for (const [_rowNum, filename] of imageMap) {
         const sourcePath = `${extractedDir}/xl/media/${filename}`;
         const targetPath = `${uploadsDir}/${filename}`;
         
@@ -496,16 +494,16 @@ export class ExcelSyncService {
     }
 
     // Sync Excel items
-    for (const [baseModel, groupedItem] of Object.entries(groupedItems)) {
+    for (const [baseModel, _groupedItem] of Object.entries(groupedItems)) {
       try {
         // Find category
-        const category = await categoryRepository.findByName(groupedItem.category);
+        const category = await categoryRepository.findByName(_groupedItem.category);
         const categoryId = category?.id;
 
         if (!categoryId) {
           result.errors.push({
-            row: groupedItem.variants[0]?.rowNumber || 0,
-            message: `Category not found: ${groupedItem.category}`,
+            row: _groupedItem.variants[0]?.rowNumber || 0,
+            message: `Category not found: ${_groupedItem.category}`,
           });
           continue;
         }
@@ -516,32 +514,32 @@ export class ExcelSyncService {
           // Update existing
           await itemRepository.update(existingItem.id, {
             category_id: categoryId,
-            name: groupedItem.name,
-            description: groupedItem.description,
-            dimensions: groupedItem.dimensions,
+            name: _groupedItem.name,
+            description: _groupedItem.description,
+            dimensions: _groupedItem.dimensions,
             is_active: true,
           });
           result.phases.items.updated++;
-          this.log(result, `  ✓ Updated item: ${groupedItem.name} (${baseModel})`, 'items');
+          this.log(result, `  ✓ Updated item: ${_groupedItem.name} (${baseModel})`, 'items');
           itemIdMap.set(baseModel, existingItem.id);
         } else {
           // Create new
           const newItem = await itemRepository.create({
             category_id: categoryId,
-            name: groupedItem.name,
-            description: groupedItem.description,
+            name: _groupedItem.name,
+            description: _groupedItem.description,
             base_model_number: baseModel,
-            dimensions: groupedItem.dimensions,
+            dimensions: _groupedItem.dimensions,
           });
           result.phases.items.added++;
-          this.log(result, `  ✓ Created item: ${groupedItem.name} (${baseModel})`, 'items');
+          this.log(result, `  ✓ Created item: ${_groupedItem.name} (${baseModel})`, 'items');
           itemIdMap.set(baseModel, newItem.id);
         }
-      } catch (error) {
+      } catch (_error) {
         result.errors.push({
-          row: groupedItem.variants[0]?.rowNumber || 0,
-          message: `Failed to sync item ${groupedItem.name}`,
-          details: String(error),
+          row: _groupedItem.variants[0]?.rowNumber || 0,
+          message: `Failed to sync item ${_groupedItem.name}`,
+          details: String(_error),
         });
       }
     }
@@ -553,11 +551,11 @@ export class ExcelSyncService {
           await itemRepository.deactivate(item.id);
           result.phases.items.deactivated++;
           this.log(result, `  ✗ Deactivated item: ${item.name} (${baseModel})`, 'items');
-        } catch (error) {
+        } catch (_error) {
           result.errors.push({
             row: 0,
             message: `Failed to deactivate item ${item.name}`,
-            details: String(error),
+            details: String(_error),
           });
         }
       }
@@ -648,18 +646,18 @@ export class ExcelSyncService {
             result.phases.variants.added++;
             this.log(result, `  ✓ Created variant: ${variant.style} ($${variant.price})`, 'variants');
           }
-        } catch (error) {
+        } catch (_error) {
           result.errors.push({
             row: variant.rowNumber,
             message: `Failed to sync variant ${variant.style}`,
-            details: String(error),
+            details: String(_error),
           });
         }
       }
     }
 
     // Second pass: Deactivate variants not in Excel
-    for (const [baseModel, groupedItem] of Object.entries(groupedItems)) {
+    for (const [baseModel, _groupedItem] of Object.entries(groupedItems)) {
       const itemId = itemIdMap.get(baseModel);
       if (!itemId) continue;
 
@@ -673,11 +671,11 @@ export class ExcelSyncService {
             await itemVariantRepository.deactivate(variant.id);
             result.phases.variants.deactivated++;
             this.log(result, `  ✗ Deactivated variant: ${variant.style_name} (item: ${baseModel})`, 'variants');
-          } catch (error) {
+          } catch (_error) {
             result.errors.push({
               row: 0,
               message: `Failed to deactivate variant ${variant.style_name}`,
-              details: String(error),
+              details: String(_error),
             });
           }
         }
@@ -737,7 +735,7 @@ export class ExcelSyncService {
         if (variantsWithAddons > 0) {
           this.log(result, `  🗑️ Cleared addons for ${variantsWithAddons} variants of: ${baseModel}`, 'addons');
         }
-      } catch (error) {
+      } catch (_error) {
         this.log(result, `  ⚠️ Failed to clear addons for: ${baseModel}`, 'addons');
       }
     }
@@ -839,7 +837,7 @@ export class ExcelSyncService {
             
             const optionalText = addonRef.isOptional ? 'optional' : 'mandatory';
             this.log(result, `  ✓ Linked ${optionalText} addon "${addonRef.modelRef}" to "${variant.style}" (slot ${addonRef.slotNumber})`, 'addons');
-          } catch (error) {
+          } catch (_error) {
             // Link might already exist, skip
           }
         }

@@ -2,15 +2,14 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { userRepository } from '../repositories/user.ts';
-import { type hashPassword, comparePassword } from '../services/password.ts';
+import { comparePassword } from '../services/password.ts';
 import { generateToken } from '../services/jwt.ts';
 import {
   createRefreshToken,
   verifyRefreshToken,
-  type revokeRefreshToken,
   revokeAllUserTokens,
 } from '../services/refresh-token.ts';
-import { authMiddleware, type adminMiddleware } from '../middleware/auth.ts';
+import { authMiddleware } from '../middleware/auth.ts';
 import { loginRateLimit, refreshRateLimit } from '../middleware/rate-limit.ts';
 
 const authRoutes = new Hono();
@@ -21,11 +20,7 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
-const createUserSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
-  role: z.enum(['admin', 'user']).optional(),
-});
+
 
 // POST /auth/login - Authenticate user
 authRoutes.post('/login', loginRateLimit(), zValidator('json', loginSchema), async (c) => {

@@ -16,19 +16,19 @@ export class SettingsRepository {
   /**
    * Get a setting value by key
    */
-  async getSetting(key: string): Promise<string | null> {
+  getSetting(key: string): Promise<string | null> {
     const db = getDb();
     const result = db.query<[string]>(
       'SELECT value FROM app_settings WHERE key = ?',
       [key]
     );
-    return result.length > 0 ? result[0][0] : null;
+    return Promise.resolve(result.length > 0 ? result[0][0] : null);
   }
 
   /**
    * Set a setting value
    */
-  async setSetting(key: string, value: string): Promise<void> {
+  setSetting(key: string, value: string): Promise<void> {
     const db = getDb();
     db.query(
       `INSERT INTO app_settings (key, value, updated_at) 
@@ -38,6 +38,7 @@ export class SettingsRepository {
          updated_at = CURRENT_TIMESTAMP`,
       [key, value]
     );
+    return Promise.resolve();
   }
 
   /**

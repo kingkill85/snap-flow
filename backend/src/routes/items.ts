@@ -9,7 +9,7 @@ import { uploadMiddleware } from '../middleware/upload.ts';
 import { fileStorageService } from '../services/file-storage.ts';
 import type { CreateItemDTO, UpdateItemDTO, CreateItemVariantDTO, CreateVariantAddonDTO } from '../models/index.ts';
 import { excelImportService } from '../services/excel-import.ts';
-import { excelSyncService, type ProgressCallback } from '../services/excel-sync.ts';
+import { excelSyncService } from '../services/excel-sync.ts';
 
 // Extend Hono context types
 declare module 'hono' {
@@ -300,7 +300,7 @@ itemRoutes.put(
       // Check if trying to activate item while category is inactive
       if (body.is_active === true) {
         const category = await categoryRepository.findById(existingItem.category_id);
-        if (category && !Boolean(category.is_active)) {
+        if (category && !category.is_active) {
           return c.json({ 
             error: 'Cannot activate item while its category is inactive. Please activate the category first.' 
           }, 400);
@@ -523,7 +523,7 @@ itemRoutes.put(
       const isActive = isActiveStr !== undefined ? isActiveStr === 'true' : undefined;
 
       // Check if trying to activate variant while item is inactive
-      if (isActive === true && !Boolean(item.is_active)) {
+      if (isActive === true && !item.is_active) {
         if (uploadResult?.success && uploadResult.filePath) {
           await fileStorageService.deleteFile(uploadResult.filePath);
         }

@@ -1,11 +1,24 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/assert@0.208": "0.208.0",
+    "jsr:@std/fmt@0.208": "0.208.0",
     "npm:@hono/zod-validator@0.2": "0.2.2_hono@4.12.1_zod@3.25.76",
     "npm:hono@4": "4.12.1",
     "npm:sharp@0.33": "0.33.5",
     "npm:xlsx@~0.18.5": "0.18.5",
     "npm:zod@^3.22.0": "3.25.76"
+  },
+  "jsr": {
+    "@std/assert@0.208.0": {
+      "integrity": "1aa06be08916efe062e40c0948e95034cea4627355dcb32a5e1d4e52786ace7c",
+      "dependencies": [
+        "jsr:@std/fmt"
+      ]
+    },
+    "@std/fmt@0.208.0": {
+      "integrity": "06584c97a1a7b934e8de185c45a595d8234c5312e51e61cb05650af4cb8eb65f"
+    }
   },
   "npm": {
     "@emnapi/runtime@1.8.1": {
@@ -323,6 +336,7 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@std/assert@0.208",
       "npm:@hono/zod-validator@0.2",
       "npm:hono@4",
       "npm:sharp@0.33",

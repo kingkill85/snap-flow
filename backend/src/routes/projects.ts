@@ -5,7 +5,7 @@ import { projectRepository } from '../repositories/project.ts';
 import { floorplanRepository } from '../repositories/floorplan.ts';
 import { authMiddleware } from '../middleware/auth.ts';
 import { bomService } from '../services/bom.ts';
-import type { currencyService } from '../services/currency.ts';
+
 import { invoiceCalculationService } from '../services/invoice-calculation.ts';
 import type { CreateProjectDTO } from '../models/index.ts';
 
@@ -158,11 +158,12 @@ projectRoutes.post('/', authMiddleware, zValidator('json', createProjectSchema),
       data: project,
       message: 'Project created successfully',
     }, 201);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Create project error:', error);
     // Check for duplicate project error
-    if (error.message?.includes('already exists')) {
-      return c.json({ error: error.message }, 400);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message.includes('already exists')) {
+      return c.json({ error: message }, 400);
     }
     return c.json({ error: 'Internal server error' }, 500);
   }
@@ -226,11 +227,12 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
       data: project,
       message: 'Project updated successfully',
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Update project error:', error);
     // Check for duplicate project error
-    if (error.message?.includes('already exists')) {
-      return c.json({ error: error.message }, 400);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message.includes('already exists')) {
+      return c.json({ error: message }, 400);
     }
     return c.json({ error: 'Internal server error' }, 500);
   }

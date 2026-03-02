@@ -1,6 +1,6 @@
 import type { Context, Next } from 'hono';
 import { fileStorageService } from '../services/file-storage.ts';
-import { processImageSafe, type ProcessOptions } from '../services/image-processing.ts';
+import { processImageSafe } from '../services/image-processing.ts';
 
 /**
  * Allowed image MIME types
@@ -13,23 +13,9 @@ const ALLOWED_IMAGE_MIME_TYPES = [
 ];
 
 /**
- * Allowed Excel MIME types
- */
-const ALLOWED_EXCEL_MIME_TYPES = [
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-excel',
-  'application/octet-stream',
-];
-
-/**
  * Maximum file size for images (5MB)
  */
 const MAX_IMAGE_FILE_SIZE = 5 * 1024 * 1024;
-
-/**
- * Maximum file size for Excel files (50MB)
- */
-const MAX_EXCEL_FILE_SIZE = 50 * 1024 * 1024;
 
 /**
  * Upload result interface

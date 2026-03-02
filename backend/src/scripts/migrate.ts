@@ -11,7 +11,7 @@ interface Migration {
   applied_at: string;
 }
 
-export async function setupMigrations(): Promise<void> {
+export function setupMigrations(): Promise<void> {
   // Create migrations table if not exists
   getDb().execute(`
     CREATE TABLE IF NOT EXISTS migrations (
@@ -20,14 +20,15 @@ export async function setupMigrations(): Promise<void> {
       applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  return Promise.resolve();
 }
 
-export async function getAppliedMigrations(): Promise<string[]> {
+export function getAppliedMigrations(): Promise<string[]> {
   const result = getDb().query<[string]>(`SELECT name FROM migrations ORDER BY id`);
-  return result.map((row: [string]) => row[0]);
+  return Promise.resolve(result.map((row: [string]) => row[0]));
 }
 
-export async function applyMigration(name: string, sql: string): Promise<void> {
+export function applyMigration(name: string, sql: string): Promise<void> {
   try {
     const db = getDb();
     
@@ -46,6 +47,7 @@ export async function applyMigration(name: string, sql: string): Promise<void> {
     }
     
     console.log(`✅ Applied migration: ${name}`);
+    return Promise.resolve();
   } catch (error) {
     console.error(`❌ Failed to apply migration ${name}:`, error);
     throw error;

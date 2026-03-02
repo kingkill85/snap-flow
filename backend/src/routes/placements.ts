@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { placementRepository } from '../repositories/placement.ts';
-import type { bomEntryRepository } from '../repositories/bom-entry.ts';
+
 import { bomService } from '../services/bom.ts';
 import { floorplanRepository } from '../repositories/floorplan.ts';
 import { authMiddleware } from '../middleware/auth.ts';
@@ -105,11 +105,10 @@ placementRoutes.post('/', authMiddleware, zValidator('json', createPlacementSche
       data: placement,
       message: 'Placement created successfully',
     }, 201);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Create placement error:', error);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    return c.json({ error: 'Internal server error', details: error.message }, 500);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: 'Internal server error', details: errorMessage }, 500);
   }
 });
 

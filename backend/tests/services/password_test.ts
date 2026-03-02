@@ -1,7 +1,7 @@
-import { assertEquals, assertNotEquals } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, assertNotEquals } from '@std/assert';
 import { hashPassword, comparePassword } from '../../src/services/password.ts';
 
-Deno.test("Password service - hashPassword creates a hash", async () => {
+Deno.test("Password service - hashPassword creates a hash", () => {
   const password = 'testpassword123';
   const hash = hashPassword(password);
   
@@ -12,7 +12,7 @@ Deno.test("Password service - hashPassword creates a hash", async () => {
   assertEquals(isBcryptHash, true);
 });
 
-Deno.test("Password service - comparePassword validates correct password", async () => {
+Deno.test("Password service - comparePassword validates correct password", () => {
   const password = 'testpassword123';
   const hash = hashPassword(password);
   
@@ -20,7 +20,7 @@ Deno.test("Password service - comparePassword validates correct password", async
   assertEquals(isValid, true);
 });
 
-Deno.test("Password service - comparePassword rejects incorrect password", async () => {
+Deno.test("Password service - comparePassword rejects incorrect password", () => {
   const password = 'testpassword123';
   const hash = hashPassword(password);
   

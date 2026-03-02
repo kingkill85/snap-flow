@@ -19,16 +19,7 @@ declare module 'hono' {
 
 const floorplanRoutes = new Hono();
 
-// Validation schemas
-const createFloorplanSchema = z.object({
-  project_id: z.number().int().positive(),
-  name: z.string().min(1).max(200),
-});
 
-const updateFloorplanSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  sort_order: z.number().int().optional(),
-});
 
 const reorderSchema = z.object({
   floorplan_ids: z.array(z.number().int().positive()),

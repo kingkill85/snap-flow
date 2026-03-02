@@ -6,35 +6,35 @@ import type { Floorplan, CreateFloorplanDTO, UpdateFloorplanDTO } from '../model
  * Handles all database operations for floorplans
  */
 export class FloorplanRepository {
-  async findAll(): Promise<Floorplan[]> {
+  findAll(): Promise<Floorplan[]> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, name, image_path, sort_order
       FROM floorplans
       ORDER BY sort_order ASC, id ASC
     `);
-    return result as unknown as Floorplan[];
+    return Promise.resolve(result as unknown as Floorplan[]);
   }
 
-  async findByProject(projectId: number): Promise<Floorplan[]> {
+  findByProject(projectId: number): Promise<Floorplan[]> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, name, image_path, sort_order
       FROM floorplans
       WHERE project_id = ?
       ORDER BY sort_order ASC, id ASC
     `, [projectId]);
-    return result as unknown as Floorplan[];
+    return Promise.resolve(result as unknown as Floorplan[]);
   }
 
-  async findById(id: number): Promise<Floorplan | null> {
+  findById(id: number): Promise<Floorplan | null> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, name, image_path, sort_order
       FROM floorplans
       WHERE id = ?
     `, [id]);
-    return result.length > 0 ? (result[0] as unknown as Floorplan) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Floorplan) : null);
   }
 
-  async create(data: CreateFloorplanDTO): Promise<Floorplan> {
+  create(data: CreateFloorplanDTO): Promise<Floorplan> {
     // Get max sort_order for this project
     const maxResult = getDb().queryEntries(`
       SELECT MAX(sort_order) as max_order
@@ -50,10 +50,10 @@ export class FloorplanRepository {
       RETURNING id, project_id, name, image_path, sort_order
     `, [data.project_id, data.name, data.image_path, sortOrder]);
 
-    return result[0] as unknown as Floorplan;
+    return Promise.resolve(result[0] as unknown as Floorplan);
   }
 
-  async update(id: number, data: UpdateFloorplanDTO): Promise<Floorplan | null> {
+  update(id: number, data: UpdateFloorplanDTO): Promise<Floorplan | null> {
     const sets: string[] = [];
     const values: (string | number | undefined)[] = [];
 
@@ -83,10 +83,10 @@ export class FloorplanRepository {
       RETURNING id, project_id, name, image_path, sort_order
     `, values);
 
-    return result.length > 0 ? (result[0] as unknown as Floorplan) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Floorplan) : null);
   }
 
-  async delete(id: number): Promise<void> {
+  delete(id: number): Promise<void> {
     // Delete placements that reference BOM entries for this floorplan
     getDb().query(`
       DELETE FROM placements 
@@ -101,9 +101,10 @@ export class FloorplanRepository {
     
     // Finally delete the floorplan
     getDb().query(`DELETE FROM floorplans WHERE id = ?`, [id]);
+    return Promise.resolve();
   }
 
-  async reorder(projectId: number, floorplanIds: number[]): Promise<void> {
+  reorder(projectId: number, floorplanIds: number[]): Promise<void> {
     for (let i = 0; i < floorplanIds.length; i++) {
       getDb().query(`
         UPDATE floorplans
@@ -111,6 +112,7 @@ export class FloorplanRepository {
         WHERE id = ? AND project_id = ?
       `, [i + 1, floorplanIds[i], projectId]);
     }
+    return Promise.resolve();
   }
 }
 

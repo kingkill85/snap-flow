@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, assertExists } from '@std/assert';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
 import { hashPassword } from '../../src/services/password.ts';
@@ -9,11 +9,6 @@ await setupTestDatabase();
 // Import repositories after database is set up
 const { userRepository } = await import('../../src/repositories/user.ts');
 const { projectRepository } = await import('../../src/repositories/project.ts');
-const { floorplanRepository } = await import('../../src/repositories/floorplan.ts');
-const { categoryRepository } = await import('../../src/repositories/category.ts');
-const { itemRepository } = await import('../../src/repositories/item.ts');
-const { itemVariantRepository } = await import('../../src/repositories/item-variant.ts');
-const { placementRepository } = await import('../../src/repositories/placement.ts');
 
 async function getAuthToken(): Promise<string> {
   clearDatabase();

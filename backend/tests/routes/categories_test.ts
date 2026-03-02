@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, assertExists } from '@std/assert';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
 import { hashPassword } from '../../src/services/password.ts';
@@ -263,7 +263,7 @@ Deno.test('PUT /categories/:id - should deactivate category and cascade to items
   
   // Create admin user
   const passwordHash = hashPassword('admin123');
-  const admin = await userRepository.create({
+  const _admin = await userRepository.create({
     email: 'admin@test.com',
     password_hash: passwordHash,
     role: 'admin',
@@ -345,7 +345,7 @@ Deno.test('PUT /categories/:id - should activate category without cascading to c
   
   // Create admin user
   const passwordHash = hashPassword('admin123');
-  const admin = await userRepository.create({
+  const _admin = await userRepository.create({
     email: 'admin@test.com',
     password_hash: passwordHash,
     role: 'admin',
@@ -389,7 +389,7 @@ Deno.test('PUT /categories/:id - should activate category without cascading to c
     }),
   });
 
-  const data = await parseJSON(response);
+  const _data = await parseJSON(response);
 
   assertEquals(response.status, 200);
   

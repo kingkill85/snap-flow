@@ -7,7 +7,7 @@ import type { Placement, CreatePlacementDTO, UpdatePlacementDTO } from '../model
  * Placements now reference BOM entries instead of variants directly
  */
 export class PlacementRepository {
-  async findAll(): Promise<Placement[]> {
+  findAll(): Promise<Placement[]> {
     const result = getDb().queryEntries(`
       SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.rotation, p.created_at,
              b.floorplan_id, b.item_id, b.variant_id as item_variant_id
@@ -15,10 +15,10 @@ export class PlacementRepository {
       JOIN project_bom b ON p.bom_id = b.id
       ORDER BY p.created_at DESC
     `);
-    return result as unknown as Placement[];
+    return Promise.resolve(result as unknown as Placement[]);
   }
 
-  async findByFloorplan(floorplanId: number): Promise<Placement[]> {
+  findByFloorplan(floorplanId: number): Promise<Placement[]> {
     const result = getDb().queryEntries(`
       SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.rotation, p.created_at,
              b.floorplan_id, b.item_id, b.variant_id as item_variant_id,
@@ -28,10 +28,10 @@ export class PlacementRepository {
       WHERE b.floorplan_id = ?
       ORDER BY p.created_at DESC
     `, [floorplanId]);
-    return result as unknown as Placement[];
+    return Promise.resolve(result as unknown as Placement[]);
   }
 
-  async findById(id: number): Promise<Placement | null> {
+  findById(id: number): Promise<Placement | null> {
     const result = getDb().queryEntries(`
       SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.rotation, p.created_at,
              b.floorplan_id, b.item_id, b.variant_id as item_variant_id
@@ -39,10 +39,10 @@ export class PlacementRepository {
       JOIN project_bom b ON p.bom_id = b.id
       WHERE p.id = ?
     `, [id]);
-    return result.length > 0 ? (result[0] as unknown as Placement) : null;
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Placement) : null);
   }
 
-  async findByBomEntry(bomId: number): Promise<Placement[]> {
+  findByBomEntry(bomId: number): Promise<Placement[]> {
     const result = getDb().queryEntries(`
       SELECT p.id, p.bom_id, p.x, p.y, p.width, p.height, p.rotation, p.created_at,
              b.floorplan_id, b.item_id, b.variant_id as item_variant_id
@@ -51,10 +51,10 @@ export class PlacementRepository {
       WHERE p.bom_id = ?
       ORDER BY p.created_at DESC
     `, [bomId]);
-    return result as unknown as Placement[];
+    return Promise.resolve(result as unknown as Placement[]);
   }
 
-  async create(data: CreatePlacementDTO): Promise<Placement> {
+  create(data: CreatePlacementDTO): Promise<Placement> {
     const result = getDb().queryEntries(`
       INSERT INTO placements (bom_id, x, y, width, height, rotation)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -74,7 +74,7 @@ export class PlacementRepository {
     return this.findById(inserted.id as number) as Promise<Placement>;
   }
 
-  async createWithBomEntry(bomId: number, data: Omit<CreatePlacementDTO, 'floorplan_id' | 'item_variant_id'>): Promise<Placement> {
+  createWithBomEntry(bomId: number, data: Omit<CreatePlacementDTO, 'floorplan_id' | 'item_variant_id'>): Promise<Placement> {
     const result = getDb().queryEntries(`
       INSERT INTO placements (bom_id, x, y, width, height, rotation)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -92,7 +92,7 @@ export class PlacementRepository {
     return this.findById(inserted.id as number) as Promise<Placement>;
   }
 
-  async update(id: number, data: UpdatePlacementDTO): Promise<Placement | null> {
+  update(id: number, data: UpdatePlacementDTO): Promise<Placement | null> {
     const sets: string[] = [];
     const values: (string | number | null | undefined)[] = [];
 
@@ -134,28 +134,30 @@ export class PlacementRepository {
       RETURNING id, bom_id, x, y, width, height, rotation, created_at
     `, values);
 
-    if (result.length === 0) return null;
+    if (result.length === 0) return Promise.resolve(null);
     
     const inserted = result[0] as Record<string, unknown>;
     return this.findById(inserted.id as number);
   }
 
-  async delete(id: number): Promise<void> {
+  delete(id: number): Promise<void> {
     getDb().query(`DELETE FROM placements WHERE id = ?`, [id]);
+    return Promise.resolve();
   }
 
-  async deleteByBomEntry(bomId: number): Promise<void> {
+  deleteByBomEntry(bomId: number): Promise<void> {
     getDb().query(`DELETE FROM placements WHERE bom_id = ?`, [bomId]);
+    return Promise.resolve();
   }
 
-  async countByBomEntry(bomId: number): Promise<number> {
+  countByBomEntry(bomId: number): Promise<number> {
     const result = getDb().queryEntries(`
       SELECT COUNT(*) as count FROM placements WHERE bom_id = ?
     `, [bomId]);
-    return (result[0] as { count: number }).count;
+    return Promise.resolve((result[0] as { count: number }).count);
   }
 
-  async updateDimensionsForItem(floorplanId: number, itemId: number, width: number, height: number): Promise<void> {
+  updateDimensionsForItem(floorplanId: number, itemId: number, width: number, height: number): Promise<void> {
     getDb().query(`
       UPDATE placements
       SET width = ?, height = ?
@@ -164,15 +166,16 @@ export class PlacementRepository {
         WHERE floorplan_id = ? AND item_id = ?
       )
     `, [width, height, floorplanId, itemId]);
+    return Promise.resolve();
   }
 
-  async findByBomId(bomId: number): Promise<Placement[]> {
+  findByBomId(bomId: number): Promise<Placement[]> {
     const result = getDb().queryEntries(`
       SELECT id, bom_id, x, y, width, height, rotation, created_at
       FROM placements
       WHERE bom_id = ?
     `, [bomId]);
-    return result as unknown as Placement[];
+    return Promise.resolve(result as unknown as Placement[]);
   }
 }
 

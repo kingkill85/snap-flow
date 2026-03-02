@@ -1,4 +1,4 @@
-import { assertEquals, type assertNotEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, assertExists } from '@std/assert';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { excelSyncService } from '../../src/services/excel-sync.ts';
 import { categoryRepository } from '../../src/repositories/category.ts';
@@ -12,7 +12,7 @@ Deno.test("ExcelSyncService - syncCategories creates new categories", async () =
   clearDatabase();
   
   // Create test data with categories
-  const groupedItems = {
+  const _groupedItems = {
     "MODEL1": {
       baseModelNumber: "MODEL1",
       name: "Test Item 1",
@@ -206,7 +206,7 @@ Deno.test("ExcelSyncService - variant addons can be linked", async () => {
   assertEquals(addons.length, 1);
 });
 
-Deno.test("ExcelSyncService - syncCatalog method exists and is callable", async () => {
+Deno.test("ExcelSyncService - syncCatalog method exists and is callable", () => {
   // Test that the service method exists
   assertEquals(typeof excelSyncService.syncCatalog, 'function');
   

@@ -86,7 +86,7 @@ class CurrencyService {
   /**
    * Get USD to PKR rate specifically (default for this app)
    */
-  async getUSDtoPKRRate(): Promise<{ rate: number; fromCache: boolean }> {
+  getUSDtoPKRRate(): Promise<{ rate: number; fromCache: boolean }> {
     return this.getExchangeRate('PKR');
   }
 

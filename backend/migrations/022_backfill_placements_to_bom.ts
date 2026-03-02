@@ -3,7 +3,7 @@
 
 import { getDb } from '../src/config/database.ts';
 
-async function backfillPlacements() {
+function backfillPlacements() {
   const db = getDb();
   
   console.log('Starting backfill of placements to BOM entries...');
@@ -152,4 +152,8 @@ async function backfillPlacements() {
 }
 
 // Run the backfill
-backfillPlacements().catch(console.error);
+try {
+  backfillPlacements();
+} catch (error) {
+  console.error(error);
+}

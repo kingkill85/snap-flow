@@ -106,7 +106,7 @@ export async function verifyRefreshToken(token: string): Promise<number | null> 
 export async function revokeRefreshToken(token: string): Promise<boolean> {
   const tokenHash = await hashToken(token);
   
-  const result = getDb().query(
+  getDb().query(
     `UPDATE refresh_tokens 
      SET revoked_at = CURRENT_TIMESTAMP 
      WHERE token_hash = ? AND revoked_at IS NULL`,
@@ -119,13 +119,14 @@ export async function revokeRefreshToken(token: string): Promise<boolean> {
 /**
  * Revoke all refresh tokens for a user
  */
-export async function revokeAllUserTokens(userId: number): Promise<void> {
+export function revokeAllUserTokens(userId: number): Promise<void> {
   getDb().query(
     `UPDATE refresh_tokens 
      SET revoked_at = CURRENT_TIMESTAMP 
      WHERE user_id = ? AND revoked_at IS NULL`,
     [userId]
   );
+  return Promise.resolve();
 }
 
 /**

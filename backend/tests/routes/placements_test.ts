@@ -1,7 +1,8 @@
-import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, assertExists } from '@std/assert';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
 import { hashPassword } from '../../src/services/password.ts';
+import type { Placement } from '../../src/models/index.ts';
 
 // Setup test database before all tests
 await setupTestDatabase();
@@ -13,7 +14,7 @@ const { floorplanRepository } = await import('../../src/repositories/floorplan.t
 const { categoryRepository } = await import('../../src/repositories/category.ts');
 const { itemRepository } = await import('../../src/repositories/item.ts');
 const { itemVariantRepository } = await import('../../src/repositories/item-variant.ts');
-const { placementRepository } = await import('../../src/repositories/placement.ts');
+
 
 async function getAuthToken(): Promise<string> {
   clearDatabase();
@@ -321,7 +322,7 @@ Deno.test('Placement - duplicate endpoint', async (t) => {
     assertEquals(data.data.length, 2);
     
     // Verify original placement still exists
-    const original = data.data.find((p: any) => p.id === originalPlacementId);
+    const original = data.data.find((p: Placement) => p.id === originalPlacementId);
     assertExists(original);
     assertEquals(original.x, 100);
     assertEquals(original.y, 150);

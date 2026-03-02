@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from 'https://deno.land/std@0.208.0/assert/mod.ts';
+import { assertEquals, assertExists } from '@std/assert';
 import { hashPassword } from '../../src/services/password.ts';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 
@@ -159,7 +159,7 @@ Deno.test('UserRepository - update user full_name to null', async () => {
   });
 
   const updated = await userRepository.update(created.id, {
-    full_name: null as any,
+    full_name: null as unknown as string,
   });
 
   assertExists(updated);
@@ -186,7 +186,7 @@ Deno.test('UserRepository - user has password_hash field', async () => {
   clearDatabase();
   
   const passwordHash = hashPassword('testpassword');
-  const user = await userRepository.create({
+  const _user = await userRepository.create({
     email: 'haspassword@example.com',
     password_hash: passwordHash,
     role: 'user',
