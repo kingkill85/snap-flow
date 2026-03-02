@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -752,6 +753,9 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Style & Add-Ons</DialogTitle>
+          <DialogDescription>
+            Customize the product style and select optional add-ons for this placement.
+          </DialogDescription>
         </DialogHeader>
         
         {isLoading ? (

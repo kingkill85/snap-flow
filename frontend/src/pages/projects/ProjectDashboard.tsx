@@ -21,6 +21,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 
 export const calculateDragPosition = (
@@ -1046,6 +1047,9 @@ const ProjectDashboard = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Floorplan</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. The floorplan and all associated placements will be permanently removed.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <p>Are you sure you want to delete "{floorplanToDelete?.name}"?</p>
