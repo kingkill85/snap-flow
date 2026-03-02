@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Settings, FileDown, Receipt, Loader2 } from 'lucide-react';
 import { bomService } from '@/services/bom';
-import { generateInvoicePDF } from '@/services/invoice-pdf';
+import { generateInvoiceDOCX } from '@/services/invoice-docx';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { Floorplan } from '@/services/floorplan';
 
@@ -125,8 +125,8 @@ export function SummaryTab({
     invoiceSettings.exchange_rate > 0
   );
 
-  const handleGenerateInvoice = () => {
-    generateInvoicePDF({
+  const handleGenerateInvoice = async () => {
+    await generateInvoiceDOCX({
       projectName,
       projectNumber,
       customerName,
@@ -277,7 +277,7 @@ export function SummaryTab({
               onClick={handleGenerateInvoice}
             >
               <Receipt className="mr-2 h-4 w-4" />
-              Create Invoice (PDF)
+              Create Invoice (DOCX)
             </Button>
           </>
         )}
