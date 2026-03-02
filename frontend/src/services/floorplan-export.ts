@@ -191,7 +191,8 @@ async function drawPlacement(
   try {
     const image = await loadImage(imageUrl, { timeout: EXPORT_CONFIG.IMAGE_LOAD_TIMEOUT });
     drawPlacementImage(ctx, placement, image);
-  } catch {
+  } catch (error) {
+    console.warn(`Failed to draw placement ${placement.id}:`, error);
     drawPlaceholder(ctx, placement);
   }
 }
