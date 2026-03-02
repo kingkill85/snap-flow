@@ -40,6 +40,7 @@ interface CanvasProps {
   zoomRef?: React.MutableRefObject<{ zoom: number; pan: { x: number; y: number } }>;
   scaleRef?: React.MutableRefObject<{ scaleX: number; scaleY: number }>;
   isDuplicating?: boolean;
+  visibleCategoryIds?: Set<number>;
 }
 
 interface DraggablePlacementProps {
@@ -1044,6 +1045,7 @@ export function ConfiguratorCanvas({
   zoomRef,
   scaleRef,
   isDuplicating,
+  visibleCategoryIds,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -1448,6 +1450,13 @@ export function ConfiguratorCanvas({
               />
 
               {[...placements]
+                .filter((placement) => {
+                  // Filter by visible categories
+                  if (!visibleCategoryIds) return true;
+                  const item = items.find((i) => i.id === placement.item_id);
+                  if (!item) return true; // Show unknown items
+                  return visibleCategoryIds.has(item.category_id);
+                })
                 .sort((a, b) => {
                   // Selected placement should be rendered last (on top)
                   if (a.id === selectedPlacementId) return 1;

@@ -79,6 +79,9 @@ const ProjectDashboard = () => {
   // Active tab state for right panel
   const [activeTab, setActiveTab] = useState('products');
 
+  // Layer visibility state - all categories visible by default
+  const [visibleCategories, setVisibleCategories] = useState<Set<number>>(new Set());
+
   // Session-based memory for item sizes
   const itemSizeMemory = useRef<Map<number, { width: number; height: number }>>(new Map());
   const itemVariantMemory = useRef<Map<number, { variant_id: number; addon_ids: number[] }>>(new Map());
@@ -106,10 +109,14 @@ const ProjectDashboard = () => {
         floorplanService.getAll(projectId, signal),
         itemService.getAll({ include_inactive: false }, { page: 1, limit: 1000 }),
       ]);
-      
+
       setProject(projectData);
       setFloorplans(floorplansData);
       setItems(itemsResult.items);
+
+      // Initialize visible categories with all category IDs from items
+      const categoryIds = new Set(itemsResult.items.map(item => item.category_id));
+      setVisibleCategories(categoryIds);
       
       // Extract invoice settings from project data
       setInvoiceSettings({
@@ -276,6 +283,33 @@ const ProjectDashboard = () => {
     }
     setPlacementsVersion(prev => prev + 1);
   };
+
+  // Toggle category visibility
+  const handleToggleCategory = (categoryId: number) => {
+    setVisibleCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(categoryId)) {
+        newSet.delete(categoryId);
+      } else {
+        newSet.add(categoryId);
+      }
+      return newSet;
+    });
+  };
+
+  // Calculate item counts per category for current floorplan
+  const getCategoryCounts = useCallback(() => {
+    const counts = new Map<number, number>();
+    placements.forEach(placement => {
+      const item = items.find(i => i.id === placement.item_id);
+      if (item) {
+        counts.set(item.category_id, (counts.get(item.category_id) || 0) + 1);
+      }
+    });
+    return counts;
+  }, [placements, items]);
+
+  const categoryCounts = getCategoryCounts();
 
   const handleDragStart = (event: DragStartEvent) => {
     const activeId = event.active.id.toString();
@@ -783,6 +817,7 @@ const ProjectDashboard = () => {
                         zoomRef={canvasZoomRef}
                         scaleRef={canvasScaleRef}
                         isDuplicating={isDuplicating}
+                        visibleCategoryIds={visibleCategories}
                       />
                     </div>
                   </div>
@@ -807,7 +842,13 @@ const ProjectDashboard = () => {
               </TabsList>
               
               <TabsContent value="products" className="flex-1 m-0 overflow-hidden">
-                <ItemPalette ref={itemPaletteRef} className="h-full border-0" />
+                <ItemPalette
+                  ref={itemPaletteRef}
+                  className="h-full border-0"
+                  visibleCategories={visibleCategories}
+                  onToggleCategory={handleToggleCategory}
+                  categoryCounts={categoryCounts}
+                />
               </TabsContent>
               
               <TabsContent value="bom" className="flex-1 m-0 overflow-hidden">
