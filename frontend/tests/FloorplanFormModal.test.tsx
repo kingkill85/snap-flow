@@ -113,15 +113,17 @@ describe('FloorplanFormModal', () => {
 
   describe('Paste functionality', () => {
     it('handles image paste from clipboard', async () => {
-      render(
-        <FloorplanFormModal
-          floorplan={null}
-          projectId={1}
-          isOpen={true}
-          onClose={mockOnClose}
-          onSubmit={mockOnSubmit}
-        />
-      );
+      await act(async () => {
+        render(
+          <FloorplanFormModal
+            floorplan={null}
+            projectId={1}
+            isOpen={true}
+            onClose={mockOnClose}
+            onSubmit={mockOnSubmit}
+          />
+        );
+      });
 
       // Create a mock image file
       const mockFile = new File(['test-image-content'], 'pasted-image.png', {
@@ -143,7 +145,9 @@ describe('FloorplanFormModal', () => {
       });
 
       // Trigger paste event
-      document.dispatchEvent(pasteEvent);
+      await act(async () => {
+        document.dispatchEvent(pasteEvent);
+      });
 
       // Verify the image was processed (preview should appear)
       await waitFor(() => {
@@ -274,15 +278,17 @@ describe('FloorplanFormModal', () => {
     });
 
     it('shows error for oversized pasted image', async () => {
-      render(
-        <FloorplanFormModal
-          floorplan={null}
-          projectId={1}
-          isOpen={true}
-          onClose={mockOnClose}
-          onSubmit={mockOnSubmit}
-        />
-      );
+      await act(async () => {
+        render(
+          <FloorplanFormModal
+            floorplan={null}
+            projectId={1}
+            isOpen={true}
+            onClose={mockOnClose}
+            onSubmit={mockOnSubmit}
+          />
+        );
+      });
 
       // Create a mock oversized image file (> 5MB)
       const largeContent = new Uint8Array(6 * 1024 * 1024); // 6MB
@@ -305,7 +311,9 @@ describe('FloorplanFormModal', () => {
       });
 
       // Trigger paste event
-      document.dispatchEvent(pasteEvent);
+      await act(async () => {
+        document.dispatchEvent(pasteEvent);
+      });
 
       // Should show file size error
       await waitFor(() => {
@@ -318,15 +326,17 @@ describe('FloorplanFormModal', () => {
     it('submits form with pasted image', async () => {
       mockOnSubmit.mockResolvedValueOnce(undefined);
 
-      render(
-        <FloorplanFormModal
-          floorplan={null}
-          projectId={1}
-          isOpen={true}
-          onClose={mockOnClose}
-          onSubmit={mockOnSubmit}
-        />
-      );
+      await act(async () => {
+        render(
+          <FloorplanFormModal
+            floorplan={null}
+            projectId={1}
+            isOpen={true}
+            onClose={mockOnClose}
+            onSubmit={mockOnSubmit}
+          />
+        );
+      });
 
       // Enter floorplan name
       const nameInput = await screen.findByLabelText('Floorplan Name *');
@@ -350,7 +360,9 @@ describe('FloorplanFormModal', () => {
         writable: true,
       });
 
-      document.dispatchEvent(pasteEvent);
+      await act(async () => {
+        document.dispatchEvent(pasteEvent);
+      });
 
       // Wait for preview to appear
       await waitFor(() => {

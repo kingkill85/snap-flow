@@ -37,39 +37,45 @@ describe('Header', () => {
     vi.clearAllMocks();
   });
 
-  it('renders SnapFlow brand', () => {
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+  it('renders SnapFlow brand', async () => {
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
     
     expect(screen.getByText('SnapFlow')).toBeInTheDocument();
   });
 
-  it('renders navigation links', () => {
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+  it('renders navigation links', async () => {
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
     
     expect(screen.getByText('Home')).toBeInTheDocument();
     expect(screen.getByText('Projects')).toBeInTheDocument();
   });
 
-  it('renders login button when not authenticated', () => {
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <Header />
-        </AuthProvider>
-      </BrowserRouter>
-    );
+  it('renders login button when not authenticated', async () => {
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <AuthProvider>
+            <Header />
+          </AuthProvider>
+        </BrowserRouter>
+      );
+    });
     
     expect(screen.getByText('Login')).toBeInTheDocument();
   });

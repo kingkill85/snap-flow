@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { ItemPalette } from '@/components/configurator/ItemPalette';
 import { itemService } from '@/services/item';
 import { categoryService } from '@/services/category';
@@ -77,7 +77,9 @@ describe('ItemPalette', () => {
   });
 
   it('renders categories and items after loading', async () => {
-    render(<ItemPalette />);
+    await act(async () => {
+      render(<ItemPalette />);
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Gateways')).toBeInTheDocument();
@@ -86,7 +88,9 @@ describe('ItemPalette', () => {
   });
 
   it('fetches items with pagination limit of 1000', async () => {
-    render(<ItemPalette />);
+    await act(async () => {
+      render(<ItemPalette />);
+    });
 
     await waitFor(() => {
       expect(itemService.getAll).toHaveBeenCalledWith(
@@ -97,7 +101,9 @@ describe('ItemPalette', () => {
   });
 
   it('renders item with image and details', async () => {
-    render(<ItemPalette />);
+    await act(async () => {
+      render(<ItemPalette />);
+    });
 
     await waitFor(() => {
       const itemName = screen.getByText('Zigbee Gateway');
@@ -115,7 +121,9 @@ describe('ItemPalette', () => {
     ];
     (itemService.getAll as any).mockResolvedValue({ items: itemsWithoutImage, total: 1, totalPages: 1 });
 
-    render(<ItemPalette />);
+    await act(async () => {
+      render(<ItemPalette />);
+    });
 
     await waitFor(() => {
       expect(screen.getByText('No Image')).toBeInTheDocument();
@@ -125,7 +133,9 @@ describe('ItemPalette', () => {
   describe('Layer Visibility Toggles', () => {
     it('renders category toggle buttons when onToggleCategory is provided', async () => {
       const onToggleCategory = vi.fn();
-      render(<ItemPalette onToggleCategory={onToggleCategory} />);
+      await act(async () => {
+        render(<ItemPalette onToggleCategory={onToggleCategory} />);
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Gateways')).toBeInTheDocument();
@@ -142,7 +152,9 @@ describe('ItemPalette', () => {
         [2, 5],
       ]);
 
-      render(<ItemPalette categoryCounts={categoryCounts} />);
+      await act(async () => {
+        render(<ItemPalette categoryCounts={categoryCounts} />);
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Gateways')).toBeInTheDocument();
@@ -157,12 +169,14 @@ describe('ItemPalette', () => {
       const onToggleCategory = vi.fn();
       const visibleCategories = new Set([1]); // Only Gateways visible
 
-      render(
-        <ItemPalette
-          onToggleCategory={onToggleCategory}
-          visibleCategories={visibleCategories}
-        />
-      );
+      await act(async () => {
+        render(
+          <ItemPalette
+            onToggleCategory={onToggleCategory}
+            visibleCategories={visibleCategories}
+          />
+        );
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Gateways')).toBeInTheDocument();
@@ -180,7 +194,9 @@ describe('ItemPalette', () => {
 
     it('calls onToggleCategory when toggle button is clicked', async () => {
       const onToggleCategory = vi.fn();
-      render(<ItemPalette onToggleCategory={onToggleCategory} />);
+      await act(async () => {
+        render(<ItemPalette onToggleCategory={onToggleCategory} />);
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Gateways')).toBeInTheDocument();
@@ -194,7 +210,9 @@ describe('ItemPalette', () => {
 
     it('shows all categories as visible by default', async () => {
       const onToggleCategory = vi.fn();
-      render(<ItemPalette onToggleCategory={onToggleCategory} />);
+      await act(async () => {
+        render(<ItemPalette onToggleCategory={onToggleCategory} />);
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Gateways')).toBeInTheDocument();

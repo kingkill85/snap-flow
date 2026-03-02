@@ -7,6 +7,14 @@ import { VariantFormModal } from '@/components/items/VariantFormModal';
 global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
 global.URL.revokeObjectURL = vi.fn();
 
+// Mock variant-addon service
+vi.mock('@/services/variant-addon', () => ({
+  variantAddonService: {
+    getByVariant: vi.fn().mockResolvedValue([]),
+    getAvailableAddons: vi.fn().mockResolvedValue([]),
+  },
+}));
+
 describe('VariantFormModal', () => {
   const mockVariant = {
     id: 1,
