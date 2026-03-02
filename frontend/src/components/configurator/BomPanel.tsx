@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,43 +10,15 @@ import { itemService } from '@/services/item';
 
 interface BOMPanelProps {
   floorplanId: number;
-  placementsVersion?: number;
+  bom: FloorplanBom | null;
   className?: string;
 }
 
-export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }: BOMPanelProps) {
-  const [bom, setBom] = useState<FloorplanBom | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+export function BOMPanel({ floorplanId, bom, className = '' }: BOMPanelProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
   const [isUpdating, setIsUpdating] = useState(false);
   const [changeReport, setChangeReport] = useState<ChangeReport | null>(null);
-
-  useEffect(() => {
-    fetchBom(true);
-  }, [floorplanId]);
-  
-  useEffect(() => {
-    if (placementsVersion > 0) {
-      fetchBom(false);
-    }
-  }, [placementsVersion]);
-
-  const fetchBom = async (showLoading = false) => {
-    try {
-      if (showLoading) setIsLoading(true);
-      const data = await bomService.getBomForFloorplan(floorplanId);
-      setBom(data);
-      if (!bom) {
-        setExpandedGroups(new Set(data.groups.map(g => g.mainEntry.id)));
-      }
-      setError('');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load BOM');
-    } finally {
-      if (showLoading) setIsLoading(false);
-    }
-  };
+  const [error, setError] = useState('');
 
   const toggleGroup = (groupId: number) => {
     setExpandedGroups(prev => {
@@ -64,12 +36,11 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
     if (!confirm('Update BOM prices from current catalog? This will show a change report.')) {
       return;
     }
-    
+
     try {
       setIsUpdating(true);
       const report = await bomService.updateFromCatalog(floorplanId);
       setChangeReport(report);
-      await fetchBom(true);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to update from catalog');
     } finally {
@@ -77,7 +48,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
     }
   };
 
-  if (isLoading) {
+  if (!bom) {
     return (
       <div className={`flex flex-col h-full ${className}`}>
         <div className="flex-1 flex justify-center items-center">
@@ -87,22 +58,19 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
     );
   }
 
-  if (error) {
+  if (error && !bom) {
     return (
       <div className={`flex flex-col h-full ${className}`}>
         <div className="p-4">
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
-          <Button variant="outline" size="sm" onClick={() => fetchBom(true)} className="mt-2">
-            Retry
-          </Button>
         </div>
       </div>
     );
   }
 
-  if (!bom || bom.groups.length === 0) {
+  if (bom.groups.length === 0) {
     return (
       <div className={`flex flex-col h-full ${className}`}>
         <div className="p-4 border-b border-border/50">
@@ -180,10 +148,10 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
         {bom.groups.filter(group => group.quantity > 0).map((group) => {
           const isExpanded = expandedGroups.has(group.mainEntry.id);
           const hasChildren = group.children.length > 0;
-          
+
           return (
             <Card key={group.mainEntry.id} className={`mb-2 border-border/50 shadow-none ${!group.isAvailable ? 'bg-destructive/5' : ''}`}>
-              <div 
+              <div
                 className="flex items-center gap-3 cursor-pointer p-3"
                 onClick={() => hasChildren && toggleGroup(group.mainEntry.id)}
               >
@@ -192,7 +160,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
                     {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   </span>
                 )}
-                
+
                 <div className="w-12 h-12 bg-muted rounded flex-shrink-0 overflow-hidden">
                   {group.mainEntry.picture_path ? (
                     <img
@@ -206,7 +174,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
                     </div>
                   )}
                 </div>
-                
+
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">
                     {group.mainEntry.item_name}
@@ -231,14 +199,14 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
                     </span>
                   </div>
                 </div>
-                
+
                 <div className="text-right">
                   <p className="font-semibold text-sm">
                     ${(group.mainEntry.unit_price * group.quantity).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
               </div>
-              
+
               {hasChildren && !isExpanded && (
                 <div className="mt-2 flex items-center justify-between px-3 pb-3">
                   <span className="text-xs text-muted-foreground ml-6">
@@ -249,7 +217,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
                   </span>
                 </div>
               )}
-              
+
               {isExpanded && hasChildren && (
                 <CardContent className="pt-0">
                   <div className="pl-6 border-l-2 border-border space-y-3">
@@ -299,7 +267,7 @@ export function BOMPanel({ floorplanId, placementsVersion = 0, className = '' }:
                         </div>
                       </div>
                     ))}
-                    
+
                     <div className="flex justify-between items-center pt-2 border-t border-border mt-2">
                       <span className="text-xs font-medium text-muted-foreground">Group Total:</span>
                       <span className="font-semibold text-sm">${group.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>

@@ -292,6 +292,7 @@ export function InvoiceSettingsModal({
                     size="icon"
                     onClick={handleFetchGoogleRate}
                     disabled={isFetchingRate}
+                    aria-label="Fetch exchange rate from Google"
                   >
                     {isFetchingRate ? (
                       <Loader2 className="h-4 w-4 animate-spin" />

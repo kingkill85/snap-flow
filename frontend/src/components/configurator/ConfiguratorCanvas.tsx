@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { itemService, type ItemVariant } from '@/services/item';
 import { variantAddonService } from '@/services/variant-addon';
-import { bomService } from '@/services/bom';
+import type { FloorplanBom } from '@/services/bom';
 import { exportFloorplanImage } from '@/services/floorplan-export';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -35,6 +35,8 @@ interface CanvasProps {
   floorplan: Floorplan;
   placements: Placement[];
   items: Item[];
+  bom: FloorplanBom | null;
+  placementAddons: React.MutableRefObject<Map<number, number[]>>;
   onPlacementDelete: (id: number) => void;
   onPlacementUpdate: (id: number, data: { x?: number; y?: number; width?: number; height?: number; rotation?: number; item_variant_id?: number; addon_ids?: number[] }, isFinal?: boolean) => void;
   isResizingRef?: React.MutableRefObject<boolean>;
@@ -463,7 +465,7 @@ function DraggablePlacement({
         transform: combinedTransform,
         transformOrigin: 'center center',
         zIndex: isResizing ? 200 : isDragging ? 100 : isNew ? 1 : 1,
-        animation: isNew ? 'fadeIn 50ms ease-out' : undefined,
+        animation: undefined,
       }}
       className={`rounded select-none group ${
         isSelected
@@ -558,13 +560,16 @@ function DraggablePlacement({
 interface PlacementEditModalProps {
   placement: Placement | null;
   floorplanId: number;
+  items: Item[];
+  bom: FloorplanBom | null;
+  placementAddons: React.MutableRefObject<Map<number, number[]>>;
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (variantId: number, selectedAddons: number[]) => Promise<void>;
   onDelete?: () => void;
 }
 
-function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate, onDelete }: PlacementEditModalProps) {
+function PlacementEditModal({ placement, floorplanId, items, bom, placementAddons, isOpen, onClose, onUpdate, onDelete }: PlacementEditModalProps) {
   const [item, setItem] = useState<Item | null>(null);
   const [variants, setVariants] = useState<ItemVariant[]>([]);
   const [addons, setAddons] = useState<AddonWithVariant[]>([]);
@@ -576,7 +581,6 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [isItemUnavailable, setIsItemUnavailable] = useState(false);
-  const [bomData, setBomData] = useState<any>(null);
   const lastAddonFetchKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -587,7 +591,6 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
         setVariants([]);
         setAddons([]);
         setIsItemUnavailable(false);
-        setBomData(null);
         return;
       }
 
@@ -597,21 +600,28 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
         setError('');
         setIsItemUnavailable(false);
 
-        // Fetch current BOM first (we need this regardless of item availability)
+        // Get current addon IDs - prioritize placement-specific memory, then BOM
+        // This ensures recently updated placements show correct addons even before BOM refreshes
         let currentAddonIds: number[] = [];
-        try {
-          const bomData = await bomService.getBomForFloorplan(floorplanId);
-          setBomData(bomData);
-          // Find the group that matches this placement's bom_id
-          const group = bomData.groups.find(g => 
+        let foundInPlacementAddons = false;
+        
+        // First check placement-specific addon tracking (most reliable)
+        if (placementAddons.current) {
+          const placementAddonIds = placementAddons.current.get(placement.id);
+          if (placementAddonIds !== undefined) {
+            currentAddonIds = placementAddonIds;
+            foundInPlacementAddons = true;
+          }
+        }
+        
+        // Fallback to BOM data
+        if (!foundInPlacementAddons && bom) {
+          const group = bom.groups.find(g =>
             g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
           );
           if (group) {
-            // Get addon IDs from children (these are the currently selected addons)
             currentAddonIds = group.children.map(child => child.variant_id);
           }
-        } catch (err) {
-          console.error('Failed to load BOM:', err);
         }
 
         setSelectedVariantId(placement.item_variant_id);
@@ -620,45 +630,44 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
         // Set currently selected addons (from BOM)
         const currentAddons = new Set<number>(currentAddonIds);
         setSelectedAddons(currentAddons);
-        
+
         // Store original addons for restoration when switching back
         setOriginalAddons(new Set(currentAddonIds));
 
-        // Fetch item with variants (for available options)
-        try {
-          const itemData = await itemService.getById(placement.item_id);
-          
+        // Use item from props instead of fetching
+        const itemData = items.find(i => i.id === placement.item_id);
+
+        if (!itemData) {
+          // Item not found in props - may have been deleted
+          setIsItemUnavailable(true);
+          setItem(null);
+          setVariants([]);
+          setAddons([]);
+        } else {
           // Check if item is inactive
           if (!itemData.is_active) {
             setIsItemUnavailable(true);
             setItem(itemData);
             setVariants([]);
             setAddons([]);
-            } else {
-              // Check if current variant is in the available variants list
-              // If not, it means the variant is inactive or deleted
-              const currentVariant = itemData.variants?.find(v => v.id === placement.item_variant_id);
+          } else {
+            // Check if current variant is in the available variants list
+            // If not, it means the variant is inactive or deleted
+            const currentVariant = itemData.variants?.find(v => v.id === placement.item_variant_id);
             if (!currentVariant) {
               // Variant is not in active list - it's unavailable
               setIsItemUnavailable(true);
               setItem(itemData);
               setVariants(itemData.variants || []);
               setAddons([]);
-              } else {
-                setItem(itemData);
-                setVariants(itemData.variants || []);
-                // Add-ons are loaded by the selectedVariantId effect below.
-                // Keeping it in one place avoids duplicate requests on modal open.
-                setAddons([]);
-              }
+            } else {
+              setItem(itemData);
+              setVariants(itemData.variants || []);
+              // Add-ons are loaded by the selectedVariantId effect below.
+              // Keeping it in one place avoids duplicate requests on modal open.
+              setAddons([]);
             }
-        } catch (err: any) {
-          // Item not found (404) or other error - item has been deleted
-          console.error('Failed to load item data:', err);
-          setIsItemUnavailable(true);
-          setItem(null);
-          setVariants([]);
-          setAddons([]);
+          }
         }
       } catch (err) {
         console.error('Failed to load placement data:', err);
@@ -669,7 +678,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
     };
 
     loadItemData();
-  }, [placement, floorplanId]);
+  }, [placement, floorplanId, items, bom]);
 
   useEffect(() => {
     const loadAddons = async () => {
@@ -775,12 +784,12 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
               </AlertDescription>
             </Alert>
 
-            {bomData && (
+            {bom && (
               <div className="p-3 bg-muted rounded-lg">
                 <div className="flex items-start gap-3">
                   {(() => {
                     // Find the BOM group for this placement
-                    const group = bomData.groups.find((g: any) => 
+                    const group = bom.groups.find((g: any) => 
                       g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
                     );
                     const mainEntry = group?.mainEntry;
@@ -801,7 +810,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
                   })()}
                   <div className="flex-1 min-w-0">
                     {(() => {
-                      const group = bomData.groups.find((g: any) => 
+                      const group = bom.groups.find((g: any) => 
                         g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
                       );
                       const mainEntry = group?.mainEntry;
@@ -821,7 +830,7 @@ function PlacementEditModal({ placement, floorplanId, isOpen, onClose, onUpdate,
             )}
 
             {(() => {
-              const group = bomData?.groups.find((g: any) => 
+              const group = bom?.groups.find((g: any) => 
                 g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
               );
               return group && group.children.length > 0 ? (
@@ -1043,6 +1052,8 @@ export function ConfiguratorCanvas({
   floorplan,
   placements,
   items,
+  bom,
+  placementAddons,
   onPlacementDelete,
   onPlacementUpdate,
   isResizingRef,
@@ -1560,8 +1571,12 @@ export function ConfiguratorCanvas({
         </div>
 
         <PlacementEditModal
+          key={editingPlacement?.id || 'closed'}
           placement={editingPlacement}
           floorplanId={floorplan.id}
+          items={items}
+          bom={bom}
+          placementAddons={placementAddons}
           isOpen={editingPlacement !== null}
           onClose={() => setEditingPlacement(null)}
           onUpdate={async (variantId, selectedAddons) => {

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Settings, FileDown, Receipt, Loader2 } from 'lucide-react';
-import { bomService } from '@/services/bom';
+import type { FloorplanBom } from '@/services/bom';
 import { generateInvoiceDOCX } from '@/services/invoice-docx';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { Floorplan } from '@/services/floorplan';
@@ -19,9 +19,9 @@ interface SummaryTabProps {
   projectNumber: string;
   customerName: string;
   floorplans: Floorplan[];
+  floorplanBoms: Map<number, FloorplanBom>;
   invoiceSettings: InvoiceSettings | null;
   onConfigureInvoice: () => void;
-  placementsVersion: number;
 }
 
 interface FloorplanTotal {
@@ -36,113 +36,115 @@ export function SummaryTab({
   projectNumber,
   customerName,
   floorplans,
+  floorplanBoms,
   invoiceSettings,
   onConfigureInvoice,
-  placementsVersion,
 }: SummaryTabProps) {
   const [floorplanTotals, setFloorplanTotals] = useState<FloorplanTotal[]>([]);
   const [projectTotal, setProjectTotal] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
+  const lastBomVersionRef = useRef<string>('');
 
-  // Fetch totals when tab becomes active or placements change
+  // Calculate totals from BOM data when it changes
   useEffect(() => {
-    const fetchTotals = async () => {
-      setIsLoading(true);
-      try {
-        // Initialize with loading state
-        setFloorplanTotals(
-          floorplans.map((fp) => ({
-            floorplan: fp,
-            total: 0,
-            items: [],
-            isLoading: true,
-          }))
-        );
+    // If no floorplans, nothing to calculate - show empty state immediately
+    if (floorplans.length === 0) {
+      setFloorplanTotals([]);
+      setProjectTotal(0);
+      setIsLoading(false);
+      lastBomVersionRef.current = '';
+      return;
+    }
 
-        // Fetch totals and items for all floorplans in parallel
-        const totals = await Promise.all(
-          floorplans.map(async (floorplan) => {
-            try {
-              const bom = await bomService.getBomForFloorplan(floorplan.id);
-              const items: FloorplanItem[] = [];
-              const itemTotals = new Map<string, { quantity: number; unitPrice: number; total: number }>();
+    // Create a version string from all BOM data to detect changes
+    const bomVersion = floorplans
+      .map(fp => {
+        const bom = floorplanBoms.get(fp.id);
+        return bom ? `${fp.id}:${bom.totalPrice}` : `${fp.id}:null`;
+      })
+      .join('|');
 
-              bom.groups.forEach((group) => {
-                // Add main entry (aggregate if same item appears in multiple groups)
-                const mainName = `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`;
-                const existingMain = itemTotals.get(mainName);
-                const mainTotal = group.mainEntry.unit_price * group.quantity;
-                if (existingMain) {
-                  existingMain.quantity += group.quantity;
-                  existingMain.total += mainTotal;
-                } else {
-                  itemTotals.set(mainName, {
-                    quantity: group.quantity,
-                    unitPrice: group.mainEntry.unit_price,
-                    total: mainTotal,
-                  });
-                }
+    // Skip if BOM data hasn't changed
+    if (bomVersion === lastBomVersionRef.current) return;
+    lastBomVersionRef.current = bomVersion;
 
-                // Add children (add-ons) as separate line items (also aggregate)
-                group.children.forEach((child) => {
-                  const childName = `${child.item_name}${child.style_name ? ` (${child.style_name})` : ''}`;
-                  const existingChild = itemTotals.get(childName);
-                  const childTotal = child.unit_price * group.quantity;
-                  if (existingChild) {
-                    existingChild.quantity += group.quantity;
-                    existingChild.total += childTotal;
-                  } else {
-                    itemTotals.set(childName, {
-                      quantity: group.quantity,
-                      unitPrice: child.unit_price,
-                      total: childTotal,
-                    });
-                  }
-                });
-              });
+    setIsLoading(true);
 
-              // Convert map to array
-              itemTotals.forEach((totals, name) => {
-                items.push({
-                  name,
-                  quantity: totals.quantity,
-                  unitPrice: totals.unitPrice,
-                  total: totals.total,
-                });
-              });
+    // Calculate totals from BOM data
+    const totals: FloorplanTotal[] = floorplans.map((floorplan) => {
+      const bom = floorplanBoms.get(floorplan.id);
 
-              return {
-                floorplan,
-                total: bom.totalPrice,
-                items,
-                isLoading: false,
-              };
-            } catch (err) {
-              console.error(`Failed to fetch BOM for floorplan ${floorplan.id}:`, err);
-              return {
-                floorplan,
-                total: 0,
-                items: [],
-                isLoading: false,
-              };
-            }
-          })
-        );
-
-        setFloorplanTotals(totals);
-
-        // Calculate project total
-        const total = totals.reduce((sum, item) => sum + item.total, 0);
-        setProjectTotal(total);
-      } catch (err) {
-        console.error('Failed to fetch totals:', err);
-      } finally {
-        setIsLoading(false);
+      if (!bom) {
+        return {
+          floorplan,
+          total: 0,
+          items: [],
+          isLoading: false,
+        };
       }
-    };
 
-    fetchTotals();
-  }, [floorplans, placementsVersion]);
+      const items: FloorplanItem[] = [];
+      const itemTotals = new Map<string, { quantity: number; unitPrice: number; total: number }>();
+
+      bom.groups.forEach((group) => {
+        // Add main entry (aggregate if same item appears in multiple groups)
+        const mainName = `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`;
+        const existingMain = itemTotals.get(mainName);
+        const mainTotal = group.mainEntry.unit_price * group.quantity;
+        if (existingMain) {
+          existingMain.quantity += group.quantity;
+          existingMain.total += mainTotal;
+        } else {
+          itemTotals.set(mainName, {
+            quantity: group.quantity,
+            unitPrice: group.mainEntry.unit_price,
+            total: mainTotal,
+          });
+        }
+
+        // Add children (add-ons) as separate line items (also aggregate)
+        group.children.forEach((child) => {
+          const childName = `${child.item_name}${child.style_name ? ` (${child.style_name})` : ''}`;
+          const existingChild = itemTotals.get(childName);
+          const childTotal = child.unit_price * group.quantity;
+          if (existingChild) {
+            existingChild.quantity += group.quantity;
+            existingChild.total += childTotal;
+          } else {
+            itemTotals.set(childName, {
+              quantity: group.quantity,
+              unitPrice: child.unit_price,
+              total: childTotal,
+            });
+          }
+        });
+      });
+
+      // Convert map to array
+      itemTotals.forEach((totals, name) => {
+        items.push({
+          name,
+          quantity: totals.quantity,
+          unitPrice: totals.unitPrice,
+          total: totals.total,
+        });
+      });
+
+      return {
+        floorplan,
+        total: bom.totalPrice,
+        items,
+        isLoading: false,
+      };
+    });
+
+    setFloorplanTotals(totals);
+
+    // Calculate project total
+    const total = totals.reduce((sum, item) => sum + item.total, 0);
+    setProjectTotal(total);
+    setIsLoading(false);
+  }, [floorplans, floorplanBoms]);
 
   const formatCurrency = (amount: number, decimals = 2) => {
     return amount.toLocaleString('en-US', {

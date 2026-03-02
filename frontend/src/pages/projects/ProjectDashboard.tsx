@@ -4,7 +4,8 @@ import { projectService, type Project } from '@/services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/services/floorplan';
 import { placementService, type Placement, type CreatePlacementDTO } from '@/services/placement';
 import { itemService, type Item } from '@/services/item';
-import { bomService } from '@/services/bom';
+import { variantAddonService } from '@/services/variant-addon';
+import { bomService, type FloorplanBom } from '@/services/bom';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -66,6 +67,7 @@ const ProjectDashboard = () => {
   const [placementsVersion, setPlacementsVersion] = useState(0);
   const [projectTotal, setProjectTotal] = useState<number>(0);
   const [isDropping, setIsDropping] = useState(false);
+  const [floorplanBoms, setFloorplanBoms] = useState<Map<number, FloorplanBom>>(new Map());
   
   // Floorplan modal state
   const [showFloorplanModal, setShowFloorplanModal] = useState(false);
@@ -83,44 +85,50 @@ const ProjectDashboard = () => {
   // Layer visibility state - all categories visible by default
   const [visibleCategories, setVisibleCategories] = useState<Set<number>>(new Set());
 
-  // Persistent memory for item sizes (localStorage-backed)
-  const ITEM_SIZE_MEMORY_KEY = 'snapflow_item_size_memory';
-  const ITEM_VARIANT_MEMORY_KEY = 'snapflow_item_variant_memory';
-  
+  // Persistent memory for item sizes (localStorage-backed, per-project)
+  const getSizeMemoryKey = (projId: number) => `snapflow_item_size_memory_${projId}`;
+  const getVariantMemoryKey = (projId: number) => `snapflow_item_variant_memory_${projId}`;
+
   const itemSizeMemory = useRef<Map<number, { width: number; height: number }>>(new Map());
   const itemVariantMemory = useRef<Map<number, { variant_id: number; addon_ids: number[] }>>(new Map());
-  
-  // Load persisted memory from localStorage on mount
+
+  // Load persisted memory from localStorage when project changes
   useEffect(() => {
+    if (!projectId) return;
+
     try {
-      const savedSizeMemory = localStorage.getItem(ITEM_SIZE_MEMORY_KEY);
+      const savedSizeMemory = localStorage.getItem(getSizeMemoryKey(projectId));
       if (savedSizeMemory) {
         const parsed = JSON.parse(savedSizeMemory);
         itemSizeMemory.current = new Map(parsed);
+      } else {
+        itemSizeMemory.current = new Map();
       }
-      
-      const savedVariantMemory = localStorage.getItem(ITEM_VARIANT_MEMORY_KEY);
+
+      const savedVariantMemory = localStorage.getItem(getVariantMemoryKey(projectId));
       if (savedVariantMemory) {
         const parsed = JSON.parse(savedVariantMemory);
         itemVariantMemory.current = new Map(parsed);
+      } else {
+        itemVariantMemory.current = new Map();
       }
     } catch (err) {
       console.error('Failed to load item memory from localStorage:', err);
     }
-  }, []);
-  
+  }, [projectId]);
+
   // Helper functions to persist memory to localStorage
   const persistSizeMemory = () => {
     try {
-      localStorage.setItem(ITEM_SIZE_MEMORY_KEY, JSON.stringify(Array.from(itemSizeMemory.current.entries())));
+      localStorage.setItem(getSizeMemoryKey(projectId), JSON.stringify(Array.from(itemSizeMemory.current.entries())));
     } catch (err) {
       console.error('Failed to persist size memory:', err);
     }
   };
-  
+
   const persistVariantMemory = () => {
     try {
-      localStorage.setItem(ITEM_VARIANT_MEMORY_KEY, JSON.stringify(Array.from(itemVariantMemory.current.entries())));
+      localStorage.setItem(getVariantMemoryKey(projectId), JSON.stringify(Array.from(itemVariantMemory.current.entries())));
     } catch (err) {
       console.error('Failed to persist variant memory:', err);
     }
@@ -140,6 +148,9 @@ const ProjectDashboard = () => {
   
   // Ref to access ItemPalette's aspect ratio cache
   const itemPaletteRef = useRef<ItemPaletteRef>(null);
+
+  // Track addon configuration per-placement (not persisted, just for modal consistency)
+  const placementAddons = useRef<Map<number, number[]>>(new Map());
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -214,6 +225,40 @@ const ProjectDashboard = () => {
     }
   };
 
+  const fetchFloorplanBom = async (floorplanId: number, signal?: AbortSignal) => {
+    try {
+      const bomData = await bomService.getBomForFloorplan(floorplanId, signal);
+      setFloorplanBoms(prev => new Map(prev).set(floorplanId, bomData));
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.error('Failed to load BOM:', err);
+      }
+    }
+  };
+
+  // Fetch BOM for all floorplans when placements change (debounced)
+  const bomFetchTimeoutRef = useRef<number | null>(null);
+  useEffect(() => {
+    // Clear any pending fetch
+    if (bomFetchTimeoutRef.current) {
+      clearTimeout(bomFetchTimeoutRef.current);
+    }
+
+    // Debounce BOM fetch to avoid flicker during rapid placements
+    bomFetchTimeoutRef.current = window.setTimeout(() => {
+      const controller = new AbortController();
+      floorplans.forEach(fp => {
+        fetchFloorplanBom(fp.id, controller.signal);
+      });
+    }, 300);
+
+    return () => {
+      if (bomFetchTimeoutRef.current) {
+        clearTimeout(bomFetchTimeoutRef.current);
+      }
+    };
+  }, [placementsVersion, floorplans]);
+
   const fetchProjectTotal = async (signal?: AbortSignal) => {
     try {
       const data = await bomService.getProjectTotal(projectId, signal);
@@ -227,6 +272,7 @@ const ProjectDashboard = () => {
     if (activeFloorplan) {
       const controller = new AbortController();
       fetchPlacements(activeFloorplan.id, controller.signal);
+      fetchFloorplanBom(activeFloorplan.id, controller.signal);
       return () => controller.abort();
     }
   }, [activeFloorplan?.id]);
@@ -237,19 +283,23 @@ const ProjectDashboard = () => {
     return () => controller.abort();
   }, [projectId]);
 
+  // Calculate project total from BOM data instead of fetching separately
   useEffect(() => {
-    const controller = new AbortController();
-    fetchProjectTotal(controller.signal);
-  }, [projectId, placementsVersion]);
+    let total = 0;
+    floorplanBoms.forEach((bom) => {
+      total += bom.totalPrice;
+    });
+    setProjectTotal(total);
+  }, [floorplanBoms]);
 
   const handlePlacementCreate = async (placement: { x: number; y: number; width?: number; height?: number; item_id: number; item_variant_id: number; addon_ids?: number[]; ignoreDefaults?: boolean }) => {
     if (!activeFloorplan) return;
-    
+
     // Use explicit dimensions if provided (calculated in handleDragEnd)
     // Otherwise fall back to defaults
     const width = placement.width ?? 60;
     const height = placement.height ?? 60;
-    
+
     const createData: CreatePlacementDTO = {
       floorplan_id: activeFloorplan.id,
       item_variant_id: placement.item_variant_id,
@@ -258,21 +308,33 @@ const ProjectDashboard = () => {
       width,
       height,
     };
-    
+
     const newPlacement = await placementService.create(createData);
-    
-    if (placement.addon_ids && placement.addon_ids.length > 0) {
+
+    // Update BOM if addon_ids is provided (even if empty array - which means clear all addons)
+    if (placement.addon_ids !== undefined) {
       await placementService.updateBom(newPlacement.id, placement.item_variant_id, placement.addon_ids);
     }
-    
+
     // Only save size to memory if NOT ignoring defaults (Ctrl+drag)
     // This prevents Ctrl+drag from updating the "default" size
     if (!placement.ignoreDefaults) {
       itemSizeMemory.current.set(placement.item_id, { width, height });
       persistSizeMemory();
+
+      // Also save variant/addon configuration to memory
+      itemVariantMemory.current.set(placement.item_id, {
+        variant_id: placement.item_variant_id,
+        addon_ids: placement.addon_ids || [],
+      });
+      persistVariantMemory();
     }
-    
-    await fetchPlacements(activeFloorplan.id);
+
+    // Track addon configuration per-placement for modal consistency
+    placementAddons.current.set(newPlacement.id, placement.addon_ids || []);
+
+    // Optimistically add the new placement to local state to prevent flickering
+    setPlacements(prev => [...prev, newPlacement]);
     setPlacementsVersion(prev => prev + 1);
   };
 
@@ -285,20 +347,24 @@ const ProjectDashboard = () => {
     // Handle variant/BOM updates - these always save immediately
     if (placement.item_variant_id !== undefined) {
       try {
-        await placementService.updateBom(id, placement.item_variant_id, placement.addon_ids || []);
-        
-        const updatedPlacement = placements.find(p => p.id === id);
-        if (updatedPlacement) {
-          itemVariantMemory.current.set(updatedPlacement.item_id, {
-            variant_id: placement.item_variant_id,
-            addon_ids: placement.addon_ids || [],
-          });
-          persistVariantMemory();
-        }
-        
-        if (activeFloorplan) {
-          await fetchPlacements(activeFloorplan.id);
-        }
+        const result = await placementService.updateBom(id, placement.item_variant_id, placement.addon_ids || []);
+
+        // Update local state immediately with the new placement (including new bom_id)
+        setPlacements(prev => prev.map(p =>
+          p.id === id ? result.placement : p
+        ));
+
+        // Update memory
+        itemVariantMemory.current.set(result.placement.item_id, {
+          variant_id: placement.item_variant_id,
+          addon_ids: placement.addon_ids || [],
+        });
+        persistVariantMemory();
+
+        // Track addon configuration per-placement for modal consistency
+        placementAddons.current.set(id, placement.addon_ids || []);
+
+        // Trigger BOM refresh
         setPlacementsVersion(prev => prev + 1);
         return;
       } catch (err) {
@@ -329,6 +395,18 @@ const ProjectDashboard = () => {
   };
 
   const handlePlacementDelete = async (id: number) => {
+    // Find the placement being deleted to clear its memory
+    const placementToDelete = placements.find(p => p.id === id);
+    if (placementToDelete) {
+      itemSizeMemory.current.delete(placementToDelete.item_id);
+      itemVariantMemory.current.delete(placementToDelete.item_id);
+      persistSizeMemory();
+      persistVariantMemory();
+    }
+
+    // Clean up placement-specific addon tracking
+    placementAddons.current.delete(id);
+
     await placementService.delete(id);
     if (activeFloorplan) {
       await fetchPlacements(activeFloorplan.id);
@@ -572,12 +650,12 @@ const ProjectDashboard = () => {
           const variantToUse = storedConfig?.variant_id
             ? fullItem.variants?.find(v => v.id === storedConfig.variant_id)
             : fullItem.variants?.[0];
-          
+
           if (variantToUse) {
             // Calculate dimensions based on whether Ctrl was pressed
             let placementWidth = 60;
             let placementHeight = 60;
-            
+
             if (!ignoreDefaults) {
               // Use stored size if available
               const storedSize = itemSizeMemory.current.get(itemData.itemId);
@@ -602,11 +680,30 @@ const ProjectDashboard = () => {
                 }
               }
             }
-            
+
             // Clamp dimensions
             placementWidth = Math.max(5, Math.min(500, placementWidth));
             placementHeight = Math.max(5, Math.min(500, placementHeight));
-            
+
+            // Get addon IDs - use stored config if available, otherwise fetch required addons
+            // Ctrl+drag should still include required addons, just not use memory for variant/size
+            let addonIds: number[] | undefined;
+            if (!ignoreDefaults && storedConfig?.addon_ids !== undefined) {
+              // Normal drag with memory: use stored addon configuration
+              addonIds = storedConfig.addon_ids;
+            } else {
+              // Ctrl+drag or no memory: fetch required addons for the selected variant
+              try {
+                const variantAddons = await variantAddonService.getByVariant(itemData.itemId, variantToUse.id);
+                addonIds = variantAddons
+                  .filter(va => va.is_required && va.addon_variant.is_active)
+                  .map(va => va.addon_variant.id);
+              } catch (err) {
+                console.error('Failed to fetch required addons:', err);
+                addonIds = [];
+              }
+            }
+
             await handlePlacementCreate({
               x: dropX,
               y: dropY,
@@ -614,7 +711,7 @@ const ProjectDashboard = () => {
               height: placementHeight,
               item_id: itemData.itemId,
               item_variant_id: variantToUse.id,
-              addon_ids: ignoreDefaults ? undefined : storedConfig?.addon_ids,
+              addon_ids: addonIds,
               ignoreDefaults,
             });
             // Clear drag item - placement will appear with fade-in animation
@@ -869,6 +966,8 @@ const ProjectDashboard = () => {
                         floorplan={activeFloorplan}
                         placements={placements}
                         items={items}
+                        bom={floorplanBoms.get(activeFloorplan.id) || null}
+                        placementAddons={placementAddons}
                         onPlacementUpdate={handlePlacementUpdate}
                         onPlacementDelete={handlePlacementDelete}
                         isResizingRef={isResizingRef}
@@ -899,7 +998,11 @@ const ProjectDashboard = () => {
                 </TabsTrigger>
               </TabsList>
               
-              <TabsContent value="products" className="flex-1 m-0 overflow-hidden">
+              <TabsContent
+                value="products"
+                forceMount
+                className={`flex-1 m-0 overflow-hidden ${activeTab !== 'products' ? 'hidden' : ''}`}
+              >
                 <ItemPalette
                   ref={itemPaletteRef}
                   className="h-full border-0"
@@ -908,12 +1011,16 @@ const ProjectDashboard = () => {
                   categoryCounts={categoryCounts}
                 />
               </TabsContent>
-              
-              <TabsContent value="bom" className="flex-1 m-0 overflow-hidden">
+
+              <TabsContent
+                value="bom"
+                forceMount
+                className={`flex-1 m-0 overflow-hidden ${activeTab !== 'bom' ? 'hidden' : ''}`}
+              >
                 {activeFloorplan ? (
-                  <BOMPanel 
-                    floorplanId={activeFloorplan.id} 
-                    placementsVersion={placementsVersion}
+                  <BOMPanel
+                    floorplanId={activeFloorplan.id}
+                    bom={floorplanBoms.get(activeFloorplan.id) || null}
                     className="h-full border-0"
                   />
                 ) : (
@@ -923,15 +1030,19 @@ const ProjectDashboard = () => {
                 )}
               </TabsContent>
 
-              <TabsContent value="summary" className="flex-1 m-0 overflow-hidden">
+              <TabsContent
+                value="summary"
+                forceMount
+                className={`flex-1 m-0 overflow-hidden ${activeTab !== 'summary' ? 'hidden' : ''}`}
+              >
                 <SummaryTab
                   projectName={project?.name || ''}
                   projectNumber={generateProjectNumber(project)}
                   customerName={project?.customer_name || ''}
                   floorplans={floorplans}
+                  floorplanBoms={floorplanBoms}
                   invoiceSettings={invoiceSettings}
                   onConfigureInvoice={() => setShowInvoiceModal(true)}
-                  placementsVersion={placementsVersion}
                 />
               </TabsContent>
             </Tabs>

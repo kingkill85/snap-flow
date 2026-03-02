@@ -168,9 +168,34 @@ describe('InvoiceSettingsModal', () => {
     expect(mockOnClose).toHaveBeenCalled();
   });
 
-  it.skip('fetches exchange rate when refresh button is clicked', async () => {
-    // Skipped: Button doesn't have accessible name for testing
-    // This functionality is tested manually
+  it('fetches exchange rate when refresh button is clicked', async () => {
+    const { invoiceSettingsService } = await import('@/services/invoice-settings');
+    
+    render(
+      <InvoiceSettingsModal
+        projectId={1}
+        bomTotal={1000}
+        isOpen={true}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />
+    );
+
+    const user = userEvent.setup();
+    
+    // Click the refresh button to fetch exchange rate
+    const refreshButton = screen.getByLabelText('Fetch exchange rate from Google');
+    await user.click(refreshButton);
+    
+    // Verify that getExchangeRate was called with PKR (default currency)
+    await waitFor(() => {
+      expect(invoiceSettingsService.getExchangeRate).toHaveBeenCalledWith('PKR');
+    });
+    
+    // Verify that the Google Rate is displayed
+    await waitFor(() => {
+      expect(screen.getByText('279.50 PKR')).toBeInTheDocument();
+    });
   });
 
   it('shows error message when save fails', async () => {
