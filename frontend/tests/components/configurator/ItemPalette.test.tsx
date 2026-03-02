@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ItemPalette } from '@/components/configurator/ItemPalette';
 import { itemService } from '@/services/item';
 import { categoryService } from '@/services/category';
@@ -119,6 +119,90 @@ describe('ItemPalette', () => {
 
     await waitFor(() => {
       expect(screen.getByText('No Image')).toBeInTheDocument();
+    });
+  });
+
+  describe('Layer Visibility Toggles', () => {
+    it('renders category toggle buttons when onToggleCategory is provided', async () => {
+      const onToggleCategory = vi.fn();
+      render(<ItemPalette onToggleCategory={onToggleCategory} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Gateways')).toBeInTheDocument();
+      });
+
+      // Should have toggle buttons (eye icons)
+      const toggleButtons = document.querySelectorAll('button[title="Hide layer"], button[title="Show layer"]');
+      expect(toggleButtons.length).toBe(2); // One for each category
+    });
+
+    it('displays item count badges next to category names', async () => {
+      const categoryCounts = new Map([
+        [1, 3],
+        [2, 5],
+      ]);
+
+      render(<ItemPalette categoryCounts={categoryCounts} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Gateways')).toBeInTheDocument();
+      });
+
+      // Check for count badges
+      expect(screen.getByText('3')).toBeInTheDocument();
+      expect(screen.getByText('5')).toBeInTheDocument();
+    });
+
+    it('shows hidden state for categories not in visibleCategories', async () => {
+      const onToggleCategory = vi.fn();
+      const visibleCategories = new Set([1]); // Only Gateways visible
+
+      render(
+        <ItemPalette
+          onToggleCategory={onToggleCategory}
+          visibleCategories={visibleCategories}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Gateways')).toBeInTheDocument();
+        expect(screen.getByText('Sensors')).toBeInTheDocument();
+      });
+
+      // Should have one "Hide layer" button (for visible category)
+      // and one "Show layer" button (for hidden category)
+      const hideButton = screen.getByTitle('Hide layer');
+      const showButton = screen.getByTitle('Show layer');
+
+      expect(hideButton).toBeInTheDocument();
+      expect(showButton).toBeInTheDocument();
+    });
+
+    it('calls onToggleCategory when toggle button is clicked', async () => {
+      const onToggleCategory = vi.fn();
+      render(<ItemPalette onToggleCategory={onToggleCategory} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Gateways')).toBeInTheDocument();
+      });
+
+      const toggleButtons = screen.getAllByTitle('Hide layer');
+      fireEvent.click(toggleButtons[0]);
+
+      expect(onToggleCategory).toHaveBeenCalledWith(1);
+    });
+
+    it('shows all categories as visible by default', async () => {
+      const onToggleCategory = vi.fn();
+      render(<ItemPalette onToggleCategory={onToggleCategory} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Gateways')).toBeInTheDocument();
+      });
+
+      // Both categories should show "Hide layer" (visible by default)
+      const hideButtons = screen.getAllByTitle('Hide layer');
+      expect(hideButtons.length).toBe(2);
     });
   });
 });

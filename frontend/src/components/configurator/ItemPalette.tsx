@@ -4,8 +4,9 @@ import type { Item } from '@/services/item';
 import { itemService } from '@/services/item';
 import type { Category } from '@/services/category';
 import { categoryService } from '@/services/category';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 
 interface DraggableItemProps {
   item: Item;
@@ -84,14 +85,22 @@ export interface ItemPaletteRef {
 
 interface ItemPaletteProps {
   className?: string;
+  visibleCategories?: Set<number>;
+  onToggleCategory?: (categoryId: number) => void;
+  categoryCounts?: Map<number, number>;
 }
 
-export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function ItemPalette({ className = '' }, ref) {
+export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function ItemPalette({
+  className = '',
+  visibleCategories,
+  onToggleCategory,
+  categoryCounts
+}, ref) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  
+
   // Cache for image aspect ratios (image_path -> aspect_ratio)
   const imageAspectRatios = useRef<Map<string, number>>(new Map());
 
@@ -187,12 +196,35 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
           const categoryItems = items.filter((item) => item.category_id === category.id);
           if (categoryItems.length === 0) return null;
 
+          const isVisible = visibleCategories?.has(category.id) ?? true;
+          const count = categoryCounts?.get(category.id) ?? 0;
+
           return (
             <div key={category.id} className="mb-6">
-              <h3 className="text-sm font-bold text-foreground uppercase tracking-wide mb-3">
-                {category.name}
-              </h3>
-              
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wide flex items-center gap-2">
+                  {category.name}
+                  <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                    {count}
+                  </span>
+                </h3>
+                {onToggleCategory && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => onToggleCategory(category.id)}
+                    title={isVisible ? 'Hide layer' : 'Show layer'}
+                  >
+                    {isVisible ? (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                )}
+              </div>
+
               <div className="grid grid-cols-3 gap-2">
                 {categoryItems.map((item) => (
                   <DraggableItem
