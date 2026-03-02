@@ -20,6 +20,33 @@
 - `refactor/description` - Code refactoring
 - `docs/description` - Documentation updates
 
+## 🧹 CRITICAL: Run Lint Before Pushing
+
+**BEFORE PUSHING:**
+1. Run lint on both frontend and backend:
+   ```bash
+   # Backend
+   cd backend && deno lint
+   
+   # Frontend
+   cd frontend && npm run lint
+   ```
+
+2. Fix ALL lint errors before pushing
+
+3. Ensure tests pass:
+   ```bash
+   # Backend
+   cd backend && deno task test
+   
+   # Frontend
+   cd frontend && npm run test:run
+   ```
+
+**NO EXCEPTIONS:**
+- ❌ Do not push with lint errors
+- ❌ Do not push with failing tests
+
 ## Project Overview
 
 **SnapFlow** - A web application for smart home automation companies to create project proposals.
