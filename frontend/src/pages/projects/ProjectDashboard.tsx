@@ -82,9 +82,57 @@ const ProjectDashboard = () => {
   // Layer visibility state - all categories visible by default
   const [visibleCategories, setVisibleCategories] = useState<Set<number>>(new Set());
 
-  // Session-based memory for item sizes
+  // Persistent memory for item sizes (localStorage-backed)
+  const ITEM_SIZE_MEMORY_KEY = 'snapflow_item_size_memory';
+  const ITEM_VARIANT_MEMORY_KEY = 'snapflow_item_variant_memory';
+  
   const itemSizeMemory = useRef<Map<number, { width: number; height: number }>>(new Map());
   const itemVariantMemory = useRef<Map<number, { variant_id: number; addon_ids: number[] }>>(new Map());
+  
+  // Load persisted memory from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedSizeMemory = localStorage.getItem(ITEM_SIZE_MEMORY_KEY);
+      if (savedSizeMemory) {
+        const parsed = JSON.parse(savedSizeMemory);
+        itemSizeMemory.current = new Map(parsed);
+      }
+      
+      const savedVariantMemory = localStorage.getItem(ITEM_VARIANT_MEMORY_KEY);
+      if (savedVariantMemory) {
+        const parsed = JSON.parse(savedVariantMemory);
+        itemVariantMemory.current = new Map(parsed);
+      }
+    } catch (err) {
+      console.error('Failed to load item memory from localStorage:', err);
+    }
+  }, []);
+  
+  // Helper functions to persist memory to localStorage
+  const persistSizeMemory = () => {
+    try {
+      localStorage.setItem(ITEM_SIZE_MEMORY_KEY, JSON.stringify(Array.from(itemSizeMemory.current.entries())));
+    } catch (err) {
+      console.error('Failed to persist size memory:', err);
+    }
+  };
+  
+  const persistVariantMemory = () => {
+    try {
+      localStorage.setItem(ITEM_VARIANT_MEMORY_KEY, JSON.stringify(Array.from(itemVariantMemory.current.entries())));
+    } catch (err) {
+      console.error('Failed to persist variant memory:', err);
+    }
+  };
+  
+  // Helper to clear memory for a specific item (used with Ctrl+drag)
+  const clearItemMemory = (itemId: number) => {
+    itemSizeMemory.current.delete(itemId);
+    itemVariantMemory.current.delete(itemId);
+    persistSizeMemory();
+    persistVariantMemory();
+  };
+  
   const isResizingRef = useRef(false);
   const canvasZoomRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
   const canvasScaleRef = useRef({ scaleX: 1, scaleY: 1 });
@@ -220,6 +268,7 @@ const ProjectDashboard = () => {
     // This prevents Ctrl+drag from updating the "default" size
     if (!placement.ignoreDefaults) {
       itemSizeMemory.current.set(placement.item_id, { width, height });
+      persistSizeMemory();
     }
     
     await fetchPlacements(activeFloorplan.id);
@@ -243,6 +292,7 @@ const ProjectDashboard = () => {
             variant_id: placement.item_variant_id,
             addon_ids: placement.addon_ids || [],
           });
+          persistVariantMemory();
         }
         
         if (activeFloorplan) {
@@ -266,6 +316,7 @@ const ProjectDashboard = () => {
           width: newWidth,
           height: newHeight,
         });
+        persistSizeMemory();
       }
     }
     
@@ -508,6 +559,12 @@ const ProjectDashboard = () => {
           // Check if Ctrl was pressed during drag start (ignore all defaults)
           // Use the state we set in handleDragStart
           const ignoreDefaults = isCtrlDraggingItem;
+          
+          // If Ctrl was pressed, clear the stored memory for this item
+          // This allows users to "reset" an item to defaults
+          if (ignoreDefaults) {
+            clearItemMemory(itemData.itemId);
+          }
           
           // Select variant to use
           const storedConfig = ignoreDefaults ? undefined : itemVariantMemory.current.get(itemData.itemId);
