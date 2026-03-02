@@ -199,7 +199,8 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
   const currencyCode = data.invoiceSettings?.local_currency_code || 'PKR';
 
   // Summary rows - calculate colspan based on floorplan count
-  const labelColSpan = 1 + numFloorplanCols + 1; // # + floorplans + TotalQty
+  // Span: # + Item Description + floorplans + Total Quantity
+  const labelColSpan = 1 + 1 + numFloorplanCols + 1; // # + Item + floors + TotalQty
 
   // Total for all floors
   rows.push(
