@@ -12,28 +12,46 @@ const EXPORT_CONFIG = {
   DEFAULT_QUALITY: 0.92,
   BORDER_RADIUS: 4,
   BORDER_WIDTH: 2,
-  PLACEHOLDER_BG_COLOR: '#f3f4f6',
-  PLACEHOLDER_BORDER_COLOR: '#9ca3af',
   IMAGE_LOAD_TIMEOUT: 10000,
   FILENAME_SANITIZE_REGEX: /[^a-zA-Z0-9-_]/g,
 } as const;
 
 /**
- * Gets the current theme primary color from CSS custom properties.
- * Falls back to brand purple if CSS variable is not available.
+ * Gets a color from CSS custom properties.
+ * Falls back to provided default if CSS variable is not available.
  */
-function getPrimaryColor(): string {
+function getThemeColor(cssVar: string, defaultColor: string): string {
   if (typeof document === 'undefined') {
-    return '#8C00AA';
+    return defaultColor;
   }
   const root = document.documentElement;
-  const primaryHsl = getComputedStyle(root).getPropertyValue('--primary').trim();
-  if (!primaryHsl) {
-    return '#8C00AA';
+  const hslValue = getComputedStyle(root).getPropertyValue(cssVar).trim();
+  if (!hslValue) {
+    return defaultColor;
   }
-  // Convert HSL to hex (expects format: "H S% L%")
-  const [h, s, l] = primaryHsl.split(' ').map(v => parseFloat(v));
+  const [h, s, l] = hslValue.split(' ').map(v => parseFloat(v));
   return hslToHex(h, s, l);
+}
+
+/**
+ * Gets the current theme primary color.
+ */
+function getPrimaryColor(): string {
+  return getThemeColor('--primary', '#8C00AA');
+}
+
+/**
+ * Gets the current theme secondary/muted background color for placeholders.
+ */
+function getPlaceholderBgColor(): string {
+  return getThemeColor('--muted', '#f3f4f6');
+}
+
+/**
+ * Gets the current theme border color for placeholder borders.
+ */
+function getPlaceholderBorderColor(): string {
+  return getThemeColor('--border', '#9ca3af');
 }
 
 /**
@@ -229,8 +247,8 @@ function drawPlaceholder(ctx: CanvasRenderingContext2D, placement: Placement): v
     placement.height,
     EXPORT_CONFIG.BORDER_RADIUS,
     {
-      fill: EXPORT_CONFIG.PLACEHOLDER_BG_COLOR,
-      stroke: EXPORT_CONFIG.PLACEHOLDER_BORDER_COLOR,
+      fill: getPlaceholderBgColor(),
+      stroke: getPlaceholderBorderColor(),
       lineWidth: EXPORT_CONFIG.BORDER_WIDTH,
     }
   );
