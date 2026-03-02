@@ -259,15 +259,6 @@ const ProjectDashboard = () => {
     };
   }, [placementsVersion, floorplans]);
 
-  const fetchProjectTotal = async (signal?: AbortSignal) => {
-    try {
-      const data = await bomService.getProjectTotal(projectId, signal);
-      setProjectTotal(data.totalPrice);
-    } catch (err) {
-      console.error('Failed to load project total:', err);
-    }
-  };
-
   useEffect(() => {
     if (activeFloorplan) {
       const controller = new AbortController();

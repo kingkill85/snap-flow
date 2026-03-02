@@ -796,7 +796,7 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
                     const mainEntryImageUrl = mainEntry?.picture_path 
                       ? itemService.getImageUrl(mainEntry.picture_path)
                       : null;
-                    return mainEntryImageUrl ? (
+                    return mainEntryImageUrl && mainEntry ? (
                       <img
                         src={mainEntryImageUrl}
                         alt={mainEntry.item_name}
