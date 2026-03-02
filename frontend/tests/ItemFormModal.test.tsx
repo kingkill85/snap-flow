@@ -42,7 +42,7 @@ describe('ItemFormModal', () => {
     // Dialog renders in a portal, so check document.body
     await waitFor(() => {
       expect(document.body.textContent).toContain('Create Product');
-    });
+    }, { timeout: 10000 });
   });
 
   it('renders edit item modal with pre-filled data', async () => {

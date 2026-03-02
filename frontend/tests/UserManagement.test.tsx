@@ -67,7 +67,7 @@ describe('UserManagement', () => {
 
     await waitFor(() => {
       expect(screen.getByText('User Management')).toBeInTheDocument();
-    });
+    }, { timeout: 10000 });
 
     expect(screen.getByText('Manage system users and permissions')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument();

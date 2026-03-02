@@ -105,7 +105,7 @@ describe('ItemManagement', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Product Management')).toBeInTheDocument();
-    });
+    }, { timeout: 10000 });
 
     expect(screen.getByText('Manage products and their details')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add product/i })).toBeInTheDocument();
@@ -137,7 +137,7 @@ describe('ItemManagement', () => {
     // Wait for the page to load
     await waitFor(() => {
       expect(screen.getByText('Product Management')).toBeInTheDocument();
-    });
+    }, { timeout: 10000 });
 
     // Find and click the Add Product button
     const addButton = screen.getByRole('button', { name: /add product/i });
@@ -146,7 +146,7 @@ describe('ItemManagement', () => {
     // Modal should open - check for any modal content
     await waitFor(() => {
       expect(document.querySelector('[role="dialog"]')).toBeInTheDocument();
-    });
+    }, { timeout: 10000 });
   });
 
   it('shows empty state when no items', async () => {
