@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import type { DragStartEvent, DragEndEvent } from '@dnd-kit/core';
 import type { Item } from '@/services/item';
 import type { Placement } from '@/services/placement';
@@ -14,9 +14,7 @@ interface UseDragHandlersProps {
   itemSizeMemory: React.MutableRefObject<Map<number, { width: number; height: number }>>;
   itemVariantMemory: React.MutableRefObject<Map<number, { variant_id: number; addon_ids: number[] }>>;
   itemPaletteRef: React.RefObject<ItemPaletteRef>;
-  placementAddons: React.MutableRefObject<Map<number, number[]>>;
   isResizingRef: React.MutableRefObject<boolean>;
-  canvasScaleRef: React.MutableRefObject<{ scaleX: number; scaleY: number }>;
   handlePlacementCreate: (placement: {
     x: number;
     y: number;
@@ -63,9 +61,7 @@ export function useDragHandlers({
   itemSizeMemory,
   itemVariantMemory,
   itemPaletteRef,
-  placementAddons,
   isResizingRef,
-  canvasScaleRef,
   handlePlacementCreate,
   handlePlacementUpdate,
   fetchPlacements,
@@ -333,7 +329,6 @@ export function useDragHandlers({
     activeFloorplan,
     placements,
     items,
-    isDuplicating,
     isCtrlDraggingItem,
     itemSizeMemory,
     itemVariantMemory,
