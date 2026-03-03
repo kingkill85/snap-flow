@@ -253,20 +253,28 @@ const ProjectDashboard = () => {
   const handleDeleteFloorplan = async () => {
     if (!floorplanToDelete) return;
     
+    // Capture ID before clearing state
+    const deletedFloorplanId = floorplanToDelete.id;
+    const wasActiveFloorplan = activeFloorplan?.id === deletedFloorplanId;
+    
     try {
-      await floorplanService.delete(floorplanToDelete.id);
+      await floorplanService.delete(deletedFloorplanId);
       setShowDeleteFloorplanModal(false);
       setFloorplanToDelete(null);
+      
       // Clear BOM data for deleted floorplan to prevent stale data
       setFloorplanBoms(prev => {
         const next = new Map(prev);
-        next.delete(floorplanToDelete.id);
+        next.delete(deletedFloorplanId);
         return next;
       });
-      await fetchProjectData();
       
-      // After fetch, clear active floorplan to let the useEffect select the first one
-      setActiveFloorplan(null);
+      // If deleted floorplan was active, clear it before fetch to avoid stale references
+      if (wasActiveFloorplan) {
+        setActiveFloorplan(null);
+      }
+      
+      await fetchProjectData();
     } catch (err) {
       setError(extractErrorMessage(err, 'Failed to delete floorplan'));
     }
