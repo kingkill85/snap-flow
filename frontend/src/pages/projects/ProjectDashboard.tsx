@@ -1,18 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { projectService, type Project } from '@/services/project';
+import type { Project } from '@/services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/services/floorplan';
-import { placementService, type Placement, type CreatePlacementDTO } from '@/services/placement';
-import { itemService, type Item } from '@/services/item';
-import { variantAddonService } from '@/services/variant-addon';
-import { bomService } from '@/services/bom';
 import type { InvoiceSettings } from '@/services/invoice-settings';
-import type { FloorplanBom } from '@/services/bom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2 } from 'lucide-react';
-import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors, pointerWithin } from '@dnd-kit/core';
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, pointerWithin } from '@dnd-kit/core';
 import { ConfiguratorCanvas, ItemPalette, BOMPanel } from '@/components/configurator';
 import type { ItemPaletteRef } from '@/components/configurator';
 import { DragOverlayContent } from '@/components/configurator/DragOverlayContent';
@@ -48,17 +43,12 @@ const ProjectDashboard = () => {
   // Project data hook
   const {
     project,
-    setProject,
     floorplans,
-    setFloorplans,
     activeFloorplan,
     setActiveFloorplan,
     items,
-    setItems,
     isLoading,
-    setIsLoading,
     showNotFound,
-    setShowNotFound,
     error,
     setError,
     visibleCategories,
@@ -66,7 +56,6 @@ const ProjectDashboard = () => {
     invoiceSettings,
     setInvoiceSettings,
     floorplanBoms,
-    setFloorplanBom,
     fetchProjectData,
     fetchFloorplanBom,
   } = useProjectData({ projectId });
@@ -166,7 +155,6 @@ const ProjectDashboard = () => {
   // Placements hook
   const {
     placements,
-    setPlacements,
     handlePlacementCreate,
     handlePlacementUpdate,
     handlePlacementDelete,
@@ -211,17 +199,11 @@ const ProjectDashboard = () => {
   // Drag handlers hook
   const {
     activeDragItem,
-    activeDragPlacement,
     isDuplicating,
     isDropping,
     isCtrlDraggingItem,
     handleDragStart,
     handleDragEnd,
-    setActiveDragItem,
-    setActiveDragPlacement,
-    setIsDuplicating,
-    setIsDropping,
-    setIsCtrlDraggingItem,
   } = useDragHandlers({
     items,
     placements,
