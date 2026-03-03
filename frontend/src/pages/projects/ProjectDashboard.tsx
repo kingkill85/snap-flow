@@ -25,6 +25,7 @@ import { EmptyFloorplanState } from '@/components/projects/EmptyFloorplanState';
 import { extractErrorMessage, formatCurrency } from '@/utils';
 import { useItemMemory } from '@/hooks/useItemMemory';
 import { useBomCalculations } from '@/hooks/useBomCalculations';
+import { useDragHandlers } from '@/hooks/useDragHandlers';
 
 const generateProjectNumber = (project: Project): string => {
   const date = new Date(project.created_at);
@@ -47,12 +48,7 @@ const ProjectDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showNotFound, setShowNotFound] = useState(false);
   const [error, setError] = useState('');
-  const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
-  const [, setActiveDragPlacement] = useState<Placement | null>(null);
-  const [isDuplicating, setIsDuplicating] = useState(false);
-  const [isCtrlDraggingItem, setIsCtrlDraggingItem] = useState(false);
   const [placementsVersion, setPlacementsVersion] = useState(0);
-  const [isDropping, setIsDropping] = useState(false);
   
   // BOM state - Map of floorplanId to BOM data
   const [floorplanBoms, setFloorplanBoms] = useState<Map<number, FloorplanBom>>(new Map());
@@ -377,7 +373,38 @@ const ProjectDashboard = () => {
 
   const categoryCounts = getCategoryCounts();
 
-  const handleDragStart = (event: DragStartEvent) => {
+  // Drag handlers hook
+  const {
+    activeDragItem,
+    activeDragPlacement,
+    isDuplicating,
+    isDropping,
+    isCtrlDraggingItem,
+    handleDragStart,
+    handleDragEnd,
+    setActiveDragItem,
+    setActiveDragPlacement,
+    setIsDuplicating,
+    setIsDropping,
+    setIsCtrlDraggingItem,
+  } = useDragHandlers({
+    items,
+    placements,
+    activeFloorplan,
+    itemSizeMemory,
+    itemVariantMemory,
+    itemPaletteRef,
+    placementAddons,
+    isResizingRef,
+    canvasScaleRef,
+    handlePlacementCreate,
+    handlePlacementUpdate,
+    fetchPlacements,
+    setPlacementsVersion,
+    clearItemMemory,
+  });
+
+  const handleSubmitFloorplan = async (data: CreateFloorplanDTO | { name?: string; sort_order?: number }, image?: File) => {
     const activeId = event.active.id.toString();
     
     if (activeId.startsWith('item-')) {
