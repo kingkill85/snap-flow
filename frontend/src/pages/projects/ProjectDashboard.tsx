@@ -138,21 +138,7 @@ const ProjectDashboard = () => {
     }
   }, [floorplans, fetchFloorplanBom]);
 
-  useEffect(() => {
-    if (activeFloorplan) {
-      const controller = new AbortController();
-      fetchPlacements(activeFloorplan.id, controller.signal);
-      return () => controller.abort();
-    }
-  }, [activeFloorplan, fetchPlacements]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchProjectData(controller.signal);
-    return () => controller.abort();
-  }, [projectId, fetchProjectData]);
-
-  // Placements hook
+  // Placements hook - MUST be called before useEffect that uses fetchPlacements
   const {
     placements,
     handlePlacementCreate,
@@ -168,6 +154,27 @@ const ProjectDashboard = () => {
     persistVariantMemory,
     setPlacementsVersion,
   });
+
+  useEffect(() => {
+    if (activeFloorplan) {
+      const controller = new AbortController();
+      fetchPlacements(activeFloorplan.id, controller.signal);
+      return () => controller.abort();
+    }
+  }, [activeFloorplan, fetchPlacements]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchProjectData(controller.signal);
+    return () => controller.abort();
+  }, [projectId, fetchProjectData]);
+
+  // Auto-select first floorplan when none is active but floorplans exist
+  useEffect(() => {
+    if (!activeFloorplan && floorplans.length > 0) {
+      setActiveFloorplan(floorplans[0]);
+    }
+  }, [activeFloorplan, floorplans, setActiveFloorplan]);
 
   // Toggle category visibility
   const handleToggleCategory = (categoryId: number) => {
@@ -222,18 +229,25 @@ const ProjectDashboard = () => {
   });
 
   const handleSubmitFloorplan = async (data: CreateFloorplanDTO | { name?: string; sort_order?: number }, image?: File) => {
+    let createdFloorplan: Floorplan | null = null;
+    
     if (floorplanToEdit) {
       await floorplanService.update(floorplanToEdit.id, data as { name?: string; sort_order?: number }, image);
     } else {
       if (!image) {
         throw new Error('Image is required');
       }
-      await floorplanService.create(data as CreateFloorplanDTO, image);
+      createdFloorplan = await floorplanService.create(data as CreateFloorplanDTO, image);
     }
     
     setShowFloorplanModal(false);
     setFloorplanToEdit(null);
     await fetchProjectData();
+    
+    // After fetch, select the newly created floorplan
+    if (createdFloorplan) {
+      setActiveFloorplan(createdFloorplan);
+    }
   };
 
   const handleDeleteFloorplan = async () => {
@@ -241,7 +255,6 @@ const ProjectDashboard = () => {
     
     try {
       await floorplanService.delete(floorplanToDelete.id);
-      setActiveFloorplan(null);
       setShowDeleteFloorplanModal(false);
       setFloorplanToDelete(null);
       // Clear BOM data for deleted floorplan to prevent stale data
@@ -251,6 +264,9 @@ const ProjectDashboard = () => {
         return next;
       });
       await fetchProjectData();
+      
+      // After fetch, clear active floorplan to let the useEffect select the first one
+      setActiveFloorplan(null);
     } catch (err) {
       setError(extractErrorMessage(err, 'Failed to delete floorplan'));
     }

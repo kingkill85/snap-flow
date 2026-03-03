@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { projectService, type Project } from '@/services/project';
 import { floorplanService, type Floorplan } from '@/services/floorplan';
 import { itemService, type Item } from '@/services/item';
@@ -52,6 +52,10 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
     setFloorplanBoms((prev) => new Map(prev).set(floorplanId, bom));
   }, []);
 
+  // Use ref to avoid circular dependency
+  const activeFloorplanRef = useRef(activeFloorplan);
+  activeFloorplanRef.current = activeFloorplan;
+
   const fetchProjectData = useCallback(async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
@@ -81,11 +85,13 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
       });
       
       if (floorplansData.length > 0) {
-        if (!activeFloorplan) {
+        // Use ref to get current value without dependency
+        const currentActive = activeFloorplanRef.current;
+        if (!currentActive) {
           setActiveFloorplan(floorplansData[0]);
         } else {
           // Update active floorplan with fresh data from API
-          const updatedFloorplan = floorplansData.find(fp => fp.id === activeFloorplan.id);
+          const updatedFloorplan = floorplansData.find(fp => fp.id === currentActive.id);
           if (updatedFloorplan) {
             setActiveFloorplan(updatedFloorplan);
           }
@@ -104,7 +110,7 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, activeFloorplan]);
+  }, [projectId]);
 
   const fetchFloorplanBom = useCallback(async (floorplanId: number, signal?: AbortSignal) => {
     try {
