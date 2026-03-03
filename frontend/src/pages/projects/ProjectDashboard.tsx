@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { projectService, type Project } from '@/services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/services/floorplan';
@@ -7,38 +7,24 @@ import { itemService, type Item } from '@/services/item';
 import { variantAddonService } from '@/services/variant-addon';
 import { bomService } from '@/services/bom';
 import type { InvoiceSettings } from '@/services/invoice-settings';
-import type { FloorplanBom, BomGroup } from '@/services/bom';
-import { Button } from '@/components/ui/button';
+import type { FloorplanBom } from '@/services/bom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Loader2, CheckCircle, XCircle, Plus, Pencil, Trash, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, PointerSensor, useSensor, useSensors, pointerWithin } from '@dnd-kit/core';
 import { ConfiguratorCanvas, ItemPalette, BOMPanel } from '@/components/configurator';
 import type { ItemPaletteRef } from '@/components/configurator';
 import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
+import { DeleteFloorplanDialog } from '@/components/floorplans/DeleteFloorplanDialog';
+import { FloorplanTabs } from '@/components/floorplans/FloorplanTabs';
 import { InvoiceSettingsModal, SummaryTab } from '@/components/invoice';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { ProjectHeader } from '@/components/projects/ProjectHeader';
+import { EmptyFloorplanState } from '@/components/projects/EmptyFloorplanState';
 
-export const calculateDragPosition = (
-  initialX: number,
-  initialY: number,
-  deltaX: number,
-  deltaY: number,
-  scaleX: number,
-  scaleY: number
-): { x: number; y: number } => {
-  return {
-    x: initialX + deltaX / scaleX,
-    y: initialY + deltaY / scaleY,
-  };
-};
+import { extractErrorMessage, formatCurrency } from '@/utils';
+import { useItemMemory } from '@/hooks/useItemMemory';
+import { useBomCalculations } from '@/hooks/useBomCalculations';
 
 const generateProjectNumber = (project: Project): string => {
   const date = new Date(project.created_at);
@@ -76,77 +62,8 @@ const ProjectDashboard = () => {
     setFloorplanBoms((prev) => new Map(prev).set(floorplanId, bom));
   }, []);
 
-  // Aggregate items from BOM groups, combining duplicate entries
-  const aggregateItems = useCallback((groups: BomGroup[]) => {
-    const itemTotals = new Map<string, { quantity: number; unitPrice: number; total: number }>();
-
-    groups.forEach((group) => {
-      // Aggregate main entries
-      const mainName = `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`;
-      const mainTotal = group.mainEntry.unit_price * group.quantity;
-      const existingMain = itemTotals.get(mainName);
-
-      if (existingMain) {
-        existingMain.quantity += group.quantity;
-        existingMain.total += mainTotal;
-      } else {
-        itemTotals.set(mainName, {
-          quantity: group.quantity,
-          unitPrice: group.mainEntry.unit_price,
-          total: mainTotal,
-        });
-      }
-
-      // Aggregate addon entries
-      group.children.forEach((child) => {
-        const childName = `${child.item_name}${child.style_name ? ` (${child.style_name})` : ''}`;
-        const childTotal = child.unit_price * group.quantity;
-        const existingChild = itemTotals.get(childName);
-
-        if (existingChild) {
-          existingChild.quantity += group.quantity;
-          existingChild.total += childTotal;
-        } else {
-          itemTotals.set(childName, {
-            quantity: group.quantity,
-            unitPrice: child.unit_price,
-            total: childTotal,
-          });
-        }
-      });
-    });
-
-    return Array.from(itemTotals.entries()).map(([name, data]) => ({
-      name,
-      ...data,
-    }));
-  }, []);
-
-  // Calculate floorplan totals by iterating over floorplans array (not the Map)
-  const floorplanTotals = useMemo(() => {
-    return floorplans.map((floorplan) => {
-      const bom = floorplanBoms.get(floorplan.id);
-
-      if (!bom || bom.groups.length === 0) {
-        return {
-          floorplan,
-          total: 0,
-          items: [] as { name: string; quantity: number; unitPrice: number; total: number }[],
-        };
-      }
-
-      return {
-        floorplan,
-        total: bom.totalPrice,
-        items: aggregateItems(bom.groups),
-      };
-    });
-  }, [floorplans, floorplanBoms, aggregateItems]);
-
-  // Calculate project total - sum of floorplan totals
-  const projectTotal = useMemo(() => {
-    return floorplanTotals.reduce((sum, ft) => sum + ft.total, 0);
-  }, [floorplanTotals]);
+  // BOM calculations
+  const { floorplanTotals, projectTotal } = useBomCalculations(floorplans, floorplanBoms);
 
   // Floorplan modal state
   const [showFloorplanModal, setShowFloorplanModal] = useState(false);
@@ -165,61 +82,13 @@ const ProjectDashboard = () => {
   const [visibleCategories, setVisibleCategories] = useState<Set<number>>(new Set());
 
   // Persistent memory for item sizes (localStorage-backed, per-project)
-  const getSizeMemoryKey = (projId: number) => `snapflow_item_size_memory_${projId}`;
-  const getVariantMemoryKey = (projId: number) => `snapflow_item_variant_memory_${projId}`;
-
-  const itemSizeMemory = useRef<Map<number, { width: number; height: number }>>(new Map());
-  const itemVariantMemory = useRef<Map<number, { variant_id: number; addon_ids: number[] }>>(new Map());
-
-  // Load persisted memory from localStorage when project changes
-  useEffect(() => {
-    if (!projectId) return;
-
-    try {
-      const savedSizeMemory = localStorage.getItem(getSizeMemoryKey(projectId));
-      if (savedSizeMemory) {
-        const parsed = JSON.parse(savedSizeMemory);
-        itemSizeMemory.current = new Map(parsed);
-      } else {
-        itemSizeMemory.current = new Map();
-      }
-
-      const savedVariantMemory = localStorage.getItem(getVariantMemoryKey(projectId));
-      if (savedVariantMemory) {
-        const parsed = JSON.parse(savedVariantMemory);
-        itemVariantMemory.current = new Map(parsed);
-      } else {
-        itemVariantMemory.current = new Map();
-      }
-    } catch (err) {
-      console.error('Failed to load item memory from localStorage:', err);
-    }
-  }, [projectId]);
-
-  // Helper functions to persist memory to localStorage
-  const persistSizeMemory = () => {
-    try {
-      localStorage.setItem(getSizeMemoryKey(projectId), JSON.stringify(Array.from(itemSizeMemory.current.entries())));
-    } catch (err) {
-      console.error('Failed to persist size memory:', err);
-    }
-  };
-
-  const persistVariantMemory = () => {
-    try {
-      localStorage.setItem(getVariantMemoryKey(projectId), JSON.stringify(Array.from(itemVariantMemory.current.entries())));
-    } catch (err) {
-      console.error('Failed to persist variant memory:', err);
-    }
-  };
-  
-  // Helper to clear memory for a specific item (used with Ctrl+drag)
-  const clearItemMemory = (itemId: number) => {
-    itemSizeMemory.current.delete(itemId);
-    itemVariantMemory.current.delete(itemId);
-    persistSizeMemory();
-    persistVariantMemory();
-  };
+  const {
+    itemSizeMemory,
+    itemVariantMemory,
+    persistSizeMemory,
+    persistVariantMemory,
+    clearItemMemory,
+  } = useItemMemory(projectId);
   
   const isResizingRef = useRef(false);
   const canvasZoomRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -280,9 +149,9 @@ const ProjectDashboard = () => {
       }
 
       setError('');
-    } catch (err: any) {
+    } catch (err) {
       if (err.name !== 'AbortError') {
-        setError(err.response?.data?.error || 'Failed to load project data');
+        setError(extractErrorMessage(err, 'Failed to load project data'));
         // Only show "not found" if we get a 404
         if (err.response?.status === 404) {
           setShowNotFound(true);
@@ -297,7 +166,7 @@ const ProjectDashboard = () => {
     try {
       const placementsData = await placementService.getAll(floorplanId, signal);
       setPlacements(placementsData);
-    } catch (err: any) {
+    } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('Failed to load placements:', err);
       }
@@ -308,7 +177,7 @@ const ProjectDashboard = () => {
     try {
       const bomData = await bomService.getBomForFloorplan(floorplanId, signal);
       setFloorplanBom(floorplanId, bomData);
-    } catch (err: any) {
+    } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('Failed to load BOM:', err);
       }
@@ -802,22 +671,18 @@ const ProjectDashboard = () => {
   };
 
   const handleSubmitFloorplan = async (data: CreateFloorplanDTO | { name?: string; sort_order?: number }, image?: File) => {
-    try {
-      if (floorplanToEdit) {
-        await floorplanService.update(floorplanToEdit.id, data as { name?: string; sort_order?: number }, image);
-      } else {
-        if (!image) {
-          throw new Error('Image is required');
-        }
-        await floorplanService.create(data as CreateFloorplanDTO, image);
+    if (floorplanToEdit) {
+      await floorplanService.update(floorplanToEdit.id, data as { name?: string; sort_order?: number }, image);
+    } else {
+      if (!image) {
+        throw new Error('Image is required');
       }
-      
-      setShowFloorplanModal(false);
-      setFloorplanToEdit(null);
-      await fetchProjectData();
-    } catch (err: any) {
-      throw err;
+      await floorplanService.create(data as CreateFloorplanDTO, image);
     }
+    
+    setShowFloorplanModal(false);
+    setFloorplanToEdit(null);
+    await fetchProjectData();
   };
 
   const handleDeleteFloorplan = async () => {
@@ -835,8 +700,8 @@ const ProjectDashboard = () => {
         return next;
       });
       await fetchProjectData();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to delete floorplan');
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Failed to delete floorplan'));
     }
   };
 
@@ -854,8 +719,8 @@ const ProjectDashboard = () => {
     try {
       await floorplanService.reorder(projectId, newOrder.map(fp => fp.id));
       await fetchProjectData();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to reorder floorplans');
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Failed to reorder floorplans'));
     }
   };
 
@@ -906,35 +771,7 @@ const ProjectDashboard = () => {
 
   return (
     <div className="fixed inset-0 top-12 flex flex-col">
-      {/* Project Header */}
-      <div className="bg-card border-b px-2 flex items-center gap-2 flex-shrink-0 h-8">
-        <Button variant="ghost" size="icon" className="h-6 w-6 p-0" onClick={() => navigate('/projects')}>
-          <ArrowLeft className="h-3 w-3" />
-        </Button>
-        <div className="h-4 w-px bg-border"></div>
-        <div className="text-sm text-muted-foreground leading-none">{generateProjectNumber(project)}</div>
-        <div className="h-4 w-px bg-border"></div>
-        <div className="font-medium text-sm truncate max-w-[200px] leading-none">{project.name}</div>
-        <div className="h-4 w-px bg-border"></div>
-        <div className="text-sm text-muted-foreground truncate max-w-[150px] leading-none">{project.customer_name}</div>
-        <div className="h-4 w-px bg-border"></div>
-        {project.status === 'active' ? (
-          <span className="inline-flex items-center text-green-600 text-sm leading-none">
-            <CheckCircle className="w-4 h-4 mr-1" />
-            Active
-          </span>
-        ) : project.status === 'completed' ? (
-          <span className="inline-flex items-center text-blue-600 text-sm leading-none">
-            <CheckCircle className="w-4 h-4 mr-1" />
-            Completed
-          </span>
-        ) : (
-          <span className="inline-flex items-center text-destructive text-sm leading-none">
-            <XCircle className="w-4 h-4 mr-1" />
-            Cancelled
-          </span>
-        )}
-      </div>
+      <ProjectHeader project={project} onBack={() => navigate('/projects')} />
 
       {/* Configurator Area */}
       <DndContext
@@ -947,87 +784,18 @@ const ProjectDashboard = () => {
           {/* Left Side - Canvas Area */}
           <div className="flex-1 flex flex-col min-w-0 bg-card">
             {floorplans.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                <div className="text-center">
-                  <p className="mb-2">No floorplans yet.</p>
-                  <Button size="sm" onClick={openCreateFloorplanModal}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Your First Floorplan
-                  </Button>
-                </div>
-              </div>
+              <EmptyFloorplanState onAdd={openCreateFloorplanModal} />
             ) : (
               <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Floorplan Tabs */}
-                <div className="flex items-center justify-start border-b bg-muted/30 px-4 py-2 flex-shrink-0 h-10">
-                  <div className="flex gap-1 overflow-x-auto">
-                    {floorplans.map((floorplan, index) => (
-                      <div
-                        key={floorplan.id}
-                        className={`flex items-center px-3 py-2 cursor-pointer transition-colors whitespace-nowrap border-b-2 ${
-                          activeFloorplan?.id === floorplan.id
-                            ? 'text-foreground border-primary font-medium'
-                            : 'text-muted-foreground border-transparent hover:text-foreground'
-                        }`}
-                        onClick={() => setActiveFloorplan(floorplan)}
-                      >
-                        <span className="text-sm">{floorplan.name}</span>
-                        <div className="flex items-center gap-0.5 ml-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditFloorplanModal(floorplan);
-                            }}
-                            className="p-1 text-primary hover:bg-primary/10 rounded transition-colors"
-                            title="Rename"
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (index > 0) handleReorderFloorplans(floorplan.id, 'up');
-                            }}
-                            disabled={index === 0}
-                            className={`p-1 text-muted-foreground hover:bg-muted rounded transition-colors ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                            title="Move Left"
-                          >
-                            <ChevronLeft className="h-3 w-3" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (index < floorplans.length - 1) handleReorderFloorplans(floorplan.id, 'down');
-                            }}
-                            disabled={index === floorplans.length - 1}
-                            className={`p-1 text-muted-foreground hover:bg-muted rounded transition-colors ${index === floorplans.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                            title="Move Right"
-                          >
-                            <ChevronRight className="h-3 w-3" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openDeleteFloorplanModal(floorplan);
-                            }}
-                            className="p-1 text-destructive hover:bg-destructive/10 rounded transition-colors"
-                            title="Delete"
-                          >
-                            <Trash className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    
-                    <div
-                      className="flex items-center px-3 py-2 cursor-pointer transition-colors whitespace-nowrap border-b-2 text-muted-foreground border-transparent hover:text-foreground"
-                      onClick={openCreateFloorplanModal}
-                      title="Add Floorplan"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </div>
-                  </div>
-                </div>
+                <FloorplanTabs
+                  floorplans={floorplans}
+                  activeFloorplan={activeFloorplan}
+                  onSelect={setActiveFloorplan}
+                  onEdit={openEditFloorplanModal}
+                  onDelete={openDeleteFloorplanModal}
+                  onReorder={handleReorderFloorplans}
+                  onAdd={openCreateFloorplanModal}
+                />
 
                 {/* Canvas Area */}
                 {activeFloorplan && (
@@ -1126,7 +894,7 @@ const ProjectDashboard = () => {
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-muted-foreground">Project Total:</span>
                   <span className="text-xl font-bold">
-                    ${projectTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${formatCurrency(projectTotal)}
                   </span>
                 </div>
               </div>
@@ -1226,33 +994,12 @@ const ProjectDashboard = () => {
         initialSettings={invoiceSettings || undefined}
       />
 
-      {/* Delete Floorplan Modal */}
-      <Dialog open={showDeleteFloorplanModal} onOpenChange={setShowDeleteFloorplanModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Floorplan</DialogTitle>
-            <DialogDescription>
-              This action cannot be undone. The floorplan and all associated placements will be permanently removed.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p>Are you sure you want to delete "{floorplanToDelete?.name}"?</p>
-            <p className="text-sm text-muted-foreground">
-              This will permanently delete the floorplan and all placements on it.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowDeleteFloorplanModal(false)}>
-                <X className="mr-2 h-4 w-4" />
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleDeleteFloorplan}>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DeleteFloorplanDialog
+        floorplan={floorplanToDelete}
+        isOpen={showDeleteFloorplanModal}
+        onClose={() => setShowDeleteFloorplanModal(false)}
+        onConfirm={handleDeleteFloorplan}
+      />
 
       {error && (
         <Alert variant="destructive" className="m-4">
