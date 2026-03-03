@@ -31,7 +31,6 @@ interface UseProjectDataReturn {
   invoiceSettings: InvoiceSettings | null;
   setInvoiceSettings: React.Dispatch<React.SetStateAction<InvoiceSettings | null>>;
   floorplanBoms: Map<number, FloorplanBom>;
-  setFloorplanBom: (floorplanId: number, bom: FloorplanBom) => void;
   setFloorplanBoms: React.Dispatch<React.SetStateAction<Map<number, FloorplanBom>>>;
   fetchProjectData: (signal?: AbortSignal) => Promise<void>;
   fetchFloorplanBom: (floorplanId: number, signal?: AbortSignal) => Promise<void>;
@@ -48,10 +47,6 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
   const [visibleCategories, setVisibleCategories] = useState<Set<number>>(new Set());
   const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings | null>(null);
   const [floorplanBoms, setFloorplanBoms] = useState<Map<number, FloorplanBom>>(new Map());
-
-  const setFloorplanBom = useCallback((floorplanId: number, bom: FloorplanBom) => {
-    setFloorplanBoms((prev) => new Map(prev).set(floorplanId, bom));
-  }, []);
 
   // Use ref to avoid circular dependency
   const activeFloorplanRef = useRef(activeFloorplan);
@@ -122,13 +117,13 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
   const fetchFloorplanBom = useCallback(async (floorplanId: number, signal?: AbortSignal) => {
     try {
       const bomData = await bomService.getBomForFloorplan(floorplanId, signal);
-      setFloorplanBom(floorplanId, bomData);
+      setFloorplanBoms((prev) => new Map(prev).set(floorplanId, bomData));
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         console.error('Failed to load BOM:', err);
       }
     }
-  }, [setFloorplanBom]);
+  }, []);
 
   return {
     project,
@@ -150,7 +145,6 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
     invoiceSettings,
     setInvoiceSettings,
     floorplanBoms,
-    setFloorplanBom,
     setFloorplanBoms,
     fetchProjectData,
     fetchFloorplanBom,
