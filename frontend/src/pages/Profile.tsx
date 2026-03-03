@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Save, Loader2 } from 'lucide-react';
+import { extractErrorMessage } from '@/utils';
 
 const Profile = () => {
   const { user, updateProfile } = useAuth();

@@ -22,6 +22,7 @@ import {
 import type { Item } from '@/services/item';
 import type { Category } from '@/services/category';
 import { X, Save, Plus } from 'lucide-react';
+import { extractErrorMessage } from '@/utils';
 
 export interface CreateItemDTO {
   category_id: number;

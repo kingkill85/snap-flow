@@ -50,6 +50,7 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react';
+import { extractErrorMessage } from '@/utils';
 
 const ItemManagement = () => {
   const [items, setItems] = useState<Item[]>([]);
@@ -93,7 +94,8 @@ const ItemManagement = () => {
         const data = await categoryService.getAll(controller.signal, true);
         setCategories(data);
       } catch (err: unknown) {
-        if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
+        const errorMessage = extractErrorMessage(err, '');
+        if (errorMessage !== 'AbortError' && errorMessage !== 'CanceledError') {
           console.error('Failed to fetch categories:', err);
         }
       }
@@ -126,7 +128,8 @@ const ItemManagement = () => {
         setItems(result.items);
         setTotalPages(result.totalPages);
       } catch (err: unknown) {
-        if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
+        const errorMessage = extractErrorMessage(err, '');
+        if (errorMessage !== 'AbortError' && errorMessage !== 'CanceledError') {
           setError(extractErrorMessage(err) || 'Failed to fetch items');
         }
       } finally {
@@ -168,7 +171,8 @@ const ItemManagement = () => {
       const variants = await itemService.getVariants(itemId, showInactive);
       setItemVariants(prev => ({ ...prev, [itemId]: variants }));
     } catch (err: unknown) {
-      if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
+      const errorMessage = extractErrorMessage(err, '');
+      if (errorMessage !== 'AbortError' && errorMessage !== 'CanceledError') {
         setError(extractErrorMessage(err) || 'Failed to load variants');
       }
     } finally {

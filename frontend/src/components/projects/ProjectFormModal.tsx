@@ -21,6 +21,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Loader2, FolderPlus, Save, X } from 'lucide-react';
 import type { Project, CreateProjectDTO, UpdateProjectDTO } from '@/services/project';
+import { extractErrorMessage } from '@/utils';
 
 interface ProjectFormModalProps {
   project: Project | null;
@@ -95,17 +96,7 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
       }
       onClose();
     } catch (err: unknown) {
-      const errorData = extractErrorMessage(err);
-      let errorMessage: string;
-      if (typeof errorData === 'object' && errorData !== null) {
-        if (errorData.issues && Array.isArray(errorData.issues)) {
-          errorMessage = errorData.issues.map((issue: { message: string }) => issue.message).join(', ');
-        } else {
-          errorMessage = JSON.stringify(errorData);
-        }
-      } else {
-        errorMessage = errorData || extractErrorMessage(err) || `Failed to ${isEdit ? 'update' : 'create'} project`;
-      }
+      const errorMessage = extractErrorMessage(err, `Failed to ${isEdit ? 'update' : 'create'} project`);
       setError(errorMessage);
     } finally {
       setIsSubmitting(false);

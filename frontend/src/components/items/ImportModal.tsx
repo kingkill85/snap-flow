@@ -128,7 +128,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
         });
       }, 500);
 
-      const response = await itemService.syncCatalog(selectedFile);
+      const response = await itemService.syncCatalog(selectedFile) as SyncResult;
       
       clearInterval(progressInterval);
       setProgress(100);
@@ -139,7 +139,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
       // This ensures the summary is visible before modal closes
     } catch (err: unknown) {
       setStep('upload');
-      setError(extractErrorMessage(err) || extractErrorMessage(err) || 'Failed to sync catalog');
+      setError(extractErrorMessage(err, 'Failed to sync catalog'));
     } finally {
       setIsUploading(false);
     }

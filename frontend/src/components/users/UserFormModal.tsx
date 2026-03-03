@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/select';
 import type { User } from '@/types';
 import type { CreateUserDTO, UpdateUserDTO } from '@/services/user';
+import { extractErrorMessage } from '@/utils';
 
 interface UserFormModalProps {
   user: User | null;

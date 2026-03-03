@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
 import { Plus, Pencil, Trash2, ArrowUp, ArrowDown, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { extractErrorMessage } from '@/utils';
 
 const CategoryManagement = () => {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -33,7 +34,8 @@ const CategoryManagement = () => {
       setCategories(data);
       setError('');
     } catch (err: unknown) {
-      if (err.name !== 'AbortError') {
+      const errorMessage = extractErrorMessage(err, '');
+      if (errorMessage !== 'AbortError') {
         setError(extractErrorMessage(err) || 'Failed to fetch categories');
       }
     } finally {
@@ -85,7 +87,8 @@ const CategoryManagement = () => {
       const updatedCategories = await categoryService.reorder(categoryIds);
       setCategories(updatedCategories);
     } catch (err: unknown) {
-      setError(extractErrorMessage(err) || 'Failed to reorder categories');
+      const errorMessage = extractErrorMessage(err);
+      setError(errorMessage || 'Failed to reorder categories');
     }
   };
 

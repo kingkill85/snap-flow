@@ -17,6 +17,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { UserFormModal } from '@/components/users/UserFormModal';
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
 import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { extractErrorMessage } from '@/utils';
 
 const UserManagement = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -35,8 +36,9 @@ const UserManagement = () => {
       setUsers(data);
       setError('');
     } catch (err: unknown) {
-      if (err.name !== 'AbortError') {
-        setError(extractErrorMessage(err) || extractErrorMessage(err) || 'Failed to fetch users');
+      const errorMessage = extractErrorMessage(err, '');
+      if (errorMessage !== 'AbortError') {
+        setError(extractErrorMessage(err) || 'Failed to fetch users');
       }
     } finally {
       setIsLoading(false);

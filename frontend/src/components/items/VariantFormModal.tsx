@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { X, Upload, Plus, Trash2, Loader2, ChevronDown, Image as ImageIcon, Save } from 'lucide-react';
 import type { ItemVariant, Item } from '@/services/item';
 import { variantAddonService, type VariantAddon } from '@/services/variant-addon';
+import { extractErrorMessage } from '@/utils';
 
 export interface CreateVariantDTO {
   style_name: string;

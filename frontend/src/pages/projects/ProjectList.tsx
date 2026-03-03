@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { extractErrorMessage } from '@/utils';
 
 // Generate project number: YYYY-MM-DD_Customer Name_Address
 const generateProjectNumber = (project: Project): string => {
@@ -66,7 +67,8 @@ const ProjectList = () => {
         setIsSearching(false);
       }
     } catch (err: unknown) {
-      if (err.name !== 'AbortError') {
+      const errorMessage = extractErrorMessage(err, '');
+      if (errorMessage !== 'AbortError') {
         setError(extractErrorMessage(err) || 'Failed to fetch projects');
       }
       if (!isSearch) {
