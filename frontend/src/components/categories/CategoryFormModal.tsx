@@ -32,7 +32,7 @@ export function CategoryFormModal({ category, isOpen, onClose, onSubmit }: Categ
   useEffect(() => {
     if (category) {
       setName(category.name);
-      setIsActive(category.is_active);
+      setIsActive(Boolean(category.is_active));
     } else {
       setName('');
       setIsActive(true);
@@ -46,7 +46,7 @@ export function CategoryFormModal({ category, isOpen, onClose, onSubmit }: Categ
     setIsLoading(true);
 
     try {
-      await onSubmit({ name, is_active: isActive });
+      await onSubmit({ name, is_active: Boolean(isActive) });
       onClose();
     } catch (err) {
       setError(extractErrorMessage(err, 'Failed to save category'));
