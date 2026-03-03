@@ -169,12 +169,7 @@ const ProjectDashboard = () => {
     return () => controller.abort();
   }, [projectId, fetchProjectData]);
 
-  // Auto-select first floorplan when none is active but floorplans exist
-  useEffect(() => {
-    if (!activeFloorplan && floorplans.length > 0) {
-      setActiveFloorplan(floorplans[0]);
-    }
-  }, [activeFloorplan, floorplans, setActiveFloorplan]);
+  // Note: Auto-selection of floorplan is handled by useProjectData hook in fetchProjectData
 
   // Toggle category visibility
   const handleToggleCategory = (categoryId: number) => {
