@@ -3,9 +3,12 @@ import { vi } from 'vitest';
 
 // Make vi available globally
 declare global {
+  // eslint-disable-next-line no-var
   var vi: typeof vi;
 }
-(globalThis as any).vi = vi;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).vi = vi;
 
 // Mock ResizeObserver for tests
 global.ResizeObserver = class ResizeObserver {

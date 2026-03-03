@@ -166,8 +166,7 @@ describe('AuthContext', () => {
   it('clears token on 401 unauthorized user fetch', async () => {
     mockGetAccessToken.mockReturnValue('invalid-token');
     mockGetRefreshToken.mockReturnValue('invalid-refresh-token');
-    const error = new Error('Invalid token') as any;
-    error.response = { status: 401 };
+    const error = Object.assign(new Error('Invalid token'), { response: { status: 401 } });
     mockGetCurrentUser.mockRejectedValueOnce(error);
 
     render(

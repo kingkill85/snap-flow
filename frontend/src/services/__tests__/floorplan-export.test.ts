@@ -181,7 +181,7 @@ describe('exportFloorplanImage', () => {
       variants: [
         {
           ...mockItem.variants![0],
-          image_path: undefined as any,
+          image_path: undefined as unknown as string,
         },
       ],
     };
@@ -228,7 +228,8 @@ describe('exportFloorplanImage', () => {
     await exportFloorplanImage(mockFloorplan, placements, [mockItem]);
 
     // Should draw both placements (2 floorplan draws + 2 placement draws)
-    const drawImageCalls = (mockCtx.drawImage as any).mock.calls;
+    const drawImageCalls = // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mockCtx.drawImage as any).mock.calls;
     expect(drawImageCalls.length).toBeGreaterThanOrEqual(3);
   });
 
@@ -356,7 +357,8 @@ describe('exportFloorplanImage', () => {
       );
 
       // Should only draw one placement (category 1)
-      const drawImageCalls = (mockCtx.drawImage as any).mock.calls;
+      const drawImageCalls = // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mockCtx.drawImage as any).mock.calls;
       // 1 floorplan + 1 placement from visible category
       expect(drawImageCalls.length).toBe(2);
     });
@@ -377,7 +379,8 @@ describe('exportFloorplanImage', () => {
       await exportFloorplanImage(mockFloorplan, [placement1, placement2], [mockItem]);
 
       // Should draw both placements
-      const drawImageCalls = (mockCtx.drawImage as any).mock.calls;
+      const drawImageCalls = // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mockCtx.drawImage as any).mock.calls;
       expect(drawImageCalls.length).toBeGreaterThanOrEqual(3); // floorplan + 2 placements
     });
 
@@ -399,7 +402,8 @@ describe('exportFloorplanImage', () => {
       );
 
       // Should draw the placement even though item is not found (shown by default)
-      const drawImageCalls = (mockCtx.drawImage as any).mock.calls;
+      const drawImageCalls = // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mockCtx.drawImage as any).mock.calls;
       expect(drawImageCalls.length).toBeGreaterThanOrEqual(2); // floorplan + placement
     });
 
@@ -427,7 +431,8 @@ describe('exportFloorplanImage', () => {
       );
 
       // Should draw floorplan + 2 placements (categories 1 and 3)
-      const drawImageCalls = (mockCtx.drawImage as any).mock.calls;
+      const drawImageCalls = // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mockCtx.drawImage as any).mock.calls;
       expect(drawImageCalls.length).toBe(3);
     });
   });

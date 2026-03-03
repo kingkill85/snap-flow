@@ -92,7 +92,7 @@ const ItemManagement = () => {
       try {
         const data = await categoryService.getAll(controller.signal, true);
         setCategories(data);
-      } catch (err: any) {
+      } catch (err) {
         if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
           console.error('Failed to fetch categories:', err);
         }
@@ -125,7 +125,7 @@ const ItemManagement = () => {
 
         setItems(result.items);
         setTotalPages(result.totalPages);
-      } catch (err: any) {
+      } catch (err) {
         if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
           setError(err.response?.data?.error || 'Failed to fetch items');
         }
@@ -167,7 +167,7 @@ const ItemManagement = () => {
     try {
       const variants = await itemService.getVariants(itemId, showInactive);
       setItemVariants(prev => ({ ...prev, [itemId]: variants }));
-    } catch (err: any) {
+    } catch (err) {
       if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
         setError(err.response?.data?.error || 'Failed to load variants');
       }

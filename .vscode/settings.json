@@ -6,7 +6,7 @@
   },
   "typescript.tsdk": "frontend-v2/node_modules/typescript/lib",
   "typescript.enablePromptUseWorkspaceTsdk": true,
-  
+
   "[typescript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
@@ -28,7 +28,7 @@
   "[html]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  
+
   "tailwindCSS.includeLanguages": {
     "typescript": "javascript",
     "typescriptreact": "javascript"
@@ -37,12 +37,12 @@
     ["cn\\(([^)]*)\\)", "'([^']*)'"],
     ["cn\\(([^)]*)\\)", "\"([^\"]*)\""]
   ],
-  
+
   "deno.enable": true,
   "deno.lint": true,
   "deno.unstable": true,
   "deno.config": "./backend/deno.json",
-  
+
   "files.exclude": {
     "**/node_modules": true,
     "**/dist": true,
@@ -52,23 +52,24 @@
     "**/node_modules/**": true,
     "**/dist/**": true
   },
-  
+
   "search.exclude": {
     "**/node_modules": true,
     "**/dist": true,
     "**/*.lock": true
   },
-  
+
   "emmet.includeLanguages": {
     "typescript": "typescriptreact"
   },
-  
+
   "cSpell.words": [
-    "SnapFlow",
-    "shadcn",
-    "tailwindcss",
-    "lucide",
     "Deno",
-    "frontend"
+    "floorplans",
+    "frontend",
+    "lucide",
+    "shadcn",
+    "SnapFlow",
+    "tailwindcss"
   ]
 }

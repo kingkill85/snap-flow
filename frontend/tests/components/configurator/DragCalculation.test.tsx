@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateDragPosition } from '@/pages/projects/ProjectDashboard';
+import { calculateDragPosition } from '@/utils/dragPosition';
 
 describe('calculateDragPosition', () => {
   it('calculates correct position for simple drag at 1:1 scale', () => {

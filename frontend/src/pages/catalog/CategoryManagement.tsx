@@ -32,7 +32,7 @@ const CategoryManagement = () => {
       const data = await categoryService.getAll(signal, showInactive);
       setCategories(data);
       setError('');
-    } catch (err: any) {
+    } catch (err) {
       if (err.name !== 'AbortError') {
         setError(err.message || 'Failed to fetch categories');
       }
@@ -84,7 +84,7 @@ const CategoryManagement = () => {
     try {
       const updatedCategories = await categoryService.reorder(categoryIds);
       setCategories(updatedCategories);
-    } catch (err: any) {
+    } catch (err) {
       setError(err.response?.data?.error || 'Failed to reorder categories');
     }
   };

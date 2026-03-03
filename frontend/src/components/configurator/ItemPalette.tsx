@@ -161,7 +161,7 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
         preloadImages(itemsResult.items);
         
         setError('');
-      } catch (err: any) {
+      } catch (err) {
         setError(err.message || 'Failed to load products');
       } finally {
         setIsLoading(false);

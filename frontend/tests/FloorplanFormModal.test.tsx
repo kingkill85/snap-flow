@@ -238,7 +238,7 @@ describe('FloorplanFormModal', () => {
     });
 
     it('does not listen for paste when modal is closed', async () => {
-      const { rerender } = render(
+      render(
         <FloorplanFormModal
           floorplan={null}
           projectId={1}
