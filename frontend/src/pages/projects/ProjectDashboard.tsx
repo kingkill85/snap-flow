@@ -123,7 +123,7 @@ const ProjectDashboard = () => {
         clearTimeout(bomFetchTimeoutRef.current);
       }
     };
-  }, [placementsVersion, floorplans]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [placementsVersion, floorplans, fetchFloorplanBom]);
 
   // Initial BOM fetch when floorplans load (runs once)
   const initialBomFetchRef = useRef(false);
@@ -136,7 +136,7 @@ const ProjectDashboard = () => {
       });
       return () => controller.abort();
     }
-  }, [floorplans]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [floorplans, fetchFloorplanBom]);
 
   useEffect(() => {
     if (activeFloorplan) {
@@ -144,13 +144,13 @@ const ProjectDashboard = () => {
       fetchPlacements(activeFloorplan.id, controller.signal);
       return () => controller.abort();
     }
-  }, [activeFloorplan?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeFloorplan, fetchPlacements]);
 
   useEffect(() => {
     const controller = new AbortController();
     fetchProjectData(controller.signal);
     return () => controller.abort();
-  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectId, fetchProjectData]);
 
   // Placements hook
   const {
