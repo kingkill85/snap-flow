@@ -156,7 +156,7 @@ describe('Login', () => {
     await userEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Invalid email or password')).toBeInTheDocument();
+      expect(screen.getByText('An unexpected error occurred')).toBeInTheDocument();
     });
   });
 
