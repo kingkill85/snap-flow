@@ -94,8 +94,14 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
           const updatedFloorplan = floorplansData.find(fp => fp.id === currentActive.id);
           if (updatedFloorplan) {
             setActiveFloorplan(updatedFloorplan);
+          } else {
+            // Previously active floorplan no longer exists (was deleted)
+            setActiveFloorplan(floorplansData[0]);
           }
         }
+      } else {
+        // No floorplans left, clear active floorplan
+        setActiveFloorplan(null);
       }
 
       setError('');
