@@ -56,6 +56,8 @@ const ProjectDashboard = () => {
     invoiceSettings,
     setInvoiceSettings,
     floorplanBoms,
+    setFloorplanBom,
+    setFloorplanBoms,
     fetchProjectData,
     fetchFloorplanBom,
   } = useProjectData({ projectId });

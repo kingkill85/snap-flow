@@ -32,6 +32,7 @@ interface UseProjectDataReturn {
   setInvoiceSettings: React.Dispatch<React.SetStateAction<InvoiceSettings | null>>;
   floorplanBoms: Map<number, FloorplanBom>;
   setFloorplanBom: (floorplanId: number, bom: FloorplanBom) => void;
+  setFloorplanBoms: React.Dispatch<React.SetStateAction<Map<number, FloorplanBom>>>;
   fetchProjectData: (signal?: AbortSignal) => Promise<void>;
   fetchFloorplanBom: (floorplanId: number, signal?: AbortSignal) => Promise<void>;
 }
@@ -158,6 +159,7 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
     setInvoiceSettings,
     floorplanBoms,
     setFloorplanBom,
+    setFloorplanBoms,
     fetchProjectData,
     fetchFloorplanBom,
   };
