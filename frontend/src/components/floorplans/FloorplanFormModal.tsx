@@ -12,6 +12,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import type { Floorplan, CreateFloorplanDTO } from '@/services/floorplan';
+import { extractErrorMessage } from '@/utils';
 
 interface FloorplanFormModalProps {
   floorplan: Floorplan | null;
@@ -154,18 +155,7 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
       }
       onClose();
     } catch (err) {
-      const errorData = err.response?.data?.error;
-      let errorMessage: string;
-      if (typeof errorData === 'object' && errorData !== null) {
-        if (errorData.issues && Array.isArray(errorData.issues)) {
-          errorMessage = errorData.issues.map((issue: { message: string }) => issue.message).join(', ');
-        } else {
-          errorMessage = JSON.stringify(errorData);
-        }
-      } else {
-        errorMessage = errorData || err.message || `Failed to ${isEdit ? 'update' : 'create'} floorplan`;
-      }
-      setError(errorMessage);
+      setError(extractErrorMessage(err, `Failed to ${isEdit ? 'update' : 'create'} floorplan`));
     } finally {
       setIsSubmitting(false);
     }

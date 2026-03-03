@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
 import { Upload, Loader2, CheckCircle, AlertCircle, FileSpreadsheet, FileText, X, Check } from 'lucide-react';
 import { itemService } from '@/services/item';
+import { extractErrorMessage } from '@/utils';
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -136,9 +137,9 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
       setStep('complete');
       // Note: onSuccess is NOT called here - it's called when user clicks "Done"
       // This ensures the summary is visible before modal closes
-    } catch (err) {
+    } catch (err: unknown) {
       setStep('upload');
-      setError(err.response?.data?.error || err.message || 'Failed to sync catalog');
+      setError(extractErrorMessage(err) || extractErrorMessage(err) || 'Failed to sync catalog');
     } finally {
       setIsUploading(false);
     }
@@ -413,7 +414,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
                 <h4 className="font-semibold text-red-900 dark:text-red-100 mb-2">Errors:</h4>
                 <ul className="text-sm text-red-800 dark:text-red-200 space-y-1 max-h-32 overflow-y-auto">
                   {result.errors.map((err, idx) => (
-                    <li key={idx}>Row {err.row}: {err.message}</li>
+                    <li key={idx}>Row {err.row}: {extractErrorMessage(err)}</li>
                   ))}
                 </ul>
               </div>

@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Loader2, Save, X, RefreshCw } from 'lucide-react';
 import { invoiceSettingsService, type InvoiceSettings } from '@/services/invoice-settings';
+import { extractErrorMessage } from '@/utils';
 
 interface InvoiceSettingsModalProps {
   projectId: number;
@@ -125,7 +126,7 @@ export function InvoiceSettingsModal({
     try {
       const response = await invoiceSettingsService.getExchangeRate(formData.local_currency_code);
       setGoogleRate(response.rate);
-    } catch (err) {
+    } catch (err: unknown) {
       setError('Failed to fetch exchange rate. Please try again.');
     } finally {
       setIsFetchingRate(false);
@@ -148,8 +149,8 @@ export function InvoiceSettingsModal({
       });
       onSave(savedSettings);
       onClose();
-    } catch (err) {
-      const errorData = err.response?.data?.error;
+    } catch (err: unknown) {
+      const errorData = extractErrorMessage(err);
       setError(typeof errorData === 'string' ? errorData : 'Failed to save invoice settings');
     } finally {
       setIsSubmitting(false);

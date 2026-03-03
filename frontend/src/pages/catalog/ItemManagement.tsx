@@ -92,7 +92,7 @@ const ItemManagement = () => {
       try {
         const data = await categoryService.getAll(controller.signal, true);
         setCategories(data);
-      } catch (err) {
+      } catch (err: unknown) {
         if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
           console.error('Failed to fetch categories:', err);
         }
@@ -125,9 +125,9 @@ const ItemManagement = () => {
 
         setItems(result.items);
         setTotalPages(result.totalPages);
-      } catch (err) {
+      } catch (err: unknown) {
         if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
-          setError(err.response?.data?.error || 'Failed to fetch items');
+          setError(extractErrorMessage(err) || 'Failed to fetch items');
         }
       } finally {
         setIsLoading(false);
@@ -167,9 +167,9 @@ const ItemManagement = () => {
     try {
       const variants = await itemService.getVariants(itemId, showInactive);
       setItemVariants(prev => ({ ...prev, [itemId]: variants }));
-    } catch (err) {
+    } catch (err: unknown) {
       if (err.name !== 'AbortError' && err.name !== 'CanceledError') {
-        setError(err.response?.data?.error || 'Failed to load variants');
+        setError(extractErrorMessage(err) || 'Failed to load variants');
       }
     } finally {
       setLoadingVariants(prev => ({ ...prev, [itemId]: false }));
@@ -269,7 +269,7 @@ const ItemManagement = () => {
         }
       }
       setAllVariantsForAddon(variants);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to fetch variants for add-ons:', err);
       setAllItemsForAddon([]);
       setAllVariantsForAddon([]);

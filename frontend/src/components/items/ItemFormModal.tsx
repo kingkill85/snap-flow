@@ -111,8 +111,8 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
 
       await onSubmit(data);
       onClose();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save item');
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err) || 'Failed to save item');
     } finally {
       setIsLoading(false);
     }

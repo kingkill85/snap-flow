@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, ChevronDown, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { extractErrorMessage } from '@/utils';
 import type { FloorplanBom, ChangeReport } from '@/services/bom';
 import { bomService } from '@/services/bom';
 import { itemService } from '@/services/item';
@@ -42,7 +43,7 @@ export function BOMPanel({ floorplanId, bom, className = '' }: BOMPanelProps) {
       const report = await bomService.updateFromCatalog(floorplanId);
       setChangeReport(report);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to update from catalog');
+      setError(extractErrorMessage(err, 'Failed to update from catalog'));
     } finally {
       setIsUpdating(false);
     }

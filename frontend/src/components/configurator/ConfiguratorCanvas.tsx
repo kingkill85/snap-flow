@@ -789,9 +789,9 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
                 <div className="flex items-start gap-3">
                   {(() => {
                     // Find the BOM group for this placement
-                    const group = bom.groups.find((g: import("@/services/bom").BomGroup) => 
-                      g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
-                    );
+                    const group = placement?.bom_id ? bom.groups.find((g: import("@/services/bom").BomGroup) => 
+                      g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
+                    ) : undefined;
                     const mainEntry = group?.mainEntry;
                     const mainEntryImageUrl = mainEntry?.picture_path 
                       ? itemService.getImageUrl(mainEntry.picture_path)
@@ -810,9 +810,9 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
                   })()}
                   <div className="flex-1 min-w-0">
                     {(() => {
-                    const group = bom.groups.find((g: import('@/services/bom').BomGroup) =>
-                        g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
-                      );
+                    const group = placement?.bom_id ? bom.groups.find((g: import('@/services/bom').BomGroup) =>
+                        g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
+                      ) : undefined;
                       const mainEntry = group?.mainEntry;
                       return (
                         <>
@@ -830,9 +830,9 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
             )}
 
             {(() => {
-              const group = bom?.groups.find((g: import("@/services/bom").BomGroup) => 
-                g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
-              );
+              const group = placement?.bom_id ? bom?.groups.find((g: import("@/services/bom").BomGroup) => 
+                g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
+              ) : undefined;
               return group && group.children.length > 0 ? (
                 <div>
                   <Label className="block text-sm font-medium mb-2">Add-ons</Label>

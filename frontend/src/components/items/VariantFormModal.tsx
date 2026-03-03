@@ -119,7 +119,7 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
     try {
       const data = await variantAddonService.getByVariant(itemId, variant.id);
       setAddons(data);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to load add-ons:', err);
     } finally {
       setLoadingAddons(false);
@@ -139,8 +139,8 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
       await loadAddons();
       setSelectedAddonVariant('');
       setIsRequired(false);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add add-on');
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err) || 'Failed to add add-on');
     } finally {
       setAddingAddon(false);
     }
@@ -152,8 +152,8 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
     try {
       await variantAddonService.removeAddon(itemId, variant.id, addonId);
       await loadAddons();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to remove add-on');
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err) || 'Failed to remove add-on');
     }
   };
 
@@ -223,8 +223,8 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
 
       await onSubmit(data);
       onClose();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save variant');
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err) || 'Failed to save variant');
     } finally {
       setIsLoading(false);
     }

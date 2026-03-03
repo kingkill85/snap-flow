@@ -82,8 +82,8 @@ export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModal
         await onSubmit(createData);
       }
       onClose();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save user');
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err) || 'Failed to save user');
     } finally {
       setIsLoading(false);
     }

@@ -94,8 +94,8 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
         await onSubmit(createData);
       }
       onClose();
-    } catch (err) {
-      const errorData = err.response?.data?.error;
+    } catch (err: unknown) {
+      const errorData = extractErrorMessage(err);
       let errorMessage: string;
       if (typeof errorData === 'object' && errorData !== null) {
         if (errorData.issues && Array.isArray(errorData.issues)) {
@@ -104,7 +104,7 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
           errorMessage = JSON.stringify(errorData);
         }
       } else {
-        errorMessage = errorData || err.message || `Failed to ${isEdit ? 'update' : 'create'} project`;
+        errorMessage = errorData || extractErrorMessage(err) || `Failed to ${isEdit ? 'update' : 'create'} project`;
       }
       setError(errorMessage);
     } finally {

@@ -7,6 +7,7 @@ import { categoryService } from '@/services/category';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { extractErrorMessage } from '@/utils';
 
 interface DraggableItemProps {
   item: Item;
@@ -162,7 +163,7 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
         
         setError('');
       } catch (err) {
-        setError(err.message || 'Failed to load products');
+        setError(extractErrorMessage(err, 'Failed to load products'));
       } finally {
         setIsLoading(false);
       }

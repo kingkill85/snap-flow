@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
+import { extractErrorMessage } from '@/utils';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -25,8 +26,8 @@ const Login = () => {
     try {
       await login(email, password);
       navigate('/');
-    } catch (err) {
-      const errorMessage = err.response?.data?.error || 'Invalid email or password';
+    } catch (err: unknown) {
+      const errorMessage = extractErrorMessage(err) || 'Invalid email or password';
       setError(errorMessage);
     } finally {
       setIsLoading(false);
