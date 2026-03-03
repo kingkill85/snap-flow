@@ -6,9 +6,23 @@ export const extractErrorMessage = (
   defaultMessage = 'An unexpected error occurred'
 ): string => {
   if (error && typeof error === 'object') {
-    const err = error as { response?: { data?: { error?: string } } };
-    if (err.response?.data?.error) {
-      return err.response.data.error;
+    const err = error as { 
+      response?: { 
+        data?: { 
+          error?: string | { issues?: Array<{ message: string }>; name?: string } 
+        } 
+      } 
+    };
+    const errorData = err.response?.data?.error;
+    if (errorData) {
+      // Handle Zod validation errors with issues
+      if (typeof errorData === 'object' && errorData.issues && Array.isArray(errorData.issues)) {
+        return errorData.issues.map((issue) => issue.message).join(', ');
+      }
+      // Handle simple string errors
+      if (typeof errorData === 'string') {
+        return errorData;
+      }
     }
   }
   return defaultMessage;
