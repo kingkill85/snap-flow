@@ -1,4 +1,5 @@
 import api from './api';
+import type { Floorplan } from './floorplan';
 
 export interface BomEntry {
   id: number;
@@ -32,6 +33,19 @@ export interface FloorplanBom {
   floorplanId: number;
   groups: BomGroup[];
   totalPrice: number;
+}
+
+export interface FloorplanItem {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface FloorplanTotal {
+  floorplan: Floorplan;
+  total: number;
+  items: FloorplanItem[];
 }
 
 export interface ChangeReport {
@@ -76,11 +90,6 @@ export const bomService = {
 
   async updateFromCatalog(floorplanId: number, signal?: AbortSignal): Promise<ChangeReport> {
     const response = await api.post(`/floorplans/${floorplanId}/bom/update-from-catalog`, {}, { signal });
-    return response.data.data;
-  },
-
-  async getProjectTotal(projectId: number, signal?: AbortSignal): Promise<{ totalPrice: number }> {
-    const response = await api.get(`/projects/${projectId}/total`, { signal });
     return response.data.data;
   },
 };

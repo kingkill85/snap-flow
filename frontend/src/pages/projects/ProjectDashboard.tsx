@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { projectService, type Project } from '@/services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/services/floorplan';
 import { placementService, type Placement, type CreatePlacementDTO } from '@/services/placement';
 import { itemService, type Item } from '@/services/item';
 import { variantAddonService } from '@/services/variant-addon';
-import { bomService, type FloorplanBom } from '@/services/bom';
+import { bomService } from '@/services/bom';
 import type { InvoiceSettings } from '@/services/invoice-settings';
+import type { FloorplanBom, BomGroup } from '@/services/bom';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -65,10 +66,88 @@ const ProjectDashboard = () => {
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [isCtrlDraggingItem, setIsCtrlDraggingItem] = useState(false);
   const [placementsVersion, setPlacementsVersion] = useState(0);
-  const [projectTotal, setProjectTotal] = useState<number>(0);
   const [isDropping, setIsDropping] = useState(false);
+  
+  // BOM state - Map of floorplanId to BOM data
   const [floorplanBoms, setFloorplanBoms] = useState<Map<number, FloorplanBom>>(new Map());
   
+  // Update BOM for a specific floorplan
+  const setFloorplanBom = useCallback((floorplanId: number, bom: FloorplanBom) => {
+    setFloorplanBoms((prev) => new Map(prev).set(floorplanId, bom));
+  }, []);
+
+  // Aggregate items from BOM groups, combining duplicate entries
+  const aggregateItems = useCallback((groups: BomGroup[]) => {
+    const itemTotals = new Map<string, { quantity: number; unitPrice: number; total: number }>();
+
+    groups.forEach((group) => {
+      // Aggregate main entries
+      const mainName = `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`;
+      const mainTotal = group.mainEntry.unit_price * group.quantity;
+      const existingMain = itemTotals.get(mainName);
+
+      if (existingMain) {
+        existingMain.quantity += group.quantity;
+        existingMain.total += mainTotal;
+      } else {
+        itemTotals.set(mainName, {
+          quantity: group.quantity,
+          unitPrice: group.mainEntry.unit_price,
+          total: mainTotal,
+        });
+      }
+
+      // Aggregate addon entries
+      group.children.forEach((child) => {
+        const childName = `${child.item_name}${child.style_name ? ` (${child.style_name})` : ''}`;
+        const childTotal = child.unit_price * group.quantity;
+        const existingChild = itemTotals.get(childName);
+
+        if (existingChild) {
+          existingChild.quantity += group.quantity;
+          existingChild.total += childTotal;
+        } else {
+          itemTotals.set(childName, {
+            quantity: group.quantity,
+            unitPrice: child.unit_price,
+            total: childTotal,
+          });
+        }
+      });
+    });
+
+    return Array.from(itemTotals.entries()).map(([name, data]) => ({
+      name,
+      ...data,
+    }));
+  }, []);
+
+  // Calculate floorplan totals by iterating over floorplans array (not the Map)
+  const floorplanTotals = useMemo(() => {
+    return floorplans.map((floorplan) => {
+      const bom = floorplanBoms.get(floorplan.id);
+
+      if (!bom || bom.groups.length === 0) {
+        return {
+          floorplan,
+          total: 0,
+          items: [] as { name: string; quantity: number; unitPrice: number; total: number }[],
+        };
+      }
+
+      return {
+        floorplan,
+        total: bom.totalPrice,
+        items: aggregateItems(bom.groups),
+      };
+    });
+  }, [floorplans, floorplanBoms, aggregateItems]);
+
+  // Calculate project total - sum of floorplan totals
+  const projectTotal = useMemo(() => {
+    return floorplanTotals.reduce((sum, ft) => sum + ft.total, 0);
+  }, [floorplanTotals]);
+
   // Floorplan modal state
   const [showFloorplanModal, setShowFloorplanModal] = useState(false);
   const [floorplanToEdit, setFloorplanToEdit] = useState<Floorplan | null>(null);
@@ -228,7 +307,7 @@ const ProjectDashboard = () => {
   const fetchFloorplanBom = async (floorplanId: number, signal?: AbortSignal) => {
     try {
       const bomData = await bomService.getBomForFloorplan(floorplanId, signal);
-      setFloorplanBoms(prev => new Map(prev).set(floorplanId, bomData));
+      setFloorplanBom(floorplanId, bomData);
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         console.error('Failed to load BOM:', err);
@@ -239,6 +318,9 @@ const ProjectDashboard = () => {
   // Fetch BOM for all floorplans when placements change (debounced)
   const bomFetchTimeoutRef = useRef<number | null>(null);
   useEffect(() => {
+    // Skip initial render - only run when placementsVersion changes from user actions
+    if (placementsVersion === 0) return;
+    
     // Clear any pending fetch
     if (bomFetchTimeoutRef.current) {
       clearTimeout(bomFetchTimeoutRef.current);
@@ -257,13 +339,25 @@ const ProjectDashboard = () => {
         clearTimeout(bomFetchTimeoutRef.current);
       }
     };
-  }, [placementsVersion, floorplans]);
+  }, [placementsVersion]);
+
+  // Initial BOM fetch when floorplans load (runs once)
+  const initialBomFetchRef = useRef(false);
+  useEffect(() => {
+    if (floorplans.length > 0 && !initialBomFetchRef.current) {
+      initialBomFetchRef.current = true;
+      const controller = new AbortController();
+      floorplans.forEach(fp => {
+        fetchFloorplanBom(fp.id, controller.signal);
+      });
+      return () => controller.abort();
+    }
+  }, [floorplans]);
 
   useEffect(() => {
     if (activeFloorplan) {
       const controller = new AbortController();
       fetchPlacements(activeFloorplan.id, controller.signal);
-      fetchFloorplanBom(activeFloorplan.id, controller.signal);
       return () => controller.abort();
     }
   }, [activeFloorplan?.id]);
@@ -273,15 +367,6 @@ const ProjectDashboard = () => {
     fetchProjectData(controller.signal);
     return () => controller.abort();
   }, [projectId]);
-
-  // Calculate project total from BOM data instead of fetching separately
-  useEffect(() => {
-    let total = 0;
-    floorplanBoms.forEach((bom) => {
-      total += bom.totalPrice;
-    });
-    setProjectTotal(total);
-  }, [floorplanBoms]);
 
   const handlePlacementCreate = async (placement: { x: number; y: number; width?: number; height?: number; item_id: number; item_variant_id: number; addon_ids?: number[]; ignoreDefaults?: boolean }) => {
     if (!activeFloorplan) return;
@@ -743,7 +828,12 @@ const ProjectDashboard = () => {
       setActiveFloorplan(null);
       setShowDeleteFloorplanModal(false);
       setFloorplanToDelete(null);
-      setPlacementsVersion(prev => prev + 1);
+      // Clear BOM data for deleted floorplan to prevent stale data
+      setFloorplanBoms(prev => {
+        const next = new Map(prev);
+        next.delete(floorplanToDelete.id);
+        return next;
+      });
       await fetchProjectData();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to delete floorplan');
@@ -1022,7 +1112,8 @@ const ProjectDashboard = () => {
                   projectNumber={generateProjectNumber(project)}
                   customerName={project?.customer_name || ''}
                   floorplans={floorplans}
-                  floorplanBoms={floorplanBoms}
+                  floorplanTotals={floorplanTotals}
+                  projectTotal={projectTotal}
                   invoiceSettings={invoiceSettings}
                   onConfigureInvoice={() => setShowInvoiceModal(true)}
                 />

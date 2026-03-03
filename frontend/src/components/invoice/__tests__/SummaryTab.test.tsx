@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { SummaryTab } from '../SummaryTab';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { Floorplan } from '@/services/floorplan';
-import type { FloorplanBom } from '@/services/bom';
+import type { FloorplanTotal } from '@/services/bom';
 
 // Mock services
 vi.mock('@/services/invoice-docx', () => ({
@@ -11,74 +11,36 @@ vi.mock('@/services/invoice-docx', () => ({
 }));
 
 const mockFloorplans: Floorplan[] = [
-  { id: 1, name: 'Basement', project_id: 1, created_at: '2024-01-01' },
-  { id: 2, name: 'Ground Floor', project_id: 1, created_at: '2024-01-01' },
+  { id: 1, name: 'Basement', project_id: 1, image_path: 'test.jpg', sort_order: 1 },
+  { id: 2, name: 'Ground Floor', project_id: 1, image_path: 'test.jpg', sort_order: 2 },
 ];
 
-const mockFloorplanBoms = new Map<number, FloorplanBom>([
-  [
-    1,
-    {
-      floorplanId: 1,
-      totalPrice: 500,
-      groups: [
-        {
-          mainEntry: {
-            id: 1,
-            project_id: 1,
-            floorplan_id: 1,
-            item_id: 1,
-            variant_id: 1,
-            parent_bom_id: null,
-            item_name: 'Test Item',
-            style_name: 'Black',
-            model_number: 'TEST-001',
-            unit_price: 100,
-            picture_path: null,
-            created_at: '2024-01-01',
-            updated_at: '2024-01-01',
-          },
-          children: [],
-          quantity: 5,
-          totalPrice: 500,
-          isAvailable: true,
-          bomEntryIds: [1],
-        },
-      ],
-    },
-  ],
-  [
-    2,
-    {
-      floorplanId: 2,
-      totalPrice: 500,
-      groups: [
-        {
-          mainEntry: {
-            id: 2,
-            project_id: 1,
-            floorplan_id: 2,
-            item_id: 2,
-            variant_id: 2,
-            parent_bom_id: null,
-            item_name: 'Another Item',
-            style_name: null,
-            model_number: 'TEST-002',
-            unit_price: 250,
-            picture_path: null,
-            created_at: '2024-01-01',
-            updated_at: '2024-01-01',
-          },
-          children: [],
-          quantity: 2,
-          totalPrice: 500,
-          isAvailable: true,
-          bomEntryIds: [2],
-        },
-      ],
-    },
-  ],
-]);
+const mockFloorplanTotals: FloorplanTotal[] = [
+  {
+    floorplan: mockFloorplans[0],
+    total: 500,
+    items: [
+      {
+        name: 'Test Item (Black)',
+        quantity: 5,
+        unitPrice: 100,
+        total: 500,
+      },
+    ],
+  },
+  {
+    floorplan: mockFloorplans[1],
+    total: 500,
+    items: [
+      {
+        name: 'Another Item',
+        quantity: 2,
+        unitPrice: 250,
+        total: 500,
+      },
+    ],
+  },
+];
 
 const mockInvoiceSettings: InvoiceSettings = {
   discount_percentage: 10,
@@ -90,20 +52,21 @@ const mockInvoiceSettings: InvoiceSettings = {
 };
 
 describe('SummaryTab', () => {
-  it('renders and shows content when BOM data is provided', async () => {
+  it('renders and shows content when totals are provided', async () => {
     render(
       <SummaryTab
         projectName="Test Project"
         projectNumber="PRJ-001"
         customerName="Test Customer"
         floorplans={mockFloorplans}
-        floorplanBoms={mockFloorplanBoms}
+        floorplanTotals={mockFloorplanTotals}
+        projectTotal={1000}
         invoiceSettings={null}
         onConfigureInvoice={vi.fn()}
       />
     );
 
-    // Should eventually show floorplan breakdown
+    // Should show floorplan breakdown
     await waitFor(() => {
       expect(screen.getByText('Floorplan Breakdown')).toBeInTheDocument();
     });
@@ -116,7 +79,8 @@ describe('SummaryTab', () => {
         projectNumber="PRJ-001"
         customerName="Test Customer"
         floorplans={[]} // No floorplans - should show empty state immediately
-        floorplanBoms={new Map()}
+        floorplanTotals={[]}
+        projectTotal={0}
         invoiceSettings={null}
         onConfigureInvoice={vi.fn()}
       />
@@ -126,22 +90,37 @@ describe('SummaryTab', () => {
     expect(screen.getByText('No floorplans yet. Create a floorplan to see breakdown.')).toBeInTheDocument();
   });
 
-  it('displays floorplan breakdown after loading', async () => {
+  it('shows loading when floorplans exist but totals are empty', () => {
     render(
       <SummaryTab
         projectName="Test Project"
         projectNumber="PRJ-001"
         customerName="Test Customer"
         floorplans={mockFloorplans}
-        floorplanBoms={mockFloorplanBoms}
+        floorplanTotals={[]} // Empty totals - should show loading
+        projectTotal={0}
         invoiceSettings={null}
         onConfigureInvoice={vi.fn()}
       />
     );
 
-    await waitFor(() => {
-      expect(screen.getByText('Floorplan Breakdown')).toBeInTheDocument();
-    });
+    // Should show loading spinner
+    expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
+  });
+
+  it('displays floorplan breakdown', async () => {
+    render(
+      <SummaryTab
+        projectName="Test Project"
+        projectNumber="PRJ-001"
+        customerName="Test Customer"
+        floorplans={mockFloorplans}
+        floorplanTotals={mockFloorplanTotals}
+        projectTotal={1000}
+        invoiceSettings={null}
+        onConfigureInvoice={vi.fn()}
+      />
+    );
 
     expect(screen.getByText('Basement')).toBeInTheDocument();
     expect(screen.getByText('Ground Floor')).toBeInTheDocument();
@@ -155,7 +134,8 @@ describe('SummaryTab', () => {
         projectNumber="PRJ-001"
         customerName="Test Customer"
         floorplans={mockFloorplans}
-        floorplanBoms={mockFloorplanBoms}
+        floorplanTotals={mockFloorplanTotals}
+        projectTotal={1000}
         invoiceSettings={mockInvoiceSettings}
         onConfigureInvoice={vi.fn()}
       />
@@ -178,7 +158,8 @@ describe('SummaryTab', () => {
         projectNumber="PRJ-001"
         customerName="Test Customer"
         floorplans={mockFloorplans}
-        floorplanBoms={mockFloorplanBoms}
+        floorplanTotals={mockFloorplanTotals}
+        projectTotal={1000}
         invoiceSettings={null}
         onConfigureInvoice={vi.fn()}
       />
@@ -198,7 +179,8 @@ describe('SummaryTab', () => {
         projectNumber="PRJ-001"
         customerName="Test Customer"
         floorplans={mockFloorplans}
-        floorplanBoms={mockFloorplanBoms}
+        floorplanTotals={mockFloorplanTotals}
+        projectTotal={1000}
         invoiceSettings={null}
         onConfigureInvoice={mockOnConfigure}
       />
@@ -221,7 +203,8 @@ describe('SummaryTab', () => {
         projectNumber="PRJ-001"
         customerName="Test Customer"
         floorplans={mockFloorplans}
-        floorplanBoms={mockFloorplanBoms}
+        floorplanTotals={mockFloorplanTotals}
+        projectTotal={1000}
         invoiceSettings={mockInvoiceSettings}
         onConfigureInvoice={vi.fn()}
       />
@@ -233,24 +216,6 @@ describe('SummaryTab', () => {
     });
   });
 
-  it('shows empty state when no floorplans exist', async () => {
-    render(
-      <SummaryTab
-        projectName="Test Project"
-        projectNumber="PRJ-001"
-        customerName="Test Customer"
-        floorplans={[]}
-        floorplanBoms={new Map()}
-        invoiceSettings={null}
-        onConfigureInvoice={vi.fn()}
-      />
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('No floorplans yet. Create a floorplan to see breakdown.')).toBeInTheDocument();
-    });
-  });
-
   it('formats currency correctly', async () => {
     render(
       <SummaryTab
@@ -258,7 +223,8 @@ describe('SummaryTab', () => {
         projectNumber="PRJ-001"
         customerName="Test Customer"
         floorplans={mockFloorplans}
-        floorplanBoms={mockFloorplanBoms}
+        floorplanTotals={mockFloorplanTotals}
+        projectTotal={1000}
         invoiceSettings={mockInvoiceSettings}
         onConfigureInvoice={vi.fn()}
       />
@@ -271,14 +237,15 @@ describe('SummaryTab', () => {
     });
   });
 
-  it('recalculates totals when floorplanBoms changes', async () => {
+  it('recalculates totals when floorplanTotals changes', async () => {
     const { rerender } = render(
       <SummaryTab
         projectName="Test Project"
         projectNumber="PRJ-001"
         customerName="Test Customer"
         floorplans={mockFloorplans}
-        floorplanBoms={mockFloorplanBoms}
+        floorplanTotals={mockFloorplanTotals}
+        projectTotal={1000}
         invoiceSettings={mockInvoiceSettings}
         onConfigureInvoice={vi.fn()}
       />
@@ -288,18 +255,20 @@ describe('SummaryTab', () => {
       expect(screen.getByText('Floorplan Breakdown')).toBeInTheDocument();
     });
 
-    // Rerender with updated BOM data
-    const updatedBoms = new Map(mockFloorplanBoms);
-    updatedBoms.set(1, {
-      ...mockFloorplanBoms.get(1)!,
-      totalPrice: 750,
-      groups: [
-        {
-          ...mockFloorplanBoms.get(1)!.groups[0],
-          totalPrice: 750,
-        },
-      ],
-    });
+    // Rerender with updated totals
+    const updatedTotals = [
+      {
+        ...mockFloorplanTotals[0],
+        total: 750,
+        items: [
+          {
+            ...mockFloorplanTotals[0].items[0],
+            total: 750,
+          },
+        ],
+      },
+      mockFloorplanTotals[1],
+    ];
 
     rerender(
       <SummaryTab
@@ -307,7 +276,8 @@ describe('SummaryTab', () => {
         projectNumber="PRJ-001"
         customerName="Test Customer"
         floorplans={mockFloorplans}
-        floorplanBoms={updatedBoms}
+        floorplanTotals={updatedTotals}
+        projectTotal={1250}
         invoiceSettings={mockInvoiceSettings}
         onConfigureInvoice={vi.fn()}
       />
