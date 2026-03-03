@@ -59,7 +59,6 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
 
   const fetchProjectData = useCallback(async (signal?: AbortSignal) => {
     try {
-      console.log('[FETCH] Starting fetchProjectData for project:', projectId);
       setIsLoading(true);
       setShowNotFound(false);
       const [projectData, floorplansData, itemsResult] = await Promise.all([
@@ -67,7 +66,6 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
         floorplanService.getAll(projectId, signal),
         itemService.getAll({ include_inactive: false }, { page: 1, limit: 1000 }),
       ]);
-      console.log('[FETCH] Got', floorplansData.length, 'floorplans');
 
       setProject(projectData);
       setFloorplans(floorplansData);
@@ -87,29 +85,23 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
         exchange_rate: projectData.exchange_rate,
       });
       
-      console.log('[FETCH] Current active floorplan:', activeFloorplanRef.current?.id);
       if (floorplansData.length > 0) {
         // Use ref to get current value without dependency
         const currentActive = activeFloorplanRef.current;
-        console.log('[FETCH] Selecting floorplan. Current active:', currentActive?.id);
         if (!currentActive) {
-          console.log('[FETCH] No active floorplan, selecting first:', floorplansData[0].id);
           setActiveFloorplan(floorplansData[0]);
         } else {
           // Update active floorplan with fresh data from API
           const updatedFloorplan = floorplansData.find(fp => fp.id === currentActive.id);
           if (updatedFloorplan) {
-            console.log('[FETCH] Updated existing active floorplan:', updatedFloorplan.id);
             setActiveFloorplan(updatedFloorplan);
           } else {
             // Previously active floorplan no longer exists (was deleted)
-            console.log('[FETCH] Previous active not found, selecting first:', floorplansData[0].id);
             setActiveFloorplan(floorplansData[0]);
           }
         }
       } else {
         // No floorplans left, clear active floorplan
-        console.log('[FETCH] No floorplans left, clearing active');
         setActiveFloorplan(null);
       }
 

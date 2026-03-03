@@ -254,13 +254,8 @@ const ProjectDashboard = () => {
     const deletedFloorplanId = floorplanToDelete.id;
     const wasActiveFloorplan = activeFloorplan?.id === deletedFloorplanId;
     
-    console.log('[DELETE] Starting delete for floorplan:', deletedFloorplanId);
-    console.log('[DELETE] Was active:', wasActiveFloorplan);
-    console.log('[DELETE] Current floorplans count:', floorplans.length);
-    
     try {
       await floorplanService.delete(deletedFloorplanId);
-      console.log('[DELETE] API delete successful');
       
       setShowDeleteFloorplanModal(false);
       setFloorplanToDelete(null);
@@ -269,21 +264,16 @@ const ProjectDashboard = () => {
       setFloorplanBoms(prev => {
         const next = new Map(prev);
         next.delete(deletedFloorplanId);
-        console.log('[DELETE] Cleared BOM data for floorplan:', deletedFloorplanId);
         return next;
       });
       
       // If deleted floorplan was active, clear it before fetch to avoid stale references
       if (wasActiveFloorplan) {
-        console.log('[DELETE] Clearing active floorplan');
         setActiveFloorplan(null);
       }
       
-      console.log('[DELETE] Calling fetchProjectData...');
       await fetchProjectData();
-      console.log('[DELETE] fetchProjectData completed');
     } catch (err) {
-      console.error('[DELETE] Error during delete:', err);
       setError(extractErrorMessage(err, 'Failed to delete floorplan'));
     }
   };
