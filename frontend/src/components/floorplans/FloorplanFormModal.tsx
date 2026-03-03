@@ -153,12 +153,12 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
         await onSubmit(createData, selectedFile!);
       }
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       const errorData = err.response?.data?.error;
       let errorMessage: string;
       if (typeof errorData === 'object' && errorData !== null) {
         if (errorData.issues && Array.isArray(errorData.issues)) {
-          errorMessage = errorData.issues.map((issue: any) => issue.message).join(', ');
+          errorMessage = errorData.issues.map((issue: { message: string }) => issue.message).join(', ');
         } else {
           errorMessage = JSON.stringify(errorData);
         }

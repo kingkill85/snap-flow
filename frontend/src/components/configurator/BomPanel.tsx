@@ -41,7 +41,7 @@ export function BOMPanel({ floorplanId, bom, className = '' }: BOMPanelProps) {
       setIsUpdating(true);
       const report = await bomService.updateFromCatalog(floorplanId);
       setChangeReport(report);
-    } catch (err: any) {
+    } catch (err) {
       setError(err.response?.data?.error || 'Failed to update from catalog');
     } finally {
       setIsUpdating(false);

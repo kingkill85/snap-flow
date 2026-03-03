@@ -65,7 +65,7 @@ const ProjectList = () => {
       } else {
         setIsSearching(false);
       }
-    } catch (err: any) {
+    } catch (err) {
       if (err.name !== 'AbortError') {
         setError(err.response?.data?.error || 'Failed to fetch projects');
       }

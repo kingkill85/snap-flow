@@ -148,7 +148,7 @@ export function InvoiceSettingsModal({
       });
       onSave(savedSettings);
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       const errorData = err.response?.data?.error;
       setError(typeof errorData === 'string' ? errorData : 'Failed to save invoice settings');
     } finally {

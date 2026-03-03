@@ -136,7 +136,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
       setStep('complete');
       // Note: onSuccess is NOT called here - it's called when user clicks "Done"
       // This ensures the summary is visible before modal closes
-    } catch (err: any) {
+    } catch (err) {
       setStep('upload');
       setError(err.response?.data?.error || err.message || 'Failed to sync catalog');
     } finally {

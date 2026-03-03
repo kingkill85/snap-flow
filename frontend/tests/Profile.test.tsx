@@ -20,6 +20,8 @@ describe('Profile', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (useAuth as any).mockReturnValue({
       user: mockUser,
       updateProfile: mockUpdateProfile,

@@ -30,6 +30,7 @@ describe('ProjectList', () => {
   });
 
   it('renders without crashing', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (projectService.getAll as any).mockResolvedValue(mockProjects);
 
     render(

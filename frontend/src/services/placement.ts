@@ -59,12 +59,12 @@ export const placementService = {
     await api.delete(`/placements/${id}`, { signal });
   },
 
-  async switchVariant(id: number, variantId: number, signal?: AbortSignal): Promise<{ placement: Placement; bomEntry: any }> {
+  async switchVariant(id: number, variantId: number, signal?: AbortSignal): Promise<{ placement: Placement; bomEntry: import('./bom').BomEntry }> {
     const response = await api.put(`/placements/${id}/variant`, { variant_id: variantId }, { signal });
     return response.data.data;
   },
 
-  async updateBom(id: number, variantId: number, addonIds: number[], signal?: AbortSignal): Promise<{ placement: Placement; bomEntry: any }> {
+  async updateBom(id: number, variantId: number, addonIds: number[], signal?: AbortSignal): Promise<{ placement: Placement; bomEntry: import('./bom').BomEntry }> {
     const response = await api.post(`/placements/${id}/update-bom`, { variant_id: variantId, addon_ids: addonIds }, { signal });
     return response.data.data;
   },

@@ -49,6 +49,7 @@ describe('UserManagement', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (useAuth as any).mockReturnValue({ user: mockCurrentUser });
   });
 

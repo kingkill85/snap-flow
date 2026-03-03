@@ -112,17 +112,20 @@ api.interceptors.response.use(
         // Retry the original request with new token
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return api(originalRequest);
-      } catch (refreshError: any) {
+      } catch (refreshError) {
         console.error('[Auth] Token refresh failed:', refreshError);
         isRefreshing = false;
         refreshSubscribers = [];
 
         // Only redirect on 401 from refresh endpoint
         // Don't redirect on network errors
-        if (refreshError.response?.status === 401) {
-          console.log('[Auth] Refresh token invalid, redirecting to login');
-          authService.clearTokens();
-          window.location.href = '/login';
+        if (refreshError && typeof refreshError === 'object' && 'response' in refreshError) {
+          const errorWithResponse = refreshError as { response?: { status?: number } };
+          if (errorWithResponse.response?.status === 401) {
+            console.log('[Auth] Refresh token invalid, redirecting to login');
+            authService.clearTokens();
+            window.location.href = '/login';
+          }
         }
         return Promise.reject(refreshError);
       }

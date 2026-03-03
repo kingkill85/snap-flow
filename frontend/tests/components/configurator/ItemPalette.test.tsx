@@ -65,7 +65,9 @@ const mockItems: Item[] = [
 describe('ItemPalette', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (categoryService.getAll as any).mockResolvedValue(mockCategories);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (itemService.getAll as any).mockResolvedValue({ items: mockItems, total: 2, totalPages: 1 });
   });
 
@@ -119,6 +121,7 @@ describe('ItemPalette', () => {
     const itemsWithoutImage = [
       { ...mockItems[0], preview_image: null },
     ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (itemService.getAll as any).mockResolvedValue({ items: itemsWithoutImage, total: 1, totalPages: 1 });
 
     await act(async () => {

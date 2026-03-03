@@ -34,7 +34,7 @@ const UserManagement = () => {
       const data = await userService.getAll(signal);
       setUsers(data);
       setError('');
-    } catch (err: any) {
+    } catch (err) {
       if (err.name !== 'AbortError') {
         setError(err.response?.data?.error || err.message || 'Failed to fetch users');
       }

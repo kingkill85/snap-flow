@@ -84,11 +84,14 @@ describe('ItemManagement', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (categoryService.getAll as any).mockResolvedValue(mockCategories);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (itemService.getAll as any).mockResolvedValue({
       items: mockItems,
       totalPages: 1,
     });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (itemService.getVariants as any).mockResolvedValue(mockVariants);
   });
 
@@ -150,6 +153,7 @@ describe('ItemManagement', () => {
   });
 
   it('shows empty state when no items', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (itemService.getAll as any).mockResolvedValue({
       items: [],
       totalPages: 1,
@@ -167,6 +171,7 @@ describe('ItemManagement', () => {
   });
 
   it('handles error when fetching items fails', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (itemService.getAll as any).mockRejectedValue({ response: { data: { error: 'Failed to fetch items' } } });
 
     render(

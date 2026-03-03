@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import type { Category } from '@/services/category';
+import { extractErrorMessage } from '@/utils';
 import { X, Save, Plus } from 'lucide-react';
 
 interface CategoryFormModalProps {
@@ -47,8 +48,8 @@ export function CategoryFormModal({ category, isOpen, onClose, onSubmit }: Categ
     try {
       await onSubmit({ name, is_active: isActive });
       onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to save category');
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Failed to save category'));
     } finally {
       setIsLoading(false);
     }

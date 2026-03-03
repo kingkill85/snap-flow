@@ -789,7 +789,7 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
                 <div className="flex items-start gap-3">
                   {(() => {
                     // Find the BOM group for this placement
-                    const group = bom.groups.find((g: any) => 
+                    const group = bom.groups.find((g: import("@/services/bom").BomGroup) => 
                       g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
                     );
                     const mainEntry = group?.mainEntry;
@@ -810,7 +810,7 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
                   })()}
                   <div className="flex-1 min-w-0">
                     {(() => {
-                      const group = bom.groups.find((g: any) => 
+                    const group = bom.groups.find((g: import('@/services/bom').BomGroup) =>
                         g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
                       );
                       const mainEntry = group?.mainEntry;
@@ -830,14 +830,14 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
             )}
 
             {(() => {
-              const group = bom?.groups.find((g: any) => 
+              const group = bom?.groups.find((g: import("@/services/bom").BomGroup) => 
                 g.bomEntryIds?.includes(placement?.bom_id) || g.mainEntry.id === placement?.bom_id
               );
               return group && group.children.length > 0 ? (
                 <div>
                   <Label className="block text-sm font-medium mb-2">Add-ons</Label>
                   <div className="space-y-2">
-                    {group.children.map((child: any) => (
+                    {group.children.map((child: import("@/services/bom").BomEntry) => (
                       <div
                         key={child.id}
                         className="flex items-center justify-between p-2 rounded-lg border bg-background border-border opacity-75"

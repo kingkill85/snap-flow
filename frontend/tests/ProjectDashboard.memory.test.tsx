@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 describe('Item Memory Persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (window as any).localStorage.clear();
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -73,12 +73,12 @@ describe('Item Memory Persistence', () => {
       sizeMemory.set(2, { width: 200, height: 100 });
 
       // Simulate persisting to localStorage
-      (window as any).localStorage.setItem(
+      localStorage.setItem(
         ITEM_SIZE_MEMORY_KEY,
         JSON.stringify(Array.from(sizeMemory.entries()))
       );
 
-      expect((window as any).localStorage.setItem).toHaveBeenCalledWith(
+      expect(localStorage.setItem).toHaveBeenCalledWith(
         ITEM_SIZE_MEMORY_KEY,
         JSON.stringify([[1, { width: 100, height: 50 }], [2, { width: 200, height: 100 }]])
       );
@@ -89,12 +89,12 @@ describe('Item Memory Persistence', () => {
       const variantMemory = new Map<number, { variant_id: number; addon_ids: number[] }>();
       variantMemory.set(1, { variant_id: 5, addon_ids: [1, 2] });
 
-      (window as any).localStorage.setItem(
+      localStorage.setItem(
         ITEM_VARIANT_MEMORY_KEY,
         JSON.stringify(Array.from(variantMemory.entries()))
       );
 
-      expect((window as any).localStorage.setItem).toHaveBeenCalledWith(
+      expect(localStorage.setItem).toHaveBeenCalledWith(
         ITEM_VARIANT_MEMORY_KEY,
         JSON.stringify([[1, { variant_id: 5, addon_ids: [1, 2] }]])
       );
@@ -104,9 +104,9 @@ describe('Item Memory Persistence', () => {
       const ITEM_SIZE_MEMORY_KEY = 'snapflow_item_size_memory';
       const storedData = [[1, { width: 100, height: 50 }], [2, { width: 200, height: 100 }]];
 
-      (window as any).localStorage.getItem.mockReturnValue(JSON.stringify(storedData));
+      localStorage.getItem.mockReturnValue(JSON.stringify(storedData));
 
-      const savedSizeMemory = (window as any).localStorage.getItem(ITEM_SIZE_MEMORY_KEY);
+      const savedSizeMemory = localStorage.getItem(ITEM_SIZE_MEMORY_KEY);
       if (savedSizeMemory) {
         const parsed = JSON.parse(savedSizeMemory);
         const loadedMap = new Map(parsed);
@@ -120,9 +120,9 @@ describe('Item Memory Persistence', () => {
       const ITEM_VARIANT_MEMORY_KEY = 'snapflow_item_variant_memory';
       const storedData = [[1, { variant_id: 5, addon_ids: [1, 2, 3] }]];
 
-      (window as any).localStorage.getItem.mockReturnValue(JSON.stringify(storedData));
+      localStorage.getItem.mockReturnValue(JSON.stringify(storedData));
 
-      const savedVariantMemory = (window as any).localStorage.getItem(ITEM_VARIANT_MEMORY_KEY);
+      const savedVariantMemory = localStorage.getItem(ITEM_VARIANT_MEMORY_KEY);
       if (savedVariantMemory) {
         const parsed = JSON.parse(savedVariantMemory);
         const loadedMap = new Map(parsed);
@@ -133,18 +133,18 @@ describe('Item Memory Persistence', () => {
 
     it('should handle missing localStorage data gracefully', () => {
       const ITEM_SIZE_MEMORY_KEY = 'snapflow_item_size_memory';
-      (window as any).localStorage.getItem.mockReturnValue(null);
+      localStorage.getItem.mockReturnValue(null);
 
-      const savedSizeMemory = (window as any).localStorage.getItem(ITEM_SIZE_MEMORY_KEY);
+      const savedSizeMemory = localStorage.getItem(ITEM_SIZE_MEMORY_KEY);
       expect(savedSizeMemory).toBeNull();
     });
 
     it('should handle corrupted localStorage data gracefully', () => {
       const ITEM_SIZE_MEMORY_KEY = 'snapflow_item_size_memory';
-      (window as any).localStorage.getItem.mockReturnValue('invalid json');
+      localStorage.getItem.mockReturnValue('invalid json');
 
       expect(() => {
-        const savedSizeMemory = (window as any).localStorage.getItem(ITEM_SIZE_MEMORY_KEY);
+        const savedSizeMemory = localStorage.getItem(ITEM_SIZE_MEMORY_KEY);
         if (savedSizeMemory) {
           JSON.parse(savedSizeMemory);
         }
@@ -186,21 +186,21 @@ describe('Item Memory Persistence', () => {
       sizeMemory.delete(1);
       variantMemory.delete(1);
 
-      (window as any).localStorage.setItem(
+      localStorage.setItem(
         ITEM_SIZE_MEMORY_KEY,
         JSON.stringify(Array.from(sizeMemory.entries()))
       );
-      (window as any).localStorage.setItem(
+      localStorage.setItem(
         ITEM_VARIANT_MEMORY_KEY,
         JSON.stringify(Array.from(variantMemory.entries()))
       );
 
       // Verify localStorage was called with empty arrays
-      expect((window as any).localStorage.setItem).toHaveBeenCalledWith(
+      expect(localStorage.setItem).toHaveBeenCalledWith(
         ITEM_SIZE_MEMORY_KEY,
         '[]'
       );
-      expect((window as any).localStorage.setItem).toHaveBeenCalledWith(
+      expect(localStorage.setItem).toHaveBeenCalledWith(
         ITEM_VARIANT_MEMORY_KEY,
         '[]'
       );
