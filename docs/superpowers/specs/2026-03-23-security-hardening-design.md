@@ -14,17 +14,18 @@ SnapFlow is an internet-facing smart home automation proposal generator (Deno + 
 
 ### 1.1 Path Traversal in `/uploads/*` Static File Serving
 
-**Files:** `backend/src/main.ts` (lines 118-119), `backend/src/middleware/upload.ts` (lines 152-153)
+**Files:** `backend/src/main.ts` (lines 118-119), `backend/src/middleware/upload.ts` (lines 151-187)
 
 **Problem:** The `/uploads/*` route concatenates the raw request path into a filesystem path without sanitization. A request like `/uploads/../../backend/src/config/env.ts` could serve arbitrary server files.
 
 **Fix:**
+- Add `import { resolve } from "@std/path"` (using the existing Deno std import map from `deno.json`)
 - In the `/uploads/*` handler in `main.ts`, after extracting `filePath`:
-  1. Use `path.resolve(env.UPLOAD_DIR, filePath)` to get the absolute path
-  2. Use `path.resolve(env.UPLOAD_DIR)` to get the canonical upload base
+  1. Use `resolve(env.UPLOAD_DIR, filePath)` to get the absolute path
+  2. Use `resolve(env.UPLOAD_DIR)` to get the canonical upload base
   3. Assert the resolved path starts with the canonical base + `/`
   4. Return 404 if the assertion fails
-- Remove or fix the duplicate dead code in `upload.ts` (`serveUploadsMiddleware`)
+- Remove the entire unused `serveUploadsMiddleware` function in `upload.ts` (lines 151-187)
 
 **Acceptance criteria:**
 - `GET /uploads/../../etc/passwd` returns 404
@@ -67,10 +68,10 @@ SnapFlow is an internet-facing smart home automation proposal generator (Deno + 
 **Problem:** The same refresh token is valid for the full 7-day window. If exfiltrated, an attacker can generate access tokens indefinitely.
 
 **Fix — Backend:**
-- In `verifyRefreshToken` (or in the `/auth/refresh` route handler):
-  1. After validating the token, delete it from the `refresh_tokens` table
-  2. Generate a new refresh token via `generateRefreshToken`
-  3. Store the new token in the database
+- In the `/auth/refresh` route handler in `auth.ts` (not in `verifyRefreshToken`, which should remain a pure verification function):
+  1. After `verifyRefreshToken` succeeds, call `revokeRefreshToken(rawToken)` to soft-delete the used token (sets `revoked_at = CURRENT_TIMESTAMP`, preserving the audit trail)
+  2. Generate a new refresh token via `generateRefreshToken(userId)`
+  3. Store the new token in the database via `createRefreshToken`
   4. Return both the new access token AND the new refresh token in the response body:
      ```json
      { "data": { "accessToken": "...", "refreshToken": "..." } }
@@ -97,13 +98,20 @@ SnapFlow is an internet-facing smart home automation proposal generator (Deno + 
   - `full_name`: `z.string().min(1).max(255).optional()`
   - `email`: `z.string().email().optional()`
   - `password`: `z.string().min(12).optional()` (new minimum, see 2.3)
-  - `current_password`: `z.string().min(1)` (required when changing password)
+  - `current_password`: `z.string().min(1).optional()` (required when `password` is provided)
 - Apply via `zValidator('json', updateProfileSchema)` middleware on the route
+- Add a `.refine()` to the schema: if `password` is provided, `current_password` must also be provided
+- In the route handler, when `password` is present:
+  1. Fetch the user's current `password_hash` from the database
+  2. Call `comparePassword(current_password, user.password_hash)` to verify the old password
+  3. If verification fails, return 401 `{ "error": "Current password is incorrect" }`
+  4. Only then proceed to hash and store the new password
 
 **Acceptance criteria:**
 - Requests with missing/invalid fields return 400 with Zod error details
 - Valid requests still work as before
-- Password changes require `current_password`
+- Password changes require `current_password` and it is verified against the stored hash
+- Providing `password` without `current_password` returns 400
 
 ### 2.3 Raise Password Minimum Length
 
@@ -112,13 +120,15 @@ SnapFlow is an internet-facing smart home automation proposal generator (Deno + 
 **Problem:** Minimum password length is 6 characters. NIST SP 800-63B recommends at least 8; modern guidance suggests 12+.
 
 **Fix:**
-- Change `z.string().min(6)` to `z.string().min(12)` in both `loginSchema` (registration path) and `createUserSchema`
-- Update `updateProfileSchema` (from 2.2) to use `.min(12)` as well
+- Change `z.string().min(6)` to `z.string().min(12)` in `createUserSchema` (`backend/src/routes/users.ts`, line 13) — this is the admin user-creation endpoint
+- Do NOT change `loginSchema` (`backend/src/routes/auth.ts`, line 20) — this is used for login, not registration. Raising the minimum here would lock out existing users with 6-11 character passwords. The login schema should remain at `.min(1)` (or a low floor) since bcrypt comparison handles the actual validation.
+- The `updateProfileSchema` (from 2.2) already uses `.min(12)` for new password changes
 
 **Acceptance criteria:**
-- Registration with an 11-character password returns 400
-- Registration with a 12-character password succeeds
+- Admin creating a user with an 11-character password returns 400
+- Admin creating a user with a 12-character password succeeds
 - Existing users with short passwords can still log in (no retroactive enforcement)
+- Login attempts are not blocked by schema validation regardless of password length
 
 ### 2.4 Schedule `cleanupExpiredTokens`
 
@@ -131,10 +141,19 @@ SnapFlow is an internet-facing smart home automation proposal generator (Deno + 
   1. Import `cleanupExpiredTokens` from the refresh token service
   2. Call it once at startup
   3. Set a `setInterval` to call it every hour: `setInterval(cleanupExpiredTokens, 60 * 60 * 1000)`
+- Additionally, fix the cleanup query's retention window. The current query has two clauses:
+  1. `expires_at < datetime('now', '-7 days')` — expired tokens retained 7 extra days (14-day effective window)
+  2. `revoked_at IS NOT NULL AND revoked_at < datetime('now', '-7 days')` — revoked tokens retained 7 days after revocation
+
+  Change both clauses:
+  1. `expires_at < datetime('now')` — clean up expired tokens immediately
+  2. `revoked_at IS NOT NULL AND revoked_at < datetime('now')` — clean up revoked tokens immediately (important for rotation in 2.1, where revoked tokens should not linger)
 
 **Acceptance criteria:**
 - Expired tokens are cleaned up on server start
 - Expired tokens are cleaned up hourly while the server runs
+- Expired tokens are cleaned up immediately after expiry, not after a 7-day grace period
+- Revoked tokens (from refresh token rotation) are cleaned up immediately, not retained for 7 days
 
 ---
 
@@ -147,10 +166,18 @@ SnapFlow is an internet-facing smart home automation proposal generator (Deno + 
 **Problem:** `X-Forwarded-For` and `X-Real-IP` are client-controllable. All clients without headers share a single `'unknown'` bucket.
 
 **Fix:**
-- Replace the current `getClientIp` implementation:
-  1. Use Hono's `c.env` to access the Deno `ConnInfo` or `remoteAddr` from the underlying server connection
+- Update `Deno.serve` in `main.ts` to pass connection info to Hono. Currently `main.ts` calls `Deno.serve({ port, hostname }, app.fetch)` which only passes the `Request`. Change to:
+  ```typescript
+  Deno.serve({ port, hostname }, (req, info) => {
+    return app.fetch(req, { remoteAddr: info.remoteAddr });
+  });
+  ```
+  This makes `c.env.remoteAddr` available in all Hono handlers and middleware.
+- Replace the current `getClientIdentifier` implementation in `rate-limit.ts`:
+  1. Read `c.env?.remoteAddr?.hostname` as the primary IP source (from Deno's transport layer, not spoofable)
   2. Only trust `X-Forwarded-For` / `X-Real-IP` if an env var `TRUSTED_PROXY=true` is set (opt-in)
-  3. Remove the `'unknown'` fallback — use `'no-ip'` with a very restrictive limit (e.g., 3 requests/window) to force proper IP detection rather than silently allowing abuse
+  3. When `TRUSTED_PROXY=true`, use the rightmost non-private IP from `X-Forwarded-For`
+  4. Remove the `'unknown'` fallback — use `'no-ip'` with a very restrictive limit (e.g., 3 requests/window) to force proper IP detection rather than silently allowing abuse
 - Add `TRUSTED_PROXY` to `env.ts` config (default: `false`)
 
 **Acceptance criteria:**
@@ -200,7 +227,8 @@ SnapFlow is an internet-facing smart home automation proposal generator (Deno + 
 - Validate with `previewSchema.parse(preview)` before calling `executeImport`
 
 **Acceptance criteria:**
-- A crafted payload with unexpected fields is rejected
+- Unknown fields in the payload are stripped before processing (Zod's default `.parse()` behavior, consistent with other schemas in the codebase)
+- A payload with missing required fields or wrong types is rejected with 400
 - A valid preview from `/import-preview` passes validation
 - Error response matches the standard format
 
@@ -243,6 +271,7 @@ SnapFlow is an internet-facing smart home automation proposal generator (Deno + 
 - **Login rate limit window tuning** — fixing the IP detection (3.1) addresses the root cause
 - **`.env` file in repo** — verify `.gitignore` separately; not a code change
 - **Uploads CORS `*` header** (line 143 of `main.ts`) — low severity, defer
+- **No-origin `return '*'` in CORS handler** — the production branch returns `'*'` when `origin` is falsy (requests from curl, mobile apps, server-to-server). This is technically a gap but is functionally harmless since browsers ignore `Access-Control-Allow-Origin: *` when `credentials: true`. Documented here as a known gap; defer to a future CORS cleanup pass.
 
 ## Testing Strategy
 
