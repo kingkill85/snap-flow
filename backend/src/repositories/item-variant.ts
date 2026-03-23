@@ -1,4 +1,4 @@
-import { getDb, withTransactionAsync } from '../config/database.ts';
+import { getDb, withTransaction, withTransactionAsync } from '../config/database.ts';
 import type { ItemVariant, CreateItemVariantDTO } from '../models/index.ts';
 import { variantAddonRepository } from './variant-addon.ts';
 import { bomEntryRepository } from './bom-entry.ts';
@@ -185,13 +185,15 @@ export class ItemVariantRepository {
   }
 
   reorder(itemId: number, variantIds: number[]): Promise<void> {
-    for (let i = 0; i < variantIds.length; i++) {
-      getDb().query(`
-        UPDATE item_variants
-        SET sort_order = ?
-        WHERE id = ? AND item_id = ?
-      `, [i + 1, variantIds[i], itemId]);
-    }
+    withTransaction(() => {
+      for (let i = 0; i < variantIds.length; i++) {
+        getDb().query(`
+          UPDATE item_variants
+          SET sort_order = ?
+          WHERE id = ? AND item_id = ?
+        `, [i + 1, variantIds[i], itemId]);
+      }
+    });
     return Promise.resolve();
   }
 }

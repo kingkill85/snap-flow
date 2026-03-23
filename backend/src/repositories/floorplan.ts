@@ -107,13 +107,15 @@ export class FloorplanRepository {
   }
 
   reorder(projectId: number, floorplanIds: number[]): Promise<void> {
-    for (let i = 0; i < floorplanIds.length; i++) {
-      getDb().query(`
-        UPDATE floorplans
-        SET sort_order = ?
-        WHERE id = ? AND project_id = ?
-      `, [i + 1, floorplanIds[i], projectId]);
-    }
+    withTransaction(() => {
+      for (let i = 0; i < floorplanIds.length; i++) {
+        getDb().query(`
+          UPDATE floorplans
+          SET sort_order = ?
+          WHERE id = ? AND project_id = ?
+        `, [i + 1, floorplanIds[i], projectId]);
+      }
+    });
     return Promise.resolve();
   }
 }
