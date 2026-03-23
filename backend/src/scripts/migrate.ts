@@ -394,6 +394,7 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_placements_bom ON placements(bom_entry_id);
       `
     },
+    // NOTE: Migration 022 was removed during development. The gap is intentional.
     {
       name: '023_rename_bom_add_project',
       sql: `
@@ -489,6 +490,8 @@ export async function runMigrations(): Promise<void> {
         ALTER TABLE project_bom RENAME COLUMN price_snapshot TO unit_price;
       `
     },
+    // NOTE: Two migrations share the 025 prefix. Both run correctly because
+    // the migration runner tracks by full name string, not by number.
     {
       name: '025_allow_multiple_bom_entries_per_variant',
       sql: `
