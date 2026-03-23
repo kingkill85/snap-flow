@@ -7,6 +7,7 @@ import { serveStatic } from 'hono/deno';
 import { env } from './config/env.ts';
 import { runMigrations } from './scripts/migrate.ts';
 import { runBomImageMigration } from './services/bom-image-migration.ts';
+import { cleanupExpiredTokens } from './services/refresh-token.ts';
 import authRoutes from './routes/auth.ts';
 import userRoutes from './routes/users.ts';
 import categoryRoutes from './routes/categories.ts';
@@ -75,6 +76,10 @@ app.get('/api', (c: Context) => {
     docs: '/health'
   });
 });
+
+// NOTE: All authenticated users share a single workspace by design.
+// There are no per-user ownership checks on projects, floorplans,
+// or placements. This is intentional for single-business deployments.
 
 // API routes (all protected routes under /api)
 const api = new Hono();
@@ -256,6 +261,11 @@ if (import.meta.main) {
   } catch (error) {
     console.error('❌ Failed to run seed script:', error);
   }
+
+  // Schedule periodic cleanup of expired refresh tokens
+  cleanupExpiredTokens();
+  setInterval(cleanupExpiredTokens, 60 * 60 * 1000); // Every hour
+  console.log('🧹 Token cleanup scheduled (hourly)');
 
   // Start server
   const port = env.PORT;
