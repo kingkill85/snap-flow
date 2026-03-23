@@ -139,7 +139,6 @@ In `frontend/src/context/AuthContext.tsx`, add a new `useEffect` after the exist
   useEffect(() => {
     const handleLogout = () => {
       setUser(null);
-      setIsLoading(false);
     };
     window.addEventListener('auth:logout', handleLogout);
     return () => window.removeEventListener('auth:logout', handleLogout);
@@ -198,19 +197,36 @@ In `handleDragStart` (line 104), replace the fire-and-forget call:
             });
 ```
 
-- [ ] **Step 3: Await the promise in handleDragEnd**
+- [ ] **Step 3: Await the promise in handleDragEnd and use the correct placement ID**
 
-In `handleDragEnd`, at the point where it processes placement drops (where it reads `activeDragPlacement` to apply position), add an await for the duplicate promise before applying the position update:
+In `handleDragEnd`, find the placement handling block (around line 140-182). The key issue is that `placementId` comes from `activeId` (the original placement), but when duplicating, the position update should go to the *new* placement.
+
+Before line 176 (`handlePlacementUpdate(placementId, { x: newX, y: newY })`), add:
 
 ```typescript
-    // Wait for duplicate to resolve if in progress
-    if (duplicatePromiseRef.current) {
-      await duplicatePromiseRef.current;
-      duplicatePromiseRef.current = null;
-    }
+        // If duplicating, wait for duplicate to resolve and use its ID
+        let targetPlacementId = placementId;
+        if (duplicatePromiseRef.current) {
+          try {
+            const duplicated = await duplicatePromiseRef.current as { id: number };
+            targetPlacementId = duplicated.id;
+          } catch {
+            // Duplicate failed — position update goes to original
+          }
+          duplicatePromiseRef.current = null;
+        }
 ```
 
-This should go early in the placement handling path of `handleDragEnd`, before the position update is applied.
+Then change line 176 from:
+```typescript
+        handlePlacementUpdate(placementId, { x: newX, y: newY });
+```
+To:
+```typescript
+        handlePlacementUpdate(targetPlacementId, { x: newX, y: newY });
+```
+
+This ensures the position update goes to the duplicated placement when Ctrl+dragging, or falls back to the original if duplication failed.
 
 - [ ] **Step 4: Run frontend tests**
 
@@ -326,7 +342,8 @@ Replace lines 77-85:
 
 ```typescript
       if (isEdit) {
-        const updateData: UpdateProjectDTO = {
+        // Always include all fields so clearing optional fields actually saves
+        const updateData: Partial<typeof formData> = {
           name: formData.name,
           status: formData.status,
           customer_name: formData.customer_name,
@@ -334,7 +351,7 @@ Replace lines 77-85:
           customer_phone: formData.customer_phone,
           customer_address: formData.customer_address,
         };
-        await onSubmit(updateData);
+        await onSubmit(updateData as UpdateProjectDTO);
 ```
 
 - [ ] **Step 2: Run frontend tests**
@@ -380,6 +397,9 @@ Replace lines 183-199:
       setTotalPages(result.totalPages);
     } catch (err) {
       setError(extractErrorMessage(err));
+    } finally {
+      setItemToDelete(null);
+      setShowDeleteModal(false);
     }
   };
 ```
