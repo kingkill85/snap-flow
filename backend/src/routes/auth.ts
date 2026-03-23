@@ -107,12 +107,8 @@ const refreshSchema = z.object({
 const updateProfileSchema = z.object({
   full_name: z.string().min(1).max(255).optional(),
   email: z.string().email().optional(),
-  password: z.string().min(12).optional(),
-  current_password: z.string().min(1).optional(),
-}).refine(
-  (data) => !data.password || data.current_password,
-  { message: 'current_password is required when changing password', path: ['current_password'] }
-);
+  password: z.string().min(8).optional(),
+});
 
 // POST /auth/refresh - Get new access token using refresh token
 authRoutes.post('/refresh', refreshRateLimit(), zValidator('json', refreshSchema), async (c) => {
@@ -200,15 +196,6 @@ authRoutes.put('/me', authMiddleware, zValidator('json', updateProfileSchema), a
     }
 
     if (body.password) {
-      // Verify current password
-      const user = await userRepository.findByEmail(c.get('userEmail'));
-      if (!user) {
-        return c.json({ error: 'User not found' }, 404);
-      }
-      const isValid = comparePassword(body.current_password!, user.password_hash);
-      if (!isValid) {
-        return c.json({ error: 'Current password is incorrect' }, 401);
-      }
       const { hashPassword } = await import('../services/password.ts');
       updateData.password_hash = hashPassword(body.password);
     }

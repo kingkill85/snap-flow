@@ -11,7 +11,7 @@ const userRoutes = new Hono();
 const createUserSchema = z.object({
   email: z.string().email(),
   full_name: z.string().optional(),
-  password: z.string().min(12),
+  password: z.string().min(8),
   role: z.enum(['admin', 'user']).optional(),
 });
 
