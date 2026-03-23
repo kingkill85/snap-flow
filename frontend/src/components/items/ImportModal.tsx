@@ -167,7 +167,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-[800px] lg:max-w-[900px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[800px] lg:max-w-[900px]">
         <DialogHeader>
           <DialogTitle>Import Catalog</DialogTitle>
           <DialogDescription>
@@ -175,6 +175,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
           </DialogDescription>
         </DialogHeader>
 
+        <div className="flex-1 overflow-y-auto px-1">
         {step === 'upload' && (
           <div className="space-y-4">
             {error && (
@@ -421,6 +422,8 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
             )}
           </div>
         )}
+
+        </div>
 
         <DialogFooter>
           {step === 'upload' && (

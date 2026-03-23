@@ -131,13 +131,14 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
           </DialogDescription>
         </DialogHeader>
 
-        {error && (
-          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
-            {error}
-          </div>
-        )}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          {error && (
+            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
+              {error}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="flex-1 overflow-y-auto px-1 space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Name *</Label>
             <Input
@@ -210,6 +211,8 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
               </Label>
             </div>
           )}
+
+          </div>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
