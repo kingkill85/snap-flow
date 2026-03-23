@@ -280,5 +280,7 @@ if (import.meta.main) {
       console.log(`🔒 API routes: http://${hostname}:${port}/api`);
       console.log(`🌐 Accessible from Windows at: http://localhost:${port}`);
     },
-  }, app.fetch);
+  }, (req, info) => {
+    return app.fetch(req, { remoteAddr: info.remoteAddr });
+  });
 }

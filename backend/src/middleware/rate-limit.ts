@@ -1,4 +1,5 @@
 import type { Context, Next } from 'hono';
+import { env } from '../config/env.ts';
 
 /**
  * Simple in-memory rate limiting middleware
@@ -39,10 +40,36 @@ function getClientIdentifier(c: Context, key?: string): string {
   if (key) {
     return key;
   }
-  // Get IP from various headers
-  const forwarded = c.req.header('x-forwarded-for');
-  const realIp = c.req.header('x-real-ip');
-  return forwarded || realIp || 'unknown';
+
+  // Primary: use transport-level IP (not spoofable)
+  const remoteAddr = c.env?.remoteAddr?.hostname;
+
+  // If TRUSTED_PROXY is enabled, prefer X-Forwarded-For
+  if (env.TRUSTED_PROXY) {
+    const forwarded = c.req.header('x-forwarded-for');
+    if (forwarded) {
+      // Use rightmost non-private IP (last proxy in chain)
+      const ips = forwarded.split(',').map(ip => ip.trim());
+      for (let i = ips.length - 1; i >= 0; i--) {
+        const ip = ips[i];
+        if (!isPrivateIp(ip)) {
+          return ip;
+        }
+      }
+      // All IPs are private — use the last one
+      return ips[ips.length - 1];
+    }
+  }
+
+  return remoteAddr || 'no-ip';
+}
+
+function isPrivateIp(ip: string): boolean {
+  return ip.startsWith('10.') ||
+         ip.startsWith('172.16.') || ip.startsWith('172.17.') || ip.startsWith('172.18.') ||
+         ip.startsWith('172.19.') || ip.startsWith('172.2') || ip.startsWith('172.3') ||
+         ip.startsWith('192.168.') ||
+         ip === '127.0.0.1' || ip === '::1' || ip === 'localhost';
 }
 
 /**

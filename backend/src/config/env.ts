@@ -49,6 +49,7 @@ interface Env {
   UPLOAD_DIR: string;
   CORS_ORIGIN: string;
   NODE_ENV: 'development' | 'production' | 'test';
+  TRUSTED_PROXY: boolean;
 }
 
 function getEnvVar(name: string, defaultValue?: string): string {
@@ -96,6 +97,7 @@ export const env: Env = {
   UPLOAD_DIR: resolveAbsolutePath(getEnvVar('UPLOAD_DIR', './uploads')),
   CORS_ORIGIN: getEnvVar('CORS_ORIGIN', 'http://localhost:5173'),
   NODE_ENV: (getEnvVar('NODE_ENV', 'development') as Env['NODE_ENV']),
+  TRUSTED_PROXY: getEnvVar('TRUSTED_PROXY', 'false') === 'true',
 };
 
 export default env;

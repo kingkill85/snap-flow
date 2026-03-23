@@ -1,7 +1,8 @@
 import { assertEquals } from '@std/assert';
-import { setupTestDatabase } from '../test-utils.ts';
+import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
 import { validateMagicBytes } from '../../src/utils/magic-bytes.ts';
+import { hashPassword } from '../../src/services/password.ts';
 
 await setupTestDatabase();
 
@@ -48,4 +49,41 @@ Deno.test('Magic bytes - random bytes rejected for image', () => {
 Deno.test('Magic bytes - empty buffer rejected', () => {
   const empty = new Uint8Array(0);
   assertEquals(validateMagicBytes(empty, 'image'), false);
+});
+
+Deno.test('Security - X-Forwarded-For header is ignored when TRUSTED_PROXY is false', async () => {
+  clearDatabase();
+
+  const passwordHash = hashPassword('testpassword123');
+  const { userRepository } = await import('../../src/repositories/user.ts');
+  await userRepository.create({
+    email: 'ratelimit@example.com',
+    password_hash: passwordHash,
+    role: 'user',
+  });
+
+  // Make requests with different X-Forwarded-For headers
+  // They should all count against the same bucket since TRUSTED_PROXY=false
+  for (let i = 0; i < 11; i++) {
+    await testRequest('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': `1.2.3.${i}`,
+      },
+      body: JSON.stringify({ email: 'ratelimit@example.com', password: 'wrong' }),
+    });
+  }
+
+  // 11th+ request should be rate limited (all share same bucket despite spoofed IPs)
+  const response = await testRequest('/api/auth/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Forwarded-For': '9.9.9.9',
+    },
+    body: JSON.stringify({ email: 'ratelimit@example.com', password: 'wrong' }),
+  });
+
+  assertEquals(response.status, 429);
 });
