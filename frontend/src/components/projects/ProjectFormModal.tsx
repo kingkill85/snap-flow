@@ -75,13 +75,15 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
 
     try {
       if (isEdit) {
-        const updateData: UpdateProjectDTO = {};
-        if (formData.name) updateData.name = formData.name;
-        if (formData.status) updateData.status = formData.status;
-        if (formData.customer_name) updateData.customer_name = formData.customer_name;
-        if (formData.customer_email) updateData.customer_email = formData.customer_email;
-        if (formData.customer_phone) updateData.customer_phone = formData.customer_phone;
-        if (formData.customer_address) updateData.customer_address = formData.customer_address;
+        // Always include all fields so clearing optional fields actually saves
+        const updateData: UpdateProjectDTO = {
+          name: formData.name,
+          status: formData.status,
+          customer_name: formData.customer_name,
+          customer_email: formData.customer_email,
+          customer_phone: formData.customer_phone,
+          customer_address: formData.customer_address,
+        };
         await onSubmit(updateData);
       } else {
         const createData: CreateProjectDTO = {
