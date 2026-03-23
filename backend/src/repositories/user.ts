@@ -24,6 +24,10 @@ export class UserRepository {
     return Promise.resolve(result.length > 0 ? (result[0] as unknown as User) : null);
   }
 
+  /**
+   * Find user by email. Returns full user record including password_hash.
+   * Used for auth verification only — callers must NOT return password_hash to client.
+   */
   findByEmail(email: string): Promise<User | null> {
     const result = getDb().queryEntries(`
       SELECT * FROM users WHERE email = ?

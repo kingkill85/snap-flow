@@ -182,20 +182,27 @@ const ItemManagement = () => {
 
   const handleDeleteItem = async () => {
     if (!itemToDelete) return;
-    await itemService.delete(itemToDelete.id);
-    
-    // Refresh items
-    const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
-    if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
-    if (debouncedSearchQuery) filter.search = debouncedSearchQuery;
-    if (showInactive) filter.include_inactive = true;
-    
-    const result = await itemService.getAll(
-      filter,
-      { page: currentPage, limit: itemsPerPage }
-    );
-    setItems(result.items);
-    setTotalPages(result.totalPages);
+    try {
+      await itemService.delete(itemToDelete.id);
+
+      // Refresh items
+      const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
+      if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
+      if (debouncedSearchQuery) filter.search = debouncedSearchQuery;
+      if (showInactive) filter.include_inactive = true;
+
+      const result = await itemService.getAll(
+        filter,
+        { page: currentPage, limit: itemsPerPage }
+      );
+      setItems(result.items);
+      setTotalPages(result.totalPages);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setItemToDelete(null);
+      setShowDeleteModal(false);
+    }
   };
 
   const openDeleteModal = (item: Item) => {
@@ -218,11 +225,15 @@ const ItemManagement = () => {
 
   const handleDeleteVariant = async () => {
     if (!itemIdForVariantDelete || !variantToDelete) return;
-    await itemService.deleteVariant(itemIdForVariantDelete, variantToDelete.id);
-    // Refresh variants
-    const variants = await itemService.getVariants(itemIdForVariantDelete, showInactive);
-    setItemVariants(prev => ({ ...prev, [itemIdForVariantDelete]: variants }));
-    closeDeleteVariantModal();
+    try {
+      await itemService.deleteVariant(itemIdForVariantDelete, variantToDelete.id);
+      const variants = await itemService.getVariants(itemIdForVariantDelete, showInactive);
+      setItemVariants(prev => ({ ...prev, [itemIdForVariantDelete]: variants }));
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      closeDeleteVariantModal();
+    }
   };
 
   // Item modal handlers

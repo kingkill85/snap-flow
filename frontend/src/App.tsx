@@ -3,6 +3,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { SyncProvider } from '@/context/SyncContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import Layout from '@/components/layout/Layout';
 
 // Pages
@@ -35,7 +36,11 @@ function App() {
               <Route index element={<Home />} />
               <Route path="profile" element={<Profile />} />
               <Route path="projects" element={<ProjectList />} />
-              <Route path="projects/:id" element={<ProjectDashboard />} />
+              <Route path="projects/:id" element={
+                <ErrorBoundary>
+                  <ProjectDashboard />
+                </ErrorBoundary>
+              } />
               
               {/* Admin only routes */}
               <Route path="catalog/products" element={

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { DragStartEvent, DragEndEvent } from '@dnd-kit/core';
 import type { Item } from '@/services/item';
 import type { Placement } from '@/services/placement';
@@ -73,6 +73,7 @@ export function useDragHandlers({
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [isDropping, setIsDropping] = useState(false);
   const [isCtrlDraggingItem, setIsCtrlDraggingItem] = useState(false);
+  const duplicatePromiseRef = useRef<Promise<unknown> | null>(null);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const activeId = event.active.id.toString();
@@ -101,15 +102,17 @@ export function useDragHandlers({
           setActiveDragPlacement(placement);
           setIsDuplicating(true);
           
-          placementService.duplicate(placementId, placement.x, placement.y)
+          duplicatePromiseRef.current = placementService.duplicate(placementId, placement.x, placement.y)
             .then((newPlacement) => {
               setActiveDragPlacement(newPlacement);
               fetchPlacements(activeFloorplan.id);
               setPlacementsVersion(prev => prev + 1);
+              return newPlacement;
             })
             .catch((err) => {
               console.error('Failed to duplicate placement:', err);
               setIsDuplicating(false);
+              duplicatePromiseRef.current = null;
             });
         } else {
           setActiveDragPlacement(placement);
@@ -173,7 +176,19 @@ export function useDragHandlers({
         const newX = placement.x + deltaX;
         const newY = placement.y + deltaY;
 
-        handlePlacementUpdate(placementId, { x: newX, y: newY });
+        // If duplicating, wait for duplicate to resolve and use its ID
+        let targetPlacementId = placementId;
+        if (duplicatePromiseRef.current) {
+          try {
+            const duplicated = await duplicatePromiseRef.current as { id: number };
+            targetPlacementId = duplicated.id;
+          } catch {
+            // Duplicate failed — position update goes to original
+          }
+          duplicatePromiseRef.current = null;
+        }
+
+        handlePlacementUpdate(targetPlacementId, { x: newX, y: newY });
       }
       setActiveDragItem(null);
       setActiveDragPlacement(null);

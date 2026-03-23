@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Placement, CreatePlacementDTO } from '@/services/placement';
 import { placementService } from '@/services/placement';
 import type { Floorplan } from '@/services/floorplan';
@@ -48,6 +48,8 @@ export function usePlacements({
   setPlacementsVersion,
 }: UsePlacementsProps): UsePlacementsReturn {
   const [placements, setPlacements] = useState<Placement[]>([]);
+  const placementsRef = useRef(placements);
+  useEffect(() => { placementsRef.current = placements; }, [placements]);
   const placementAddons = useRef<Map<number, number[]>>(new Map());
 
   const fetchPlacements = useCallback(async (floorplanId: number, signal?: AbortSignal) => {
@@ -144,7 +146,7 @@ export function usePlacements({
     }
     
     if (placement.width !== undefined || placement.height !== undefined) {
-      const updatedPlacement = placements.find(p => p.id === id);
+      const updatedPlacement = placementsRef.current.find(p => p.id === id);
       if (updatedPlacement) {
         const newWidth = placement.width ?? updatedPlacement.width;
         const newHeight = placement.height ?? updatedPlacement.height;
@@ -159,7 +161,7 @@ export function usePlacements({
     if (isFinal !== false) {
       await placementService.update(id, placement);
     }
-  }, [itemSizeMemory, itemVariantMemory, persistSizeMemory, persistVariantMemory, placements, setPlacementsVersion]);
+  }, [itemSizeMemory, itemVariantMemory, persistSizeMemory, persistVariantMemory, setPlacementsVersion]);
 
   const handlePlacementDelete = useCallback(async (id: number) => {
     placementAddons.current.delete(id);
