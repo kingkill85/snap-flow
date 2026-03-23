@@ -7,14 +7,19 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Flag to prevent multiple refresh attempts
 let isRefreshing = false;
-let refreshSubscribers: Array<(token: string) => void> = [];
+let refreshSubscribers: Array<{ resolve: (token: string) => void; reject: (err: unknown) => void }> = [];
 
-function subscribeTokenRefresh(callback: (token: string) => void) {
-  refreshSubscribers.push(callback);
+function subscribeTokenRefresh(cb: { resolve: (token: string) => void; reject: (err: unknown) => void }) {
+  refreshSubscribers.push(cb);
 }
 
 function onTokenRefreshed(token: string) {
-  refreshSubscribers.forEach((callback) => callback(token));
+  refreshSubscribers.forEach(({ resolve }) => resolve(token));
+  refreshSubscribers = [];
+}
+
+function onRefreshFailed(err: unknown) {
+  refreshSubscribers.forEach(({ reject }) => reject(err));
   refreshSubscribers = [];
 }
 
@@ -91,10 +96,13 @@ api.interceptors.response.use(
       // If already refreshing, wait for the new token
       if (isRefreshing) {
         console.log('[Auth] Token refresh already in progress, waiting...');
-        return new Promise((resolve) => {
-          subscribeTokenRefresh((token: string) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            resolve(api(originalRequest));
+        return new Promise((resolve, reject) => {
+          subscribeTokenRefresh({
+            resolve: (token: string) => {
+              originalRequest.headers.Authorization = `Bearer ${token}`;
+              resolve(api(originalRequest));
+            },
+            reject,
           });
         });
       }
@@ -115,7 +123,7 @@ api.interceptors.response.use(
       } catch (refreshError) {
         console.error('[Auth] Token refresh failed:', refreshError);
         isRefreshing = false;
-        refreshSubscribers = [];
+        onRefreshFailed(refreshError);
 
         // Only redirect on 401 from refresh endpoint
         // Don't redirect on network errors
