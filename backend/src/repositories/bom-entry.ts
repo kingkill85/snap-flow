@@ -1,6 +1,7 @@
-import { getDb } from '../config/database.ts';
+import { getDb, withTransaction, withTransactionAsync } from '../config/database.ts';
 import type { ProjectBom, CreateBomEntryDTO, UpdateBomEntryDTO } from '../models/index.ts';
 import { placementRepository } from './placement.ts';
+import { fileStorageService } from '../services/file-storage.ts';
 
 /**
  * Project BOM Repository
@@ -156,18 +157,46 @@ export class BomEntryRepository {
   }
 
   async delete(id: number): Promise<void> {
-    // Delete children BOM entries first (application-level cascade)
-    getDb().query(`DELETE FROM project_bom WHERE parent_bom_id = ?`, [id]);
-    
-    // Delete placements that reference this BOM entry
-    await placementRepository.deleteByBomEntry(id);
-    
-    // Now delete the BOM entry itself
-    getDb().query(`DELETE FROM project_bom WHERE id = ?`, [id]);
+    // Collect image paths before deleting (for file cleanup after transaction)
+    const children = getDb().queryEntries<{ picture_path: string | null }>(
+      `SELECT picture_path FROM project_bom WHERE parent_bom_id = ?`, [id]
+    );
+    const parent = getDb().queryEntries<{ picture_path: string | null }>(
+      `SELECT picture_path FROM project_bom WHERE id = ?`, [id]
+    );
+    const imagePaths = [
+      ...children.map(c => c.picture_path),
+      ...parent.map(p => p.picture_path),
+    ].filter((p): p is string => p !== null && p !== undefined);
+
+    await withTransactionAsync(async () => {
+      // Delete placements referencing children
+      getDb().query(`DELETE FROM placements WHERE bom_id IN (SELECT id FROM project_bom WHERE parent_bom_id = ?)`, [id]);
+      // Delete placements referencing parent
+      await placementRepository.deleteByBomEntry(id);
+      // Delete children BOM entries
+      getDb().query(`DELETE FROM project_bom WHERE parent_bom_id = ?`, [id]);
+      // Delete parent BOM entry
+      getDb().query(`DELETE FROM project_bom WHERE id = ?`, [id]);
+    });
+
+    // Clean up image files outside transaction
+    for (const imagePath of imagePaths) {
+      try {
+        await fileStorageService.deleteFile(imagePath);
+      } catch {
+        // Ignore file cleanup errors — DB state is consistent
+      }
+    }
   }
 
   deleteByFloorplan(floorplanId: number): Promise<void> {
-    getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ?`, [floorplanId]);
+    withTransaction(() => {
+      // Delete placements referencing BOM entries for this floorplan
+      getDb().query(`DELETE FROM placements WHERE bom_id IN (SELECT id FROM project_bom WHERE floorplan_id = ?)`, [floorplanId]);
+      // Delete BOM entries
+      getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ?`, [floorplanId]);
+    });
     return Promise.resolve();
   }
 
