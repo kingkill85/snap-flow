@@ -88,6 +88,7 @@ interface ItemPaletteProps {
   className?: string;
   visibleCategories?: Set<number>;
   onToggleCategory?: (categoryId: number) => void;
+  onToggleAllCategories?: (visible: boolean) => void;
   categoryCounts?: Map<number, number>;
 }
 
@@ -95,6 +96,7 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
   className = '',
   visibleCategories,
   onToggleCategory,
+  onToggleAllCategories,
   categoryCounts
 }, ref) {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -190,8 +192,27 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
     );
   }
 
+  const allVisible = categories.every(cat => visibleCategories?.has(cat.id) ?? true);
+
   return (
     <div className={`flex flex-col h-full ${className}`}>
+      {onToggleAllCategories && (
+        <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Layers</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => onToggleAllCategories(!allVisible)}
+          >
+            {allVisible ? (
+              <><EyeOff className="h-3 w-3 mr-1" /> Hide All</>
+            ) : (
+              <><Eye className="h-3 w-3 mr-1" /> Show All</>
+            )}
+          </Button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto p-4">
         {categories.map((category) => {
           const categoryItems = items.filter((item) => item.category_id === category.id);
@@ -205,7 +226,11 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-bold text-foreground uppercase tracking-wide flex items-center gap-2">
                   {category.name}
-                  <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                  <span className={`text-xs font-normal px-1.5 py-0.5 rounded ${
+                    !isVisible && count > 0
+                      ? 'bg-orange-500/20 text-orange-400 dark:text-orange-300 font-medium'
+                      : 'text-muted-foreground bg-muted'
+                  }`}>
                     {count}
                   </span>
                 </h3>
@@ -218,9 +243,9 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
                     title={isVisible ? 'Hide layer' : 'Show layer'}
                   >
                     {isVisible ? (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
+                      <Eye className="h-4 w-4 text-foreground" />
                     ) : (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      <EyeOff className="h-4 w-4 text-muted-foreground/40" />
                     )}
                   </Button>
                 )}

@@ -186,6 +186,15 @@ const ProjectDashboard = () => {
     });
   };
 
+  // Toggle all categories on/off
+  const handleToggleAllCategories = (visible: boolean) => {
+    if (visible) {
+      setVisibleCategories(new Set(categories.map(c => c.id)));
+    } else {
+      setVisibleCategories(new Set());
+    }
+  };
+
   // Calculate item counts per category for current floorplan
   const categoryCounts = useMemo(() => {
     const counts = new Map<number, number>();
@@ -417,6 +426,7 @@ const ProjectDashboard = () => {
                   className="h-full border-0"
                   visibleCategories={visibleCategories}
                   onToggleCategory={handleToggleCategory}
+                  onToggleAllCategories={handleToggleAllCategories}
                   categoryCounts={categoryCounts}
                 />
               </TabsContent>
