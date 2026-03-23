@@ -7,6 +7,7 @@ import { generateToken } from '../services/jwt.ts';
 import {
   createRefreshToken,
   verifyRefreshToken,
+  revokeRefreshToken,
   revokeAllUserTokens,
 } from '../services/refresh-token.ts';
 import { authMiddleware } from '../middleware/auth.ts';
@@ -115,6 +116,9 @@ authRoutes.post('/refresh', refreshRateLimit(), zValidator('json', refreshSchema
       return c.json({ error: 'Invalid or expired refresh token' }, 401);
     }
 
+    // Revoke the used refresh token (rotation)
+    await revokeRefreshToken(refreshToken);
+
     // Get user details
     const user = await userRepository.findById(userId);
     if (!user) {
@@ -124,9 +128,13 @@ authRoutes.post('/refresh', refreshRateLimit(), zValidator('json', refreshSchema
     // Generate new access token
     const newAccessToken = await generateToken(user.id, user.email, user.role);
 
+    // Generate new refresh token (rotation)
+    const newRefreshToken = await createRefreshToken(user.id);
+
     return c.json({
       data: {
         accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
       },
       message: 'Token refreshed successfully',
     });

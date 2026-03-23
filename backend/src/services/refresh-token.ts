@@ -134,8 +134,8 @@ export function revokeAllUserTokens(userId: number): Promise<void> {
  */
 export function cleanupExpiredTokens(): void {
   getDb().query(
-    `DELETE FROM refresh_tokens 
-     WHERE expires_at < datetime('now', '-7 days') 
-     OR (revoked_at IS NOT NULL AND revoked_at < datetime('now', '-7 days'))`
+    `DELETE FROM refresh_tokens
+     WHERE expires_at < datetime('now')
+     OR (revoked_at IS NOT NULL AND revoked_at < datetime('now'))`
   );
 }
