@@ -7,6 +7,7 @@ import { generateToken } from '../services/jwt.ts';
 import {
   createRefreshToken,
   verifyRefreshToken,
+  revokeRefreshToken,
   revokeAllUserTokens,
 } from '../services/refresh-token.ts';
 import { authMiddleware } from '../middleware/auth.ts';
@@ -103,6 +104,16 @@ const refreshSchema = z.object({
   refreshToken: z.string(),
 });
 
+const updateProfileSchema = z.object({
+  full_name: z.string().min(1).max(255).optional(),
+  email: z.string().email().optional(),
+  password: z.string().min(12).optional(),
+  current_password: z.string().min(1).optional(),
+}).refine(
+  (data) => !data.password || data.current_password,
+  { message: 'current_password is required when changing password', path: ['current_password'] }
+);
+
 // POST /auth/refresh - Get new access token using refresh token
 authRoutes.post('/refresh', refreshRateLimit(), zValidator('json', refreshSchema), async (c) => {
   const { refreshToken } = c.req.valid('json');
@@ -115,6 +126,9 @@ authRoutes.post('/refresh', refreshRateLimit(), zValidator('json', refreshSchema
       return c.json({ error: 'Invalid or expired refresh token' }, 401);
     }
 
+    // Revoke the used refresh token (rotation)
+    await revokeRefreshToken(refreshToken);
+
     // Get user details
     const user = await userRepository.findById(userId);
     if (!user) {
@@ -124,9 +138,13 @@ authRoutes.post('/refresh', refreshRateLimit(), zValidator('json', refreshSchema
     // Generate new access token
     const newAccessToken = await generateToken(user.id, user.email, user.role);
 
+    // Generate new refresh token (rotation)
+    const newRefreshToken = await createRefreshToken(user.id);
+
     return c.json({
       data: {
         accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
       },
       message: 'Token refreshed successfully',
     });
@@ -162,43 +180,49 @@ authRoutes.get('/me', authMiddleware, async (c) => {
 });
 
 // PUT /auth/me - Update current user profile
-authRoutes.put('/me', authMiddleware, async (c) => {
+authRoutes.put('/me', authMiddleware, zValidator('json', updateProfileSchema), async (c) => {
   const userId = c.get('userId');
-  const body = await c.req.json();
-  
+  const body = c.req.valid('json');
+
   try {
-    // Users can only update: full_name, email, password
-    // Cannot change: id, role, created_at
     const updateData: { full_name?: string; email?: string; password_hash?: string } = {};
-    
+
     if (body.full_name !== undefined) {
       updateData.full_name = body.full_name;
     }
-    
+
     if (body.email) {
-      // Check if email is already taken by another user
       const existingUser = await userRepository.findByEmail(body.email);
       if (existingUser && existingUser.id !== userId) {
         return c.json({ error: 'Email already in use' }, 400);
       }
       updateData.email = body.email;
     }
-    
+
     if (body.password) {
+      // Verify current password
+      const user = await userRepository.findByEmail(c.get('userEmail'));
+      if (!user) {
+        return c.json({ error: 'User not found' }, 404);
+      }
+      const isValid = comparePassword(body.current_password!, user.password_hash);
+      if (!isValid) {
+        return c.json({ error: 'Current password is incorrect' }, 401);
+      }
       const { hashPassword } = await import('../services/password.ts');
       updateData.password_hash = hashPassword(body.password);
     }
-    
+
     if (Object.keys(updateData).length === 0) {
       return c.json({ error: 'No fields to update' }, 400);
     }
-    
+
     const updatedUser = await userRepository.update(userId, updateData);
-    
+
     if (!updatedUser) {
       return c.json({ error: 'User not found' }, 404);
     }
-    
+
     return c.json({
       data: {
         id: updatedUser.id,

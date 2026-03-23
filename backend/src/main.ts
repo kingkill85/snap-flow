@@ -1,3 +1,4 @@
+import { resolve } from '@std/path';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -6,6 +7,7 @@ import { serveStatic } from 'hono/deno';
 import { env } from './config/env.ts';
 import { runMigrations } from './scripts/migrate.ts';
 import { runBomImageMigration } from './services/bom-image-migration.ts';
+import { cleanupExpiredTokens } from './services/refresh-token.ts';
 import authRoutes from './routes/auth.ts';
 import userRoutes from './routes/users.ts';
 import categoryRoutes from './routes/categories.ts';
@@ -22,36 +24,24 @@ const app: Hono = new Hono();
 app.use(logger());
 app.use(cors({
   origin: (origin) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
     if (!origin) return '*';
-    
-    // In production, check against allowed origins
+
     if (env.NODE_ENV === 'production') {
-      // Allow the configured origin
+      // Only allow the configured origin
       if (origin === env.CORS_ORIGIN) {
         return origin;
       }
-      
-      // Allow any localhost origin for development
-      if (origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')) {
-        return origin;
-      }
-      
-      // Allow local network IPs (192.168.x.x, 10.x.x.x)
-      if (/^http:\/\/192\.168\.\d+\.\d+/.test(origin) || 
-          /^http:\/\/10\.\d+\.\d+\.\d+/.test(origin)) {
-        return origin;
-      }
-      
+
       // If CORS_ORIGIN is '*', allow all
       if (env.CORS_ORIGIN === '*') {
         return '*';
       }
-      
+
       return env.CORS_ORIGIN;
     }
-    
-    // In development, allow all origins
+
+    // In development, allow all origins including localhost and LAN
     return origin || '*';
   },
   credentials: true,
@@ -74,6 +64,10 @@ app.get('/api', (c: Context) => {
     docs: '/health'
   });
 });
+
+// NOTE: All authenticated users share a single workspace by design.
+// There are no per-user ownership checks on projects, floorplans,
+// or placements. This is intentional for single-business deployments.
 
 // API routes (all protected routes under /api)
 const api = new Hono();
@@ -116,7 +110,13 @@ app.get('/api/*', (c: Context) => {
 // Serve uploaded files statically at /uploads/*
 app.get('/uploads/*', async (c: Context) => {
   const filePath = c.req.path.replace('/uploads/', '');
-  const fullPath = `${env.UPLOAD_DIR}/${filePath}`;
+
+  // Prevent path traversal
+  const uploadBase = resolve(env.UPLOAD_DIR);
+  const fullPath = resolve(env.UPLOAD_DIR, filePath);
+  if (!fullPath.startsWith(uploadBase + '/')) {
+    return c.json({ error: 'File not found' }, 404);
+  }
 
   try {
     const file = await Deno.open(fullPath);
@@ -187,10 +187,10 @@ try {
   const stat = await Deno.stat(frontendPath);
   if (stat.isDirectory) {
     console.log(`📁 Serving frontend from ${frontendPath}`);
-    
+
     // Serve static files
     app.use('/*', serveStatic({ root: frontendPath }));
-    
+
     // SPA fallback - serve index.html for all non-API routes
     app.get('*', async (c) => {
       try {
@@ -250,6 +250,11 @@ if (import.meta.main) {
     console.error('❌ Failed to run seed script:', error);
   }
 
+  // Schedule periodic cleanup of expired refresh tokens
+  cleanupExpiredTokens();
+  setInterval(cleanupExpiredTokens, 60 * 60 * 1000); // Every hour
+  console.log('🧹 Token cleanup scheduled (hourly)');
+
   // Start server
   const port = env.PORT;
   console.log(`🚀 SnapFlow API server starting on port ${port}...`);
@@ -263,5 +268,7 @@ if (import.meta.main) {
       console.log(`🔒 API routes: http://${hostname}:${port}/api`);
       console.log(`🌐 Accessible from Windows at: http://localhost:${port}`);
     },
-  }, app.fetch);
+  }, (req, info) => {
+    return app.fetch(req, { remoteAddr: info.remoteAddr });
+  });
 }

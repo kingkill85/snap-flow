@@ -13,7 +13,7 @@ async function getAdminToken(): Promise<string> {
   clearDatabase();
   
   // Create admin user
-  const passwordHash = hashPassword('admin123');
+  const passwordHash = hashPassword('adminpassword12!');
   await userRepository.create({
     email: 'admin@example.com',
     password_hash: passwordHash,
@@ -26,7 +26,7 @@ async function getAdminToken(): Promise<string> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email: 'admin@example.com',
-      password: 'admin123',
+      password: 'adminpassword12!',
     }),
   });
 
@@ -38,7 +38,7 @@ async function getUserToken(): Promise<string> {
   clearDatabase();
   
   // Create regular user
-  const passwordHash = hashPassword('user123');
+  const passwordHash = hashPassword('userpassword12!');
   await userRepository.create({
     email: 'user@example.com',
     password_hash: passwordHash,
@@ -51,7 +51,7 @@ async function getUserToken(): Promise<string> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email: 'user@example.com',
-      password: 'user123',
+      password: 'userpassword12!',
     }),
   });
 
@@ -70,7 +70,7 @@ Deno.test('User management - admin can create user', async () => {
     },
     body: JSON.stringify({
       email: 'newuser@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });
@@ -93,7 +93,7 @@ Deno.test('User management - non-admin cannot create user', async () => {
     },
     body: JSON.stringify({
       email: 'another@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });
@@ -116,7 +116,7 @@ Deno.test('User management - cannot create duplicate user', async () => {
     },
     body: JSON.stringify({
       email: 'duplicate@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });
@@ -130,7 +130,7 @@ Deno.test('User management - cannot create duplicate user', async () => {
     },
     body: JSON.stringify({
       email: 'duplicate@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });
@@ -180,7 +180,7 @@ Deno.test('User management - admin can delete user', async () => {
     },
     body: JSON.stringify({
       email: 'todelete@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });
@@ -204,7 +204,7 @@ Deno.test('User management - cannot delete yourself', async () => {
   clearDatabase();
   
   // Create admin and get token
-  const passwordHash = hashPassword('admin123');
+  const passwordHash = hashPassword('adminpassword12!');
   const admin = await userRepository.create({
     email: 'selfdelete@example.com',
     password_hash: passwordHash,
@@ -216,7 +216,7 @@ Deno.test('User management - cannot delete yourself', async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email: 'selfdelete@example.com',
-      password: 'admin123',
+      password: 'adminpassword12!',
     }),
   });
 
@@ -247,7 +247,7 @@ Deno.test('User management - created user can login', async () => {
     },
     body: JSON.stringify({
       email: 'canlogin@example.com',
-      password: 'testpass123',
+      password: 'testpassword12!',
       role: 'user',
     }),
   });
@@ -258,7 +258,7 @@ Deno.test('User management - created user can login', async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email: 'canlogin@example.com',
-      password: 'testpass123',
+      password: 'testpassword12!',
     }),
   });
 
@@ -280,7 +280,7 @@ Deno.test('User management - admin can update user full_name', async () => {
     },
     body: JSON.stringify({
       email: 'updatefullname@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });
@@ -318,7 +318,7 @@ Deno.test('User management - admin can update user email', async () => {
     },
     body: JSON.stringify({
       email: 'updateuseremail@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });
@@ -356,7 +356,7 @@ Deno.test('User management - admin can update user password', async () => {
     },
     body: JSON.stringify({
       email: 'updateuserpass@example.com',
-      password: 'oldpassword',
+      password: 'oldpassword12!',
       role: 'user',
     }),
   });
@@ -372,7 +372,7 @@ Deno.test('User management - admin can update user password', async () => {
       'Authorization': `Bearer ${adminToken}`,
     },
     body: JSON.stringify({
-      password: 'newpassword123',
+      password: 'newpassword12345!',
     }),
   });
 
@@ -384,7 +384,7 @@ Deno.test('User management - admin can update user password', async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email: 'updateuserpass@example.com',
-      password: 'newpassword123',
+      password: 'newpassword12345!',
     }),
   });
 
@@ -403,7 +403,7 @@ Deno.test('User management - admin can update user role', async () => {
     },
     body: JSON.stringify({
       email: 'promoteuser@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });
@@ -441,7 +441,7 @@ Deno.test('User management - admin update without changes fails', async () => {
     },
     body: JSON.stringify({
       email: 'noupdate@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });
@@ -498,7 +498,7 @@ Deno.test('User management - admin cannot use duplicate email', async () => {
     },
     body: JSON.stringify({
       email: 'existing@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });
@@ -511,7 +511,7 @@ Deno.test('User management - admin cannot use duplicate email', async () => {
     },
     body: JSON.stringify({
       email: 'another@example.com',
-      password: 'password123',
+      password: 'password12345!',
       role: 'user',
     }),
   });

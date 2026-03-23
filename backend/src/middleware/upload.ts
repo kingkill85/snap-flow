@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono';
 import { fileStorageService } from '../services/file-storage.ts';
 import { processImageSafe } from '../services/image-processing.ts';
+import { validateMagicBytes } from '../utils/magic-bytes.ts';
 
 /**
  * Allowed image MIME types
@@ -95,28 +96,41 @@ export function uploadMiddleware(
         }
       }
 
-      // Read file buffer
+      // Read file buffer (needed for magic byte validation and saving)
       const fileBuffer = await file.arrayBuffer();
+      const fileBytes = new Uint8Array(fileBuffer);
+
+      // Validate magic bytes regardless of skipValidation
+      const magicType = skipValidation ? 'excel' : 'image';
+      if (!validateMagicBytes(fileBytes, magicType)) {
+        c.set('uploadResult', {
+          success: false,
+          error: 'Invalid file format',
+        });
+        await next();
+        return;
+      }
+
       let buffer: Uint8Array;
 
       // Process image if maxImageWidth is specified
       if (maxImageWidth && maxImageWidth > 0) {
         try {
-          const processResult = await processImageSafe(new Uint8Array(fileBuffer), {
+          const processResult = await processImageSafe(fileBytes, {
             maxWidth: maxImageWidth,
           });
           if (processResult.format !== 'unknown') {
             buffer = processResult.buffer;
             console.log(`Image processed: ${processResult.originalSize} bytes → ${processResult.processedSize} bytes (${Math.round((1 - processResult.processedSize / processResult.originalSize) * 100)}% reduction)`);
           } else {
-            buffer = new Uint8Array(fileBuffer);
+            buffer = fileBytes;
           }
         } catch (error) {
           console.warn('Image processing failed, saving original:', error);
-          buffer = new Uint8Array(fileBuffer);
+          buffer = fileBytes;
         }
       } else {
-        buffer = new Uint8Array(fileBuffer);
+        buffer = fileBytes;
       }
 
       // Save file
@@ -142,46 +156,4 @@ export function uploadMiddleware(
       await next();
     }
   };
-}
-
-/**
- * Middleware to serve uploaded files statically
- * This should be mounted at /uploads route
- */
-export async function serveUploadsMiddleware(c: Context) {
-  const filePath = c.req.path.replace('/uploads/', '');
-  const fullPath = fileStorageService.getFilePath(filePath);
-
-  try {
-    const file = await Deno.open(fullPath);
-    const stat = await file.stat();
-    
-    // Determine content type
-    const ext = filePath.split('.').pop()?.toLowerCase();
-    let contentType = 'application/octet-stream';
-    
-    switch (ext) {
-      case 'jpg':
-      case 'jpeg':
-        contentType = 'image/jpeg';
-        break;
-      case 'png':
-        contentType = 'image/png';
-        break;
-      case 'webp':
-        contentType = 'image/webp';
-        break;
-    }
-
-    c.header('Content-Type', contentType);
-    c.header('Content-Length', stat.size.toString());
-    
-    return c.body(file.readable);
-  } catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
-      return c.json({ error: 'File not found' }, 404);
-    }
-    console.error('Serve uploads error:', error);
-    return c.json({ error: 'Failed to serve file' }, 500);
-  }
 }

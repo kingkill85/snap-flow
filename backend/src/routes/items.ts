@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
+import { zValidator } from '@hono/zod-validator';
 import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { variantAddonRepository } from '../repositories/variant-addon.ts';
@@ -32,7 +34,8 @@ itemRoutes.get('/', async (c) => {
     const search = c.req.query('search');
     const page = parseInt(c.req.query('page') || '1', 10);
     const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
-    const includeInactive = c.req.query('include_inactive') === 'true';
+    // Only allow include_inactive for authenticated users
+    const includeInactive = c.req.query('include_inactive') === 'true' && !!c.get('userId');
 
     const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
     
@@ -394,7 +397,7 @@ itemRoutes.delete('/:id', authMiddleware, adminMiddleware, async (c) => {
 itemRoutes.get('/:id/variants', async (c) => {
   try {
     const itemId = parseInt(c.req.param('id'));
-    const includeInactive = c.req.query('include_inactive') === 'true';
+    const includeInactive = c.req.query('include_inactive') === 'true' && !!c.get('userId');
     
     const item = await itemRepository.findById(itemId);
     if (!item) {
@@ -747,6 +750,45 @@ itemRoutes.patch('/:id/variants/:variantId/activate', authMiddleware, adminMiddl
 // IMPORT ROUTES
 // ==========================================
 
+const importPreviewItemSchema = z.object({
+  baseModelNumber: z.string(),
+  name: z.string(),
+  category: z.string(),
+  description: z.string(),
+  dimensions: z.string(),
+  variants: z.array(z.object({
+    style: z.string(),
+    price: z.number(),
+    imageFilename: z.string().optional(),
+  })),
+  addons: z.array(z.object({
+    slot: z.number(),
+    modelNumber: z.string(),
+    isRequired: z.boolean(),
+    found: z.boolean(),
+  })),
+  existingItemId: z.number().optional(),
+  action: z.enum(['create', 'update']),
+});
+
+const importPreviewSchema = z.object({
+  preview: z.object({
+    items: z.array(importPreviewItemSchema),
+    errors: z.array(z.object({
+      row: z.number(),
+      field: z.string(),
+      message: z.string(),
+      value: z.string(),
+    })),
+    warnings: z.array(z.string()),
+    summary: z.object({
+      totalRows: z.number(),
+      itemsToCreate: z.number(),
+      itemsToUpdate: z.number(),
+    }),
+  }),
+});
+
 // POST /items/import-preview - Preview Excel import
 itemRoutes.post('/import-preview', authMiddleware, adminMiddleware, uploadMiddleware('imports'), async (c) => {
   try {
@@ -771,15 +813,10 @@ itemRoutes.post('/import-preview', authMiddleware, adminMiddleware, uploadMiddle
 });
 
 // POST /items/import - Execute Excel import
-itemRoutes.post('/import', authMiddleware, adminMiddleware, async (c) => {
+itemRoutes.post('/import', authMiddleware, adminMiddleware, zValidator('json', importPreviewSchema), async (c) => {
   try {
-    const { preview } = await c.req.json();
-
-    if (!preview) {
-      return c.json({ error: 'No preview data provided' }, 400);
-    }
-
-    const result = await excelImportService.executeImport(preview);
+    const { preview } = c.req.valid('json');
+    const result = await excelImportService.executeImport(preview as Parameters<typeof excelImportService.executeImport>[0]);
 
     return c.json({
       data: result,

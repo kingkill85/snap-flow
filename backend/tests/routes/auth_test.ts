@@ -375,7 +375,7 @@ Deno.test('Auth endpoints - update profile with password', async () => {
   clearDatabase();
   
   // Create and login a user
-  const passwordHash = hashPassword('oldpassword');
+  const passwordHash = hashPassword('oldpassword12!');
   await userRepository.create({
     email: 'updatepass@example.com',
     password_hash: passwordHash,
@@ -387,7 +387,7 @@ Deno.test('Auth endpoints - update profile with password', async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email: 'updatepass@example.com',
-      password: 'oldpassword',
+      password: 'oldpassword12!',
     }),
   });
 
@@ -402,7 +402,8 @@ Deno.test('Auth endpoints - update profile with password', async () => {
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      password: 'newpassword123',
+      password: 'newpassword12345!',
+      current_password: 'oldpassword12!',
     }),
   });
 
@@ -414,7 +415,7 @@ Deno.test('Auth endpoints - update profile with password', async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email: 'updatepass@example.com',
-      password: 'newpassword123',
+      password: 'newpassword12345!',
     }),
   });
 
