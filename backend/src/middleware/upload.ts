@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono';
 import { fileStorageService } from '../services/file-storage.ts';
 import { processImageSafe } from '../services/image-processing.ts';
+import { validateMagicBytes } from '../utils/magic-bytes.ts';
 
 /**
  * Allowed image MIME types
@@ -95,28 +96,41 @@ export function uploadMiddleware(
         }
       }
 
-      // Read file buffer
+      // Read file buffer (needed for magic byte validation and saving)
       const fileBuffer = await file.arrayBuffer();
+      const fileBytes = new Uint8Array(fileBuffer);
+
+      // Validate magic bytes regardless of skipValidation
+      const magicType = skipValidation ? 'excel' : 'image';
+      if (!validateMagicBytes(fileBytes, magicType)) {
+        c.set('uploadResult', {
+          success: false,
+          error: 'Invalid file format',
+        });
+        await next();
+        return;
+      }
+
       let buffer: Uint8Array;
 
       // Process image if maxImageWidth is specified
       if (maxImageWidth && maxImageWidth > 0) {
         try {
-          const processResult = await processImageSafe(new Uint8Array(fileBuffer), {
+          const processResult = await processImageSafe(fileBytes, {
             maxWidth: maxImageWidth,
           });
           if (processResult.format !== 'unknown') {
             buffer = processResult.buffer;
             console.log(`Image processed: ${processResult.originalSize} bytes → ${processResult.processedSize} bytes (${Math.round((1 - processResult.processedSize / processResult.originalSize) * 100)}% reduction)`);
           } else {
-            buffer = new Uint8Array(fileBuffer);
+            buffer = fileBytes;
           }
         } catch (error) {
           console.warn('Image processing failed, saving original:', error);
-          buffer = new Uint8Array(fileBuffer);
+          buffer = fileBytes;
         }
       } else {
-        buffer = new Uint8Array(fileBuffer);
+        buffer = fileBytes;
       }
 
       // Save file
