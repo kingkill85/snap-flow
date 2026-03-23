@@ -12,19 +12,9 @@ import {
 } from 'docx';
 import type { InvoiceSettings } from './invoice-settings';
 import type { Floorplan } from './floorplan';
-
-interface FloorplanItem {
-  name: string;
-  quantity: number;
-  unitPrice: number;
-  total: number;
-}
-
-interface FloorplanTotal {
-  floorplan: Floorplan;
-  total: number;
-  items: FloorplanItem[];
-}
+import type { FloorplanItem, FloorplanTotal } from './bom';
+import type { Item } from './item';
+import type { Category } from './category';
 
 interface PivotItem {
   name: string;
@@ -32,6 +22,11 @@ interface PivotItem {
   totalQuantity: number;
   unitPrice: number;
   total: number;
+  categoryId: number;
+  categorySortOrder: number;
+  categoryName: string;
+  isAddon: boolean;
+  parentItemName: string | null;
 }
 
 interface InvoiceDocxData {
@@ -41,6 +36,8 @@ interface InvoiceDocxData {
   floorplanTotals: FloorplanTotal[];
   projectTotal: number;
   invoiceSettings: InvoiceSettings | null;
+  items: Item[];
+  categories: Category[];
 }
 
 const createBorder = {
@@ -50,7 +47,7 @@ const createBorder = {
   right: { style: BorderStyle.SINGLE, size: 1, color: '000000' },
 };
 
-// Transform data to pivot format
+// Transform data to pivot format, sorted by category then interleaved addons
 const transformToPivot = (floorplanTotals: FloorplanTotal[]): { items: PivotItem[], floorplans: Floorplan[] } => {
   const itemMap = new Map<string, PivotItem>();
   const floorplans: Floorplan[] = floorplanTotals.map(ft => ft.floorplan);
@@ -58,29 +55,79 @@ const transformToPivot = (floorplanTotals: FloorplanTotal[]): { items: PivotItem
   floorplanTotals.forEach((floorplanData) => {
     const floorplanId = floorplanData.floorplan.id;
 
-    floorplanData.items.forEach((item) => {
-      const existingItem = itemMap.get(item.name);
+    floorplanData.items.forEach((item: FloorplanItem) => {
+      // For addons, key by parentItemName + " > " + name to prevent cross-parent merging
+      const pivotKey = item.isAddon ? `${item.parentItemName} > ${item.name}` : item.name;
+      const existingItem = itemMap.get(pivotKey);
 
       if (existingItem) {
-        existingItem.floorQuantities[floorplanId] = item.quantity;
+        existingItem.floorQuantities[floorplanId] = (existingItem.floorQuantities[floorplanId] || 0) + item.quantity;
         existingItem.totalQuantity += item.quantity;
         existingItem.total += item.total;
       } else {
-        itemMap.set(item.name, {
+        itemMap.set(pivotKey, {
           name: item.name,
           floorQuantities: { [floorplanId]: item.quantity },
           totalQuantity: item.quantity,
           unitPrice: item.unitPrice,
           total: item.total,
+          categoryId: item.categoryId,
+          categorySortOrder: item.categorySortOrder,
+          categoryName: item.categoryName,
+          isAddon: item.isAddon,
+          parentItemName: item.parentItemName,
         });
       }
     });
   });
 
-  // Convert map to array and sort by name
-  const items = Array.from(itemMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  // Group by category, sort categories by sort_order
+  const categoryGroups = new Map<string, { sortOrder: number; nonAddons: PivotItem[]; addonsByParent: Map<string, PivotItem[]> }>();
 
-  return { items, floorplans };
+  itemMap.forEach((pivotItem) => {
+    const catKey = pivotItem.categoryName;
+    if (!categoryGroups.has(catKey)) {
+      categoryGroups.set(catKey, {
+        sortOrder: pivotItem.categorySortOrder,
+        nonAddons: [],
+        addonsByParent: new Map(),
+      });
+    }
+    const group = categoryGroups.get(catKey)!;
+    if (!pivotItem.isAddon) {
+      group.nonAddons.push(pivotItem);
+    } else {
+      const parentKey = pivotItem.parentItemName ?? '';
+      if (!group.addonsByParent.has(parentKey)) {
+        group.addonsByParent.set(parentKey, []);
+      }
+      group.addonsByParent.get(parentKey)!.push(pivotItem);
+    }
+  });
+
+  // Sort categories by sort_order
+  const sortedCategories = Array.from(categoryGroups.entries()).sort(([, a], [, b]) => a.sortOrder - b.sortOrder);
+
+  // Flatten: for each category, sort non-addons alphabetically, then interleave their addons
+  const sortedItems: PivotItem[] = [];
+  sortedCategories.forEach(([, group]) => {
+    group.nonAddons.sort((a, b) => a.name.localeCompare(b.name));
+    group.nonAddons.forEach((nonAddon) => {
+      sortedItems.push(nonAddon);
+      const addons = group.addonsByParent.get(nonAddon.name) || [];
+      addons.sort((a, b) => a.name.localeCompare(b.name));
+      addons.forEach(addon => sortedItems.push(addon));
+    });
+    // Also handle addons whose parent wasn't found in this category (edge case)
+    group.addonsByParent.forEach((addons, parentKey) => {
+      if (!group.nonAddons.find(n => n.name === parentKey)) {
+        addons.sort((a, b) => a.name.localeCompare(b.name));
+        addons.forEach(addon => sortedItems.push(addon));
+      }
+    });
+  });
+
+  return { items: sortedItems, floorplans };
 };
 
 export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> => {
@@ -96,13 +143,13 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
   // Header row
   const headerCells: TableCell[] = [
     new TableCell({
-      children: [new Paragraph({ children: [new TextRun({ text: '#', bold: true, font: 'Calibri' })] })],
+      children: [new Paragraph({ children: [new TextRun({ text: '#', bold: true, font: 'Bahnschrift Light' })] })],
       width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
       shading: { fill: 'E0E0E0' },
       borders: createBorder,
     }),
     new TableCell({
-      children: [new Paragraph({ children: [new TextRun({ text: 'Item Description', bold: true, font: 'Calibri' })], alignment: AlignmentType.LEFT })],
+      children: [new Paragraph({ children: [new TextRun({ text: 'Item Description', bold: true, font: 'Bahnschrift Light' })], alignment: AlignmentType.LEFT })],
       width: { size: itemWidthPercent, type: WidthType.PERCENTAGE },
       shading: { fill: 'E0E0E0' },
       borders: createBorder,
@@ -113,7 +160,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
   floorplans.forEach((floorplan) => {
     headerCells.push(
       new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: floorplan.name, bold: true, font: 'Calibri' })], alignment: AlignmentType.CENTER })],
+        children: [new Paragraph({ children: [new TextRun({ text: floorplan.name, bold: true, font: 'Bahnschrift Light' })], alignment: AlignmentType.CENTER })],
         width: { size: floorplanWidthPercent, type: WidthType.PERCENTAGE },
         shading: { fill: 'E0E0E0' },
         borders: createBorder,
@@ -124,19 +171,19 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
   // Add remaining columns
   headerCells.push(
     new TableCell({
-      children: [new Paragraph({ children: [new TextRun({ text: 'Total\nQuantity', bold: true, font: 'Calibri' })], alignment: AlignmentType.CENTER })],
+      children: [new Paragraph({ children: [new TextRun({ text: 'Total\nQuantity', bold: true, font: 'Bahnschrift Light' })], alignment: AlignmentType.CENTER })],
       width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
       shading: { fill: 'E0E0E0' },
       borders: createBorder,
     }),
     new TableCell({
-      children: [new Paragraph({ children: [new TextRun({ text: 'Unit Price ($)', bold: true, font: 'Calibri' })], alignment: AlignmentType.RIGHT })],
+      children: [new Paragraph({ children: [new TextRun({ text: 'Unit Price ($)', bold: true, font: 'Bahnschrift Light' })], alignment: AlignmentType.RIGHT })],
       width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
       shading: { fill: 'E0E0E0' },
       borders: createBorder,
     }),
     new TableCell({
-      children: [new Paragraph({ children: [new TextRun({ text: 'Total', bold: true, font: 'Calibri' })], alignment: AlignmentType.RIGHT })],
+      children: [new Paragraph({ children: [new TextRun({ text: 'Total', bold: true, font: 'Bahnschrift Light' })], alignment: AlignmentType.RIGHT })],
       width: { size: fixedWidthPercent, type: WidthType.PERCENTAGE },
       shading: { fill: 'E0E0E0' },
       borders: createBorder,
@@ -145,15 +192,43 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
 
   rows.push(new TableRow({ children: headerCells }));
 
-  // Data rows
-  items.forEach((item, index) => {
+  // Data rows — track category to insert header rows when category changes
+  const totalCols = numFloorplanCols + 6; // # + Item + floors + TotalQty + UnitPrice + Total
+  let currentCategoryName: string | null = null;
+  let rowNumber = 0;
+
+  items.forEach((item) => {
+    // Insert category header row when category changes
+    if (item.categoryName !== currentCategoryName) {
+      currentCategoryName = item.categoryName;
+      const categoryHeaderRow = new TableRow({
+        children: [
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: item.categoryName, bold: true, font: 'Bahnschrift Light', size: 18 })],
+                alignment: AlignmentType.LEFT,
+              }),
+            ],
+            columnSpan: totalCols,
+            shading: { fill: 'D0D0D0' },
+            borders: createBorder,
+          }),
+        ],
+      });
+      rows.push(categoryHeaderRow);
+    }
+
+    rowNumber++;
+    const displayName = item.isAddon ? `  ↳ ${item.name}` : item.name;
+
     const dataCells: TableCell[] = [
       new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: (index + 1).toString(), font: 'Calibri' })], alignment: AlignmentType.CENTER })],
+        children: [new Paragraph({ children: [new TextRun({ text: rowNumber.toString(), font: 'Bahnschrift Light', size: 18 })], alignment: AlignmentType.CENTER })],
         borders: createBorder,
       }),
       new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: item.name, font: 'Calibri' })], alignment: AlignmentType.LEFT })],
+        children: [new Paragraph({ children: [new TextRun({ text: displayName, font: 'Bahnschrift Light', size: 18 })], alignment: AlignmentType.LEFT })],
         borders: createBorder,
       }),
     ];
@@ -163,7 +238,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
       const qty = item.floorQuantities[floorplan.id] || 0;
       dataCells.push(
         new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: qty.toString(), font: 'Calibri' })], alignment: AlignmentType.CENTER })],
+          children: [new Paragraph({ children: [new TextRun({ text: qty.toString(), font: 'Bahnschrift Light', size: 18 })], alignment: AlignmentType.CENTER })],
           borders: createBorder,
         })
       );
@@ -172,15 +247,15 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
     // Add total quantity, unit price, and total
     dataCells.push(
       new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: item.totalQuantity.toString(), font: 'Calibri' })], alignment: AlignmentType.CENTER })],
+        children: [new Paragraph({ children: [new TextRun({ text: item.totalQuantity.toString(), font: 'Bahnschrift Light', size: 18 })], alignment: AlignmentType.CENTER })],
         borders: createBorder,
       }),
       new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: `$${item.unitPrice.toLocaleString('en-US')}`, font: 'Calibri' })], alignment: AlignmentType.RIGHT })],
+        children: [new Paragraph({ children: [new TextRun({ text: `$${item.unitPrice.toLocaleString('en-US')}`, font: 'Bahnschrift Light', size: 18 })], alignment: AlignmentType.RIGHT })],
         borders: createBorder,
       }),
       new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: `$${item.total.toLocaleString('en-US')}`, font: 'Calibri' })], alignment: AlignmentType.RIGHT })],
+        children: [new Paragraph({ children: [new TextRun({ text: `$${item.total.toLocaleString('en-US')}`, font: 'Bahnschrift Light', size: 18 })], alignment: AlignmentType.RIGHT })],
         borders: createBorder,
       })
     );
@@ -208,7 +283,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         new TableCell({
           children: [
             new Paragraph({
-              children: [new TextRun({ text: 'Total for all floors (USD)', bold: true, font: 'Calibri' })],
+              children: [new TextRun({ text: 'Total for all floors (USD)', bold: true, font: 'Bahnschrift Light', size: 20 })],
               alignment: AlignmentType.RIGHT,
             }),
           ],
@@ -218,7 +293,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         new TableCell({
           children: [
             new Paragraph({
-              children: [new TextRun({ text: `$${data.projectTotal.toLocaleString('en-US')}`, bold: true, font: 'Calibri' })],
+              children: [new TextRun({ text: `$${data.projectTotal.toLocaleString('en-US')}`, bold: true, font: 'Bahnschrift Light', size: 20 })],
               alignment: AlignmentType.RIGHT,
             }),
           ],
@@ -237,7 +312,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: 'DISCOUNT', bold: true, color: 'FF0000', font: 'Calibri' })],
+                children: [new TextRun({ text: 'DISCOUNT', bold: true, color: 'FF0000', font: 'Bahnschrift Light', size: 20 })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
@@ -247,7 +322,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: `-$${discount.toLocaleString('en-US')}`, bold: true, color: 'FF0000', font: 'Calibri' })],
+                children: [new TextRun({ text: `-$${discount.toLocaleString('en-US')}`, bold: true, color: 'FF0000', font: 'Bahnschrift Light', size: 20 })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
@@ -265,7 +340,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: 'Total after Discount (USD)', bold: true, font: 'Calibri' })],
+                children: [new TextRun({ text: 'Total after Discount (USD)', bold: true, font: 'Bahnschrift Light', size: 20 })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
@@ -275,7 +350,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: `$${afterDiscount.toLocaleString('en-US')}`, bold: true, font: 'Calibri' })],
+                children: [new TextRun({ text: `$${afterDiscount.toLocaleString('en-US')}`, bold: true, font: 'Bahnschrift Light', size: 20 })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
@@ -295,7 +370,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: 'System Design, Programming & Commissioning', bold: true, italics: true, font: 'Calibri' })],
+                children: [new TextRun({ text: 'System Design, Programming & Commissioning', bold: true, italics: true, font: 'Bahnschrift Light', size: 20 })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
@@ -305,7 +380,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: `$${services.toLocaleString('en-US')}`, bold: true, font: 'Calibri' })],
+                children: [new TextRun({ text: `$${services.toLocaleString('en-US')}`, bold: true, font: 'Bahnschrift Light', size: 20 })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
@@ -324,7 +399,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         new TableCell({
           children: [
             new Paragraph({
-              children: [new TextRun({ text: 'Grand Total (USD)', bold: true, size: 20, font: 'Calibri' })],
+              children: [new TextRun({ text: 'Grand Total (USD)', bold: true, size: 20, font: 'Bahnschrift Light' })],
               alignment: AlignmentType.RIGHT,
             }),
           ],
@@ -334,7 +409,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         new TableCell({
           children: [
             new Paragraph({
-              children: [new TextRun({ text: `$${grandTotalUsd.toLocaleString('en-US')}`, bold: true, size: 20, font: 'Calibri' })],
+              children: [new TextRun({ text: `$${grandTotalUsd.toLocaleString('en-US')}`, bold: true, size: 20, font: 'Bahnschrift Light' })],
               alignment: AlignmentType.RIGHT,
             }),
           ],
@@ -354,7 +429,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: `Grand Total (${currencyCode})`, bold: true, size: 20, font: 'Calibri' })],
+                children: [new TextRun({ text: `Grand Total (${currencyCode})`, bold: true, size: 20, font: 'Bahnschrift Light' })],
                 alignment: AlignmentType.RIGHT,
               }),
             ],
@@ -369,7 +444,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
                     text: `${currencySymbol} ${Math.round(grandTotalLocal).toLocaleString('en-US')}`,
                     bold: true,
                     size: 20,
-                    font: 'Calibri',
+                    font: 'Bahnschrift Light',
                   }),
                 ],
                 alignment: AlignmentType.RIGHT,
@@ -393,8 +468,8 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
       default: {
         document: {
           run: {
-            font: 'Calibri',
-             size: 20, // 10pt
+            font: 'Bahnschrift Light',
+            size: 18, // 9pt
           },
         },
       },
@@ -404,15 +479,15 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         properties: {},
         children: [
           new Paragraph({
-            children: [new TextRun({ text: `Project: ${data.projectName}`, size: 22, bold: true, font: 'Calibri' })],
+            children: [new TextRun({ text: `Project: ${data.projectName}`, size: 22, bold: true, font: 'Bahnschrift Light' })],
             spacing: { after: 100 },
           }),
           new Paragraph({
-            children: [new TextRun({ text: `Customer: ${data.customerName}`, size: 22, bold: true, font: 'Calibri' })],
+            children: [new TextRun({ text: `Customer: ${data.customerName}`, size: 22, bold: true, font: 'Bahnschrift Light' })],
             spacing: { after: 100 },
           }),
           new Paragraph({
-            children: [new TextRun({ text: `Ref: ${data.projectNumber}`, size: 22, bold: true, font: 'Calibri' })],
+            children: [new TextRun({ text: `Ref: ${data.projectNumber}`, size: 22, bold: true, font: 'Bahnschrift Light' })],
             spacing: { after: 200 },
           }),
           table,

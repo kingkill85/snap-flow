@@ -40,6 +40,11 @@ export interface FloorplanItem {
   quantity: number;
   unitPrice: number;
   total: number;
+  categoryId: number;
+  categorySortOrder: number;
+  categoryName: string;
+  isAddon: boolean;
+  parentItemName: string | null;
 }
 
 export interface FloorplanTotal {
