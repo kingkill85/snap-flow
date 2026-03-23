@@ -1,4 +1,4 @@
-import { db } from '../config/database.ts';
+import { getDb } from '../config/database.ts';
 import { hashPassword } from '../services/password.ts';
 
 /**
@@ -22,23 +22,23 @@ function createAdminUser() {
   
   try {
     // Check if user already exists
-    const existing = db.query<[number]>(
+    const existing = getDb().query<[number]>(
       'SELECT id FROM users WHERE email = ?',
       [ADMIN_EMAIL]
     );
-    
+
     if (existing.length > 0) {
       console.log(`User ${ADMIN_EMAIL} already exists`);
       console.log('You can log in with the password you previously set');
       return;
     }
-    
+
     // Hash password
     const passwordHash = hashPassword(ADMIN_PASSWORD);
-    
+
     // Create admin user
-    db.query(
-      `INSERT INTO users (email, password_hash, role, full_name) 
+    getDb().query(
+      `INSERT INTO users (email, password_hash, role, full_name)
        VALUES (?, ?, ?, ?)`,
       [ADMIN_EMAIL, passwordHash, 'admin', 'Administrator']
     );
@@ -56,7 +56,7 @@ function createAdminUser() {
     console.error('❌ Failed to create admin user:', error);
     Deno.exit(1);
   } finally {
-    db.close();
+    getDb().close();
   }
 }
 

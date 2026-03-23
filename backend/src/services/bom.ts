@@ -697,15 +697,23 @@ export class BomService {
       if (variant.price !== entry.unit_price) {
         const oldPrice = entry.unit_price;
         const newPrice = variant.price;
-        
+
+        // Copy image to project folder (not raw catalog path)
+        const newPicturePath = variant.image_path
+          ? await this.copyImageToProject(entry.project_id, entry.id, variant.image_path)
+          : entry.picture_path;
+
         // Update snapshot
         await bomEntryRepository.update(entry.id, {
           item_name: item.name,
           style_name: variant.style_name,
           model_number: item.base_model_number || `${variant.style_name}`,
           unit_price: variant.price,
-          picture_path: variant.image_path,
+          picture_path: newPicturePath,
         });
+
+        // Update in-memory entry so totalAfter calculation uses new price
+        entry.unit_price = variant.price;
 
         report.updated.push({
           entryId: entry.id,

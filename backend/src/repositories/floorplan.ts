@@ -1,4 +1,4 @@
-import { getDb } from '../config/database.ts';
+import { getDb, withTransaction } from '../config/database.ts';
 import type { Floorplan, CreateFloorplanDTO, UpdateFloorplanDTO } from '../models/index.ts';
 
 /**
@@ -87,31 +87,35 @@ export class FloorplanRepository {
   }
 
   delete(id: number): Promise<void> {
-    // Delete placements that reference BOM entries for this floorplan
-    getDb().query(`
-      DELETE FROM placements 
-      WHERE bom_id IN (SELECT id FROM project_bom WHERE floorplan_id = ?)
-    `, [id]);
-    
-    // Delete child BOM entries first (parent_bom_id references)
-    getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ? AND parent_bom_id IS NOT NULL`, [id]);
-    
-    // Then delete parent BOM entries
-    getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ?`, [id]);
-    
-    // Finally delete the floorplan
-    getDb().query(`DELETE FROM floorplans WHERE id = ?`, [id]);
+    withTransaction(() => {
+      // Delete placements that reference BOM entries for this floorplan
+      getDb().query(`
+        DELETE FROM placements
+        WHERE bom_id IN (SELECT id FROM project_bom WHERE floorplan_id = ?)
+      `, [id]);
+
+      // Delete child BOM entries first (parent_bom_id references)
+      getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ? AND parent_bom_id IS NOT NULL`, [id]);
+
+      // Then delete parent BOM entries
+      getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ?`, [id]);
+
+      // Finally delete the floorplan
+      getDb().query(`DELETE FROM floorplans WHERE id = ?`, [id]);
+    });
     return Promise.resolve();
   }
 
   reorder(projectId: number, floorplanIds: number[]): Promise<void> {
-    for (let i = 0; i < floorplanIds.length; i++) {
-      getDb().query(`
-        UPDATE floorplans
-        SET sort_order = ?
-        WHERE id = ? AND project_id = ?
-      `, [i + 1, floorplanIds[i], projectId]);
-    }
+    withTransaction(() => {
+      for (let i = 0; i < floorplanIds.length; i++) {
+        getDb().query(`
+          UPDATE floorplans
+          SET sort_order = ?
+          WHERE id = ? AND project_id = ?
+        `, [i + 1, floorplanIds[i], projectId]);
+      }
+    });
     return Promise.resolve();
   }
 }

@@ -1,4 +1,4 @@
-import { getDb } from '../config/database.ts';
+import { getDb, withTransaction, withTransactionAsync } from '../config/database.ts';
 import type { ItemVariant, CreateItemVariantDTO } from '../models/index.ts';
 import { variantAddonRepository } from './variant-addon.ts';
 import { bomEntryRepository } from './bom-entry.ts';
@@ -155,33 +155,45 @@ export class ItemVariantRepository {
     return Promise.resolve();
   }
 
-  async deleteByItemId(itemId: number): Promise<void> {
-    // Get all variants for this item first
+  /**
+   * Internal: delete variants by item ID without opening a transaction.
+   * Use when already inside a transaction (e.g., called from ItemRepository.delete).
+   */
+  async deleteByItemIdInternal(itemId: number): Promise<void> {
     const variants = await this.findByItemId(itemId, true);
-    
-    // Clear variant_id in project_bom to preserve BOM history
+
     for (const variant of variants) {
       await bomEntryRepository.clearVariantId(variant.id);
     }
-    
-    // Delete addon relationships for each variant first
+
     for (const variant of variants) {
       await variantAddonRepository.deleteByVariantId(variant.id);
       await variantAddonRepository.deleteByAddonVariantId(variant.id);
     }
-    
-    // Now delete the variants
+
     getDb().query(`DELETE FROM item_variants WHERE item_id = ?`, [itemId]);
   }
 
+  /**
+   * Public: delete variants by item ID, wrapped in a transaction.
+   * Use when NOT already inside a transaction.
+   */
+  async deleteByItemId(itemId: number): Promise<void> {
+    await withTransactionAsync(async () => {
+      await this.deleteByItemIdInternal(itemId);
+    });
+  }
+
   reorder(itemId: number, variantIds: number[]): Promise<void> {
-    for (let i = 0; i < variantIds.length; i++) {
-      getDb().query(`
-        UPDATE item_variants
-        SET sort_order = ?
-        WHERE id = ? AND item_id = ?
-      `, [i + 1, variantIds[i], itemId]);
-    }
+    withTransaction(() => {
+      for (let i = 0; i < variantIds.length; i++) {
+        getDb().query(`
+          UPDATE item_variants
+          SET sort_order = ?
+          WHERE id = ? AND item_id = ?
+        `, [i + 1, variantIds[i], itemId]);
+      }
+    });
     return Promise.resolve();
   }
 }

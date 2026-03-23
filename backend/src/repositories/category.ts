@@ -1,4 +1,4 @@
-import { getDb } from '../config/database.ts';
+import { getDb, withTransaction } from '../config/database.ts';
 import type { Category, CreateCategoryDTO, UpdateCategoryDTO } from '../models/index.ts';
 
 /**
@@ -143,13 +143,15 @@ export class CategoryRepository {
   }
 
   reorder(categoryIds: number[]): Promise<void> {
-    for (let i = 0; i < categoryIds.length; i++) {
-      getDb().query(`
-        UPDATE categories 
-        SET sort_order = ? 
-        WHERE id = ?
-      `, [i + 1, categoryIds[i]]);
-    }
+    withTransaction(() => {
+      for (let i = 0; i < categoryIds.length; i++) {
+        getDb().query(`
+          UPDATE categories
+          SET sort_order = ?
+          WHERE id = ?
+        `, [i + 1, categoryIds[i]]);
+      }
+    });
     return Promise.resolve();
   }
 }
