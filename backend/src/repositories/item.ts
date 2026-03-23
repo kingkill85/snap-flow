@@ -1,4 +1,4 @@
-import { getDb } from '../config/database.ts';
+import { getDb, withTransactionAsync } from '../config/database.ts';
 import type { Item, CreateItemDTO, UpdateItemDTO } from '../models/index.ts';
 import { itemVariantRepository } from './item-variant.ts';
 import { bomEntryRepository } from './bom-entry.ts';
@@ -266,13 +266,15 @@ export class ItemRepository {
   }
 
   async delete(id: number): Promise<void> {
-    // Clear item_id in project_bom to preserve BOM history
-    await bomEntryRepository.clearItemId(id);
-    
-    // Delete related variants first (application-level cascade)
-    await itemVariantRepository.deleteByItemId(id);
-    
-    getDb().query(`DELETE FROM items WHERE id = ?`, [id]);
+    await withTransactionAsync(async () => {
+      // Clear item_id in project_bom to preserve BOM history
+      await bomEntryRepository.clearItemId(id);
+
+      // Delete related variants (use Internal to avoid nested transaction)
+      await itemVariantRepository.deleteByItemIdInternal(id);
+
+      getDb().query(`DELETE FROM items WHERE id = ?`, [id]);
+    });
   }
 
   async findOrCreateByBaseModelNumber(
