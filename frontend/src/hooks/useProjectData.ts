@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { projectService, type Project } from '@/services/project';
 import { floorplanService, type Floorplan } from '@/services/floorplan';
 import { itemService, type Item } from '@/services/item';
+import { categoryService, type Category } from '@/services/category';
 import { bomService } from '@/services/bom';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { FloorplanBom } from '@/services/bom';
@@ -20,6 +21,8 @@ interface UseProjectDataReturn {
   setActiveFloorplan: React.Dispatch<React.SetStateAction<Floorplan | null>>;
   items: Item[];
   setItems: React.Dispatch<React.SetStateAction<Item[]>>;
+  categories: Category[];
+  setCategories: React.Dispatch<React.SetStateAction<Category[]>>;
   isLoading: boolean;
   setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
   showNotFound: boolean;
@@ -41,6 +44,7 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
   const [floorplans, setFloorplans] = useState<Floorplan[]>([]);
   const [activeFloorplan, setActiveFloorplan] = useState<Floorplan | null>(null);
   const [items, setItems] = useState<Item[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showNotFound, setShowNotFound] = useState(false);
   const [error, setError] = useState('');
@@ -56,15 +60,17 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
     try {
       setIsLoading(true);
       setShowNotFound(false);
-      const [projectData, floorplansData, itemsResult] = await Promise.all([
+      const [projectData, floorplansData, itemsResult, categoriesData] = await Promise.all([
         projectService.getById(projectId, signal),
         floorplanService.getAll(projectId, signal),
         itemService.getAll({ include_inactive: false }, { page: 1, limit: 1000 }, signal),
+        categoryService.getAll(signal),
       ]);
 
       setProject(projectData);
       setFloorplans(floorplansData);
       setItems(itemsResult.items);
+      setCategories(categoriesData);
 
       // Initialize visible categories with all category IDs from items
       const categoryIds = new Set(itemsResult.items.map(item => item.category_id));
@@ -134,6 +140,8 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
     setActiveFloorplan,
     items,
     setItems,
+    categories,
+    setCategories,
     isLoading,
     setIsLoading,
     showNotFound,

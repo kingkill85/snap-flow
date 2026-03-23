@@ -47,6 +47,7 @@ const ProjectDashboard = () => {
     activeFloorplan,
     setActiveFloorplan,
     items,
+    categories,
     isLoading,
     showNotFound,
     error,
@@ -62,7 +63,7 @@ const ProjectDashboard = () => {
   } = useProjectData({ projectId });
 
   // BOM calculations
-  const { floorplanTotals, projectTotal } = useBomCalculations(floorplans, floorplanBoms);
+  const { floorplanTotals, projectTotal } = useBomCalculations(floorplans, floorplanBoms, items, categories);
 
   // Floorplan modal state
   const [showFloorplanModal, setShowFloorplanModal] = useState(false);
@@ -452,6 +453,8 @@ const ProjectDashboard = () => {
                   projectTotal={projectTotal}
                   invoiceSettings={invoiceSettings}
                   onConfigureInvoice={() => setShowInvoiceModal(true)}
+                  items={items}
+                  categories={categories}
                 />
               </TabsContent>
             </Tabs>

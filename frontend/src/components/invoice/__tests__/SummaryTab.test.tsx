@@ -4,6 +4,8 @@ import { SummaryTab } from '../SummaryTab';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { Floorplan } from '@/services/floorplan';
 import type { FloorplanTotal } from '@/services/bom';
+import type { Item } from '@/services/item';
+import type { Category } from '@/services/category';
 
 // Mock services
 vi.mock('@/services/invoice-docx', () => ({
@@ -15,6 +17,9 @@ const mockFloorplans: Floorplan[] = [
   { id: 2, name: 'Ground Floor', project_id: 1, image_path: 'test.jpg', sort_order: 2 },
 ];
 
+const mockItems: Item[] = [];
+const mockCategories: Category[] = [];
+
 const mockFloorplanTotals: FloorplanTotal[] = [
   {
     floorplan: mockFloorplans[0],
@@ -25,6 +30,11 @@ const mockFloorplanTotals: FloorplanTotal[] = [
         quantity: 5,
         unitPrice: 100,
         total: 500,
+        categoryId: 1,
+        categorySortOrder: 1,
+        categoryName: 'Lighting',
+        isAddon: false,
+        parentItemName: null,
       },
     ],
   },
@@ -37,6 +47,11 @@ const mockFloorplanTotals: FloorplanTotal[] = [
         quantity: 2,
         unitPrice: 250,
         total: 500,
+        categoryId: 1,
+        categorySortOrder: 1,
+        categoryName: 'Lighting',
+        isAddon: false,
+        parentItemName: null,
       },
     ],
   },
@@ -63,6 +78,8 @@ describe('SummaryTab', () => {
         projectTotal={1000}
         invoiceSettings={null}
         onConfigureInvoice={vi.fn()}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 
@@ -83,6 +100,8 @@ describe('SummaryTab', () => {
         projectTotal={0}
         invoiceSettings={null}
         onConfigureInvoice={vi.fn()}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 
@@ -101,6 +120,8 @@ describe('SummaryTab', () => {
         projectTotal={0}
         invoiceSettings={null}
         onConfigureInvoice={vi.fn()}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 
@@ -119,6 +140,8 @@ describe('SummaryTab', () => {
         projectTotal={1000}
         invoiceSettings={null}
         onConfigureInvoice={vi.fn()}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 
@@ -138,6 +161,8 @@ describe('SummaryTab', () => {
         projectTotal={1000}
         invoiceSettings={mockInvoiceSettings}
         onConfigureInvoice={vi.fn()}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 
@@ -162,6 +187,8 @@ describe('SummaryTab', () => {
         projectTotal={1000}
         invoiceSettings={null}
         onConfigureInvoice={vi.fn()}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 
@@ -183,6 +210,8 @@ describe('SummaryTab', () => {
         projectTotal={1000}
         invoiceSettings={null}
         onConfigureInvoice={mockOnConfigure}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 
@@ -207,6 +236,8 @@ describe('SummaryTab', () => {
         projectTotal={1000}
         invoiceSettings={mockInvoiceSettings}
         onConfigureInvoice={vi.fn()}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 
@@ -227,6 +258,8 @@ describe('SummaryTab', () => {
         projectTotal={1000}
         invoiceSettings={mockInvoiceSettings}
         onConfigureInvoice={vi.fn()}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 
@@ -248,6 +281,8 @@ describe('SummaryTab', () => {
         projectTotal={1000}
         invoiceSettings={mockInvoiceSettings}
         onConfigureInvoice={vi.fn()}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 
@@ -280,6 +315,8 @@ describe('SummaryTab', () => {
         projectTotal={1250}
         invoiceSettings={mockInvoiceSettings}
         onConfigureInvoice={vi.fn()}
+        items={mockItems}
+        categories={mockCategories}
       />
     );
 

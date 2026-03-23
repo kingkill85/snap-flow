@@ -6,6 +6,8 @@ import { generateInvoiceDOCX } from '@/services/invoice-docx';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { Floorplan } from '@/services/floorplan';
 import type { FloorplanTotal } from '@/services/bom';
+import type { Item } from '@/services/item';
+import type { Category } from '@/services/category';
 
 interface SummaryTabProps {
   projectName: string;
@@ -16,6 +18,8 @@ interface SummaryTabProps {
   projectTotal: number;
   invoiceSettings: InvoiceSettings | null;
   onConfigureInvoice: () => void;
+  items: Item[];
+  categories: Category[];
 }
 
 export function SummaryTab({
@@ -27,6 +31,8 @@ export function SummaryTab({
   projectTotal,
   invoiceSettings,
   onConfigureInvoice,
+  items,
+  categories,
 }: SummaryTabProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -62,6 +68,8 @@ export function SummaryTab({
         floorplanTotals,
         projectTotal,
         invoiceSettings,
+        items,
+        categories,
       });
     } finally {
       setIsGenerating(false);
