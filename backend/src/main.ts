@@ -1,3 +1,4 @@
+import { resolve } from '@std/path';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -116,7 +117,13 @@ app.get('/api/*', (c: Context) => {
 // Serve uploaded files statically at /uploads/*
 app.get('/uploads/*', async (c: Context) => {
   const filePath = c.req.path.replace('/uploads/', '');
-  const fullPath = `${env.UPLOAD_DIR}/${filePath}`;
+
+  // Prevent path traversal
+  const uploadBase = resolve(env.UPLOAD_DIR);
+  const fullPath = resolve(env.UPLOAD_DIR, filePath);
+  if (!fullPath.startsWith(uploadBase + '/')) {
+    return c.json({ error: 'File not found' }, 404);
+  }
 
   try {
     const file = await Deno.open(fullPath);
@@ -187,10 +194,10 @@ try {
   const stat = await Deno.stat(frontendPath);
   if (stat.isDirectory) {
     console.log(`📁 Serving frontend from ${frontendPath}`);
-    
+
     // Serve static files
     app.use('/*', serveStatic({ root: frontendPath }));
-    
+
     // SPA fallback - serve index.html for all non-API routes
     app.get('*', async (c) => {
       try {
