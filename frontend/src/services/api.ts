@@ -89,7 +89,7 @@ api.interceptors.response.use(
       if (!refreshToken) {
         console.log('[Auth] No refresh token available, redirecting to login');
         authService.clearTokens();
-        window.location.href = '/login';
+        window.dispatchEvent(new Event('auth:logout'));
         return Promise.reject(error);
       }
 
@@ -132,7 +132,7 @@ api.interceptors.response.use(
           if (errorWithResponse.response?.status === 401) {
             console.log('[Auth] Refresh token invalid, redirecting to login');
             authService.clearTokens();
-            window.location.href = '/login';
+            window.dispatchEvent(new Event('auth:logout'));
           }
         }
         return Promise.reject(refreshError);
