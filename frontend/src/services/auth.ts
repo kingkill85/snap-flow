@@ -9,6 +9,7 @@ interface LoginResponse {
 
 interface RefreshResponse {
   accessToken: string;
+  refreshToken: string;
 }
 
 interface UpdateProfileDTO {
@@ -74,17 +75,17 @@ export const authService = {
 
   async refreshAccessToken(signal?: AbortSignal): Promise<string> {
     const refreshToken = this.getRefreshToken();
-    
+
     if (!refreshToken) {
       throw new Error('No refresh token available');
     }
 
     const response = await api.post<ApiResponse<RefreshResponse>>('/auth/refresh', { refreshToken }, { signal });
-    const { accessToken } = response.data.data;
-    
-    // Update stored access token
-    localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-    
+    const { accessToken, refreshToken: newRefreshToken } = response.data.data;
+
+    // Store both new tokens (rotation)
+    this.setTokens(accessToken, newRefreshToken);
+
     return accessToken;
   },
 
