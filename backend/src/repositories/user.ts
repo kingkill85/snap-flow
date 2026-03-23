@@ -45,7 +45,7 @@ export class UserRepository {
     const sets: string[] = [];
     const values: (string | undefined | null)[] = [];
 
-    if (data.email) {
+    if (data.email !== undefined) {
       sets.push('email = ?');
       values.push(data.email);
     }
@@ -53,11 +53,11 @@ export class UserRepository {
       sets.push('full_name = ?');
       values.push(data.full_name);
     }
-    if (data.password_hash) {
+    if (data.password_hash !== undefined) {
       sets.push('password_hash = ?');
       values.push(data.password_hash);
     }
-    if (data.role) {
+    if (data.role !== undefined) {
       sets.push('role = ?');
       values.push(data.role);
     }

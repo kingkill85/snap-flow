@@ -121,3 +121,16 @@ Deno.test('Route ordering - POST /placements/bulk-update is reachable', async ()
   const data = await parseJSON(response);
   assertEquals(response.status !== 404, true, `Expected non-404, got ${response.status}: ${JSON.stringify(data)}`);
 });
+
+Deno.test('UserRepository.update - can update email with !== undefined check', async () => {
+  clearDatabase();
+
+  const user = await userRepository.create({
+    email: 'original@example.com',
+    password_hash: hashPassword('testpassword123'),
+    role: 'user',
+  });
+
+  const updated = await userRepository.update(user.id, { email: 'new@example.com' });
+  assertEquals(updated?.email, 'new@example.com');
+});
