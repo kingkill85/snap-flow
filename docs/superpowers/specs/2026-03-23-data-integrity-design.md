@@ -66,13 +66,13 @@ export async function withTransactionAsync<T>(fn: () => Promise<T>): Promise<T> 
 
 **Fix:** Wrap the body of `delete` in `withTransactionAsync`.
 
-### A.2 Wrap `ItemVariantRepository.delete` in transaction
+### A.2 Wrap `ItemVariantRepository.deleteByItemId` in transaction
 
-**File:** `backend/src/repositories/item-variant.ts` (lines 153-156)
+**File:** `backend/src/repositories/item-variant.ts` (lines 158-175)
 
-**Problem:** Deleting addons and then the variant are separate statements.
+**Problem:** `deleteByItemId` performs multiple steps — clears BOM variant references, deletes addon relationships for each variant, then deletes the variants. These are separate statements. A crash midway leaves orphaned addon records or inconsistent BOM references. (Note: the single-variant `delete` at line 153 is a one-statement operation and doesn't need a transaction.)
 
-**Fix:** Wrap in `withTransaction` (sync operations).
+**Fix:** Wrap `deleteByItemId` in `withTransactionAsync`.
 
 ### A.3 Fix `BomEntryRepository.delete` — add child image cleanup + transaction
 
@@ -88,13 +88,14 @@ export async function withTransactionAsync<T>(fn: () => Promise<T>): Promise<T> 
 - Wrap the DB operations in `withTransactionAsync`
 
 The pattern:
-1. Collect child `picture_path` values
+1. Collect child `picture_path` values AND parent `picture_path`
 2. `BEGIN`
-3. Delete children from DB
-4. Delete placements
-5. Delete parent from DB
-6. `COMMIT`
-7. Clean up image files (outside transaction — file I/O shouldn't block rollback)
+3. Delete placements referencing children: `DELETE FROM placements WHERE bom_id IN (SELECT id FROM project_bom WHERE parent_bom_id = ?)`
+4. Delete placements referencing parent: `DELETE FROM placements WHERE bom_id = ?`
+5. Delete children from DB
+6. Delete parent from DB
+7. `COMMIT`
+8. Clean up image files (outside transaction — file I/O shouldn't block rollback)
 
 ### A.4 Fix `BomEntryRepository.deleteByFloorplan` — delete placements first
 
@@ -127,7 +128,29 @@ Then delete the BOM entries. Wrap both in `withTransaction`.
 
 **Problem:** Four sync phases (categories, items, variants, addons) execute hundreds of statements. A mid-sync failure leaves the catalog half-synced with no rollback.
 
-**Fix:** Wrap the 4-phase sync in `withTransactionAsync`. The top-level try/catch already sets `result.success = false` — add `ROLLBACK` to that path.
+**Fix:** Cannot use `withTransactionAsync` directly because `syncCatalog` catches errors internally (line 148) and does not re-throw — the helper would see no error and `COMMIT` even on failure. Instead, manage transactions manually:
+
+```typescript
+async syncCatalog(excelPath: string): Promise<SyncResult> {
+  // ... result initialization ...
+
+  const db = getDb();
+  db.query('BEGIN');
+  try {
+    // Phase 0-4 (unchanged)
+    // ...
+    db.query('COMMIT');
+  } catch (error) {
+    db.query('ROLLBACK');
+    result.success = false;
+    // ... error logging (unchanged) ...
+  }
+
+  return result;
+}
+```
+
+This preserves the existing error-handling pattern (set `result.success = false`, log error, return result) while adding rollback on failure.
 
 ---
 
@@ -137,13 +160,14 @@ Then delete the BOM entries. Wrap both in `withTransaction`.
 
 **File:** `backend/src/routes/placements.ts`
 
-**Problem:** `POST /bulk-update` (line 236) is defined after `POST /:id/update-bom` (line 178). Hono matches `"bulk-update"` as `:id`, so the endpoint is unreachable.
+**Problem:** `POST /bulk-update` (line 236) is defined after multiple `/:id` routes. While Hono's path matching is segment-aware (so `POST /:id/update-bom` won't match `/bulk-update` due to different segment counts), this violates the CLAUDE.md convention that specific routes must come before general `/:id` routes. It's also fragile — if any `POST /:id` route (without a sub-path) is added in the future, it would shadow `/bulk-update`.
 
-**Fix:** Move the `POST /bulk-update` handler to before all `/:id` routes (after line 44, before `GET /`). Same for `POST /:id/duplicate` — verify it's after `POST /bulk-update` but that's already the case.
+**Fix:** Move the `POST /bulk-update` handler to before all `/:id` routes (after the schema definitions, before `GET /`). This follows the CLAUDE.md guidance on route ordering and prevents future shadowing.
 
 **Acceptance criteria:**
 - `POST /placements/bulk-update` returns 200 (not 404)
 - `POST /placements/:id/update-bom` still works
+- All existing placement tests pass
 
 ### B.2 Fix stale `totalAfter` in `BomService.updateFromCatalog`
 
@@ -173,7 +197,7 @@ const newPicturePath = variant.image_path
   : entry.picture_path;
 ```
 
-Then use `newPicturePath` in the update call. Need to ensure `entry.project_id` is available — check if the `findByFloorplan` query includes it, or join through the floorplan.
+Then use `newPicturePath` in the update call. `entry.project_id` is available — the `findByFloorplan` query at `bom-entry.ts:22-29` includes `project_id` in the SELECT.
 
 ### B.4 Remove broken `PlacementRepository.create`
 
