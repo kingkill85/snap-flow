@@ -44,7 +44,10 @@ categoryRoutes.get('/', async (c) => {
 // GET /categories/:id - Get single category
 categoryRoutes.get('/:id', async (c) => {
   const id = parseInt(c.req.param('id'));
-  
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
+
   try {
     const category = await categoryRepository.findById(id);
     if (!category) {
@@ -90,6 +93,9 @@ categoryRoutes.post('/', authMiddleware, adminMiddleware, zValidator('json', cre
 // PUT /categories/:id - Update category (admin only)
 categoryRoutes.put('/:id', authMiddleware, adminMiddleware, zValidator('json', updateCategorySchema), async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const { name, sort_order, is_active } = c.req.valid('json');
 
   try {
@@ -139,6 +145,9 @@ categoryRoutes.put('/:id', authMiddleware, adminMiddleware, zValidator('json', u
 // Note: This will fail if items are using this category (foreign key constraint)
 categoryRoutes.delete('/:id', authMiddleware, adminMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
 
   try {
     const category = await categoryRepository.findById(id);
@@ -186,6 +195,9 @@ categoryRoutes.patch('/reorder', authMiddleware, adminMiddleware, zValidator('js
 // Cascades to all items and variants in this category
 categoryRoutes.patch('/:id/deactivate', authMiddleware, adminMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
 
   try {
     const category = await categoryRepository.findById(id);
@@ -209,6 +221,9 @@ categoryRoutes.patch('/:id/deactivate', authMiddleware, adminMiddleware, async (
 // Note: Does NOT cascade - items and variants must be activated individually
 categoryRoutes.patch('/:id/activate', authMiddleware, adminMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
 
   try {
     const category = await categoryRepository.findById(id);

@@ -90,7 +90,10 @@ placementRoutes.post('/bulk-update', authMiddleware, zValidator('json', bulkUpda
 // GET /placements/:id - Get single placement
 placementRoutes.get('/:id', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
-  
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
+
   try {
     const placement = await placementRepository.findById(id);
     if (!placement) {
@@ -141,6 +144,9 @@ placementRoutes.post('/', authMiddleware, zValidator('json', createPlacementSche
 // PUT /placements/:id - Update placement (position/size only)
 placementRoutes.put('/:id', authMiddleware, zValidator('json', updatePlacementSchema), async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const data = c.req.valid('json');
 
   try {
@@ -168,6 +174,9 @@ const switchVariantSchema = z.object({
 
 placementRoutes.put('/:id/variant', authMiddleware, zValidator('json', switchVariantSchema), async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const { variant_id } = c.req.valid('json');
 
   try {
@@ -204,6 +213,9 @@ const updateBomSchema = z.object({
 
 placementRoutes.post('/:id/update-bom', authMiddleware, zValidator('json', updateBomSchema), async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const { variant_id, addon_ids } = c.req.valid('json');
 
   try {
@@ -235,6 +247,9 @@ placementRoutes.post('/:id/update-bom', authMiddleware, zValidator('json', updat
 // Also deletes BOM entry if no more placements reference it
 placementRoutes.delete('/:id', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
 
   try {
     const placement = await placementRepository.findById(id);
@@ -267,6 +282,9 @@ const duplicatePlacementSchema = z.object({
 
 placementRoutes.post('/:id/duplicate', authMiddleware, zValidator('json', duplicatePlacementSchema), async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const { x, y } = c.req.valid('json');
 
   try {

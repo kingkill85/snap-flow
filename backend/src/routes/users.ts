@@ -63,6 +63,9 @@ userRoutes.get('/', authMiddleware, adminMiddleware, async (c) => {
 // PUT /users/:id - Update user (admin only)
 userRoutes.put('/:id', authMiddleware, adminMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const body = await c.req.json();
   
   try {
@@ -115,6 +118,9 @@ userRoutes.put('/:id', authMiddleware, adminMiddleware, async (c) => {
 // DELETE /users/:id - Delete user
 userRoutes.delete('/:id', authMiddleware, adminMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const currentUserId = c.get('userId');
 
   if (id === currentUserId) {
