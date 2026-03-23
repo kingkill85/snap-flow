@@ -174,13 +174,14 @@ export function InvoiceSettingsModal({
           </DialogDescription>
         </DialogHeader>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="flex-1 overflow-y-auto px-1 space-y-6">
           {/* Discount Section */}
           <div className="space-y-4">
             <h4 className="text-sm font-semibold text-primary">Discount</h4>
@@ -361,6 +362,8 @@ export function InvoiceSettingsModal({
                 </div>
               )}
             </div>
+          </div>
+
           </div>
 
           <DialogFooter>
