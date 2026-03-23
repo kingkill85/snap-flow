@@ -5,6 +5,7 @@ import { categoryRepository } from '../repositories/category.ts';
 import { settingsRepository } from '../repositories/settings.ts';
 import { processImageSafe } from './image-processing.ts';
 import { env } from '../config/env.ts';
+import { getDb } from '../config/database.ts';
 
 /**
  * Excel Catalog Sync Service
@@ -129,20 +130,31 @@ export class ExcelSyncService {
       this.log(result, `✓ Found ${Object.keys(groupedItems).length} unique items with ${Object.values(groupedItems).reduce((acc, item) => acc + item.variants.length, 0)} variants`, 'parsing');
       this.log(result, `✓ Extracted ${extractedImages.size} images`, 'parsing');
 
-      // Phase 1: Sync Categories
-      await this.syncCategories(groupedItems, result);
+      // Begin transaction for all DB mutations
+      getDb().query('BEGIN');
 
-      // Phase 2: Sync Base Items
-      const itemIdMap = await this.syncItems(groupedItems, result);
+      try {
+        // Phase 1: Sync Categories
+        await this.syncCategories(groupedItems, result);
 
-      // Phase 3: Sync Variants with Images
-      await this.syncVariants(groupedItems, itemIdMap, extractedImages, result);
+        // Phase 2: Sync Base Items
+        const itemIdMap = await this.syncItems(groupedItems, result);
 
-      // Phase 4: Sync Variant Addons
-      await this.syncVariantAddons(groupedItems, itemIdMap, result);
+        // Phase 3: Sync Variants with Images
+        await this.syncVariants(groupedItems, itemIdMap, extractedImages, result);
 
-      // Set last sync timestamp for image cache busting
-      await settingsRepository.setLastSyncTimestamp(Date.now());
+        // Phase 4: Sync Variant Addons
+        await this.syncVariantAddons(groupedItems, itemIdMap, result);
+
+        // Set last sync timestamp
+        await settingsRepository.setLastSyncTimestamp(Date.now());
+
+        getDb().query('COMMIT');
+      } catch (error) {
+        getDb().query('ROLLBACK');
+        throw error; // Re-throw to outer catch
+      }
+
       this.log(result, '✅ Sync completed successfully!', 'complete');
 
     } catch (error) {
