@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 
 export interface ItemSize {
   width: number;
@@ -46,22 +46,22 @@ export function useItemMemory(projectId: number) {
   }, [projectId]);
 
   // Persist size memory to localStorage
-  const persistSizeMemory = () => {
+  const persistSizeMemory = useCallback(() => {
     try {
       localStorage.setItem(getSizeMemoryKey(projectId), JSON.stringify(Array.from(itemSizeMemory.current.entries())));
     } catch (err) {
       console.error('Failed to persist size memory:', err);
     }
-  };
+  }, [projectId]);
 
   // Persist variant memory to localStorage
-  const persistVariantMemory = () => {
+  const persistVariantMemory = useCallback(() => {
     try {
       localStorage.setItem(getVariantMemoryKey(projectId), JSON.stringify(Array.from(itemVariantMemory.current.entries())));
     } catch (err) {
       console.error('Failed to persist variant memory:', err);
     }
-  };
+  }, [projectId]);
 
   // Clear memory for a specific item (used with Ctrl+drag)
   const clearItemMemory = (itemId: number) => {
