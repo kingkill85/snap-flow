@@ -57,5 +57,36 @@ export function getDb(): DB {
   return Database.getInstance();
 }
 
-// Keep backward compatibility
-export const db = Database.getInstance();
+/**
+ * Execute a synchronous function inside a database transaction.
+ * Commits on success, rolls back on error.
+ */
+export function withTransaction<T>(fn: () => T): T {
+  const db = getDb();
+  db.query('BEGIN');
+  try {
+    const result = fn();
+    db.query('COMMIT');
+    return result;
+  } catch (error) {
+    db.query('ROLLBACK');
+    throw error;
+  }
+}
+
+/**
+ * Execute an async function inside a database transaction.
+ * Commits on success, rolls back on error.
+ */
+export async function withTransactionAsync<T>(fn: () => Promise<T>): Promise<T> {
+  const db = getDb();
+  db.query('BEGIN');
+  try {
+    const result = await fn();
+    db.query('COMMIT');
+    return result;
+  } catch (error) {
+    db.query('ROLLBACK');
+    throw error;
+  }
+}
