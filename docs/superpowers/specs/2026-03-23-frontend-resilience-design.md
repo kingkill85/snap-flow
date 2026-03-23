@@ -37,28 +37,30 @@ SnapFlow code review identified 7 frontend issues causing hangs, race conditions
 **Problem:** `window.location.href = '/login'` causes a full page reload, destroying all component state, unsaved placements, and in-flight operations. It also bypasses React Router's `replace` flag, so the back button returns to the page that triggered the 401.
 
 **Fix:**
+
+Note: `AuthProvider` is mounted OUTSIDE `<BrowserRouter>` in `App.tsx` (line 22 vs 24), so `useNavigate` cannot be used directly in `AuthContext`. Instead, use a state flag that a component inside the router can react to.
+
 - In `api.ts`, replace both `window.location.href = '/login'` with:
   ```typescript
   authService.clearTokens();
   window.dispatchEvent(new Event('auth:logout'));
   ```
-- In `AuthContext.tsx`, add a `useEffect` that listens for the `auth:logout` event:
+- In `AuthContext.tsx`, add a `useEffect` that listens for the `auth:logout` event and sets `user` to `null`:
   ```typescript
   useEffect(() => {
     const handleLogout = () => {
       setUser(null);
-      navigate('/login', { replace: true });
     };
     window.addEventListener('auth:logout', handleLogout);
     return () => window.removeEventListener('auth:logout', handleLogout);
-  }, [navigate]);
+  }, []);
   ```
-- `AuthContext` needs `useNavigate` from React Router (add import if not present)
+- The `ProtectedRoute` component already handles the redirect: when `user` becomes `null` and `isLoading` is false, it renders `<Navigate to="/login" replace />`. So clearing the user state is sufficient to trigger the redirect through React Router without a full page reload.
 
 **Acceptance criteria:**
-- 401 redirects to /login without full page reload
-- Back button does not return to the auth-failed page
-- Component state is preserved during the navigation transition
+- 401 clears auth state and redirects to /login via ProtectedRoute (no full page reload)
+- Back button does not return to the auth-failed page (because `replace` is used in ProtectedRoute)
+- Component state transitions cleanly during the redirect
 
 ---
 
@@ -68,7 +70,7 @@ SnapFlow code review identified 7 frontend issues causing hangs, race conditions
 
 **File:** `frontend/src/hooks/useDragHandlers.ts` (lines 77-120, specifically line 104)
 
-**Problem:** `handleDragStart` calls `placementService.duplicate()` as a floating Promise. If the user drops before it resolves, `handleDragEnd` applies the position update to the wrong record (the original instead of the duplicate).
+**Problem:** `handleDragStart` calls `placementService.duplicate()` as a floating Promise. `handleDragEnd` always reads the original placement ID from the DnD event (via `activeId`), never the duplicate's ID. The `setActiveDragPlacement(newPlacement)` in the `.then()` callback is not read by `handleDragEnd`. This means the position update is always applied to the original placement, not the duplicate.
 
 **Fix:** Store the duplicate promise in a ref and await it in `handleDragEnd` before applying the position update:
 
@@ -130,7 +132,7 @@ Remove the `getCategoryCounts` `useCallback` entirely.
 
 **Problem:** Truthy checks (`if (formData.customer_email)`) mean a user who clears a field can never save that change — the empty string is falsy, so the field is omitted from the update payload.
 
-**Fix:** Always include optional fields in the update payload:
+**Fix:** Always include all fields in the update payload (both required and optional use the same truthy-check pattern on lines 77-84, which is wrong for all of them):
 ```typescript
 const updateData: Record<string, string> = {
   name: formData.name,
@@ -142,9 +144,12 @@ const updateData: Record<string, string> = {
 };
 ```
 
+The HTML `required` attribute on the form inputs prevents empty required fields from being submitted. The backend also validates required fields.
+
 **Acceptance criteria:**
 - Clearing `customer_email` and saving actually clears it on the server
-- Required fields (`name`, `customer_name`) still validated before submit
+- All fields (required and optional) are always included in the update payload
+- Form-level validation still prevents empty required fields from submission
 
 ### 3.3 Add Error Handling to Delete Handlers
 
@@ -186,13 +191,19 @@ Same pattern for `handleDeleteVariant`.
 
 **Fix:** Create a class-based `ErrorBoundary` component with a recovery UI ("Something went wrong. Click to reload."). Wrap the `ProjectDashboard` route in it in `App.tsx`.
 
-### CP.2 Fix findByEmail Password Hash Leak
+### CP.2 Document findByEmail Usage (Not an Active Leak)
 
 **File:** `backend/src/repositories/user.ts` (lines 27-32)
 
-**Problem:** `findByEmail` uses `SELECT *`, which includes `password_hash`. If the result is forwarded carelessly, it leaks hashed credentials.
+**Problem:** `findByEmail` uses `SELECT *`, which includes `password_hash`. However, after verification: every caller in `auth.ts` explicitly picks fields before returning to the client (lines 49-58 return only `id, email, full_name, role`). The `password_hash` is never sent to the client. This is a defense-in-depth concern, not an active leak.
 
-**Fix:** Use explicit column list: `SELECT id, email, full_name, role, password_hash, created_at FROM users WHERE email = ?`. This is the same columns but explicit — and add a separate `findByEmailPublic` that omits `password_hash` for non-auth contexts. Actually, simpler: the auth route already needs `password_hash` for comparison. Keep `findByEmail` with all columns (it's only used in auth paths), but verify no route ever returns `password_hash` to the client. If all routes already strip it, this is a documentation-only fix — add a comment.
+**Fix:** Add a comment to `findByEmail` documenting that it intentionally returns `password_hash` for auth verification, and that callers must not forward the full object to the client:
+```typescript
+/**
+ * Find user by email. Returns full user record including password_hash.
+ * Used for auth verification only — callers must NOT return password_hash to client.
+ */
+```
 
 ### CP.3 Wrap useItemMemory Functions in useCallback
 
@@ -200,7 +211,7 @@ Same pattern for `handleDeleteVariant`.
 
 **Problem:** `persistSizeMemory` and `persistVariantMemory` are plain function declarations, recreated every render. They're passed as deps to `usePlacements`'s `useCallback`, causing `handlePlacementCreate` and `handlePlacementUpdate` to be recreated every render.
 
-**Fix:** Wrap both in `useCallback` with stable dependencies (they read from refs, so deps can be empty `[]`).
+**Fix:** Wrap both in `useCallback` with `[projectId]` as the dependency (they read from refs for the memory data, but call `getSizeMemoryKey(projectId)` / `getVariantMemoryKey(projectId)` which captures `projectId` directly). The `projectId` dep ensures the callbacks update if the user navigates to a different project.
 
 ---
 
