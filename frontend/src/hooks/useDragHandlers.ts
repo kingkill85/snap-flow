@@ -231,7 +231,7 @@ export function useDragHandlers({
             : 1;
           const scaleY = floorplanImage.naturalHeight > 0
             ? floorplanImage.clientHeight / floorplanImage.naturalHeight
-            : 2;
+            : 1;
           
           let screenX: number;
           let screenY: number;

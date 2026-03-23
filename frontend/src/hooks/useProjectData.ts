@@ -59,7 +59,7 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
       const [projectData, floorplansData, itemsResult] = await Promise.all([
         projectService.getById(projectId, signal),
         floorplanService.getAll(projectId, signal),
-        itemService.getAll({ include_inactive: false }, { page: 1, limit: 1000 }),
+        itemService.getAll({ include_inactive: false }, { page: 1, limit: 1000 }, signal),
       ]);
 
       setProject(projectData);

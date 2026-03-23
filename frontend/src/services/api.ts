@@ -28,12 +28,12 @@ const api: AxiosInstance = axios.create({
 });
 
 // Log all requests for debugging
-console.log('[API] Initialized with baseURL:', API_URL);
+if (import.meta.env.DEV) console.log('[API] Initialized with baseURL:', API_URL);
 
 // Add request interceptor for auth token and Content-Type
 api.interceptors.request.use(
   (config) => {
-    console.log('[API] Request:', config.method?.toUpperCase(), config.url, 'baseURL:', config.baseURL);
+    if (import.meta.env.DEV) console.log('[API] Request:', config.method?.toUpperCase(), config.url, 'baseURL:', config.baseURL);
     const token = authService.getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -58,11 +58,11 @@ api.interceptors.request.use(
 // Add response interceptor for error handling and token refresh
 api.interceptors.response.use(
   (response) => {
-    console.log('[API] Response:', response.status, response.config.url);
+    if (import.meta.env.DEV) console.log('[API] Response:', response.status, response.config.url);
     return response;
   },
   async (error: AxiosError) => {
-    console.log('[API] Error:', error.response?.status, error.config?.url, error.message);
+    if (import.meta.env.DEV) console.log('[API] Error:', error.response?.status, error.config?.url, error.message);
     const originalRequest = error.config;
 
     if (!originalRequest) {
@@ -77,7 +77,7 @@ api.interceptors.response.use(
     // Handle network errors (no response) - don't redirect, just reject
     // This happens when backend is restarting or network is down
     if (!error.response) {
-      console.log('[Auth] Network error, backend may be restarting');
+      if (import.meta.env.DEV) console.log('[Auth] Network error, backend may be restarting');
       return Promise.reject(error);
     }
 
@@ -87,7 +87,7 @@ api.interceptors.response.use(
 
       // If no refresh token, redirect to login
       if (!refreshToken) {
-        console.log('[Auth] No refresh token available, redirecting to login');
+        if (import.meta.env.DEV) console.log('[Auth] No refresh token available, redirecting to login');
         authService.clearTokens();
         window.dispatchEvent(new Event('auth:logout'));
         return Promise.reject(error);
@@ -95,7 +95,7 @@ api.interceptors.response.use(
 
       // If already refreshing, wait for the new token
       if (isRefreshing) {
-        console.log('[Auth] Token refresh already in progress, waiting...');
+        if (import.meta.env.DEV) console.log('[Auth] Token refresh already in progress, waiting...');
         return new Promise((resolve, reject) => {
           subscribeTokenRefresh({
             resolve: (token: string) => {
@@ -108,12 +108,12 @@ api.interceptors.response.use(
       }
 
       // Try to refresh the token
-      console.log('[Auth] Access token expired, attempting refresh...');
+      if (import.meta.env.DEV) console.log('[Auth] Access token expired, attempting refresh...');
       isRefreshing = true;
 
       try {
         const newAccessToken = await authService.refreshAccessToken();
-        console.log('[Auth] Token refreshed successfully');
+        if (import.meta.env.DEV) console.log('[Auth] Token refreshed successfully');
         isRefreshing = false;
         onTokenRefreshed(newAccessToken);
 
@@ -130,7 +130,7 @@ api.interceptors.response.use(
         if (refreshError && typeof refreshError === 'object' && 'response' in refreshError) {
           const errorWithResponse = refreshError as { response?: { status?: number } };
           if (errorWithResponse.response?.status === 401) {
-            console.log('[Auth] Refresh token invalid, redirecting to login');
+            if (import.meta.env.DEV) console.log('[Auth] Refresh token invalid, redirecting to login');
             authService.clearTokens();
             window.dispatchEvent(new Event('auth:logout'));
           }

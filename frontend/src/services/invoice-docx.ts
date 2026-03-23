@@ -191,8 +191,8 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
   // Calculate summary values
   const discount = data.invoiceSettings?.discount_usd || 0;
   const services = data.invoiceSettings?.services_usd || 0;
-  const afterDiscount = data.projectTotal - discount;
-  const grandTotalUsd = afterDiscount + services;
+  const afterDiscount = Math.max(0, data.projectTotal - discount);
+  const grandTotalUsd = Math.max(0, afterDiscount + services);
   const exchangeRate = data.invoiceSettings?.exchange_rate || 0;
   const grandTotalLocal = grandTotalUsd * exchangeRate;
   const currencyCode = data.invoiceSettings?.local_currency_code || 'PKR';
