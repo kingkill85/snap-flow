@@ -69,7 +69,10 @@ projectRoutes.get('/', authMiddleware, async (c) => {
 // GET /projects/:id/total - Get total price for entire project (MUST come before /:id)
 projectRoutes.get('/:id/total', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
-  
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
+
   try {
     const project = await projectRepository.findById(id);
     if (!project) {
@@ -87,6 +90,9 @@ projectRoutes.get('/:id/total', authMiddleware, async (c) => {
 // GET /projects/:id/invoice-calculation - Get calculated invoice totals (MUST come before /:id)
 projectRoutes.get('/:id/invoice-calculation', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
 
   try {
     // Check if project exists
@@ -120,7 +126,10 @@ projectRoutes.get('/:id/invoice-calculation', authMiddleware, async (c) => {
 // GET /projects/:id - Get single project
 projectRoutes.get('/:id', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
-  
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
+
   try {
     const project = await projectRepository.findById(id);
     if (!project) {
@@ -172,6 +181,9 @@ projectRoutes.post('/', authMiddleware, zValidator('json', createProjectSchema),
 // PUT /projects/:id/invoice-settings - Update invoice configuration (MUST come before /:id)
 projectRoutes.put('/:id/invoice-settings', authMiddleware, zValidator('json', updateInvoiceSettingsSchema), async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const data = c.req.valid('json');
 
   try {
@@ -196,6 +208,9 @@ projectRoutes.put('/:id/invoice-settings', authMiddleware, zValidator('json', up
 // PUT /projects/:id - Update project
 projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema), async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const { name, status, customer_name, customer_email, customer_phone, customer_address } = c.req.valid('json');
 
   try {
@@ -241,6 +256,9 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
 // DELETE /projects/:id - Delete project
 projectRoutes.delete('/:id', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
 
   try {
     const project = await projectRepository.findById(id);

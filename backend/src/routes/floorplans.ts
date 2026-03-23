@@ -46,7 +46,10 @@ floorplanRoutes.get('/', authMiddleware, async (c) => {
 // GET /floorplans/:id - Get single floorplan
 floorplanRoutes.get('/:id', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
-  
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
+
   try {
     const floorplan = await floorplanRepository.findById(id);
     if (!floorplan) {
@@ -121,6 +124,9 @@ floorplanRoutes.post('/', authMiddleware, uploadMiddleware('floorplans', { maxIm
 // PUT /floorplans/:id - Update floorplan (with optional image upload)
 floorplanRoutes.put('/:id', authMiddleware, uploadMiddleware('floorplans', { maxImageWidth: 1920 }), async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const uploadResult = c.get('uploadResult');
   const formData = c.get('formData');
 
@@ -188,6 +194,9 @@ floorplanRoutes.put('/:id', authMiddleware, uploadMiddleware('floorplans', { max
 // DELETE /floorplans/:id - Delete floorplan
 floorplanRoutes.delete('/:id', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   console.log(`[Floorplan] Delete request for floorplan ID: ${id}`);
 
   try {
@@ -282,7 +291,10 @@ floorplanRoutes.patch('/reorder', authMiddleware, zValidator('json', reorderSche
 // GET /floorplans/:id/bom - Get BOM for floorplan
 floorplanRoutes.get('/:id/bom', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
-  
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
+
   try {
     const floorplan = await floorplanRepository.findById(id);
     if (!floorplan) {
@@ -304,6 +316,9 @@ const createBomEntrySchema = z.object({
 
 floorplanRoutes.post('/:id/bom-entries', authMiddleware, zValidator('json', createBomEntrySchema), async (c) => {
   const floorplanId = parseInt(c.req.param('id'));
+  if (isNaN(floorplanId)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const { variant_id } = c.req.valid('json');
   
   try {
@@ -329,7 +344,11 @@ const switchVariantSchema = z.object({
 });
 
 floorplanRoutes.put('/:id/bom-entries/:entryId/variant', authMiddleware, zValidator('json', switchVariantSchema), async (c) => {
+  const floorplanId = parseInt(c.req.param('id'));
   const entryId = parseInt(c.req.param('entryId'));
+  if (isNaN(floorplanId) || isNaN(entryId)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
   const { variant_id } = c.req.valid('json');
   
   try {
@@ -346,8 +365,12 @@ floorplanRoutes.put('/:id/bom-entries/:entryId/variant', authMiddleware, zValida
 
 // DELETE /floorplans/:id/bom-entries/:entryId - Delete BOM entry
 floorplanRoutes.delete('/:id/bom-entries/:entryId', authMiddleware, async (c) => {
+  const floorplanId = parseInt(c.req.param('id'));
   const entryId = parseInt(c.req.param('entryId'));
-  
+  if (isNaN(floorplanId) || isNaN(entryId)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
+
   try {
     await bomService.deleteBomEntry(entryId);
     return c.json({
@@ -362,7 +385,10 @@ floorplanRoutes.delete('/:id/bom-entries/:entryId', authMiddleware, async (c) =>
 // POST /floorplans/:id/bom/update-from-catalog - Update from catalog
 floorplanRoutes.post('/:id/bom/update-from-catalog', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
-  
+  if (isNaN(id)) {
+    return c.json({ error: 'Invalid ID' }, 400);
+  }
+
   try {
     const floorplan = await floorplanRepository.findById(id);
     if (!floorplan) {

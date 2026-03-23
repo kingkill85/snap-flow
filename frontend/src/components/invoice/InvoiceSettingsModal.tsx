@@ -108,13 +108,13 @@ export function InvoiceSettingsModal({
     return bomTotal * (servicesPercentage / 100);
   }, [bomTotal, servicesPercentage]);
 
-  // Calculate totals (allow negative)
+  // Calculate totals (clamped to zero)
   const totalAfterDiscount = useMemo(() => {
-    return bomTotal - discountUsd;
+    return Math.max(0, bomTotal - discountUsd);
   }, [bomTotal, discountUsd]);
 
   const grandTotalUsd = useMemo(() => {
-    return totalAfterDiscount + servicesUsd;
+    return Math.max(0, totalAfterDiscount + servicesUsd);
   }, [totalAfterDiscount, servicesUsd]);
 
   const grandTotalLocal = useMemo(() => {

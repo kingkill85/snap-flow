@@ -414,7 +414,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
                 <h4 className="font-semibold text-red-900 dark:text-red-100 mb-2">Errors:</h4>
                 <ul className="text-sm text-red-800 dark:text-red-200 space-y-1 max-h-32 overflow-y-auto">
                   {result.errors.map((err, idx) => (
-                    <li key={idx}>Row {err.row}: {extractErrorMessage(err)}</li>
+                    <li key={idx}>Row {err.row}: {err.message}{err.details ? ` — ${err.details}` : ''}</li>
                   ))}
                 </ul>
               </div>

@@ -81,7 +81,10 @@ itemRoutes.get('/:id/variants/:variantId/addons', async (c) => {
   try {
     const itemId = parseInt(c.req.param('id'));
     const variantId = parseInt(c.req.param('variantId'));
-    
+    if (isNaN(itemId) || isNaN(variantId)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
+
     const item = await itemRepository.findById(itemId);
     if (!item) {
       return c.json({ error: 'Item not found' }, 404);
@@ -108,6 +111,9 @@ itemRoutes.post('/:id/variants/:variantId/addons', authMiddleware, adminMiddlewa
   try {
     const itemId = parseInt(c.req.param('id'));
     const variantId = parseInt(c.req.param('variantId'));
+    if (isNaN(itemId) || isNaN(variantId)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
     const { addon_variant_id, is_required } = await c.req.json();
 
     if (!addon_variant_id) {
@@ -160,6 +166,9 @@ itemRoutes.delete('/:id/variants/:variantId/addons/:addonId', authMiddleware, ad
     const itemId = parseInt(c.req.param('id'));
     const variantId = parseInt(c.req.param('variantId'));
     const addonId = parseInt(c.req.param('addonId'));
+    if (isNaN(itemId) || isNaN(variantId) || isNaN(addonId)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
 
     const item = await itemRepository.findById(itemId);
     if (!item) {
@@ -196,6 +205,9 @@ itemRoutes.delete('/:id/variants/:variantId/addons/:addonId', authMiddleware, ad
 itemRoutes.get('/:id', async (c) => {
   try {
     const id = parseInt(c.req.param('id'));
+    if (isNaN(id)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
     const item = await itemRepository.findById(id, true); // Include relations
 
     if (!item) {
@@ -281,6 +293,9 @@ itemRoutes.put(
   async (c) => {
     try {
       const id = parseInt(c.req.param('id'));
+      if (isNaN(id)) {
+        return c.json({ error: 'Invalid ID' }, 400);
+      }
       const body = await c.req.json();
       const { category_id, name, description, base_model_number, dimensions } = body;
 
@@ -362,6 +377,9 @@ itemRoutes.put(
 itemRoutes.delete('/:id', authMiddleware, adminMiddleware, async (c) => {
   try {
     const id = parseInt(c.req.param('id'));
+    if (isNaN(id)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
 
     const existingItem = await itemRepository.findById(id, true);
     if (!existingItem) {
@@ -397,6 +415,9 @@ itemRoutes.delete('/:id', authMiddleware, adminMiddleware, async (c) => {
 itemRoutes.get('/:id/variants', async (c) => {
   try {
     const itemId = parseInt(c.req.param('id'));
+    if (isNaN(itemId)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
     const includeInactive = c.req.query('include_inactive') === 'true' && !!c.get('userId');
     
     const item = await itemRepository.findById(itemId);
@@ -424,6 +445,9 @@ itemRoutes.post(
   async (c) => {
     try {
       const itemId = parseInt(c.req.param('id'));
+      if (isNaN(itemId)) {
+        return c.json({ error: 'Invalid ID' }, 400);
+      }
       const uploadResult = c.get('uploadResult');
       const formData = c.get('formData');
 
@@ -495,6 +519,9 @@ itemRoutes.put(
     try {
       const itemId = parseInt(c.req.param('id'));
       const variantId = parseInt(c.req.param('variantId'));
+      if (isNaN(itemId) || isNaN(variantId)) {
+        return c.json({ error: 'Invalid ID' }, 400);
+      }
       const uploadResult = c.get('uploadResult');
       const formData = c.get('formData');
 
@@ -585,6 +612,9 @@ itemRoutes.delete('/:id/variants/:variantId', authMiddleware, adminMiddleware, a
   try {
     const itemId = parseInt(c.req.param('id'));
     const variantId = parseInt(c.req.param('variantId'));
+    if (isNaN(itemId) || isNaN(variantId)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
 
     const item = await itemRepository.findById(itemId);
     if (!item) {
@@ -622,6 +652,9 @@ itemRoutes.delete('/:id/variants/:variantId', authMiddleware, adminMiddleware, a
 itemRoutes.patch('/:id/variants/reorder', authMiddleware, adminMiddleware, async (c) => {
   try {
     const itemId = parseInt(c.req.param('id'));
+    if (isNaN(itemId)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
     const { variant_ids } = await c.req.json();
 
     if (!Array.isArray(variant_ids)) {
@@ -649,6 +682,9 @@ itemRoutes.patch('/:id/variants/reorder', authMiddleware, adminMiddleware, async
 itemRoutes.patch('/:id/deactivate', authMiddleware, adminMiddleware, async (c) => {
   try {
     const id = parseInt(c.req.param('id'));
+    if (isNaN(id)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
 
     const item = await itemRepository.findById(id);
     if (!item) {
@@ -672,6 +708,9 @@ itemRoutes.patch('/:id/deactivate', authMiddleware, adminMiddleware, async (c) =
 itemRoutes.patch('/:id/activate', authMiddleware, adminMiddleware, async (c) => {
   try {
     const id = parseInt(c.req.param('id'));
+    if (isNaN(id)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
 
     const item = await itemRepository.findById(id);
     if (!item) {
@@ -695,6 +734,9 @@ itemRoutes.patch('/:id/variants/:variantId/deactivate', authMiddleware, adminMid
   try {
     const itemId = parseInt(c.req.param('id'));
     const variantId = parseInt(c.req.param('variantId'));
+    if (isNaN(itemId) || isNaN(variantId)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
 
     const item = await itemRepository.findById(itemId);
     if (!item) {
@@ -723,6 +765,9 @@ itemRoutes.patch('/:id/variants/:variantId/activate', authMiddleware, adminMiddl
   try {
     const itemId = parseInt(c.req.param('id'));
     const variantId = parseInt(c.req.param('variantId'));
+    if (isNaN(itemId) || isNaN(variantId)) {
+      return c.json({ error: 'Invalid ID' }, 400);
+    }
 
     const item = await itemRepository.findById(itemId);
     if (!item) {

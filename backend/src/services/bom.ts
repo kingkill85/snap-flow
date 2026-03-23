@@ -5,7 +5,8 @@ import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { itemRepository } from '../repositories/item.ts';
 import { variantAddonRepository } from '../repositories/variant-addon.ts';
 import { fileStorageService } from './file-storage.ts';
-import type { ProjectBom } from '../models/index.ts';
+import { getDb } from '../config/database.ts';
+import type { ProjectBom, Item, ItemVariant } from '../models/index.ts';
 
 export interface BomGroup {
   mainEntry: ProjectBom;
@@ -401,10 +402,71 @@ export class BomService {
   async getBomForFloorplan(floorplanId: number): Promise<FloorplanBom> {
     // Get all BOM entries for floorplan
     const allEntries = await bomEntryRepository.findByFloorplan(floorplanId);
-    
+
     // Separate main entries and children
     const mainEntries = allEntries.filter(e => e.parent_bom_id === null);
     const childEntries = allEntries.filter(e => e.parent_bom_id !== null);
+
+    // --- Batch fetch all needed data upfront (fixes N+1 queries) ---
+
+    // Collect all unique BOM entry IDs (main entries only need placement counts)
+    const mainEntryIds = mainEntries.map(e => e.id);
+
+    // Collect all unique item IDs and variant IDs from all entries
+    const allItemIds = new Set<number>();
+    const allVariantIds = new Set<number>();
+    for (const entry of allEntries) {
+      if (entry.item_id) allItemIds.add(entry.item_id);
+      if (entry.variant_id) allVariantIds.add(entry.variant_id);
+    }
+
+    // Batch fetch placement counts for all main entries in one query
+    const placementCounts = new Map<number, number>();
+    if (mainEntryIds.length > 0) {
+      const placeholders = mainEntryIds.map(() => '?').join(',');
+      const countRows = getDb().queryEntries(
+        `SELECT bom_id, COUNT(*) as count FROM placements WHERE bom_id IN (${placeholders}) GROUP BY bom_id`,
+        mainEntryIds
+      ) as unknown as Array<{ bom_id: number; count: number }>;
+      for (const row of countRows) {
+        placementCounts.set(row.bom_id, row.count);
+      }
+      // Entries with no placements won't appear in results — default to 0
+    }
+
+    // Batch fetch all needed items in one query
+    const itemsMap = new Map<number, Item>();
+    if (allItemIds.size > 0) {
+      const itemIdList = Array.from(allItemIds);
+      const placeholders = itemIdList.map(() => '?').join(',');
+      const itemRows = getDb().queryEntries(
+        `SELECT id, category_id, name, description, base_model_number, dimensions, created_at, is_active
+         FROM items WHERE id IN (${placeholders})`,
+        itemIdList
+      ) as unknown as Item[];
+      for (const row of itemRows) {
+        row.is_active = Boolean(row.is_active);
+        itemsMap.set(row.id, row);
+      }
+    }
+
+    // Batch fetch all needed variants in one query
+    const variantsMap = new Map<number, ItemVariant>();
+    if (allVariantIds.size > 0) {
+      const variantIdList = Array.from(allVariantIds);
+      const placeholders = variantIdList.map(() => '?').join(',');
+      const variantRows = getDb().queryEntries(
+        `SELECT id, item_id, style_name, price, image_path, sort_order, created_at, is_active
+         FROM item_variants WHERE id IN (${placeholders})`,
+        variantIdList
+      ) as unknown as ItemVariant[];
+      for (const row of variantRows) {
+        row.is_active = Boolean(row.is_active);
+        variantsMap.set(row.id, row);
+      }
+    }
+
+    // --- Build groups using map lookups (no more per-entry DB queries) ---
 
     // Group by variant + addon configuration
     const groupMap = new Map<string, {
@@ -414,25 +476,23 @@ export class BomService {
       bomEntryIds: number[];
       isAvailable: boolean;
     }>();
-    
+
     for (const mainEntry of mainEntries) {
       // Get children (addons) for this entry
       const children = childEntries.filter(c => c.parent_bom_id === mainEntry.id);
-      
-      // Get placement count (quantity)
-      const quantity = await bomEntryRepository.getPlacementCount(mainEntry.id);
-      
-      // Check if item/variant is still available in catalog
+
+      // Get placement count (quantity) from pre-fetched map
+      const quantity = placementCounts.get(mainEntry.id) ?? 0;
+
+      // Check if item/variant is still available in catalog using pre-fetched maps
       let isAvailable = true;
       if (mainEntry.item_id && mainEntry.variant_id) {
-        const item = await itemRepository.findById(mainEntry.item_id);
-        // Convert is_active to boolean (SQLite returns 0/1)
+        const item = itemsMap.get(mainEntry.item_id);
         const itemIsActive = item ? Boolean(item.is_active) : false;
         if (!item || !itemIsActive) {
           isAvailable = false;
         } else {
-          const variant = await itemVariantRepository.findById(mainEntry.variant_id);
-          // Variant repository already converts is_active to boolean
+          const variant = variantsMap.get(mainEntry.variant_id);
           if (!variant || !variant.is_active) {
             isAvailable = false;
           }
@@ -441,17 +501,17 @@ export class BomService {
         // No item_id or variant_id means item was deleted
         isAvailable = false;
       }
-      
-      // Check availability for each child addon
+
+      // Check availability for each child addon using pre-fetched maps
       for (const child of children) {
         let childIsAvailable = true;
         if (child.item_id && child.variant_id) {
-          const childItem = await itemRepository.findById(child.item_id);
+          const childItem = itemsMap.get(child.item_id);
           const childItemIsActive = childItem ? Boolean(childItem.is_active) : false;
           if (!childItem || !childItemIsActive) {
             childIsAvailable = false;
           } else {
-            const childVariant = await itemVariantRepository.findById(child.variant_id);
+            const childVariant = variantsMap.get(child.variant_id);
             if (!childVariant || !childVariant.is_active) {
               childIsAvailable = false;
             }
@@ -462,12 +522,12 @@ export class BomService {
         // Add is_available property to child
         (child as ProjectBom).is_available = childIsAvailable;
       }
-      
+
       // Create a unique key based on variant + sorted addon variant IDs
       // This groups identical configurations together
       const addonVariantIds = children.map(c => c.variant_id).sort().join(',');
       const groupKey = `${mainEntry.variant_id}:${addonVariantIds}`;
-      
+
       if (groupMap.has(groupKey)) {
         // Merge with existing group
         const existing = groupMap.get(groupKey)!;
