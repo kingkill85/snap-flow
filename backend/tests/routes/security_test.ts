@@ -51,6 +51,26 @@ Deno.test('Magic bytes - empty buffer rejected', () => {
   assertEquals(validateMagicBytes(empty, 'image'), false);
 });
 
+Deno.test('Security - unauthenticated include_inactive returns only active items', async () => {
+  clearDatabase();
+
+  const { categoryRepository } = await import('../../src/repositories/category.ts');
+  const { itemRepository } = await import('../../src/repositories/item.ts');
+
+  const category = await categoryRepository.create({ name: 'Test Category' });
+  await itemRepository.create({ name: 'Active Item', category_id: category.id });
+  const inactiveItem = await itemRepository.create({ name: 'Inactive Item', category_id: category.id });
+  await itemRepository.deactivate(inactiveItem.id);
+
+  // Unauthenticated request with include_inactive=true should NOT return inactive items
+  const response = await testRequest('/api/items?include_inactive=true');
+  const data = await parseJSON(response);
+
+  assertEquals(response.status, 200);
+  assertEquals(data.data.length, 1);
+  assertEquals(data.data[0].name, 'Active Item');
+});
+
 Deno.test('Security - X-Forwarded-For header is ignored when TRUSTED_PROXY is false', async () => {
   clearDatabase();
 
