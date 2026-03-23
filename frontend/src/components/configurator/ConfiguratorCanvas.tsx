@@ -767,6 +767,7 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
           </DialogDescription>
         </DialogHeader>
         
+        <div className="flex-1 overflow-y-auto px-1">
         {isLoading ? (
           <div className="flex justify-center py-8">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -1004,6 +1005,7 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
             )}
           </div>
         )}
+        </div>
 
         <div className="flex justify-end gap-2">
           {isItemUnavailable ? (
