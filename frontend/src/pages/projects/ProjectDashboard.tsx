@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Project } from '@/services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/services/floorplan';
@@ -186,7 +186,7 @@ const ProjectDashboard = () => {
   };
 
   // Calculate item counts per category for current floorplan
-  const getCategoryCounts = useCallback(() => {
+  const categoryCounts = useMemo(() => {
     const counts = new Map<number, number>();
     placements.forEach(placement => {
       const item = items.find(i => i.id === placement.item_id);
@@ -196,8 +196,6 @@ const ProjectDashboard = () => {
     });
     return counts;
   }, [placements, items]);
-
-  const categoryCounts = getCategoryCounts();
 
   // Drag handlers hook
   const {
