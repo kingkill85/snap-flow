@@ -54,26 +54,6 @@ export class PlacementRepository {
     return Promise.resolve(result as unknown as Placement[]);
   }
 
-  create(data: CreatePlacementDTO): Promise<Placement> {
-    const result = getDb().queryEntries(`
-      INSERT INTO placements (bom_id, x, y, width, height, rotation)
-      VALUES (?, ?, ?, ?, ?, ?)
-      RETURNING id, bom_id, x, y, width, height, rotation, created_at
-    `, [
-      data.floorplan_id, // This should be bom_id now
-      data.x,
-      data.y,
-      data.width,
-      data.height,
-      data.rotation ?? 0.0,
-    ]);
-
-    const inserted = result[0] as Record<string, unknown>;
-    
-    // Get full placement data with BOM info
-    return this.findById(inserted.id as number) as Promise<Placement>;
-  }
-
   createWithBomEntry(bomId: number, data: Omit<CreatePlacementDTO, 'floorplan_id' | 'item_variant_id'>): Promise<Placement> {
     const result = getDb().queryEntries(`
       INSERT INTO placements (bom_id, x, y, width, height, rotation)

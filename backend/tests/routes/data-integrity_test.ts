@@ -93,3 +93,31 @@ Deno.test('deleteByFloorplan - placements are cleaned up', async () => {
   const placementsAfter = await placementRepository.findByFloorplan(floorplan.id);
   assertEquals(placementsAfter.length, 0);
 });
+
+Deno.test('Route ordering - POST /placements/bulk-update is reachable', async () => {
+  clearDatabase();
+
+  const passwordHash = hashPassword('testpassword123');
+  await userRepository.create({ email: 'routetest@example.com', password_hash: passwordHash, role: 'admin' });
+
+  const loginRes = await testRequest('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'routetest@example.com', password: 'testpassword123' }),
+  });
+  const loginData = await parseJSON(loginRes);
+  const token = loginData.data.accessToken;
+
+  // POST to bulk-update — should NOT return 404
+  const response = await testRequest('/api/placements/bulk-update?floorplan_id=1&item_id=1', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ width: 100, height: 100 }),
+  });
+
+  const data = await parseJSON(response);
+  assertEquals(response.status !== 404, true, `Expected non-404, got ${response.status}: ${JSON.stringify(data)}`);
+});

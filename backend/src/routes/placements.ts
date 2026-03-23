@@ -46,16 +46,43 @@ const bulkUpdateSchema = z.object({
 placementRoutes.get('/', authMiddleware, async (c) => {
   try {
     const floorplanId = c.req.query('floorplan_id');
-    
+
     if (floorplanId) {
       const placements = await placementRepository.findByFloorplan(parseInt(floorplanId));
       return c.json({ data: placements });
     }
-    
+
     const placements = await placementRepository.findAll();
     return c.json({ data: placements });
   } catch (error) {
     console.error('List placements error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// POST /placements/bulk-update - Update dimensions for all placements of same item on floorplan
+placementRoutes.post('/bulk-update', authMiddleware, zValidator('json', bulkUpdateSchema), async (c) => {
+  const { width, height } = c.req.valid('json');
+  const floorplanId = c.req.query('floorplan_id');
+  const itemId = c.req.query('item_id');
+
+  if (!floorplanId || !itemId) {
+    return c.json({ error: 'Missing floorplan_id or item_id query parameter' }, 400);
+  }
+
+  try {
+    await placementRepository.updateDimensionsForItem(
+      parseInt(floorplanId),
+      parseInt(itemId),
+      width,
+      height
+    );
+
+    return c.json({
+      message: 'Placements updated successfully',
+    });
+  } catch (error) {
+    console.error('Bulk update placements error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -228,33 +255,6 @@ placementRoutes.delete('/:id', authMiddleware, async (c) => {
     });
   } catch (error) {
     console.error('Delete placement error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-// POST /placements/bulk-update - Update dimensions for all placements of same item on floorplan
-placementRoutes.post('/bulk-update', authMiddleware, zValidator('json', bulkUpdateSchema), async (c) => {
-  const { width, height } = c.req.valid('json');
-  const floorplanId = c.req.query('floorplan_id');
-  const itemId = c.req.query('item_id');
-
-  if (!floorplanId || !itemId) {
-    return c.json({ error: 'Missing floorplan_id or item_id query parameter' }, 400);
-  }
-
-  try {
-    await placementRepository.updateDimensionsForItem(
-      parseInt(floorplanId),
-      parseInt(itemId),
-      width,
-      height
-    );
-    
-    return c.json({
-      message: 'Placements updated successfully',
-    });
-  } catch (error) {
-    console.error('Bulk update placements error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
