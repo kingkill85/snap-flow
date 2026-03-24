@@ -234,7 +234,7 @@ Deno.test('BOM Service - recreateBomEntry with addons', async (t) => {
     );
 
     // Create placement
-    const placement = await placementRepository.createWithBomEntry(initialBom.id, {
+    const placement = await placementRepository.createWithBomEntry(initialBom.id, floorplan.id, {
       x: 100,
       y: 100,
       width: 60,
@@ -469,7 +469,7 @@ Deno.test('BOM Service - recreateBomEntry copies new images', async (t) => {
     );
 
     const { placementRepository } = await import('../../src/repositories/placement.ts');
-    const placement = await placementRepository.createWithBomEntry(initialEntry.id, {
+    const placement = await placementRepository.createWithBomEntry(initialEntry.id, floorplan.id, {
       x: 100,
       y: 100,
       width: 50,

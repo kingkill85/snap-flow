@@ -58,22 +58,6 @@ describe('ErrorBoundary', () => {
   });
 
   it('resets error state when "Try again" is clicked', async () => {
-    // We need a stateful wrapper to control whether the child throws
-    const ControlledTest = () => {
-      const [shouldThrow, setShouldThrow] = React.useState(true);
-
-      return (
-        <ErrorBoundary key={shouldThrow ? 'error' : 'ok'}>
-          {shouldThrow ? (
-            <ThrowingComponent shouldThrow={true} />
-          ) : (
-            <div>Recovered content</div>
-          )}
-        </ErrorBoundary>
-      );
-    };
-
-    // Simpler: just verify the "Try again" button is rendered and clickable
     render(
       <ErrorBoundary>
         <ThrowingComponent shouldThrow={true} />
@@ -91,5 +75,3 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
   });
 });
-
-import React from 'react';

@@ -80,7 +80,7 @@ Deno.test('deleteByFloorplan - placements are cleaned up', async () => {
 
   // Create BOM entry and placement
   const bomEntry = await bomService.createBomEntry(project.id, floorplan.id, variant.id);
-  await placementRepository.createWithBomEntry(bomEntry.id, { x: 10, y: 20, width: 50, height: 50, rotation: 0 });
+  await placementRepository.createWithBomEntry(bomEntry.id, floorplan.id, { x: 10, y: 20, width: 50, height: 50, rotation: 0 });
 
   // Verify placement exists
   const placementsBefore = await placementRepository.findByFloorplan(floorplan.id);
@@ -206,7 +206,7 @@ Deno.test('BomEntry.delete - cleans up child placements', async () => {
   const variant = await itemVariantRepository.create({ item_id: item.id, style_name: 'S', price: 100 });
 
   const bomEntry = await bomService.createBomEntry(project.id, floorplan.id, variant.id);
-  await placementRepository.createWithBomEntry(bomEntry.id, { x: 0, y: 0, width: 50, height: 50, rotation: 0 });
+  await placementRepository.createWithBomEntry(bomEntry.id, floorplan.id, { x: 0, y: 0, width: 50, height: 50, rotation: 0 });
 
   // Verify placement exists
   const before = await placementRepository.findByFloorplan(floorplan.id);
@@ -254,7 +254,7 @@ Deno.test('BomService.updateFromCatalog - totalAfter reflects updated prices', a
 
   // Create BOM entry (snapshot at price=100) and placement
   const bomEntry = await bomService.createBomEntry(project.id, floorplan.id, variant.id);
-  await placementRepository.createWithBomEntry(bomEntry.id, { x: 0, y: 0, width: 50, height: 50, rotation: 0 });
+  await placementRepository.createWithBomEntry(bomEntry.id, floorplan.id, { x: 0, y: 0, width: 50, height: 50, rotation: 0 });
 
   // Change the catalog price
   const db = getDb();
@@ -279,7 +279,7 @@ Deno.test('BomService.updateFromCatalog - updates snapshot including picture_pat
   const variant = await itemVariantRepository.create({ item_id: item.id, style_name: 'S', price: 100 });
 
   const bomEntry = await bomService.createBomEntry(project.id, floorplan.id, variant.id);
-  await placementRepository.createWithBomEntry(bomEntry.id, { x: 0, y: 0, width: 50, height: 50, rotation: 0 });
+  await placementRepository.createWithBomEntry(bomEntry.id, floorplan.id, { x: 0, y: 0, width: 50, height: 50, rotation: 0 });
 
   // Set a catalog image on the variant and change price to trigger update
   const db = getDb();

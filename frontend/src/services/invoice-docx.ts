@@ -15,6 +15,14 @@ import type { Floorplan } from './floorplan';
 import type { FloorplanItem, FloorplanTotal } from './bom';
 import type { Item } from './item';
 import type { Category } from './category';
+import type { Area } from './area';
+import type { Placement } from './placement';
+
+export interface FloorplanAreaData {
+  floorplan: Floorplan;
+  areas: Area[];
+  placements: Placement[];
+}
 
 interface PivotItem {
   name: string;
@@ -38,6 +46,7 @@ interface InvoiceDocxData {
   invoiceSettings: InvoiceSettings | null;
   items: Item[];
   categories: Category[];
+  floorplanAreaData?: FloorplanAreaData[];
 }
 
 const createBorder = {
@@ -129,6 +138,156 @@ const transformToPivot = (floorplanTotals: FloorplanTotal[]): { items: PivotItem
 
   return { items: sortedItems, floorplans };
 };
+
+function createAreaSummarySection(
+  floorplanName: string,
+  areas: Area[],
+  placements: Placement[],
+  items: Item[],
+  categories: Category[],
+): (Paragraph | Table)[] {
+  // Only consider item-type placements
+  const itemPlacements = placements.filter(p => p.type === 'item');
+
+  // Collect unique category IDs that appear in placements for this floorplan
+  const categoryIdSet = new Set<number>();
+  itemPlacements.forEach(p => {
+    const item = items.find(i => i.id === p.item_id);
+    if (item) categoryIdSet.add(item.category_id);
+  });
+
+  // Get active categories sorted by sort_order
+  const activeCategories = categories
+    .filter(c => categoryIdSet.has(c.id))
+    .sort((a, b) => a.sort_order - b.sort_order);
+
+  if (activeCategories.length === 0) {
+    return [
+      new Paragraph({
+        children: [new TextRun({ text: `${floorplanName} — Area Summary`, bold: true, size: 24, font: 'Bahnschrift Light' })],
+        spacing: { before: 400, after: 200 },
+      }),
+      new Paragraph({
+        children: [new TextRun({ text: 'No devices placed in this floorplan.', font: 'Bahnschrift Light', size: 18 })],
+        spacing: { after: 200 },
+      }),
+    ];
+  }
+
+  // Build a map: areaId (or null) -> categoryId -> count
+  const areaMap = new Map<number | null, Map<number, number>>();
+  // Initialise all known areas
+  areas.forEach(area => areaMap.set(area.id, new Map()));
+  // Also initialise null (Unassigned)
+  areaMap.set(null, new Map());
+
+  itemPlacements.forEach(p => {
+    const item = items.find(i => i.id === p.item_id);
+    if (!item) return;
+    const areaKey = p.area_id ?? null;
+    if (!areaMap.has(areaKey)) {
+      areaMap.set(areaKey, new Map());
+    }
+    const catMap = areaMap.get(areaKey)!;
+    catMap.set(item.category_id, (catMap.get(item.category_id) || 0) + 1);
+  });
+
+  // Calculate total counts per category (header row suffix)
+  const categoryTotals = new Map<number, number>();
+  activeCategories.forEach(c => {
+    let total = 0;
+    areaMap.forEach(catMap => {
+      total += catMap.get(c.id) || 0;
+    });
+    categoryTotals.set(c.id, total);
+  });
+
+  // Column widths: area name column + one per category
+  const numCategoryCols = activeCategories.length;
+  const areaColPercent = Math.max(20, 40 - numCategoryCols * 2);
+  const catColPercent = Math.floor((100 - areaColPercent) / numCategoryCols);
+
+  // Build header row
+  const headerCells: TableCell[] = [
+    new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text: 'Area', bold: true, font: 'Bahnschrift Light' })] })],
+      width: { size: areaColPercent, type: WidthType.PERCENTAGE },
+      shading: { fill: 'E0E0E0' },
+      borders: createBorder,
+    }),
+  ];
+  activeCategories.forEach(cat => {
+    const total = categoryTotals.get(cat.id) || 0;
+    headerCells.push(
+      new TableCell({
+        children: [new Paragraph({
+          children: [new TextRun({ text: `${cat.name} (${total})`, bold: true, font: 'Bahnschrift Light', size: 16 })],
+          alignment: AlignmentType.CENTER,
+        })],
+        width: { size: catColPercent, type: WidthType.PERCENTAGE },
+        shading: { fill: 'E0E0E0' },
+        borders: createBorder,
+      })
+    );
+  });
+
+  const tableRows: TableRow[] = [new TableRow({ children: headerCells })];
+
+  // Area data rows (named areas first, then Unassigned)
+  const orderedAreaKeys: Array<number | null> = [
+    ...areas.map(a => a.id as number | null),
+  ];
+  // Only add Unassigned row if there are unassigned placements
+  const unassignedMap = areaMap.get(null);
+  const hasUnassigned = unassignedMap && Array.from(unassignedMap.values()).some(v => v > 0);
+  if (hasUnassigned) {
+    orderedAreaKeys.push(null);
+  }
+
+  orderedAreaKeys.forEach(areaKey => {
+    const catMap = areaMap.get(areaKey) || new Map();
+    // Skip areas with no devices
+    const hasDevices = activeCategories.some(c => (catMap.get(c.id) || 0) > 0);
+    if (!hasDevices) return;
+
+    const areaName = areaKey === null
+      ? 'Unassigned'
+      : (areas.find(a => a.id === areaKey)?.name || `Area ${areaKey}`);
+
+    const rowCells: TableCell[] = [
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun({ text: areaName, font: 'Bahnschrift Light', size: 18 })] })],
+        borders: createBorder,
+      }),
+    ];
+    activeCategories.forEach(cat => {
+      const count = catMap.get(cat.id) || 0;
+      rowCells.push(
+        new TableCell({
+          children: [new Paragraph({
+            children: [new TextRun({ text: count > 0 ? count.toString() : '', font: 'Bahnschrift Light', size: 18 })],
+            alignment: AlignmentType.CENTER,
+          })],
+          borders: createBorder,
+        })
+      );
+    });
+    tableRows.push(new TableRow({ children: rowCells }));
+  });
+
+  const table = new Table({
+    rows: tableRows,
+    width: { size: 100, type: WidthType.PERCENTAGE },
+  });
+
+  return [
+    new Paragraph({
+      children: [new TextRun({ text: `${floorplanName} — Area Summary`, bold: true, size: 24, font: 'Bahnschrift Light' })],
+      spacing: { before: 400, after: 200 },
+    }),
+    table,
+  ];
+}
 
 export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> => {
   const { items, floorplans } = transformToPivot(data.floorplanTotals);
@@ -463,6 +622,21 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
     width: { size: 100, type: WidthType.PERCENTAGE },
   });
 
+  // Build area summary sections for each floorplan that has area data
+  const areaSummaryElements: (Paragraph | Table)[] = [];
+  if (data.floorplanAreaData && data.floorplanAreaData.length > 0) {
+    data.floorplanAreaData.forEach(fpData => {
+      const elements = createAreaSummarySection(
+        fpData.floorplan.name,
+        fpData.areas,
+        fpData.placements,
+        data.items,
+        data.categories,
+      );
+      areaSummaryElements.push(...elements);
+    });
+  }
+
   const doc = new Document({
     styles: {
       default: {
@@ -493,11 +667,22 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
           table,
         ],
       },
+      // Area summary sections — each floorplan on a new page
+      ...areaSummaryElements.length > 0 ? [{
+        properties: {},
+        children: areaSummaryElements,
+      }] : [],
     ],
   });
 
   // Generate blob and open in new tab
   const blob = await Packer.toBlob(doc);
   const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${data.projectName.replace(/[^a-zA-Z0-9-_ ]/g, '')}_Proposal.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 };

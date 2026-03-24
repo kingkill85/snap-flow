@@ -273,6 +273,7 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
 
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={handleClose}>
+              <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting}>

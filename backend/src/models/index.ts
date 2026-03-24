@@ -139,6 +139,7 @@ export interface UpdatePlacementDTO {
   height?: number | undefined;
   rotation?: number | undefined;
   bom_id?: number | undefined;
+  area_id?: number | null | undefined;
 }
 
 // Project (includes customer information directly)
@@ -226,19 +227,24 @@ export interface UpdateFloorplanDTO {
 // Placement
 export interface Placement {
   id: number;
-  bom_id: number;
-  floorplan_id: number;  // Joined from project_bom
-  item_id: number;       // Joined from project_bom
-  item_variant_id: number; // Joined from project_bom
-  item_variant_image_path?: string; // Joined from project_bom (picture_path)
+  bom_id: number | null;  // NULL for area placements
+  floorplan_id: number;
+  type: 'item' | 'area';
+  area_id: number | null;  // For items: containing area. For areas: NULL
   x: number;
   y: number;
   width: number;
   height: number;
-  rotation: number;  // Rotation in degrees (0-360)
+  rotation: number;
   created_at: string;
-  // Joined data
+  // Joined data (item placements only)
+  item_id?: number;
+  item_variant_id?: number;
+  item_variant_image_path?: string;
   item_variant?: ItemVariant;
+  // Joined data (area placements only)
+  area_properties?: AreaProperties;
+  area_vertices?: AreaVertex[];
 }
 
 export interface CreatePlacementDTO {
@@ -259,6 +265,7 @@ export interface ProjectBom {
   item_id: number;
   variant_id: number;
   parent_bom_id: number | null;
+  area_id: number | null;
   item_name: string;
   style_name: string | null;  // Snapshot of variant.style_name
   model_number: string | null;
@@ -293,4 +300,58 @@ export interface UpdateBomEntryDTO {
   model_number?: string;
   unit_price?: number;
   picture_path?: string | null;
+}
+
+// Area Properties
+export interface AreaProperties {
+  id: number;
+  placement_id: number;
+  name: string;
+  color: string;
+  opacity: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAreaDTO {
+  floorplan_id: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  name?: string | undefined;
+  color?: string | undefined;
+  opacity?: number | undefined;
+}
+
+export interface UpdateAreaDTO {
+  name?: string | undefined;
+  color?: string | undefined;
+  opacity?: number | undefined;
+}
+
+// Area Vertex
+export interface AreaVertex {
+  id: number;
+  placement_id: number;
+  vertex_index: number;
+  x: number;
+  y: number;
+}
+
+// Area (combined placement + properties + vertices for API responses)
+export interface Area {
+  id: number;
+  floorplan_id: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  name: string;
+  color: string;
+  opacity: number;
+  vertices: AreaVertex[];
+  device_count: number;
+  created_at: string;
+  updated_at: string;
 }

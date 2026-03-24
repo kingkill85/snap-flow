@@ -1,6 +1,7 @@
 import type { Floorplan } from './floorplan';
 import type { Placement } from './placement';
 import type { Item } from './item';
+import type { Area } from './area';
 import { itemService } from './item';
 
 interface ExportOptions {
@@ -112,7 +113,9 @@ export async function exportFloorplanImage(
   placements: Placement[],
   items: Item[],
   options: ExportOptions = {},
-  visibleCategoryIds?: Set<number>
+  visibleCategoryIds?: Set<number>,
+  areas?: Area[],
+  hiddenAreaIds?: Set<number>,
 ): Promise<void> {
   const { quality = EXPORT_CONFIG.DEFAULT_QUALITY, backgroundColor } = options;
 
@@ -136,6 +139,87 @@ export async function exportFloorplanImage(
   }
 
   ctx.drawImage(floorplanImage, 0, 0, canvasWidth, canvasHeight);
+
+  // Draw visible areas (polygons with fill + border + name label)
+  if (areas) {
+    const visibleAreas = hiddenAreaIds
+      ? areas.filter(a => !hiddenAreaIds.has(a.id))
+      : areas;
+
+    // Sort largest first so smaller areas draw on top
+    const sorted = [...visibleAreas].sort((a, b) => (b.width * b.height) - (a.width * a.height));
+
+    for (const area of sorted) {
+      const verts = [...area.vertices].sort((a, b) => a.vertex_index - b.vertex_index);
+      if (verts.length < 3) continue;
+
+      // Fill
+      ctx.beginPath();
+      ctx.moveTo(verts[0].x, verts[0].y);
+      for (let i = 1; i < verts.length; i++) {
+        ctx.lineTo(verts[i].x, verts[i].y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = area.color;
+      ctx.globalAlpha = area.opacity;
+      ctx.fill();
+
+      // Border
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = area.color;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.globalAlpha = 1;
+
+      // Name label — longest edge, offset inward (matching canvas SVG)
+      const label = area.name || 'Area';
+      const centX = verts.reduce((s, v) => s + v.x, 0) / verts.length;
+      const centY = verts.reduce((s, v) => s + v.y, 0) / verts.length;
+
+      let bestLen = 0;
+      let midX = centX, midY = centY;
+      let inX = 0, inY = 0;
+
+      for (let i = 0; i < verts.length; i++) {
+        const a = verts[i];
+        const b = verts[(i + 1) % verts.length];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (len > bestLen) {
+          bestLen = len;
+          midX = (a.x + b.x) / 2;
+          midY = (a.y + b.y) / 2;
+          const nx = -(b.y - a.y);
+          const ny = b.x - a.x;
+          const nLen = Math.hypot(nx, ny) || 1;
+          const dot = (midX + nx / nLen - midX) * (centX - midX) + (midY + ny / nLen - midY) * (centY - midY);
+          const sign = dot >= 0 ? 1 : -1;
+          inX = sign * nx / nLen;
+          inY = sign * ny / nLen;
+        }
+      }
+
+      const padX = 8;
+      const padY = 5;
+      ctx.font = 'bold 16px sans-serif';
+      const metrics = ctx.measureText(label);
+      const textW = metrics.width + padX * 2;
+      const textH = 16 + padY * 2;
+      const insetDist = textH / 2 + 6;
+      const lx = midX + inX * insetDist;
+      const ly = midY + inY * insetDist;
+
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.beginPath();
+      ctx.roundRect(lx - textW / 2, ly - textH / 2, textW, textH, 4);
+      ctx.fill();
+
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, lx, ly);
+    }
+  }
 
   // Filter placements by visible categories
   const filteredPlacements = visibleCategoryIds

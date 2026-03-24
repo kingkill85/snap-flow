@@ -8,14 +8,18 @@ import { extractErrorMessage } from '@/utils';
 import type { FloorplanBom, ChangeReport } from '@/services/bom';
 import { bomService } from '@/services/bom';
 import { itemService } from '@/services/item';
+import type { Area } from '@/services/area';
+import type { Placement } from '@/services/placement';
 
 interface BOMPanelProps {
   floorplanId: number;
   bom: FloorplanBom | null;
+  areas?: Area[];
+  placements?: Placement[];
   className?: string;
 }
 
-export function BOMPanel({ floorplanId, bom, className = '' }: BOMPanelProps) {
+export function BOMPanel({ floorplanId, bom, areas = [], placements = [], className = '' }: BOMPanelProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
   const [isUpdating, setIsUpdating] = useState(false);
   const [changeReport, setChangeReport] = useState<ChangeReport | null>(null);
@@ -198,6 +202,28 @@ export function BOMPanel({ floorplanId, bom, className = '' }: BOMPanelProps) {
                     <span className="text-xs text-muted-foreground">
                       ${group.mainEntry.unit_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} each
                     </span>
+                  </div>
+                  <div className="flex items-center gap-1 mt-1 flex-wrap">
+                    {(() => {
+                      const bomIds = new Set(group.bomEntryIds || [group.mainEntry.id]);
+                      const groupPlacements = placements.filter(p => p.bom_id && bomIds.has(p.bom_id));
+                      const areaIds = [...new Set(groupPlacements.map(p => p.area_id))];
+
+                      if (areaIds.length === 0) return (
+                        <Badge variant="outline" className="text-xs text-muted-foreground">Unassigned</Badge>
+                      );
+
+                      return areaIds.map(areaId => {
+                        const area = areaId ? areas.find(a => a.id === areaId) : null;
+                        return area ? (
+                          <Badge key={areaId} variant="outline" className="text-xs" style={{ borderColor: area.color, color: area.color }}>
+                            {area.name}
+                          </Badge>
+                        ) : (
+                          <Badge key="unassigned" variant="outline" className="text-xs text-muted-foreground">Unassigned</Badge>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
 

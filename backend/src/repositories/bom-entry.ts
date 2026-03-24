@@ -10,7 +10,7 @@ import { fileStorageService } from '../services/file-storage.ts';
 export class BomEntryRepository {
   findAll(): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
-      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
              item_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
@@ -21,7 +21,7 @@ export class BomEntryRepository {
 
   findByFloorplan(floorplanId: number): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
-      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
              item_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
@@ -33,7 +33,7 @@ export class BomEntryRepository {
 
   findById(id: number): Promise<ProjectBom | null> {
     const result = getDb().queryEntries(`
-      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
              item_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
@@ -48,7 +48,7 @@ export class BomEntryRepository {
     parentId: number | null = null
   ): Promise<ProjectBom | null> {
     const result = getDb().queryEntries(`
-      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
              item_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
@@ -60,7 +60,7 @@ export class BomEntryRepository {
 
   findByItem(floorplanId: number, itemId: number): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
-      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
              item_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
@@ -72,7 +72,7 @@ export class BomEntryRepository {
 
   findChildren(parentId: number): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
-      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
              item_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
@@ -88,7 +88,7 @@ export class BomEntryRepository {
       (project_id, floorplan_id, item_id, variant_id, parent_bom_id,
        item_name, style_name, model_number, unit_price, picture_path)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      RETURNING id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+      RETURNING id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
                 item_name, style_name, model_number, unit_price, picture_path,
                 created_at, updated_at
     `, [
@@ -148,7 +148,7 @@ export class BomEntryRepository {
       UPDATE project_bom
       SET ${sets.join(', ')}
       WHERE id = ?
-      RETURNING id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+      RETURNING id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
                 item_name, style_name, model_number, unit_price, picture_path,
                 created_at, updated_at
     `, values);
@@ -223,7 +223,7 @@ export class BomEntryRepository {
 
   findByPicturePath(picturePath: string): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
-      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+      SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
              item_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom

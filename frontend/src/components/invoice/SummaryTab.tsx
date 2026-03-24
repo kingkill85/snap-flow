@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Settings, FileDown, Receipt, Loader2 } from 'lucide-react';
-import { generateInvoiceDOCX } from '@/services/invoice-docx';
+import { generateInvoiceDOCX, type FloorplanAreaData } from '@/services/invoice-docx';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { Floorplan } from '@/services/floorplan';
 import type { FloorplanTotal } from '@/services/bom';
@@ -20,6 +20,7 @@ interface SummaryTabProps {
   onConfigureInvoice: () => void;
   items: Item[];
   categories: Category[];
+  getFloorplanAreaData?: () => Promise<FloorplanAreaData[]>;
 }
 
 export function SummaryTab({
@@ -33,6 +34,7 @@ export function SummaryTab({
   onConfigureInvoice,
   items,
   categories,
+  getFloorplanAreaData,
 }: SummaryTabProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -61,6 +63,7 @@ export function SummaryTab({
   const handleGenerateInvoice = async () => {
     setIsGenerating(true);
     try {
+      const floorplanAreaData = getFloorplanAreaData ? await getFloorplanAreaData() : undefined;
       await generateInvoiceDOCX({
         projectName,
         projectNumber,
@@ -70,6 +73,7 @@ export function SummaryTab({
         invoiceSettings,
         items,
         categories,
+        floorplanAreaData,
       });
     } finally {
       setIsGenerating(false);

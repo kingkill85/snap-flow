@@ -5,6 +5,7 @@ import { placementRepository } from '../repositories/placement.ts';
 
 import { bomService } from '../services/bom.ts';
 import { floorplanRepository } from '../repositories/floorplan.ts';
+import { areaRepository } from '../repositories/area.ts';
 import { authMiddleware } from '../middleware/auth.ts';
 
 // Helper function to clean up empty BOM entries
@@ -35,6 +36,7 @@ const updatePlacementSchema = z.object({
   width: z.number().positive().optional(),
   height: z.number().positive().optional(),
   rotation: z.number().min(0).max(359.99).optional(),
+  area_id: z.number().nullable().optional(),
 });
 
 const bulkUpdateSchema = z.object({
@@ -123,7 +125,7 @@ placementRoutes.post('/', authMiddleware, zValidator('json', createPlacementSche
     const bomEntry = await bomService.createBomEntry(floorplan.project_id, data.floorplan_id, data.item_variant_id);
     
     // Create placement referencing BOM entry
-    const placement = await placementRepository.createWithBomEntry(bomEntry.id, {
+    const placement = await placementRepository.createWithBomEntry(bomEntry.id, data.floorplan_id, {
       x: data.x,
       y: data.y,
       width: data.width,
@@ -131,8 +133,13 @@ placementRoutes.post('/', authMiddleware, zValidator('json', createPlacementSche
       rotation: data.rotation ?? 0,
     });
 
+    // Assign to containing area
+    await areaRepository.recheckContainment(data.floorplan_id);
+    // Re-fetch to get updated area_id
+    const updated = await placementRepository.findById(placement!.id);
+
     return c.json({
-      data: placement,
+      data: updated,
       message: 'Placement created successfully',
     }, 201);
   } catch (error) {
@@ -157,8 +164,15 @@ placementRoutes.put('/:id', authMiddleware, zValidator('json', updatePlacementSc
 
     const placement = await placementRepository.update(id, data);
 
+    // If position changed or area_id explicitly set, recheck containment
+    if (placement && existingPlacement.type === 'item') {
+      if (data.x !== undefined || data.y !== undefined || data.area_id !== undefined) {
+        await areaRepository.recheckContainment(existingPlacement.floorplan_id);
+      }
+    }
+
     return c.json({
-      data: placement,
+      data: await placementRepository.findById(id),
       message: 'Placement updated successfully',
     });
   } catch (error) {
@@ -183,6 +197,10 @@ placementRoutes.put('/:id/variant', authMiddleware, zValidator('json', switchVar
     const placement = await placementRepository.findById(id);
     if (!placement) {
       return c.json({ error: 'Placement not found' }, 404);
+    }
+
+    if (!placement.bom_id) {
+      return c.json({ error: 'Cannot switch variant on an area placement' }, 400);
     }
 
     // Switch variant in BOM entry (same placement, different BOM entry reference)
@@ -258,12 +276,14 @@ placementRoutes.delete('/:id', authMiddleware, async (c) => {
     }
 
     const bomEntryId = placement.bom_id;
-    
+
     // Delete the placement
     await placementRepository.delete(id);
-    
+
     // Clean up BOM entry if no more placements
-    await cleanupEmptyBomEntry(bomEntryId);
+    if (bomEntryId) {
+      await cleanupEmptyBomEntry(bomEntryId);
+    }
     
     return c.json({
       message: 'Placement deleted successfully',
@@ -293,11 +313,15 @@ placementRoutes.post('/:id/duplicate', authMiddleware, zValidator('json', duplic
       return c.json({ error: 'Placement not found' }, 404);
     }
 
+    if (!placement.bom_id) {
+      return c.json({ error: 'Cannot duplicate an area placement' }, 400);
+    }
+
     // Duplicate the BOM entry (main + all children/addons)
     const newBomEntry = await bomService.duplicateBomEntry(placement.bom_id);
 
     // Create new placement with same dimensions/rotation but new position
-    const newPlacement = await placementRepository.createWithBomEntry(newBomEntry.id, {
+    const newPlacement = await placementRepository.createWithBomEntry(newBomEntry.id, placement.floorplan_id, {
       x,
       y,
       width: placement.width,

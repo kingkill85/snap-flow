@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { projectService, type Project, type CreateProjectDTO, type UpdateProjectDTO } from '@/services/project';
 import { floorplanService } from '@/services/floorplan';
@@ -50,15 +50,17 @@ const ProjectList = () => {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [floorplanCount, setFloorplanCount] = useState<number>(0);
   const hasInitializedSearchRef = useRef(false);
+  const searchQueryRef = useRef(searchQuery);
+  searchQueryRef.current = searchQuery;
 
-  const fetchProjects = async (signal?: AbortSignal, isSearch = false) => {
+  const fetchProjects = useCallback(async (signal?: AbortSignal, isSearch = false) => {
     try {
       if (isSearch) {
         setIsSearching(true);
       } else {
         setIsLoading(true);
       }
-      const data = await projectService.getAll(searchQuery || undefined, signal);
+      const data = await projectService.getAll(searchQueryRef.current || undefined, signal);
       setProjects(data);
       setError('');
       if (!isSearch) {
@@ -77,7 +79,7 @@ const ProjectList = () => {
         setIsSearching(false);
       }
     }
-  };
+  }, []);
 
   // Initial load
   useEffect(() => {
@@ -87,7 +89,7 @@ const ProjectList = () => {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [fetchProjects]);
 
   // Debounced search
   useEffect(() => {
@@ -105,7 +107,7 @@ const ProjectList = () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [searchQuery]);
+  }, [searchQuery, fetchProjects]);
 
   // Open create modal if navigated from Home "Get Started"
   useEffect(() => {
