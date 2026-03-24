@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Project } from '@/services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/services/floorplan';
@@ -15,15 +15,22 @@ import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
 import { DeleteFloorplanDialog } from '@/components/floorplans/DeleteFloorplanDialog';
 import { FloorplanTabs } from '@/components/floorplans/FloorplanTabs';
 import { InvoiceSettingsModal, SummaryTab } from '@/components/invoice';
+import type { FloorplanAreaData } from '@/services/invoice-docx';
 import { ProjectHeader } from '@/components/projects/ProjectHeader';
 import { EmptyFloorplanState } from '@/components/projects/EmptyFloorplanState';
 
 import { extractErrorMessage, formatCurrency } from '@/utils';
+import { areaService } from '@/services/area';
+import { placementService } from '@/services/placement';
 import { useItemMemory } from '@/hooks/useItemMemory';
 import { useBomCalculations } from '@/hooks/useBomCalculations';
 import { useDragHandlers } from '@/hooks/useDragHandlers';
 import { usePlacements } from '@/hooks/usePlacements';
 import { useProjectData } from '@/hooks/useProjectData';
+import { useAreas } from '@/hooks/useAreas';
+import { AreasPanel } from '@/components/configurator/AreasPanel';
+import { AreaEditModal } from '@/components/configurator/AreaEditModal';
+import type { Area } from '@/services/area';
 
 const generateProjectNumber = (project: Project): string => {
   const date = new Date(project.created_at);
@@ -157,6 +164,136 @@ const ProjectDashboard = () => {
     setPlacementsVersion,
   });
 
+  // Areas hook
+  const { areas, fetchAreas, createArea, updateArea, updateVertices, deleteArea, selectedAreaId, setSelectedAreaId } = useAreas({ activeFloorplanId: activeFloorplan?.id ?? null });
+
+  // Area edit modal state
+  const [editingArea, setEditingArea] = useState<Area | null>(null);
+
+  // Area visibility — hidden areas and their contained items are invisible on canvas
+  const [hiddenAreaIds, setHiddenAreaIds] = useState<Set<number>>(new Set());
+  const handleToggleAreaVisibility = useCallback((areaId: number) => {
+    setHiddenAreaIds(prev => {
+      const next = new Set(prev);
+      if (next.has(areaId)) next.delete(areaId);
+      else next.add(areaId);
+      return next;
+    });
+  }, []);
+
+  const handleToggleAllAreasVisibility = useCallback(() => {
+    setHiddenAreaIds(prev => {
+      if (prev.size === areas.length) return new Set(); // all hidden → show all
+      return new Set(areas.map(a => a.id)); // some visible → hide all
+    });
+  }, [areas]);
+
+  // Local area state for optimistic vertex updates during drag
+  const [localAreas, setLocalAreas] = useState<Area[]>([]);
+  const localAreasRef = useRef<Area[]>([]);
+  useEffect(() => { setLocalAreas(areas); localAreasRef.current = areas; }, [areas]);
+
+  const handleAreaMove = useCallback((id: number, dx: number, dy: number) => {
+    setLocalAreas(prev => {
+      const next = prev.map(a => {
+        if (a.id !== id) return a;
+        return {
+          ...a,
+          x: a.x + dx,
+          y: a.y + dy,
+          vertices: a.vertices.map(v => ({ ...v, x: v.x + dx, y: v.y + dy })),
+        };
+      });
+      localAreasRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const handleAreaVertexMove = useCallback((id: number, vertexIndex: number, x: number, y: number) => {
+    setLocalAreas(prev => {
+      const next = prev.map(a => {
+        if (a.id !== id) return a;
+        return {
+          ...a,
+          vertices: a.vertices.map((v, i) => i === vertexIndex ? { ...v, x, y } : v),
+        };
+      });
+      localAreasRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const handleAreaVerticesReplace = useCallback((id: number, updates: { index: number; x: number; y: number }[]) => {
+    setLocalAreas(prev => {
+      const next = prev.map(a => {
+        if (a.id !== id) return a;
+        const newVertices = [...a.vertices];
+        for (const u of updates) {
+          const v = newVertices.find(v => v.vertex_index === u.index);
+          if (v) { v.x = u.x; v.y = u.y; }
+        }
+        return { ...a, vertices: newVertices.map(v => ({ ...v })) };
+      });
+      localAreasRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const handleAreaVertexAdd = useCallback((id: number, afterIndex: number, x: number, y: number) => {
+    setLocalAreas(prev => {
+      const newAreas = prev.map(a => {
+        if (a.id !== id) return a;
+        const newVertices = [...a.vertices];
+        newVertices.splice(afterIndex + 1, 0, {
+          id: -Date.now(),
+          placement_id: id,
+          vertex_index: afterIndex + 1,
+          x,
+          y,
+        });
+        return {
+          ...a,
+          vertices: newVertices.map((v, i) => ({ ...v, vertex_index: i })),
+        };
+      });
+      localAreasRef.current = newAreas;
+      return newAreas;
+    });
+  }, []);
+
+  const handleAreaVertexDelete = useCallback(async (id: number, vertexIndex: number) => {
+    setLocalAreas(prev => {
+      const next = prev.map(a => {
+        if (a.id !== id) return a;
+        const filtered = a.vertices.filter(v => v.vertex_index !== vertexIndex);
+        return { ...a, vertices: filtered.map((v, i) => ({ ...v, vertex_index: i })) };
+      });
+      localAreasRef.current = next;
+      return next;
+    });
+    // Commit immediately
+    const area = localAreasRef.current.find(a => a.id === id);
+    if (area) {
+      await updateVertices(id, area.vertices.map(v => ({ x: v.x, y: v.y })));
+    }
+  }, [updateVertices]);
+
+  const refreshAfterContainment = useCallback(async () => {
+    if (!activeFloorplan) return;
+    await Promise.all([
+      fetchAreas(activeFloorplan.id),
+      fetchPlacements(activeFloorplan.id),
+      fetchFloorplanBom(activeFloorplan.id),
+    ]);
+  }, [activeFloorplan, fetchAreas, fetchPlacements, fetchFloorplanBom]);
+
+  const handleAreaVerticesCommit = useCallback(async (id: number) => {
+    const area = localAreasRef.current.find(a => a.id === id);
+    if (!area) return;
+    await updateVertices(id, area.vertices.map(v => ({ x: v.x, y: v.y })));
+    await refreshAfterContainment();
+  }, [updateVertices, refreshAfterContainment]);
+
   useEffect(() => {
     if (activeFloorplan) {
       const controller = new AbortController();
@@ -195,6 +332,20 @@ const ProjectDashboard = () => {
     }
   };
 
+  // Build area data for the active floorplan for DOCX area summary
+  // For DOCX export: fetch area data for all floorplans on demand
+  const getFloorplanAreaData = useCallback(async (): Promise<FloorplanAreaData[]> => {
+    const results: FloorplanAreaData[] = [];
+    for (const fp of floorplans) {
+      const [fpAreas, fpPlacements] = await Promise.all([
+        areaService.getByFloorplan(fp.id),
+        placementService.getAll(fp.id),
+      ]);
+      results.push({ floorplan: fp, areas: fpAreas, placements: fpPlacements });
+    }
+    return results;
+  }, [floorplans]);
+
   // Calculate item counts per category for current floorplan
   const categoryCounts = useMemo(() => {
     const counts = new Map<number, number>();
@@ -213,6 +364,7 @@ const ProjectDashboard = () => {
     isDuplicating,
     isDropping,
     isCtrlDraggingItem,
+    isDraggingArea,
     handleDragStart,
     handleDragEnd,
   } = useDragHandlers({
@@ -228,6 +380,25 @@ const ProjectDashboard = () => {
     fetchPlacements,
     setPlacementsVersion,
     clearItemMemory,
+    areas,
+    refreshAreas: refreshAfterContainment,
+    handleAreaCreate: async (data) => {
+      const AREA_COLORS = [
+        '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6',
+        '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
+      ];
+      const nextNum = areas.length + 1;
+      const nextColor = AREA_COLORS[(areas.length) % AREA_COLORS.length];
+      const newArea = await createArea({
+        ...data,
+        name: `Area ${nextNum}`,
+        color: nextColor,
+        opacity: 0.1,
+      });
+      await refreshAfterContainment();
+      // Open edit modal so user can set name and color
+      setEditingArea(newArea);
+    },
   });
 
   const handleSubmitFloorplan = async (data: CreateFloorplanDTO | { name?: string; sort_order?: number }, image?: File) => {
@@ -392,7 +563,23 @@ const ProjectDashboard = () => {
                         zoomRef={canvasZoomRef}
                         scaleRef={canvasScaleRef}
                         isDuplicating={isDuplicating}
+                        isItemDragging={!!activeDragItem}
                         visibleCategoryIds={visibleCategories}
+                        areas={localAreas}
+                        hiddenAreaIds={hiddenAreaIds}
+                        selectedAreaId={selectedAreaId}
+                        onSelectArea={setSelectedAreaId}
+                        onAreaMove={handleAreaMove}
+                        onAreaVertexMove={handleAreaVertexMove}
+                        onAreaVerticesReplace={handleAreaVerticesReplace}
+                        onAreaVertexAdd={handleAreaVertexAdd}
+                        onAreaVertexDelete={handleAreaVertexDelete}
+                        onAreaVerticesCommit={handleAreaVerticesCommit}
+                        onAreaEdit={(id) => setEditingArea(localAreas.find(a => a.id === id) || null)}
+                        onAreaDelete={async (id) => {
+                          await deleteArea(id);
+                          if (activeFloorplan) fetchPlacements(activeFloorplan.id);
+                        }}
                       />
                     </div>
                   </div>
@@ -408,8 +595,11 @@ const ProjectDashboard = () => {
                 <TabsTrigger value="products" className="data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:font-medium data-[state=inactive]:text-muted-foreground data-[state=inactive]:border-transparent data-[state=inactive]:hover:text-foreground rounded-none bg-transparent shadow-none border-0 px-3 py-2">
                   Products
                 </TabsTrigger>
+                <TabsTrigger value="areas" className="data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:font-medium data-[state=inactive]:text-muted-foreground data-[state=inactive]:border-transparent data-[state=inactive]:hover:text-foreground rounded-none bg-transparent shadow-none border-0 px-3 py-2">
+                  Areas
+                </TabsTrigger>
                 <TabsTrigger value="bom" className="data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:font-medium data-[state=inactive]:text-muted-foreground data-[state=inactive]:border-transparent data-[state=inactive]:hover:text-foreground rounded-none bg-transparent shadow-none border-0 px-3 py-2">
-                  Bill of Materials
+                  BOM
                 </TabsTrigger>
                 <TabsTrigger value="summary" className="data-[state=active]:text-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:font-medium data-[state=inactive]:text-muted-foreground data-[state=inactive]:border-transparent data-[state=inactive]:hover:text-foreground rounded-none bg-transparent shadow-none border-0 px-3 py-2">
                   Summary
@@ -432,6 +622,26 @@ const ProjectDashboard = () => {
               </TabsContent>
 
               <TabsContent
+                value="areas"
+                forceMount
+                className={`flex-1 m-0 overflow-hidden ${activeTab !== 'areas' ? 'hidden' : ''}`}
+              >
+                <AreasPanel
+                  areas={areas}
+                  selectedAreaId={selectedAreaId}
+                  onSelectArea={setSelectedAreaId}
+                  onEditArea={(id) => setEditingArea(areas.find(a => a.id === id) || null)}
+                  onDeleteArea={async (id) => {
+                    await deleteArea(id);
+                    if (activeFloorplan) fetchPlacements(activeFloorplan.id);
+                  }}
+                  onToggleAreaVisibility={handleToggleAreaVisibility}
+                  onToggleAllAreasVisibility={handleToggleAllAreasVisibility}
+                  hiddenAreaIds={hiddenAreaIds}
+                />
+              </TabsContent>
+
+              <TabsContent
                 value="bom"
                 forceMount
                 className={`flex-1 m-0 overflow-hidden ${activeTab !== 'bom' ? 'hidden' : ''}`}
@@ -440,6 +650,8 @@ const ProjectDashboard = () => {
                   <BOMPanel
                     floorplanId={activeFloorplan.id}
                     bom={floorplanBoms.get(activeFloorplan.id) || null}
+                    areas={areas}
+                    placements={placements}
                     className="h-full border-0"
                   />
                 ) : (
@@ -465,12 +677,13 @@ const ProjectDashboard = () => {
                   onConfigureInvoice={() => setShowInvoiceModal(true)}
                   items={items}
                   categories={categories}
+                  getFloorplanAreaData={getFloorplanAreaData}
                 />
               </TabsContent>
             </Tabs>
 
             {/* Project Total - shown in Products and BOM tabs */}
-            {(activeTab === 'products' || activeTab === 'bom') && (
+            {(activeTab === 'products' || activeTab === 'areas' || activeTab === 'bom') && (
               <div className="border-t p-4 bg-muted/30">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-muted-foreground">Project Total:</span>
@@ -495,6 +708,13 @@ const ProjectDashboard = () => {
               canvasScale={canvasScaleRef.current}
             />
           )}
+          {isDraggingArea && (
+            <div
+              className="w-[120px] h-[90px] rounded border-2 border-primary bg-primary/10 flex items-center justify-center shadow-lg"
+            >
+              <span className="text-xs font-medium text-primary">New Area</span>
+            </div>
+          )}
         </DragOverlay>
       </DndContext>
 
@@ -518,6 +738,12 @@ const ProjectDashboard = () => {
         onClose={() => setShowInvoiceModal(false)}
         onSave={handleSaveInvoiceSettings}
         initialSettings={invoiceSettings || undefined}
+      />
+
+      <AreaEditModal
+        area={editingArea}
+        onSave={async (id, data) => { await updateArea(id, data); }}
+        onClose={() => setEditingArea(null)}
       />
 
       <DeleteFloorplanDialog

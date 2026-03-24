@@ -8,6 +8,7 @@ export interface BomEntry {
   item_id: number;
   variant_id: number;
   parent_bom_id: number | null;
+  area_id: number | null;
   item_name: string;
   style_name: string | null;
   model_number: string | null;

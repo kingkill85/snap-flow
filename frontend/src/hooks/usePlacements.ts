@@ -24,7 +24,7 @@ interface UsePlacementsReturn {
     item_variant_id: number;
     addon_ids?: number[];
     ignoreDefaults?: boolean;
-  }) => Promise<void>;
+  }) => Promise<number>;
   handlePlacementUpdate: (id: number, placement: {
     x?: number;
     y?: number;
@@ -72,8 +72,8 @@ export function usePlacements({
     item_variant_id: number;
     addon_ids?: number[];
     ignoreDefaults?: boolean;
-  }) => {
-    if (!activeFloorplan) return;
+  }): Promise<number> => {
+    if (!activeFloorplan) return -1;
 
     const width = placement.width ?? 60;
     const height = placement.height ?? 60;
@@ -107,6 +107,7 @@ export function usePlacements({
     placementAddons.current.set(newPlacement.id, placement.addon_ids || []);
     setPlacements(prev => [...prev, newPlacement]);
     setPlacementsVersion(prev => prev + 1);
+    return newPlacement.id;
   }, [activeFloorplan, itemSizeMemory, itemVariantMemory, persistSizeMemory, persistVariantMemory, setPlacementsVersion]);
 
   const handlePlacementUpdate = useCallback(async (id: number, placement: {

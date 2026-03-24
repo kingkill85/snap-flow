@@ -387,9 +387,11 @@ export class BomService {
     await placementRepository.update(placementId, { bom_id: newMainEntry.id });
 
     // Delete old BOM entry only if no other placements reference it
-    const remainingPlacements = await placementRepository.findByBomId(oldBomId);
-    if (remainingPlacements.length === 0) {
-      await bomEntryRepository.delete(oldBomId);
+    if (oldBomId) {
+      const remainingPlacements = await placementRepository.findByBomId(oldBomId);
+      if (remainingPlacements.length === 0) {
+        await bomEntryRepository.delete(oldBomId);
+      }
     }
 
     return newMainEntry;

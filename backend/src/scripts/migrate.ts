@@ -661,8 +661,68 @@ export async function runMigrations(): Promise<void> {
         -- Initialize last_sync_timestamp for image cache busting
         -- This timestamp is updated after every Excel sync operation
         -- and used by all clients to bust image caches
-        INSERT OR REPLACE INTO app_settings (key, value) 
+        INSERT OR REPLACE INTO app_settings (key, value)
         VALUES ('last_sync_timestamp', '0');
+      `
+    },
+    {
+      name: '030_create_areas',
+      sql: `
+        -- Recreate placements table with new columns
+        PRAGMA foreign_keys = OFF;
+
+        CREATE TABLE placements_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bom_id INTEGER REFERENCES project_bom(id) ON DELETE CASCADE,
+          floorplan_id INTEGER NOT NULL REFERENCES floorplans(id) ON DELETE CASCADE,
+          type TEXT NOT NULL DEFAULT 'item',
+          area_id INTEGER,
+          x REAL NOT NULL,
+          y REAL NOT NULL,
+          width REAL NOT NULL,
+          height REAL NOT NULL,
+          rotation REAL NOT NULL DEFAULT 0.0 CHECK(rotation >= 0 AND rotation < 360),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        INSERT INTO placements_new (id, bom_id, floorplan_id, type, x, y, width, height, rotation, created_at)
+          SELECT p.id, p.bom_id, b.floorplan_id, 'item', p.x, p.y, p.width, p.height, p.rotation, p.created_at
+          FROM placements p JOIN project_bom b ON p.bom_id = b.id;
+
+        DROP TABLE placements;
+        ALTER TABLE placements_new RENAME TO placements;
+
+        CREATE INDEX idx_placements_bom ON placements(bom_id);
+        CREATE INDEX idx_placements_floorplan ON placements(floorplan_id);
+        CREATE INDEX idx_placements_area ON placements(area_id);
+        CREATE INDEX idx_placements_type ON placements(type);
+
+        ALTER TABLE project_bom ADD COLUMN area_id INTEGER;
+
+        CREATE TABLE area_properties (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          placement_id INTEGER NOT NULL UNIQUE REFERENCES placements(id) ON DELETE CASCADE,
+          name TEXT NOT NULL DEFAULT 'New Area',
+          color TEXT NOT NULL DEFAULT '#3b82f6',
+          opacity REAL NOT NULL DEFAULT 0.1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX idx_area_properties_placement ON area_properties(placement_id);
+
+        CREATE TABLE area_vertices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          placement_id INTEGER NOT NULL REFERENCES placements(id) ON DELETE CASCADE,
+          vertex_index INTEGER NOT NULL,
+          x REAL NOT NULL,
+          y REAL NOT NULL,
+          UNIQUE(placement_id, vertex_index)
+        );
+
+        CREATE INDEX idx_area_vertices_placement ON area_vertices(placement_id);
+
+        PRAGMA foreign_keys = ON;
       `
     }
   ];

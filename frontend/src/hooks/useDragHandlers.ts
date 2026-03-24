@@ -6,6 +6,7 @@ import type { Floorplan } from '@/services/floorplan';
 import { placementService } from '@/services/placement';
 import { variantAddonService } from '@/services/variant-addon';
 import type { ItemPaletteRef } from '@/components/configurator';
+import type { Area } from '@/services/area';
 
 interface UseDragHandlersProps {
   items: Item[];
@@ -24,7 +25,7 @@ interface UseDragHandlersProps {
     item_variant_id: number;
     addon_ids?: number[];
     ignoreDefaults?: boolean;
-  }) => Promise<void>;
+  }) => Promise<number>;
   handlePlacementUpdate: (id: number, placement: {
     x?: number;
     y?: number;
@@ -37,6 +38,9 @@ interface UseDragHandlersProps {
   fetchPlacements: (floorplanId: number) => Promise<void>;
   setPlacementsVersion: React.Dispatch<React.SetStateAction<number>>;
   clearItemMemory: (itemId: number) => void;
+  handleAreaCreate?: (data: { floorplan_id: number; x: number; y: number; width: number; height: number }) => Promise<void>;
+  areas?: Area[];
+  refreshAreas?: () => void;
 }
 
 interface UseDragHandlersReturn {
@@ -45,6 +49,7 @@ interface UseDragHandlersReturn {
   isDuplicating: boolean;
   isDropping: boolean;
   isCtrlDraggingItem: boolean;
+  isDraggingArea: boolean;
   handleDragStart: (event: DragStartEvent) => void;
   handleDragEnd: (event: DragEndEvent) => Promise<void>;
   setActiveDragItem: React.Dispatch<React.SetStateAction<Item | null>>;
@@ -67,13 +72,19 @@ export function useDragHandlers({
   fetchPlacements,
   setPlacementsVersion,
   clearItemMemory,
+  handleAreaCreate,
+  areas = [],
+  refreshAreas,
 }: UseDragHandlersProps): UseDragHandlersReturn {
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
   const [activeDragPlacement, setActiveDragPlacement] = useState<Placement | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [isDropping, setIsDropping] = useState(false);
   const [isCtrlDraggingItem, setIsCtrlDraggingItem] = useState(false);
+  const [isDraggingArea, setIsDraggingArea] = useState(false);
   const duplicatePromiseRef = useRef<Promise<unknown> | null>(null);
+  const areasRef = useRef(areas);
+  areasRef.current = areas;
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const activeId = event.active.id.toString();
@@ -119,6 +130,8 @@ export function useDragHandlers({
           setIsDuplicating(false);
         }
       }
+    } else if (activeId === 'new-area') {
+      setIsDraggingArea(true);
     }
   }, [items, placements, activeFloorplan, fetchPlacements, setPlacementsVersion]);
 
@@ -189,6 +202,8 @@ export function useDragHandlers({
         }
 
         handlePlacementUpdate(targetPlacementId, { x: newX, y: newY });
+        // Containment is handled server-side in PUT /placements/:id
+        refreshAreas?.();
       }
       setActiveDragItem(null);
       setActiveDragPlacement(null);
@@ -196,6 +211,70 @@ export function useDragHandlers({
       return;
     }
     
+    if (active.data.current?.type === 'area' && overId.startsWith('canvas-')) {
+      if (handleAreaCreate && activeFloorplan) {
+        try {
+          const canvasElement = document.querySelector(`[data-canvas-id="${activeFloorplan.id}"]`);
+          if (!canvasElement) {
+            setActiveDragItem(null);
+            setActiveDragPlacement(null);
+            setIsDuplicating(false);
+            return;
+          }
+
+          const floorplanImage = canvasElement.querySelector('img[data-floorplan-image="true"]') as HTMLImageElement | null;
+          if (!floorplanImage) {
+            setActiveDragItem(null);
+            setActiveDragPlacement(null);
+            setIsDuplicating(false);
+            return;
+          }
+
+          const imageRect = floorplanImage.getBoundingClientRect();
+          const activeRect = active.rect.current?.translated;
+
+          const scaleX = floorplanImage.naturalWidth > 0
+            ? floorplanImage.clientWidth / floorplanImage.naturalWidth
+            : 1;
+          const scaleY = floorplanImage.naturalHeight > 0
+            ? floorplanImage.clientHeight / floorplanImage.naturalHeight
+            : 1;
+
+          let screenX: number;
+          let screenY: number;
+
+          if (activeRect) {
+            screenX = activeRect.left - imageRect.left;
+            screenY = activeRect.top - imageRect.top;
+          } else {
+            screenX = event.delta.x;
+            screenY = event.delta.y;
+          }
+
+          screenX = Math.max(0, Math.min(screenX, imageRect.width - 100));
+          screenY = Math.max(0, Math.min(screenY, imageRect.height - 100));
+
+          const dropX = screenX / scaleX;
+          const dropY = screenY / scaleY;
+
+          await handleAreaCreate({
+            floorplan_id: activeFloorplan.id,
+            x: dropX,
+            y: dropY,
+            width: 200,
+            height: 150,
+          });
+        } catch (err) {
+          console.error('Failed to create area:', err);
+        }
+      }
+      setActiveDragItem(null);
+      setActiveDragPlacement(null);
+      setIsDuplicating(false);
+      setIsDraggingArea(false);
+      return;
+    }
+
     if (activeId.startsWith('item-') && overId.startsWith('canvas-')) {
       const itemData = active.data.current as { itemId: number } | undefined;
       
@@ -323,6 +402,10 @@ export function useDragHandlers({
               addon_ids: addonIds,
               ignoreDefaults,
             });
+
+            // Containment is handled server-side in POST /placements
+            refreshAreas?.();
+
             setIsDropping(false);
             setActiveDragItem(null);
             setActiveDragPlacement(null);
@@ -352,6 +435,8 @@ export function useDragHandlers({
     handlePlacementCreate,
     handlePlacementUpdate,
     clearItemMemory,
+    handleAreaCreate,
+    refreshAreas,
   ]);
 
   return {
@@ -360,6 +445,7 @@ export function useDragHandlers({
     isDuplicating,
     isDropping,
     isCtrlDraggingItem,
+    isDraggingArea,
     handleDragStart,
     handleDragEnd,
     setActiveDragItem,

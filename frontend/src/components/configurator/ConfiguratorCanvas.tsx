@@ -21,6 +21,8 @@ import { variantAddonService } from '@/services/variant-addon';
 import type { FloorplanBom } from '@/services/bom';
 import { exportFloorplanImage } from '@/services/floorplan-export';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AreaPolygon } from './AreaPolygon';
+import type { Area } from '@/services/area';
 
 // CSS keyframes for fade-in animation (50ms for snappy feel)
 // Note: Don't use transform in animation as it conflicts with placement rotation
@@ -43,7 +45,20 @@ interface CanvasProps {
   zoomRef?: React.MutableRefObject<{ zoom: number; pan: { x: number; y: number } }>;
   scaleRef?: React.MutableRefObject<{ scaleX: number; scaleY: number }>;
   isDuplicating?: boolean;
+  isItemDragging?: boolean;
   visibleCategoryIds?: Set<number>;
+  areas?: Area[];
+  hiddenAreaIds?: Set<number>;
+  selectedAreaId?: number | null;
+  onSelectArea?: (id: number | null) => void;
+  onAreaMove?: (id: number, dx: number, dy: number) => void;
+  onAreaVertexMove?: (id: number, vertexIndex: number, x: number, y: number) => void;
+  onAreaVerticesReplace?: (id: number, updates: { index: number; x: number; y: number }[]) => void;
+  onAreaVertexAdd?: (id: number, afterIndex: number, x: number, y: number) => void;
+  onAreaVertexDelete?: (id: number, vertexIndex: number) => void;
+  onAreaVerticesCommit?: (id: number) => void;
+  onAreaEdit?: (id: number) => void;
+  onAreaDelete?: (id: number) => void;
 }
 
 interface DraggablePlacementProps {
@@ -497,10 +512,10 @@ function DraggablePlacement({
               e.stopPropagation();
               onEdit();
             }}
-            className="absolute -top-10 -left-10 p-3 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-background"
+            className="absolute -top-12 -left-12 w-9 h-9 flex items-center justify-center bg-primary text-primary-foreground rounded-full hover:bg-primary/90 shadow-lg z-30 transition-transform hover:scale-110 border-[2.5px] border-background"
             title="Edit placement"
           >
-            <Pencil className="w-3 h-3" />
+            <Pencil className="w-3.5 h-3.5" />
           </button>
 
           <button
@@ -508,10 +523,10 @@ function DraggablePlacement({
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute -top-10 -right-10 p-3 bg-destructive text-destructive-foreground rounded-full hover:bg-destructive/90 shadow-lg z-30 transition-transform hover:scale-110 border-2 border-background"
+            className="absolute -top-12 -right-12 w-9 h-9 flex items-center justify-center bg-destructive text-destructive-foreground rounded-full hover:bg-destructive/90 shadow-lg z-30 transition-transform hover:scale-110 border-[2.5px] border-background"
             title="Delete placement"
           >
-            <X className="w-3 h-3" />
+            <X className="w-3.5 h-3.5" />
           </button>
 
           <div
@@ -616,9 +631,10 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
         
         // Fallback to BOM data
         if (!foundInPlacementAddons && bom) {
-          const group = bom.groups.find(g =>
-            g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
-          );
+          const bomId = placement.bom_id;
+          const group = bomId ? bom.groups.find(g =>
+            g.bomEntryIds?.includes(bomId) || g.mainEntry.id === bomId
+          ) : undefined;
           if (group) {
             currentAddonIds = group.children.map(child => child.variant_id);
           }
@@ -790,8 +806,9 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
                 <div className="flex items-start gap-3">
                   {(() => {
                     // Find the BOM group for this placement
-                    const group = placement?.bom_id ? bom.groups.find((g: import("@/services/bom").BomGroup) => 
-                      g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
+                    const pBomId = placement?.bom_id;
+                    const group = pBomId ? bom.groups.find((g: import("@/services/bom").BomGroup) =>
+                      g.bomEntryIds?.includes(pBomId) || g.mainEntry.id === pBomId
                     ) : undefined;
                     const mainEntry = group?.mainEntry;
                     const mainEntryImageUrl = mainEntry?.picture_path 
@@ -811,8 +828,9 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
                   })()}
                   <div className="flex-1 min-w-0">
                     {(() => {
-                    const group = placement?.bom_id ? bom.groups.find((g: import('@/services/bom').BomGroup) =>
-                        g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
+                    const pBomId2 = placement?.bom_id;
+                    const group = pBomId2 ? bom.groups.find((g: import('@/services/bom').BomGroup) =>
+                        g.bomEntryIds?.includes(pBomId2) || g.mainEntry.id === pBomId2
                       ) : undefined;
                       const mainEntry = group?.mainEntry;
                       return (
@@ -831,8 +849,9 @@ function PlacementEditModal({ placement, floorplanId, items, bom, placementAddon
             )}
 
             {(() => {
-              const group = placement?.bom_id ? bom?.groups.find((g: import("@/services/bom").BomGroup) => 
-                g.bomEntryIds?.includes(placement.bom_id) || g.mainEntry.id === placement.bom_id
+              const pBomId3 = placement?.bom_id;
+              const group = pBomId3 ? bom?.groups.find((g: import("@/services/bom").BomGroup) =>
+                g.bomEntryIds?.includes(pBomId3) || g.mainEntry.id === pBomId3
               ) : undefined;
               return group && group.children.length > 0 ? (
                 <div>
@@ -1062,7 +1081,20 @@ export function ConfiguratorCanvas({
   zoomRef,
   scaleRef,
   isDuplicating,
+  isItemDragging,
   visibleCategoryIds,
+  areas,
+  hiddenAreaIds,
+  selectedAreaId,
+  onSelectArea,
+  onAreaMove,
+  onAreaVertexMove,
+  onAreaVerticesReplace,
+  onAreaVertexAdd,
+  onAreaVertexDelete,
+  onAreaVerticesCommit,
+  onAreaEdit,
+  onAreaDelete,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -1316,7 +1348,7 @@ export function ConfiguratorCanvas({
 
   const handleExportImage = async () => {
     try {
-      await exportFloorplanImage(floorplan, placements, items, {}, visibleCategoryIds);
+      await exportFloorplanImage(floorplan, placements, items, {}, visibleCategoryIds, areas, hiddenAreaIds);
     } catch (err) {
       console.error('Failed to export floorplan:', err);
     }
@@ -1392,6 +1424,7 @@ export function ConfiguratorCanvas({
 
   const handleCanvasClick = () => {
     setSelectedPlacementId(null);
+    onSelectArea?.(null);
   };
 
   const handleResize = (placementId: number, x: number, y: number, width: number, height: number, isFinal?: boolean) => {
@@ -1465,12 +1498,88 @@ export function ConfiguratorCanvas({
                 onDragStart={(e) => e.preventDefault()}
               />
 
+              {areas && areas.length > 0 && (
+                <svg
+                  className="absolute inset-0"
+                  style={{ width: '100%', height: '100%', pointerEvents: isItemDragging ? 'none' : undefined }}
+                  viewBox={`0 0 ${imageNaturalSize.width} ${imageNaturalSize.height}`}
+                  preserveAspectRatio="xMinYMin meet"
+                >
+                  {/* Transparent rect to pass through clicks to canvas below */}
+                  <rect width="100%" height="100%" fill="none" style={{ pointerEvents: 'none' }} />
+                  <g>
+                    {[...areas].filter(a => !hiddenAreaIds?.has(a.id)).sort((a, b) => (b.width * b.height) - (a.width * a.height)).map(area => (
+                      <AreaPolygon
+                        key={area.id}
+                        area={area}
+                        isSelected={selectedAreaId === area.id}
+                        scale={(Math.min(scaleX, scaleY) * zoom) || 1}
+                        onSelect={(id) => { setSelectedPlacementId(null); onSelectArea?.(id); }}
+                        onMove={onAreaMove || (() => {})}
+                        onVertexMove={onAreaVertexMove || (() => {})}
+                        onVerticesReplace={onAreaVerticesReplace || (() => {})}
+                        onVertexAdd={onAreaVertexAdd || (() => {})}
+                        onVertexDelete={onAreaVertexDelete || (() => {})}
+                        onVerticesCommit={onAreaVerticesCommit || (() => {})}
+                      />
+                    ))}
+                  </g>
+                </svg>
+              )}
+
+              {/* Area action buttons — HTML overlay, same as item placement buttons */}
+              {(() => {
+                if (!selectedAreaId || !areas || hiddenAreaIds?.has(selectedAreaId)) return null;
+                const area = areas.find(a => a.id === selectedAreaId);
+                if (!area) return null;
+
+                // Convert area bounding box from natural image coords to screen coords
+                const scaleX = imageNaturalSize.width > 0
+                  ? (imageRef.current?.clientWidth || 0) / imageNaturalSize.width
+                  : 1;
+                const scaleY = imageNaturalSize.height > 0
+                  ? (imageRef.current?.clientHeight || 0) / imageNaturalSize.height
+                  : 1;
+
+                const verts = area.vertices;
+                if (verts.length === 0) return null;
+                const aMinX = Math.min(...verts.map(v => v.x));
+                const aMinY = Math.min(...verts.map(v => v.y));
+                const aMaxX = Math.max(...verts.map(v => v.x));
+
+                const screenLeft = aMinX * scaleX;
+                const screenTop = aMinY * scaleY;
+                const screenRight = aMaxX * scaleX;
+
+                return (
+                  <>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onAreaEdit?.(area.id); }}
+                      className="absolute w-9 h-9 flex items-center justify-center bg-primary text-primary-foreground rounded-full hover:bg-primary/90 shadow-lg z-30 transition-transform hover:scale-110 border-[2.5px] border-background"
+                      style={{ left: screenLeft - 48, top: screenTop - 48 }}
+                      title="Edit area"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onAreaDelete?.(area.id); }}
+                      className="absolute w-9 h-9 flex items-center justify-center bg-destructive text-destructive-foreground rounded-full hover:bg-destructive/90 shadow-lg z-30 transition-transform hover:scale-110 border-[2.5px] border-background"
+                      style={{ left: screenRight + 12, top: screenTop - 48 }}
+                      title="Delete area"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                );
+              })()}
+
               {[...placements]
                 .filter((placement) => {
                   // Filter by visible categories
+                  // Item visibility controlled only by category (Products tab)
                   if (!visibleCategoryIds) return true;
                   const item = items.find((i) => i.id === placement.item_id);
-                  if (!item) return true; // Show unknown items
+                  if (!item) return true;
                   return visibleCategoryIds.has(item.category_id);
                 })
                 .sort((a, b) => {
@@ -1490,7 +1599,7 @@ export function ConfiguratorCanvas({
                       placement={placement}
                       item={item}
                       isSelected={selectedPlacementId === placement.id}
-                      onSelect={() => setSelectedPlacementId(placement.id)}
+                      onSelect={() => { setSelectedPlacementId(placement.id); onSelectArea?.(null); }}
                       onDelete={() => {
                         onPlacementDelete(placement.id);
                         setSelectedPlacementId(null);
@@ -1567,9 +1676,26 @@ export function ConfiguratorCanvas({
           </div>
         </div>
 
-        {/* Help text */}
-        <div className="absolute bottom-2 left-2 text-xs text-muted-foreground bg-background/75 px-2 py-1 rounded">
-          Click item to select • Drag corners to resize (Shift to stretch, Ctrl for 5px snap) • Drag ↻ to rotate (Ctrl for 15° snap) • Click 🗑 to delete • Click ✎ to edit • Ctrl+wheel to zoom • Ctrl+drag to pan • Ctrl+drag item to duplicate • Click ⬇ to export image
+        {/* Help tooltip — small ? icon, expands on hover */}
+        <div className="absolute bottom-2 left-2 z-20 group">
+          <div className="px-2.5 py-1 rounded-md bg-muted/80 border border-border flex items-center gap-1.5 text-xs text-muted-foreground cursor-help">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+            Shortcuts
+          </div>
+          <div className="hidden group-hover:block absolute bottom-8 left-0 w-64 bg-popover border border-border rounded-lg shadow-lg p-3 text-xs text-popover-foreground space-y-1.5">
+            <p className="font-semibold text-sm mb-2">Shortcuts</p>
+            <p><span className="text-muted-foreground">Items:</span> Click to select, drag corners to resize</p>
+            <p><span className="text-muted-foreground">Shift+drag:</span> Stretch (free resize)</p>
+            <p><span className="text-muted-foreground">Ctrl+drag corner:</span> 5px snap</p>
+            <p><span className="text-muted-foreground">Ctrl+drag item:</span> Duplicate</p>
+            <p className="border-t border-border pt-1.5 mt-1.5"><span className="text-muted-foreground">Areas:</span> Click to select, drag to move</p>
+            <p><span className="text-muted-foreground">Shift+drag corner:</span> Stretch area</p>
+            <p><span className="text-muted-foreground">Ctrl+drag corner:</span> Free vertex move</p>
+            <p><span className="text-muted-foreground">Ctrl+Shift+drag:</span> Angle snap (5°)</p>
+            <p><span className="text-muted-foreground">Ctrl+click edge:</span> Add vertex</p>
+            <p><span className="text-muted-foreground">Ctrl+right-click vertex:</span> Remove vertex</p>
+            <p className="border-t border-border pt-1.5 mt-1.5"><span className="text-muted-foreground">Canvas:</span> Ctrl+wheel to zoom, Ctrl+drag to pan</p>
+          </div>
         </div>
 
         <PlacementEditModal

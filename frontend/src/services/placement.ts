@@ -2,7 +2,9 @@ import api from './api';
 
 export interface Placement {
   id: number;
-  bom_id: number;
+  type: 'item' | 'area';
+  bom_id: number | null;
+  area_id: number | null;
   floorplan_id: number;
   item_id: number;
   item_variant_id: number;
@@ -31,6 +33,7 @@ export interface UpdatePlacementDTO {
   width?: number;
   height?: number;
   rotation?: number;
+  area_id?: number | null;
 }
 
 export const placementService = {
