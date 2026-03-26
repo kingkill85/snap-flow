@@ -34,13 +34,13 @@ interface UseDragHandlersProps {
     item_variant_id?: number;
     addon_ids?: number[];
     rotation?: number;
-  }, isFinal?: boolean) => Promise<void>;
-  fetchPlacements: (floorplanId: number) => Promise<void>;
-  setPlacementsVersion: React.Dispatch<React.SetStateAction<number>>;
+  }, isFinal?: boolean) => Promise<Placement | undefined>;
+  setPlacements: React.Dispatch<React.SetStateAction<Placement[]>>;
   clearItemMemory: (itemId: number) => void;
   handleAreaCreate?: (data: { floorplan_id: number; x: number; y: number; width: number; height: number }) => Promise<void>;
   areas?: Area[];
-  refreshAreas?: () => void;
+  fetchAreas?: () => void;
+  setPlacementsVersion: React.Dispatch<React.SetStateAction<number>>;
 }
 
 interface UseDragHandlersReturn {
@@ -69,12 +69,12 @@ export function useDragHandlers({
   isResizingRef,
   handlePlacementCreate,
   handlePlacementUpdate,
-  fetchPlacements,
-  setPlacementsVersion,
+  setPlacements,
   clearItemMemory,
   handleAreaCreate,
   areas = [],
-  refreshAreas,
+  fetchAreas,
+  setPlacementsVersion,
 }: UseDragHandlersProps): UseDragHandlersReturn {
   const [activeDragItem, setActiveDragItem] = useState<Item | null>(null);
   const [activeDragPlacement, setActiveDragPlacement] = useState<Placement | null>(null);
@@ -82,7 +82,6 @@ export function useDragHandlers({
   const [isDropping, setIsDropping] = useState(false);
   const [isCtrlDraggingItem, setIsCtrlDraggingItem] = useState(false);
   const [isDraggingArea, setIsDraggingArea] = useState(false);
-  const duplicatePromiseRef = useRef<Promise<unknown> | null>(null);
   const areasRef = useRef(areas);
   areasRef.current = areas;
 
@@ -106,34 +105,24 @@ export function useDragHandlers({
       const placementId = parseInt(activeId.replace('placement-', ''));
       const placement = placements.find(p => p.id === placementId);
       if (placement) {
-        const activeData = event.active.data.current as { isCtrlPressed?: boolean } | undefined;
-        const isCtrlPressed = activeData?.isCtrlPressed ?? false;
+        // Read Ctrl state from the actual mouse event, not React state (which may be stale)
+        const isCtrlPressed = event.activatorEvent
+          ? (event.activatorEvent as MouseEvent).ctrlKey || (event.activatorEvent as MouseEvent).metaKey
+          : false;
         
-        if (isCtrlPressed && activeFloorplan) {
-          setActiveDragPlacement(placement);
-          setIsDuplicating(true);
-          
-          duplicatePromiseRef.current = placementService.duplicate(placementId, placement.x, placement.y)
-            .then((newPlacement) => {
-              setActiveDragPlacement(newPlacement);
-              fetchPlacements(activeFloorplan.id);
-              setPlacementsVersion(prev => prev + 1);
-              return newPlacement;
-            })
-            .catch((err) => {
-              console.error('Failed to duplicate placement:', err);
-              setIsDuplicating(false);
-              duplicatePromiseRef.current = null;
-            });
-        } else {
-          setActiveDragPlacement(placement);
-          setIsDuplicating(false);
+        const isDup = isCtrlPressed && !!activeFloorplan;
+        setActiveDragPlacement(placement);
+        setIsDuplicating(isDup);
+        if (isDup) {
+          // Add a local-only clone at the original position so it looks like the original stays.
+          // It will be replaced by the real server duplicate on drop.
+          setPlacements(prev => [...prev, { ...placement, id: -1 }]);
         }
       }
     } else if (activeId === 'new-area') {
       setIsDraggingArea(true);
     }
-  }, [items, placements, activeFloorplan, fetchPlacements, setPlacementsVersion]);
+  }, [items, placements, activeFloorplan, setPlacements]);
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -144,6 +133,10 @@ export function useDragHandlers({
     }
     
     if (!over || !activeFloorplan) {
+      // Clean up placeholder if drag cancelled
+      if (isDuplicating) {
+        setPlacements(prev => prev.filter(p => p.id !== -1));
+      }
       setActiveDragItem(null);
       setActiveDragPlacement(null);
       setIsDuplicating(false);
@@ -189,21 +182,25 @@ export function useDragHandlers({
         const newX = placement.x + deltaX;
         const newY = placement.y + deltaY;
 
-        // If duplicating, wait for duplicate to resolve and use its ID
-        let targetPlacementId = placementId;
-        if (duplicatePromiseRef.current) {
-          try {
-            const duplicated = await duplicatePromiseRef.current as { id: number };
-            targetPlacementId = duplicated.id;
-          } catch {
-            // Duplicate failed — position update goes to original
-          }
-          duplicatePromiseRef.current = null;
-        }
+        const oldAreaId = placement.area_id;
 
-        handlePlacementUpdate(targetPlacementId, { x: newX, y: newY });
-        // Containment is handled server-side in PUT /placements/:id
-        refreshAreas?.();
+        if (isDuplicating) {
+          // Remove the local placeholder, create real duplicate at drop position
+          setPlacements(prev => prev.filter(p => p.id !== -1));
+          try {
+            const newPlacement = await placementService.duplicate(placementId, newX, newY);
+            setPlacements(prev => [...prev, newPlacement]);
+            setPlacementsVersion(prev => prev + 1);
+            fetchAreas?.();
+          } catch (err) {
+            console.error('Failed to duplicate placement:', err);
+          }
+        } else {
+          const updated = await handlePlacementUpdate(placementId, { x: newX, y: newY });
+          if (!updated || updated.area_id !== oldAreaId) {
+            fetchAreas?.();
+          }
+        }
       }
       setActiveDragItem(null);
       setActiveDragPlacement(null);
@@ -314,18 +311,21 @@ export function useDragHandlers({
           
           let screenX: number;
           let screenY: number;
-          
+
           if (activeRect) {
-            screenX = activeRect.left - imageRect.left;
-            screenY = activeRect.top - imageRect.top;
+            // Use center of the dragged element to position under cursor
+            const centerX = activeRect.left + activeRect.width / 2;
+            const centerY = activeRect.top + activeRect.height / 2;
+            screenX = centerX - imageRect.left;
+            screenY = centerY - imageRect.top;
           } else {
             screenX = event.delta.x;
             screenY = event.delta.y;
           }
-          
-          screenX = Math.max(0, Math.min(screenX, imageRect.width - 100));
-          screenY = Math.max(0, Math.min(screenY, imageRect.height - 100));
-          
+
+          screenX = Math.max(0, Math.min(screenX, imageRect.width));
+          screenY = Math.max(0, Math.min(screenY, imageRect.height));
+
           const dropX = screenX / scaleX;
           const dropY = screenY / scaleY;
           
@@ -393,8 +393,8 @@ export function useDragHandlers({
             }
 
             await handlePlacementCreate({
-              x: dropX,
-              y: dropY,
+              x: dropX - placementWidth / 2,
+              y: dropY - placementHeight / 2,
               width: placementWidth,
               height: placementHeight,
               item_id: itemData.itemId,
@@ -404,7 +404,8 @@ export function useDragHandlers({
             });
 
             // Containment is handled server-side in POST /placements
-            refreshAreas?.();
+            // Only fetch area counts (not full refresh) — BOM already updates via setPlacementsVersion
+            fetchAreas?.();
 
             setIsDropping(false);
             setActiveDragItem(null);
@@ -427,6 +428,7 @@ export function useDragHandlers({
     activeFloorplan,
     placements,
     items,
+    isDuplicating,
     isCtrlDraggingItem,
     itemSizeMemory,
     itemVariantMemory,
@@ -434,9 +436,11 @@ export function useDragHandlers({
     isResizingRef,
     handlePlacementCreate,
     handlePlacementUpdate,
+    setPlacements,
     clearItemMemory,
     handleAreaCreate,
-    refreshAreas,
+    fetchAreas,
+    setPlacementsVersion,
   ]);
 
   return {

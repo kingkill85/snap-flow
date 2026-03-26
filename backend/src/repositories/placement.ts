@@ -35,7 +35,8 @@ export class PlacementRepository {
   findById(id: number): Promise<Placement | null> {
     const result = getDb().queryEntries(`
       SELECT p.id, p.bom_id, p.floorplan_id, p.type, p.area_id, p.x, p.y, p.width, p.height, p.rotation, p.created_at,
-             b.item_id, b.variant_id as item_variant_id
+             b.item_id, b.variant_id as item_variant_id,
+             b.picture_path as item_variant_image_path
       FROM placements p
       LEFT JOIN project_bom b ON p.bom_id = b.id
       WHERE p.id = ?

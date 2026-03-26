@@ -67,7 +67,7 @@ export function DragOverlayContent({
         width: `${placementWidth}px`, 
         height: `${placementHeight}px`,
         transform: `scale(${scaleX}, ${scaleY})`,
-        transformOrigin: 'top left'
+        transformOrigin: 'center center'
       }}
     >
       {item.preview_image ? (
