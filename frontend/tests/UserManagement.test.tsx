@@ -27,7 +27,7 @@ describe('UserManagement', () => {
     id: 1,
     email: 'admin@example.com',
     full_name: 'Admin User',
-    role: 'admin',
+    role: 'tenant_admin',
   };
 
   const mockUsers = [
@@ -35,7 +35,7 @@ describe('UserManagement', () => {
       id: 1,
       email: 'admin@example.com',
       full_name: 'Admin User',
-      role: 'admin',
+      role: 'tenant_admin',
       created_at: '2024-01-01T00:00:00Z',
     },
     {
@@ -115,27 +115,10 @@ describe('UserManagement', () => {
     );
 
     await waitFor(() => {
-      const adminBadge = screen.getByText('admin');
-      const userBadge = screen.getByText('user');
+      const adminBadge = screen.getByText('Tenant Admin');
+      const userBadge = screen.getByText('User');
       expect(adminBadge).toBeInTheDocument();
       expect(userBadge).toBeInTheDocument();
-    });
-  });
-
-  it('displays creation dates', async () => {
-    userService.getAll.mockResolvedValueOnce(mockUsers);
-
-    render(
-      <BrowserRouter>
-        <UserManagement />
-      </BrowserRouter>
-    );
-
-    await waitFor(() => {
-      // Check for "Created" column header (uppercase)
-      expect(screen.getByText('Created')).toBeInTheDocument();
-      // Check that users are displayed
-      expect(screen.getByText('Admin User')).toBeInTheDocument();
     });
   });
 

@@ -20,6 +20,7 @@ async function getAdminToken(): Promise<string> {
     email: 'admin@example.com',
     password_hash: passwordHash,
     role: 'admin',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {
@@ -170,6 +171,7 @@ Deno.test('POST /items - should require admin role', async () => {
     email: 'user@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {

@@ -50,9 +50,12 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { extractErrorMessage } from '@/utils';
 
 const ItemManagement = () => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -342,14 +345,18 @@ const ItemManagement = () => {
           <p className="text-muted-foreground">Manage products and their details</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowImportModal(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            Import Catalog
-          </Button>
-          <Button onClick={() => openItemModal()}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Product
-          </Button>
+          {isAdmin && (
+            <Button variant="outline" onClick={() => setShowImportModal(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              Import Catalog
+            </Button>
+          )}
+          {isAdmin && (
+            <Button onClick={() => openItemModal()}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Product
+            </Button>
+          )}
         </div>
       </div>
 
@@ -494,24 +501,26 @@ const ItemManagement = () => {
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-2">
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => openItemModal(item)}
-                            >
-                              <Pencil className="mr-1 h-3 w-3" />
-                              Edit
-                            </Button>
-                            <Button 
-                              variant="destructive" 
-                              size="sm"
-                              onClick={() => openDeleteModal(item)}
-                            >
-                              <Trash2 className="mr-1 h-3 w-3" />
-                              Delete
-                            </Button>
-                          </div>
+                          {isAdmin && (
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openItemModal(item)}
+                              >
+                                <Pencil className="mr-1 h-3 w-3" />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => openDeleteModal(item)}
+                              >
+                                <Trash2 className="mr-1 h-3 w-3" />
+                                Delete
+                              </Button>
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                       
@@ -527,13 +536,15 @@ const ItemManagement = () => {
                                   </Badge>
                                   Styles
                                 </h4>
-                                <Button 
-                                  size="sm" 
-                                  variant="outline"
-                                  onClick={() => openVariantModal(item)}
-                                >
-                                  <Plus className="mr-1 h-3 w-3" /> Add Style
-                                </Button>
+                                {isAdmin && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => openVariantModal(item)}
+                                  >
+                                    <Plus className="mr-1 h-3 w-3" /> Add Style
+                                  </Button>
+                                )}
                               </div>
                               
                               {isLoadingVar ? (
@@ -588,24 +599,26 @@ const ItemManagement = () => {
                                           )}
                                         </td>
                                         <td className="py-3 px-4 text-right">
-                                          <div className="flex gap-2 justify-end">
-                                            <Button 
-                                              size="sm" 
-                                              variant="outline"
-                                              onClick={() => openVariantModal(item, variant)}
-                                            >
-                                              <Pencil className="mr-1 h-3 w-3" />
-                                              Edit
-                                            </Button>
-                                            <Button 
-                                              size="sm" 
-                                              variant="destructive"
-                                              onClick={() => openDeleteVariantModal(item.id, variant)}
-                                            >
-                                              <Trash2 className="mr-1 h-3 w-3" />
-                                              Delete
-                                            </Button>
-                                          </div>
+                                          {isAdmin && (
+                                            <div className="flex gap-2 justify-end">
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => openVariantModal(item, variant)}
+                                              >
+                                                <Pencil className="mr-1 h-3 w-3" />
+                                                Edit
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="destructive"
+                                                onClick={() => openDeleteVariantModal(item.id, variant)}
+                                              >
+                                                <Trash2 className="mr-1 h-3 w-3" />
+                                                Delete
+                                              </Button>
+                                            </div>
+                                          )}
                                         </td>
                                       </tr>
                                     ))}

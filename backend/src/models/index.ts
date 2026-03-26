@@ -2,13 +2,38 @@
  * Database models and types
  */
 
+// === Roles ===
+export type UserRole = 'admin' | 'tenant_admin' | 'user';
+
+// === Tenants ===
+export interface Tenant {
+  id: number;
+  name: string;
+  is_distributor: number; // SQLite boolean: 0 or 1
+  is_active: number;      // SQLite boolean: 0 or 1
+  created_at: string;
+}
+
+export interface CreateTenantDTO {
+  name: string;
+  is_distributor?: number;
+}
+
+export interface UpdateTenantDTO {
+  name?: string;
+  is_active?: number;
+  is_distributor?: number;
+}
+
 // User
 export interface User {
   id: number;
   email: string;
   full_name: string | null;
   password_hash: string;
-  role: 'admin' | 'user';
+  role: UserRole;
+  tenant_id: number;
+  is_active: number;
   created_at: string;
 }
 
@@ -17,7 +42,8 @@ export interface CreateUserDTO {
   full_name?: string | undefined;
   password?: string;
   password_hash?: string;
-  role?: 'admin' | 'user';
+  role?: UserRole;
+  tenant_id: number;
 }
 
 export interface UpdateUserDTO {
@@ -25,7 +51,9 @@ export interface UpdateUserDTO {
   full_name?: string;
   password?: string;
   password_hash?: string;
-  role?: 'admin' | 'user';
+  role?: UserRole;
+  tenant_id?: number;
+  is_active?: number;
 }
 
 // Category
@@ -151,6 +179,7 @@ export interface Project {
   customer_email: string | null;
   customer_phone: string | null;
   customer_address: string | null;
+  tenant_id: number;
   created_at: string;
   // Invoice settings
   discount_percentage: number;
@@ -168,6 +197,7 @@ export interface CreateProjectDTO {
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
+  tenant_id: number;
 }
 
 export interface UpdateProjectDTO {
@@ -177,6 +207,7 @@ export interface UpdateProjectDTO {
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
+  tenant_id?: number;
 }
 
 export interface UpdateInvoiceSettingsDTO {

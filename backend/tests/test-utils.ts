@@ -120,6 +120,11 @@ export function clearDatabase(): void {
   
   // Re-enable foreign key checks
   dbInstance.query('PRAGMA foreign_keys = ON');
+
+  // Re-seed the distributor tenant (required for foreign key references)
+  dbInstance.query(
+    "INSERT INTO tenants (id, name, is_distributor, is_active) VALUES (1, 'Distributor', 1, 1)"
+  );
 }
 
 /**

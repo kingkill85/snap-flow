@@ -24,6 +24,7 @@ async function createTestUser(email: string): Promise<number> {
     email,
     password_hash: hashPassword('testpass'),
     role: 'user',
+    tenant_id: 1,
   });
   return user.id;
 }

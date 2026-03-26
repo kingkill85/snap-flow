@@ -25,6 +25,7 @@ Deno.test('BOM Service - createBomEntry adds required addons', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
 
   const floorplan = await floorplanRepository.create({
@@ -107,6 +108,7 @@ Deno.test('BOM Service - createBomEntry adds required addons', async (t) => {
       customer_name: 'Test Customer',
       customer_address: '123 Test St',
       status: 'active',
+      tenant_id: 1,
     });
 
     const floorplan2 = await floorplanRepository.create({
@@ -181,6 +183,7 @@ Deno.test('BOM Service - recreateBomEntry with addons', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
 
   const floorplan = await floorplanRepository.create({
@@ -271,6 +274,7 @@ Deno.test('BOM Service - createBomEntry handles image copying', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
 
   const floorplan = await floorplanRepository.create({
@@ -420,6 +424,7 @@ Deno.test('BOM Service - recreateBomEntry copies new images', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
 
   const floorplan = await floorplanRepository.create({
@@ -517,6 +522,7 @@ Deno.test('BOM Service - switchVariant copies new variant image', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
 
   const floorplan = await floorplanRepository.create({
@@ -596,6 +602,7 @@ Deno.test('BOM Service - deleteBomEntry cleans up images', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
 
   const floorplan = await floorplanRepository.create({

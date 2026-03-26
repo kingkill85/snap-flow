@@ -15,9 +15,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
 import { Plus, Pencil, Trash2, ArrowUp, ArrowDown, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { extractErrorMessage } from '@/utils';
 
 const CategoryManagement = () => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -122,10 +125,12 @@ const CategoryManagement = () => {
           <h1 className="text-3xl font-bold tracking-tight">Category Management</h1>
           <p className="text-muted-foreground">Organize product categories and arrange their display order</p>
         </div>
-        <Button onClick={openCreateModal}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Category
-        </Button>
+        {isAdmin && (
+          <Button onClick={openCreateModal}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Category
+          </Button>
+        )}
       </div>
 
       {error && (
@@ -173,26 +178,28 @@ const CategoryManagement = () => {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground w-6">{category.sort_order}</span>
-                        <div className="flex flex-col">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => moveCategory(index, 'up')}
-                            disabled={index === 0}
-                          >
-                            <ArrowUp className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => moveCategory(index, 'down')}
-                            disabled={index === categories.length - 1}
-                          >
-                            <ArrowDown className="h-3 w-3" />
-                          </Button>
-                        </div>
+                        {isAdmin && (
+                          <div className="flex flex-col">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => moveCategory(index, 'up')}
+                              disabled={index === 0}
+                            >
+                              <ArrowUp className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => moveCategory(index, 'down')}
+                              disabled={index === categories.length - 1}
+                            >
+                              <ArrowDown className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="font-medium">
@@ -212,24 +219,26 @@ const CategoryManagement = () => {
                       )}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => openEditModal(category)}
-                        >
-                          <Pencil className="mr-1 h-3 w-3" />
-                          Edit
-                        </Button>
-                        <Button 
-                          variant="destructive" 
-                          size="sm" 
-                          onClick={() => openDeleteModal(category)}
-                        >
-                          <Trash2 className="mr-1 h-3 w-3" />
-                          Delete
-                        </Button>
-                      </div>
+                      {isAdmin && (
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditModal(category)}
+                          >
+                            <Pencil className="mr-1 h-3 w-3" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => openDeleteModal(category)}
+                          >
+                            <Trash2 className="mr-1 h-3 w-3" />
+                            Delete
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))

@@ -94,9 +94,9 @@ describe('ProtectedRoute', () => {
     expect(document.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
-  it('redirects non-admin to home when admin required', async () => {
+  it('redirects non-tenant-admin to home when tenant admin required', async () => {
     const mockUser = { id: 1, email: 'user@example.com', role: 'user' };
-    
+
     const { authService } = await import('@/services/auth');
     authService.getAccessToken.mockReturnValue('user-token');
     authService.getRefreshToken.mockReturnValue('refresh-token');
@@ -111,7 +111,7 @@ describe('ProtectedRoute', () => {
               <Route
                 path="/admin"
                 element={
-                  <ProtectedRoute requireAdmin>
+                  <ProtectedRoute requireTenantAdmin>
                     <div>Admin Content</div>
                   </ProtectedRoute>
                 }
@@ -169,9 +169,9 @@ describe('ProtectedRoute', () => {
     expect(screen.getByText('Protected Content')).toBeInTheDocument();
   });
 
-  it('renders content for admin when admin required', async () => {
-    const mockUser = { id: 1, email: 'admin@example.com', role: 'admin' };
-    
+  it('renders content for tenant_admin when tenant admin required', async () => {
+    const mockUser = { id: 1, email: 'admin@example.com', role: 'tenant_admin' };
+
     const { authService } = await import('@/services/auth');
     authService.getAccessToken.mockReturnValue('admin-token');
     authService.getRefreshToken.mockReturnValue('refresh-token');
@@ -186,7 +186,7 @@ describe('ProtectedRoute', () => {
               <Route
                 path="/admin"
                 element={
-                  <ProtectedRoute requireAdmin>
+                  <ProtectedRoute requireTenantAdmin>
                     <div>Admin Content</div>
                   </ProtectedRoute>
                 }

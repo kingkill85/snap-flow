@@ -18,6 +18,7 @@ import placementRoutes from './routes/placements.ts';
 import currencyRoutes from './routes/currency.ts';
 import settingsRoutes from './routes/settings.ts';
 import areaRoutes from './routes/areas.ts';
+import tenantRoutes from './routes/tenants.ts';
 
 const app: Hono = new Hono();
 
@@ -102,6 +103,9 @@ api.route('/settings', settingsRoutes);
 
 // Area routes at /api/areas/*
 api.route('/areas', areaRoutes);
+
+  // Tenant management routes at /api/tenants/*
+  api.route('/tenants', tenantRoutes);
 
 // Mount API router
 app.route('/api', api);

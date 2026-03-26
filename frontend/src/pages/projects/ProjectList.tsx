@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 import { projectService, type Project, type CreateProjectDTO, type UpdateProjectDTO } from '@/services/project';
 import { floorplanService } from '@/services/floorplan';
+import { tenantService, type Tenant } from '@/services/tenants';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
@@ -38,7 +40,13 @@ const generateProjectNumber = (project: Project): string => {
 const ProjectList = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const isUser = user?.role === 'user';
+  const canManage = !isUser; // admin and tenant_admin can manage all projects
   const [projects, setProjects] = useState<Project[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantMap, setTenantMap] = useState<Record<number, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState('');
@@ -86,10 +94,20 @@ const ProjectList = () => {
     const controller = new AbortController();
     fetchProjects(controller.signal);
 
+    // Fetch tenants for admin
+    if (isAdmin) {
+      tenantService.getAll(controller.signal).then((data) => {
+        setTenants(data);
+        const map: Record<number, string> = {};
+        data.forEach((t: Tenant) => { map[t.id] = t.name; });
+        setTenantMap(map);
+      }).catch(() => { /* ignore */ });
+    }
+
     return () => {
       controller.abort();
     };
-  }, [fetchProjects]);
+  }, [fetchProjects, isAdmin]);
 
   // Debounced search
   useEffect(() => {
@@ -235,6 +253,7 @@ const ProjectList = () => {
                 <TableHead>Project Number</TableHead>
                 <TableHead>Project Name</TableHead>
                 <TableHead>Customer</TableHead>
+                {isAdmin && <TableHead>Tenant</TableHead>}
                 <TableHead>Status</TableHead>
                 <TableHead className="w-40"></TableHead>
               </TableRow>
@@ -242,7 +261,7 @@ const ProjectList = () => {
             <TableBody>
               {filteredProjects.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={isAdmin ? 6 : 5} className="text-center py-8 text-muted-foreground">
                     No projects found. Create your first project to get started.
                   </TableCell>
                 </TableRow>
@@ -254,6 +273,11 @@ const ProjectList = () => {
                     </TableCell>
                     <TableCell className="font-medium">{project.name}</TableCell>
                     <TableCell>{project.customer_name}</TableCell>
+                    {isAdmin && (
+                      <TableCell className="text-muted-foreground">
+                        {tenantMap[project.tenant_id] || '—'}
+                      </TableCell>
+                    )}
                     <TableCell>
                       {project.status === 'active' ? (
                         <span className="inline-flex items-center text-green-600 text-sm">
@@ -282,22 +306,26 @@ const ProjectList = () => {
                           <Eye className="mr-1 h-3 w-3" />
                           Open
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openEditModal(project)}
-                        >
-                          <Pencil className="mr-1 h-3 w-3" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => openDeleteModal(project)}
-                        >
-                          <Trash2 className="mr-1 h-3 w-3" />
-                          Delete
-                        </Button>
+                        {(canManage || project.status === 'active') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditModal(project)}
+                          >
+                            <Pencil className="mr-1 h-3 w-3" />
+                            Edit
+                          </Button>
+                        )}
+                        {canManage && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => openDeleteModal(project)}
+                          >
+                            <Trash2 className="mr-1 h-3 w-3" />
+                            Delete
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -310,6 +338,7 @@ const ProjectList = () => {
 
       <ProjectFormModal
         project={projectToEdit}
+        tenants={isAdmin ? tenants : undefined}
         isOpen={showFormModal}
         onClose={() => {
           setShowFormModal(false);

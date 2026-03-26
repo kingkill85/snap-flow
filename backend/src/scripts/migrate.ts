@@ -31,21 +31,29 @@ export function getAppliedMigrations(): Promise<string[]> {
 export function applyMigration(name: string, sql: string): Promise<void> {
   try {
     const db = getDb();
-    
-    // For migration 025, we need to disable foreign keys temporarily
-    // because we're recreating tables with foreign key references
-    if (name === '025_remove_all_cascade_constraints') {
+
+    // For migrations that recreate tables, we need to disable foreign keys temporarily
+    const needsFkOff = name === '025_remove_all_cascade_constraints' || name === '031_multi_tenancy';
+    if (needsFkOff) {
       db.query('PRAGMA foreign_keys = OFF');
     }
-    
-    db.execute(sql);
-    db.query(`INSERT INTO migrations (name) VALUES (?)`, [name]);
-    
+
+    // Wrap in transaction so migration is all-or-nothing
+    db.query('BEGIN TRANSACTION');
+    try {
+      db.execute(sql);
+      db.query(`INSERT INTO migrations (name) VALUES (?)`, [name]);
+      db.query('COMMIT');
+    } catch (error) {
+      db.query('ROLLBACK');
+      throw error;
+    }
+
     // Re-enable foreign keys if we disabled them
-    if (name === '025_remove_all_cascade_constraints') {
+    if (needsFkOff) {
       db.query('PRAGMA foreign_keys = ON');
     }
-    
+
     console.log(`✅ Applied migration: ${name}`);
     return Promise.resolve();
   } catch (error) {
@@ -723,6 +731,55 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_area_vertices_placement ON area_vertices(placement_id);
 
         PRAGMA foreign_keys = ON;
+      `
+    },
+    {
+      name: '031_multi_tenancy',
+      sql: `
+        -- 1. Create tenants table
+        CREATE TABLE tenants (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          is_distributor INTEGER NOT NULL DEFAULT 0,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE UNIQUE INDEX idx_tenants_name ON tenants(name);
+
+        -- 2. Seed the distributor tenant
+        INSERT INTO tenants (id, name, is_distributor, is_active)
+        VALUES (1, 'Distributor', 1, 1);
+
+        -- 3. Recreate users table with new role constraint, tenant_id, and is_active
+        CREATE TABLE users_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          email TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          role TEXT CHECK(role IN ('admin', 'tenant_admin', 'user')) NOT NULL DEFAULT 'user',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          full_name TEXT,
+          tenant_id INTEGER NOT NULL DEFAULT 1,
+          is_active INTEGER NOT NULL DEFAULT 1
+        );
+
+        INSERT INTO users_new (id, email, password_hash, role, created_at, full_name, tenant_id, is_active)
+        SELECT id, email, password_hash,
+          role,
+          created_at, full_name, 1, 1
+        FROM users;
+
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+        CREATE INDEX idx_users_email ON users(email);
+        CREATE INDEX idx_users_tenant ON users(tenant_id);
+
+        -- 4. Add tenant_id to projects
+        ALTER TABLE projects ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+        CREATE INDEX idx_projects_tenant ON projects(tenant_id);
+
+        -- 5. Recreate unique index to include tenant_id
+        DROP INDEX IF EXISTS idx_projects_unique_name_customer;
+        CREATE UNIQUE INDEX idx_projects_unique_name_customer ON projects(name, customer_name, tenant_id);
       `
     }
   ];

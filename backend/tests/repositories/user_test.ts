@@ -16,6 +16,7 @@ Deno.test('UserRepository - create user', async () => {
     email: 'test@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   assertExists(user.id);
@@ -34,6 +35,7 @@ Deno.test('UserRepository - create user with full_name', async () => {
     full_name: 'John Doe',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   assertExists(user.id);
@@ -51,6 +53,7 @@ Deno.test('UserRepository - findByEmail finds existing user', async () => {
     full_name: 'Jane Smith',
     password_hash: passwordHash,
     role: 'admin',
+    tenant_id: 1,
   });
 
   const found = await userRepository.findByEmail('find@example.com');
@@ -77,6 +80,7 @@ Deno.test('UserRepository - findById finds user by id', async () => {
     full_name: 'Test User',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const found = await userRepository.findById(created.id);
@@ -96,12 +100,14 @@ Deno.test('UserRepository - findAll returns all users', async () => {
     full_name: 'User One',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
   await userRepository.create({
     email: 'user2@example.com',
     full_name: 'User Two',
     password_hash: passwordHash,
     role: 'admin',
+    tenant_id: 1,
   });
 
   const users = await userRepository.findAll();
@@ -119,6 +125,7 @@ Deno.test('UserRepository - update user full_name', async () => {
     email: 'update@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const updated = await userRepository.update(created.id, {
@@ -137,6 +144,7 @@ Deno.test('UserRepository - update user email', async () => {
     email: 'old@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const updated = await userRepository.update(created.id, {
@@ -156,6 +164,7 @@ Deno.test('UserRepository - update user full_name to null', async () => {
     full_name: 'Original Name',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const updated = await userRepository.update(created.id, {
@@ -174,6 +183,7 @@ Deno.test('UserRepository - delete user', async () => {
     email: 'delete@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   await userRepository.delete(created.id);
@@ -190,6 +200,7 @@ Deno.test('UserRepository - user has password_hash field', async () => {
     email: 'haspassword@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const found = await userRepository.findByEmail('haspassword@example.com');

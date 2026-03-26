@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { userService, type CreateUserDTO, type UpdateUserDTO } from '@/services/user';
+import { tenantService, type Tenant } from '@/services/tenants';
 import type { User } from '@/types';
+import { roleLabels } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
@@ -21,6 +23,8 @@ import { extractErrorMessage } from '@/utils';
 
 const UserManagement = () => {
   const [users, setUsers] = useState<User[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantMap, setTenantMap] = useState<Record<number, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
@@ -29,11 +33,23 @@ const UserManagement = () => {
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const { user: currentUser } = useAuth();
 
+  const isAdmin = currentUser?.role === 'admin';
+
   const fetchUsers = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
       const data = await userService.getAll(signal);
       setUsers(data);
+
+      // Fetch tenants for admin users
+      if (currentUser?.role === 'admin') {
+        const tenantData = await tenantService.getAll(signal);
+        setTenants(tenantData);
+        const map: Record<number, string> = {};
+        tenantData.forEach((t: Tenant) => { map[t.id] = t.name; });
+        setTenantMap(map);
+      }
+
       setError('');
     } catch (err: unknown) {
       const errorMessage = extractErrorMessage(err, '');
@@ -121,15 +137,16 @@ const UserManagement = () => {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
+                {isAdmin && <TableHead>Tenant</TableHead>}
                 <TableHead>Role</TableHead>
-                <TableHead>Created</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="w-32"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={isAdmin ? 6 : 5} className="text-center py-8 text-muted-foreground">
                     No users found. Create your first user to get started.
                   </TableCell>
                 </TableRow>
@@ -140,13 +157,20 @@ const UserManagement = () => {
                       {getDisplayName(user)}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                    {isAdmin && (
+                      <TableCell className="text-muted-foreground">
+                        {tenantMap[user.tenant_id ?? 0] || '—'}
+                      </TableCell>
+                    )}
                     <TableCell>
-                      <Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>
-                        {user.role}
+                      <Badge variant={user.role === 'admin' ? 'destructive' : user.role === 'tenant_admin' ? 'default' : 'secondary'}>
+                        {roleLabels[user.role] || user.role}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Date(user.created_at).toLocaleDateString()}
+                    <TableCell>
+                      <Badge variant={user.is_active ? 'default' : 'secondary'}>
+                        {user.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
@@ -180,6 +204,8 @@ const UserManagement = () => {
 
       <UserFormModal
         user={userToEdit}
+        currentUserRole={currentUser?.role ?? 'user'}
+        tenants={isAdmin ? tenants : undefined}
         isOpen={showFormModal}
         onClose={() => {
           setShowFormModal(false);

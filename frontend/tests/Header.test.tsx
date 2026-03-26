@@ -151,7 +151,7 @@ describe('Header', () => {
   });
 
   it('displays user role in dropdown', async () => {
-    const mockUser = { id: 1, email: 'admin@example.com', full_name: 'Admin User', role: 'admin' };
+    const mockUser = { id: 1, email: 'admin@example.com', full_name: 'Admin User', role: 'tenant_admin' };
     const { authService } = await import('@/services/auth');
     authService.getAccessToken.mockReturnValue('admin-token');
     authService.getRefreshToken.mockReturnValue('refresh-token');
@@ -168,12 +168,12 @@ describe('Header', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('admin')).toBeInTheDocument();
+      expect(screen.getByText('Tenant Admin')).toBeInTheDocument();
     });
   });
 
   it('shows admin menu items for admin users', async () => {
-    const mockUser = { id: 1, email: 'admin@example.com', full_name: 'Admin User', role: 'admin' };
+    const mockUser = { id: 1, email: 'admin@example.com', full_name: 'Admin User', role: 'tenant_admin' };
     const { authService } = await import('@/services/auth');
     authService.getAccessToken.mockReturnValue('admin-token');
     authService.getRefreshToken.mockReturnValue('refresh-token');
@@ -219,8 +219,9 @@ describe('Header', () => {
       expect(screen.getByText('Regular User')).toBeInTheDocument();
     });
 
-    // Admin items should not be present in top nav
-    expect(screen.queryByText('Catalog')).not.toBeInTheDocument();
+    // Catalog is visible to all authenticated users (read-only for non-admins)
+    expect(screen.queryByText('Catalog')).toBeInTheDocument();
+    // Settings should not be present for regular users
     expect(screen.queryByText('Settings')).not.toBeInTheDocument();
   });
 

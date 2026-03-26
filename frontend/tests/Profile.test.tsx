@@ -47,7 +47,7 @@ describe('Profile', () => {
     );
 
     expect(screen.getByText('John Doe')).toBeInTheDocument();
-    expect(screen.getByText('user')).toBeInTheDocument();
+    expect(screen.getByText('User')).toBeInTheDocument();
   });
 
   it('displays user avatar with first letter', () => {

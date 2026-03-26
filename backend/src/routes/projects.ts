@@ -8,6 +8,7 @@ import { bomService } from '../services/bom.ts';
 
 import { invoiceCalculationService } from '../services/invoice-calculation.ts';
 import type { CreateProjectDTO } from '../models/index.ts';
+import type { TenantContext } from '../repositories/user.ts';
 
 // Extend Hono context types
 declare module 'hono' {
@@ -15,7 +16,21 @@ declare module 'hono' {
     userId: number;
     userEmail: string;
     userRole: string;
+    tenantId: number;
   }
+}
+
+function getTenantCtx(c: { get: (key: string) => unknown; req: { query: (key: string) => string | undefined } }): TenantContext {
+  const role = c.get('userRole') as TenantContext['role'];
+  const tenantId = c.get('tenantId') as number;
+
+  // Admin can filter by specific tenant via query param
+  const queryTenantId = c.req.query('tenantId');
+  if (queryTenantId && role === 'admin') {
+    return { tenantId: parseInt(queryTenantId), role: 'tenant_admin' }; // Force filtering
+  }
+
+  return { tenantId, role };
 }
 
 const projectRoutes = new Hono();
@@ -38,6 +53,7 @@ const updateProjectSchema = z.object({
   customer_email: z.string().email().optional().or(z.literal('')),
   customer_phone: z.string().max(50).optional().or(z.literal('')),
   customer_address: z.string().max(500).optional().or(z.literal('')),
+  tenant_id: z.number().optional(),
 });
 
 // Validation schema for updating invoice settings
@@ -56,7 +72,8 @@ const updateInvoiceSettingsSchema = z.object({
 projectRoutes.get('/', authMiddleware, async (c) => {
   try {
     const search = c.req.query('search');
-    const projects = await projectRepository.findAll(search || undefined);
+    const ctx = getTenantCtx(c);
+    const projects = await projectRepository.findAll(search || undefined, ctx);
     return c.json({
       data: projects,
     });
@@ -74,11 +91,12 @@ projectRoutes.get('/:id/total', authMiddleware, async (c) => {
   }
 
   try {
-    const project = await projectRepository.findById(id);
+    const ctx = getTenantCtx(c);
+    const project = await projectRepository.findById(id, ctx);
     if (!project) {
       return c.json({ error: 'Project not found' }, 404);
     }
-    
+
     const total = await bomService.getProjectTotal(id);
     return c.json({ data: total });
   } catch (error) {
@@ -96,7 +114,8 @@ projectRoutes.get('/:id/invoice-calculation', authMiddleware, async (c) => {
 
   try {
     // Check if project exists
-    const project = await projectRepository.findById(id);
+    const ctx = getTenantCtx(c);
+    const project = await projectRepository.findById(id, ctx);
     if (!project) {
       return c.json({ error: 'Project not found' }, 404);
     }
@@ -131,11 +150,12 @@ projectRoutes.get('/:id', authMiddleware, async (c) => {
   }
 
   try {
-    const project = await projectRepository.findById(id);
+    const ctx = getTenantCtx(c);
+    const project = await projectRepository.findById(id, ctx);
     if (!project) {
       return c.json({ error: 'Project not found' }, 404);
     }
-    
+
     return c.json({
       data: project,
     });
@@ -151,16 +171,18 @@ projectRoutes.post('/', authMiddleware, zValidator('json', createProjectSchema),
 
   try {
     // Create project with customer info
-    const createData: CreateProjectDTO = { 
+    const tenantId = c.get('tenantId') as number;
+    const createData: CreateProjectDTO & { tenant_id: number } = {
       name,
       customer_name,
+      tenant_id: tenantId,
     };
-    
+
     if (status) createData.status = status;
     if (customer_email) createData.customer_email = customer_email;
     if (customer_phone) createData.customer_phone = customer_phone;
     if (customer_address) createData.customer_address = customer_address;
-    
+
     const project = await projectRepository.create(createData);
 
     return c.json({
@@ -188,7 +210,8 @@ projectRoutes.put('/:id/invoice-settings', authMiddleware, zValidator('json', up
 
   try {
     // Check if project exists
-    const project = await projectRepository.findById(id);
+    const ctx = getTenantCtx(c);
+    const project = await projectRepository.findById(id, ctx);
     if (!project) {
       return c.json({ error: 'Project not found' }, 404);
     }
@@ -211,32 +234,41 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
   if (isNaN(id)) {
     return c.json({ error: 'Invalid ID' }, 400);
   }
-  const { name, status, customer_name, customer_email, customer_phone, customer_address } = c.req.valid('json');
+  const { name, status, customer_name, customer_email, customer_phone, customer_address, tenant_id } = c.req.valid('json');
+  const callerRole = c.get('userRole') as string;
 
   try {
     // Check if project exists
-    const existingProject = await projectRepository.findById(id);
+    const ctx = getTenantCtx(c);
+    const existingProject = await projectRepository.findById(id, ctx);
     if (!existingProject) {
       return c.json({ error: 'Project not found' }, 404);
     }
 
-    const updateData: { 
-      name?: string; 
+    // Users can only edit active projects
+    if (callerRole === 'user' && existingProject.status !== 'active') {
+      return c.json({ error: 'Only active projects can be edited' }, 403);
+    }
+
+    const updateData: {
+      name?: string;
       status?: 'active' | 'completed' | 'cancelled';
       customer_name?: string;
       customer_email?: string;
       customer_phone?: string;
       customer_address?: string;
+      tenant_id?: number;
     } = {};
-    
+
     if (name !== undefined) updateData.name = name;
     if (status !== undefined) updateData.status = status;
     if (customer_name !== undefined) updateData.customer_name = customer_name;
     if (customer_email !== undefined && customer_email !== '') updateData.customer_email = customer_email;
     if (customer_phone !== undefined && customer_phone !== '') updateData.customer_phone = customer_phone;
     if (customer_address !== undefined && customer_address !== '') updateData.customer_address = customer_address;
+    if (tenant_id !== undefined && callerRole === 'admin') updateData.tenant_id = tenant_id;
 
-    const project = await projectRepository.update(id, updateData);
+    const project = await projectRepository.update(id, updateData, ctx);
 
     return c.json({
       data: project,
@@ -253,15 +285,21 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
   }
 });
 
-// DELETE /projects/:id - Delete project
+// DELETE /projects/:id - Delete project (admin/tenant_admin only)
 projectRoutes.delete('/:id', authMiddleware, async (c) => {
   const id = parseInt(c.req.param('id'));
   if (isNaN(id)) {
     return c.json({ error: 'Invalid ID' }, 400);
   }
 
+  const callerRole = c.get('userRole') as string;
+  if (callerRole === 'user') {
+    return c.json({ error: 'Forbidden - Users cannot delete projects' }, 403);
+  }
+
   try {
-    const project = await projectRepository.findById(id);
+    const ctx = getTenantCtx(c);
+    const project = await projectRepository.findById(id, ctx);
     if (!project) {
       return c.json({ error: 'Project not found' }, 404);
     }
@@ -269,12 +307,12 @@ projectRoutes.delete('/:id', authMiddleware, async (c) => {
     // Check if project has floorplans
     const floorplans = await floorplanRepository.findByProject(id);
     if (floorplans.length > 0) {
-      return c.json({ 
-        error: `Cannot delete project with ${floorplans.length} floorplan(s). Please delete all floorplans first.` 
+      return c.json({
+        error: `Cannot delete project with ${floorplans.length} floorplan(s). Please delete all floorplans first.`
       }, 400);
     }
 
-    await projectRepository.delete(id);
+    await projectRepository.delete(id, ctx);
     
     return c.json({
       message: 'Project deleted successfully',

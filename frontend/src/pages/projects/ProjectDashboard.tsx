@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 import type { Project } from '@/services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/services/floorplan';
 import type { InvoiceSettings } from '@/services/invoice-settings';
@@ -43,6 +44,7 @@ const generateProjectNumber = (project: Project): string => {
 const ProjectDashboard = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const projectId = parseInt(id || '0');
 
   const [placementsVersion, setPlacementsVersion] = useState(0);
@@ -68,6 +70,9 @@ const ProjectDashboard = () => {
     fetchProjectData,
     fetchFloorplanBom,
   } = useProjectData({ projectId });
+
+  // Users can only edit active projects; admins/tenant_admins can edit any
+  const canEdit = user?.role !== 'user' || project?.status === 'active';
 
   // BOM calculations
   const { floorplanTotals, projectTotal } = useBomCalculations(floorplans, floorplanBoms, items, categories);
@@ -522,28 +527,35 @@ const ProjectDashboard = () => {
     <div className="fixed inset-0 top-12 flex flex-col">
       <ProjectHeader project={project} onBack={() => navigate('/projects')} />
 
+      {!canEdit && (
+        <div className="bg-muted border-b px-4 py-2 text-sm text-muted-foreground text-center">
+          This project is read-only because it is no longer active.
+        </div>
+      )}
+
       {/* Configurator Area */}
       <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
+        sensors={canEdit ? sensors : []}
+        onDragStart={canEdit ? handleDragStart : undefined}
+        onDragEnd={canEdit ? handleDragEnd : undefined}
         collisionDetection={pointerWithin}
       >
         <div className="flex-1 flex overflow-hidden">
           {/* Left Side - Canvas Area */}
           <div className="flex-1 flex flex-col min-w-0 bg-card">
             {floorplans.length === 0 ? (
-              <EmptyFloorplanState onAdd={openCreateFloorplanModal} />
+              <EmptyFloorplanState onAdd={canEdit ? openCreateFloorplanModal : () => {}} />
             ) : (
               <div className="flex-1 flex flex-col overflow-hidden">
                 <FloorplanTabs
                   floorplans={floorplans}
                   activeFloorplan={activeFloorplan}
                   onSelect={setActiveFloorplan}
-                  onEdit={openEditFloorplanModal}
-                  onDelete={openDeleteFloorplanModal}
-                  onReorder={handleReorderFloorplans}
-                  onAdd={openCreateFloorplanModal}
+                  onEdit={canEdit ? openEditFloorplanModal : () => {}}
+                  onDelete={canEdit ? openDeleteFloorplanModal : () => {}}
+                  onReorder={canEdit ? handleReorderFloorplans : () => {}}
+                  onAdd={canEdit ? openCreateFloorplanModal : () => {}}
+                  readOnly={!canEdit}
                 />
 
                 {/* Canvas Area */}
@@ -557,8 +569,8 @@ const ProjectDashboard = () => {
                         items={items}
                         bom={floorplanBoms.get(activeFloorplan.id) || null}
                         placementAddons={placementAddons}
-                        onPlacementUpdate={handlePlacementUpdate}
-                        onPlacementDelete={handlePlacementDelete}
+                        onPlacementUpdate={canEdit ? handlePlacementUpdate : () => {}}
+                        onPlacementDelete={canEdit ? handlePlacementDelete : () => {}}
                         isResizingRef={isResizingRef}
                         zoomRef={canvasZoomRef}
                         scaleRef={canvasScaleRef}
@@ -569,17 +581,17 @@ const ProjectDashboard = () => {
                         hiddenAreaIds={hiddenAreaIds}
                         selectedAreaId={selectedAreaId}
                         onSelectArea={setSelectedAreaId}
-                        onAreaMove={handleAreaMove}
-                        onAreaVertexMove={handleAreaVertexMove}
-                        onAreaVerticesReplace={handleAreaVerticesReplace}
-                        onAreaVertexAdd={handleAreaVertexAdd}
-                        onAreaVertexDelete={handleAreaVertexDelete}
-                        onAreaVerticesCommit={handleAreaVerticesCommit}
-                        onAreaEdit={(id) => setEditingArea(localAreas.find(a => a.id === id) || null)}
-                        onAreaDelete={async (id) => {
+                        onAreaMove={canEdit ? handleAreaMove : () => {}}
+                        onAreaVertexMove={canEdit ? handleAreaVertexMove : () => {}}
+                        onAreaVerticesReplace={canEdit ? handleAreaVerticesReplace : () => {}}
+                        onAreaVertexAdd={canEdit ? handleAreaVertexAdd : () => {}}
+                        onAreaVertexDelete={canEdit ? handleAreaVertexDelete : () => {}}
+                        onAreaVerticesCommit={canEdit ? handleAreaVerticesCommit : () => {}}
+                        onAreaEdit={canEdit ? (id) => setEditingArea(localAreas.find(a => a.id === id) || null) : () => {}}
+                        onAreaDelete={canEdit ? async (id) => {
                           await deleteArea(id);
                           if (activeFloorplan) fetchPlacements(activeFloorplan.id);
-                        }}
+                        } : () => {}}
                       />
                     </div>
                   </div>
@@ -630,11 +642,11 @@ const ProjectDashboard = () => {
                   areas={areas}
                   selectedAreaId={selectedAreaId}
                   onSelectArea={setSelectedAreaId}
-                  onEditArea={(id) => setEditingArea(areas.find(a => a.id === id) || null)}
-                  onDeleteArea={async (id) => {
+                  onEditArea={canEdit ? (id) => setEditingArea(areas.find(a => a.id === id) || null) : () => {}}
+                  onDeleteArea={canEdit ? async (id) => {
                     await deleteArea(id);
                     if (activeFloorplan) fetchPlacements(activeFloorplan.id);
-                  }}
+                  } : () => {}}
                   onToggleAreaVisibility={handleToggleAreaVisibility}
                   onToggleAllAreasVisibility={handleToggleAllAreasVisibility}
                   hiddenAreaIds={hiddenAreaIds}
@@ -674,7 +686,7 @@ const ProjectDashboard = () => {
                   floorplanTotals={floorplanTotals}
                   projectTotal={projectTotal}
                   invoiceSettings={invoiceSettings}
-                  onConfigureInvoice={() => setShowInvoiceModal(true)}
+                  onConfigureInvoice={canEdit ? () => setShowInvoiceModal(true) : () => {}}
                   items={items}
                   categories={categories}
                   getFloorplanAreaData={getFloorplanAreaData}

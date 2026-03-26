@@ -11,6 +11,13 @@ vi.mock('@/services/project', () => ({
   },
 }));
 
+vi.mock('@/context/AuthContext', () => ({
+  useAuth: vi.fn(() => ({
+    user: { id: 1, email: 'test@example.com', role: 'tenant_admin', tenantId: 1 },
+    isAuthenticated: true,
+  })),
+}));
+
 describe('ProjectList', () => {
   const mockProjects = [
     {

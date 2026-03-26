@@ -21,6 +21,7 @@ async function getAdminToken(): Promise<string> {
     email: 'admin@example.com',
     password_hash: passwordHash,
     role: 'admin',
+    tenant_id: 1,
   });
 
   // Login as admin
@@ -46,6 +47,7 @@ async function getUserToken(): Promise<string> {
     email: 'user@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   // Login as user
@@ -267,6 +269,7 @@ Deno.test('PUT /categories/:id - should deactivate category and cascade to items
     email: 'admin@test.com',
     password_hash: passwordHash,
     role: 'admin',
+    tenant_id: 1,
   });
 
   // Login
@@ -349,6 +352,7 @@ Deno.test('PUT /categories/:id - should activate category without cascading to c
     email: 'admin@test.com',
     password_hash: passwordHash,
     role: 'admin',
+    tenant_id: 1,
   });
 
   // Login

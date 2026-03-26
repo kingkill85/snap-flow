@@ -1,18 +1,21 @@
 import api from './api';
-import type { User } from '@/types';
+import type { User, UserRole } from '@/types';
 
 export interface CreateUserDTO {
   email: string;
   full_name?: string;
   password: string;
-  role?: 'admin' | 'user';
+  role?: UserRole;
+  tenant_id?: number;
 }
 
 export interface UpdateUserDTO {
   full_name?: string | null;
   email?: string;
   password?: string;
-  role?: 'admin' | 'user';
+  role?: UserRole;
+  tenant_id?: number;
+  is_active?: number;
 }
 
 export const userService = {

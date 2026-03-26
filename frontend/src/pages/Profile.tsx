@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { roleLabels } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -94,7 +95,7 @@ const Profile = () => {
             </Avatar>
             <div>
               <CardTitle className="text-xl">{getDisplayName()}</CardTitle>
-              <p className="text-sm text-muted-foreground capitalize">{user?.role}</p>
+              <p className="text-sm text-muted-foreground">{user?.role ? roleLabels[user.role] : 'User'}</p>
             </div>
           </div>
         </CardHeader>

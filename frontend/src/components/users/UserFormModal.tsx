@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { X, Save, Plus } from 'lucide-react';
 import {
   Select,
@@ -18,24 +19,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { User } from '@/types';
+import type { User, UserRole } from '@/types';
 import type { CreateUserDTO, UpdateUserDTO } from '@/services/user';
+import type { Tenant } from '@/services/tenants';
 import { extractErrorMessage } from '@/utils';
 
 interface UserFormModalProps {
   user: User | null;
+  currentUserRole: UserRole;
+  tenants?: Tenant[];
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: CreateUserDTO | UpdateUserDTO) => Promise<void>;
 }
 
-export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModalProps) {
+export function UserFormModal({ user, currentUserRole, tenants, isOpen, onClose, onSubmit }: UserFormModalProps) {
   const isEdit = !!user;
+  const isAdmin = currentUserRole === 'admin';
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
     password: '',
-    role: 'user' as 'admin' | 'user',
+    role: 'user' as UserRole,
+    is_active: 1,
+    tenant_id: 0,
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -47,6 +54,8 @@ export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModal
         email: user.email,
         password: '',
         role: user.role,
+        is_active: user.is_active ?? 1,
+        tenant_id: user.tenant_id ?? 0,
       });
     } else {
       setFormData({
@@ -54,6 +63,8 @@ export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModal
         email: '',
         password: '',
         role: 'user',
+        is_active: 1,
+        tenant_id: tenants?.[0]?.id ?? 0,
       });
     }
     setError('');
@@ -71,6 +82,8 @@ export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModal
           email: formData.email,
           ...(formData.password ? { password: formData.password } : {}),
           role: formData.role,
+          is_active: formData.is_active,
+          ...(isAdmin && formData.tenant_id ? { tenant_id: formData.tenant_id } : {}),
         };
         await onSubmit(updateData);
       } else {
@@ -79,6 +92,7 @@ export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModal
           email: formData.email,
           password: formData.password,
           role: formData.role,
+          ...(isAdmin && formData.tenant_id ? { tenant_id: formData.tenant_id } : {}),
         };
         await onSubmit(createData);
       }
@@ -155,7 +169,7 @@ export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModal
             <Label htmlFor="role">Role</Label>
             <Select
               value={formData.role}
-              onValueChange={(value: 'admin' | 'user') =>
+              onValueChange={(value: UserRole) =>
                 setFormData({ ...formData, role: value })
               }
             >
@@ -164,10 +178,49 @@ export function UserFormModal({ user, isOpen, onClose, onSubmit }: UserFormModal
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="user">User</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="tenant_admin">Tenant Admin</SelectItem>
+                {currentUserRole === 'admin' && (
+                  <SelectItem value="admin">Admin</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
+
+          {isAdmin && tenants && tenants.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="tenant">Tenant</Label>
+              <Select
+                value={formData.tenant_id.toString()}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, tenant_id: parseInt(value) })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a tenant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {tenants.map((t) => (
+                    <SelectItem key={t.id} value={t.id.toString()}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {isEdit && user?.role !== 'admin' && (
+            <div className="flex items-center justify-between">
+              <Label htmlFor="is_active">Active</Label>
+              <Switch
+                id="is_active"
+                checked={!!formData.is_active}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, is_active: checked ? 1 : 0 })
+                }
+              />
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

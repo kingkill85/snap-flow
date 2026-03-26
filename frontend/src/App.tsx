@@ -14,6 +14,7 @@ import Profile from '@/pages/Profile';
 import ProjectList from '@/pages/projects/ProjectList';
 import ProjectDashboard from '@/pages/projects/ProjectDashboard';
 import UserManagement from '@/pages/settings/UserManagement';
+import TenantManagement from './pages/settings/TenantManagement';
 import CategoryManagement from '@/pages/catalog/CategoryManagement';
 import ItemManagement from '@/pages/catalog/ItemManagement';
 
@@ -42,20 +43,27 @@ function App() {
                 </ErrorBoundary>
               } />
               
-              {/* Admin only routes */}
+              {/* Catalog routes - browsable by all authenticated users */}
               <Route path="catalog/products" element={
-                <ProtectedRoute requireAdmin>
+                <ProtectedRoute>
                   <ItemManagement />
                 </ProtectedRoute>
               } />
               <Route path="catalog/categories" element={
-                <ProtectedRoute requireAdmin>
+                <ProtectedRoute>
                   <CategoryManagement />
                 </ProtectedRoute>
               } />
+
+              {/* Admin only routes */}
               <Route path="settings/users" element={
-                <ProtectedRoute requireAdmin>
+                <ProtectedRoute requireTenantAdmin>
                   <UserManagement />
+                </ProtectedRoute>
+              } />
+              <Route path="settings/tenants" element={
+                <ProtectedRoute requireAdmin>
+                  <TenantManagement />
                 </ProtectedRoute>
               } />
             </Route>

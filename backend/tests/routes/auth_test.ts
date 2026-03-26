@@ -18,6 +18,7 @@ Deno.test('Auth endpoints - login with valid credentials', async () => {
     email: 'logintest@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const response = await testRequest('/api/auth/login', {
@@ -66,6 +67,7 @@ Deno.test('Auth endpoints - login with invalid password', async () => {
     email: 'wrongpass@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const response = await testRequest('/api/auth/login', {
@@ -106,6 +108,7 @@ Deno.test('Auth endpoints - get current user with valid token', async () => {
     email: 'me@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {
@@ -159,6 +162,7 @@ Deno.test('Auth endpoints - logout with valid token', async () => {
     email: 'logout@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {
@@ -194,6 +198,7 @@ Deno.test('Auth endpoints - update profile with full_name', async () => {
     email: 'updateprofile@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {
@@ -235,6 +240,7 @@ Deno.test('Auth endpoints - refresh token with valid refresh token', async () =>
     email: 'refreshtest@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {
@@ -293,6 +299,7 @@ Deno.test('Auth endpoints - access protected endpoint with refreshed token', asy
     email: 'refreshthenaccess@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {
@@ -339,6 +346,7 @@ Deno.test('Auth endpoints - update profile with email', async () => {
     email: 'updateemail@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {
@@ -380,6 +388,7 @@ Deno.test('Auth endpoints - update profile with password', async () => {
     email: 'updatepass@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {
@@ -431,6 +440,7 @@ Deno.test('Auth endpoints - update profile without changes fails', async () => {
     full_name: 'Test User',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {
