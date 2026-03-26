@@ -18,6 +18,7 @@ async function getAuthToken(): Promise<string> {
     email: 'test@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {
@@ -42,6 +43,7 @@ Deno.test('Floorplan - CRUD operations', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
   const projectId = project.id;
 
@@ -146,6 +148,7 @@ Deno.test('Floorplan - validation and errors', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
   const projectId = project.id;
 
@@ -212,6 +215,7 @@ Deno.test('Floorplan - reorder functionality', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
   const projectId = project.id;
 
@@ -334,6 +338,7 @@ Deno.test('Floorplan - delete with image cleanup', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
   const projectId = project.id;
 

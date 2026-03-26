@@ -25,6 +25,18 @@ vi.mock('@/services/item', () => ({
   },
 }));
 
+vi.mock('@/services/auth', () => ({
+  authService: { getCurrentUser: vi.fn(), getAccessToken: vi.fn(), clearTokens: vi.fn() },
+}));
+
+vi.mock('@/context/AuthContext', () => ({
+  useAuth: () => ({
+    user: { id: 1, role: 'admin', tenantId: 1, tenantName: 'Admin' },
+    isAuthenticated: true,
+    isLoading: false,
+  }),
+}));
+
 import { categoryService } from '@/services/category';
 import { itemService } from '@/services/item';
 

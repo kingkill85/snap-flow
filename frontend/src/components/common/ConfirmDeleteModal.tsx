@@ -46,7 +46,7 @@ export function ConfirmDeleteModal({
           <DialogDescription>
             {disabled
               ? disabledMessage
-              : `Are you sure you want to delete ${itemName ? <strong>{itemName}</strong> : 'this item'}? This action cannot be undone.`}
+              : <>Are you sure you want to delete {itemName ? <strong>{itemName}</strong> : 'this item'}? This action cannot be undone.</>}
           </DialogDescription>
         </DialogHeader>
 

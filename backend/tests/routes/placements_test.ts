@@ -25,6 +25,7 @@ async function getAuthToken(): Promise<string> {
     email: 'test@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   // Login
@@ -50,6 +51,7 @@ Deno.test('Placement - CRUD operations', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
   const projectId = project.id;
 
@@ -223,6 +225,7 @@ Deno.test('Placement - duplicate endpoint', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
   const projectId = project.id;
 

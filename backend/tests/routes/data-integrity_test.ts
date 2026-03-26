@@ -68,7 +68,7 @@ Deno.test('deleteByFloorplan - placements are cleaned up', async () => {
   clearDatabase();
 
   // Create project → floorplan → item → variant → BOM entry → placement
-  const project = await projectRepository.create({ name: 'Test Project', customer_name: 'Test Customer' });
+  const project = await projectRepository.create({ name: 'Test Project', customer_name: 'Test Customer', tenant_id: 1 });
   const floorplan = await floorplanRepository.create({ project_id: project.id, name: 'Floor 1', image_path: 'test.png' });
   const category = await categoryRepository.create({ name: 'Cat1' });
   const item = await itemRepository.create({ name: 'Item1', category_id: category.id });
@@ -98,7 +98,7 @@ Deno.test('Route ordering - POST /placements/bulk-update is reachable', async ()
   clearDatabase();
 
   const passwordHash = hashPassword('testpassword123');
-  await userRepository.create({ email: 'routetest@example.com', password_hash: passwordHash, role: 'admin' });
+  await userRepository.create({ email: 'routetest@example.com', password_hash: passwordHash, role: 'admin', tenant_id: 1 });
 
   const loginRes = await testRequest('/api/auth/login', {
     method: 'POST',
@@ -129,6 +129,7 @@ Deno.test('UserRepository.update - can update email with !== undefined check', a
     email: 'original@example.com',
     password_hash: hashPassword('testpassword123'),
     role: 'user',
+    tenant_id: 1,
   });
 
   const updated = await userRepository.update(user.id, { email: 'new@example.com' });
@@ -199,7 +200,7 @@ Deno.test('ItemRepository.delete - rolls back on error', async () => {
 Deno.test('BomEntry.delete - cleans up child placements', async () => {
   clearDatabase();
 
-  const project = await projectRepository.create({ name: 'BomDelProject', customer_name: 'Test' });
+  const project = await projectRepository.create({ name: 'BomDelProject', customer_name: 'Test', tenant_id: 1 });
   const floorplan = await floorplanRepository.create({ project_id: project.id, name: 'Floor', image_path: 'test.png' });
   const category = await categoryRepository.create({ name: 'Cat' });
   const item = await itemRepository.create({ name: 'Item', category_id: category.id });
@@ -246,7 +247,7 @@ Deno.test('CategoryRepository.reorder - updates all sort orders atomically', () 
 Deno.test('BomService.updateFromCatalog - totalAfter reflects updated prices', async () => {
   clearDatabase();
 
-  const project = await projectRepository.create({ name: 'TotalProject', customer_name: 'Test' });
+  const project = await projectRepository.create({ name: 'TotalProject', customer_name: 'Test', tenant_id: 1 });
   const floorplan = await floorplanRepository.create({ project_id: project.id, name: 'Floor', image_path: 'test.png' });
   const category = await categoryRepository.create({ name: 'Cat' });
   const item = await itemRepository.create({ name: 'Item', category_id: category.id });
@@ -272,7 +273,7 @@ Deno.test('BomService.updateFromCatalog - totalAfter reflects updated prices', a
 Deno.test('BomService.updateFromCatalog - updates snapshot including picture_path on price change', async () => {
   clearDatabase();
 
-  const project = await projectRepository.create({ name: 'ImgProject', customer_name: 'Test' });
+  const project = await projectRepository.create({ name: 'ImgProject', customer_name: 'Test', tenant_id: 1 });
   const floorplan = await floorplanRepository.create({ project_id: project.id, name: 'Floor', image_path: 'test.png' });
   const category = await categoryRepository.create({ name: 'Cat' });
   const item = await itemRepository.create({ name: 'Item', category_id: category.id });
@@ -309,7 +310,7 @@ Deno.test('Route ordering - POST /placements/bulk-update responds with correct h
   clearDatabase();
 
   const passwordHash = hashPassword('testpassword123');
-  await userRepository.create({ email: 'route2@example.com', password_hash: passwordHash, role: 'admin' });
+  await userRepository.create({ email: 'route2@example.com', password_hash: passwordHash, role: 'admin', tenant_id: 1 });
 
   const loginRes = await testRequest('/api/auth/login', {
     method: 'POST',

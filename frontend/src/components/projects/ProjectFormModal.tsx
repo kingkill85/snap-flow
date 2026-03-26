@@ -21,17 +21,20 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Loader2, FolderPlus, Save, X } from 'lucide-react';
 import type { Project, CreateProjectDTO, UpdateProjectDTO } from '@/services/project';
+import type { Tenant } from '@/services/tenants';
 import { extractErrorMessage } from '@/utils';
 
 interface ProjectFormModalProps {
   project: Project | null;
+  tenants?: Tenant[];
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: CreateProjectDTO | UpdateProjectDTO) => Promise<void>;
 }
 
-export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: ProjectFormModalProps) {
+export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }: ProjectFormModalProps) {
   const isEdit = !!project;
+  const isAdmin = tenants && tenants.length > 0;
   const [formData, setFormData] = useState({
     name: '',
     status: 'active' as 'active' | 'completed' | 'cancelled',
@@ -39,6 +42,7 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
     customer_email: '',
     customer_phone: '',
     customer_address: '',
+    tenant_id: 0,
   });
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,6 +57,7 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
           customer_email: project.customer_email || '',
           customer_phone: project.customer_phone || '',
           customer_address: project.customer_address || '',
+          tenant_id: project.tenant_id || 0,
         });
       } else {
         setFormData({
@@ -62,6 +67,7 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
           customer_email: '',
           customer_phone: '',
           customer_address: '',
+          tenant_id: tenants?.[0]?.id ?? 0,
         });
       }
       setError('');
@@ -76,7 +82,7 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
     try {
       if (isEdit) {
         // Always include all fields so clearing optional fields actually saves
-        const updateData: UpdateProjectDTO = {
+        const updateData: UpdateProjectDTO & { tenant_id?: number } = {
           name: formData.name,
           status: formData.status,
           customer_name: formData.customer_name,
@@ -84,9 +90,10 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
           customer_phone: formData.customer_phone,
           customer_address: formData.customer_address,
         };
+        if (isAdmin && formData.tenant_id) updateData.tenant_id = formData.tenant_id;
         await onSubmit(updateData);
       } else {
-        const createData: CreateProjectDTO = {
+        const createData: CreateProjectDTO & { tenant_id?: number } = {
           name: formData.name,
           status: formData.status,
           customer_name: formData.customer_name,
@@ -94,6 +101,7 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
         if (formData.customer_email) createData.customer_email = formData.customer_email;
         if (formData.customer_phone) createData.customer_phone = formData.customer_phone;
         if (formData.customer_address) createData.customer_address = formData.customer_address;
+        if (isAdmin && formData.tenant_id) createData.tenant_id = formData.tenant_id;
         await onSubmit(createData);
       }
       onClose();
@@ -152,6 +160,29 @@ export function ProjectFormModal({ project, isOpen, onClose, onSubmit }: Project
               </SelectContent>
             </Select>
           </div>
+
+          {isAdmin && (
+            <div className="space-y-2">
+              <Label htmlFor="tenant">Tenant</Label>
+              <Select
+                value={formData.tenant_id.toString()}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, tenant_id: parseInt(value) })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a tenant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {tenants!.map((t) => (
+                    <SelectItem key={t.id} value={t.id.toString()}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <Separator />
 

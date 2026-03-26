@@ -9,6 +9,7 @@ interface FloorplanTabsProps {
   onDelete: (floorplan: Floorplan) => void;
   onReorder: (floorplanId: number, direction: 'up' | 'down') => void;
   onAdd: () => void;
+  readOnly?: boolean;
 }
 
 export function FloorplanTabs({
@@ -19,6 +20,7 @@ export function FloorplanTabs({
   onDelete,
   onReorder,
   onAdd,
+  readOnly = false,
 }: FloorplanTabsProps) {
   return (
     <div className="flex items-center justify-start border-b bg-muted/30 px-4 py-2 flex-shrink-0 h-10">
@@ -34,7 +36,7 @@ export function FloorplanTabs({
             onClick={() => onSelect(floorplan)}
           >
             <span className="text-sm">{floorplan.name}</span>
-            <div className="flex items-center gap-0.5 ml-1">
+            {!readOnly && <div className="flex items-center gap-0.5 ml-1">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -77,17 +79,19 @@ export function FloorplanTabs({
               >
                 <Trash className="h-3 w-3" />
               </button>
-            </div>
+            </div>}
           </div>
         ))}
         
-        <div
-          className="flex items-center px-3 py-2 cursor-pointer transition-colors whitespace-nowrap border-b-2 text-muted-foreground border-transparent hover:text-foreground"
-          onClick={onAdd}
-          title="Add Floorplan"
-        >
-          <Plus className="h-4 w-4" />
-        </div>
+        {!readOnly && (
+          <div
+            className="flex items-center px-3 py-2 cursor-pointer transition-colors whitespace-nowrap border-b-2 text-muted-foreground border-transparent hover:text-foreground"
+            onClick={onAdd}
+            title="Add Floorplan"
+          >
+            <Plus className="h-4 w-4" />
+          </div>
+        )}
       </div>
     </div>
   );

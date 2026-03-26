@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { roleLabels } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -11,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from '@/components/common/ThemeToggle';
-import { User, LogOut, LayoutGrid, Tags, Settings, ChevronDown } from 'lucide-react';
+import { User, LogOut, LayoutGrid, Tags, Settings, ChevronDown, Building2 } from 'lucide-react';
 
 const Header = () => {
   const { user, isAuthenticated, logout } = useAuth();
@@ -22,6 +23,9 @@ const Header = () => {
     const name = user?.full_name || user?.email || 'U';
     return name.charAt(0).toUpperCase();
   };
+
+  const isTenantAdmin = user?.role === 'tenant_admin' || user?.role === 'admin';
+  const isAdmin = user?.role === 'admin';
 
   const handleLogout = () => {
     logout();
@@ -55,7 +59,7 @@ const Header = () => {
               Projects
             </Link>
 
-            {user?.role === 'admin' && (
+            {isAuthenticated && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
@@ -63,8 +67,8 @@ const Header = () => {
                     <ChevronDown className="h-4 w-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent 
-                  align="start" 
+                <DropdownMenuContent
+                  align="start"
                   side="bottom"
                   sideOffset={16}
                   className="min-w-[--radix-dropdown-menu-trigger-width] rounded-t-none border-t-0 shadow-none"
@@ -85,7 +89,7 @@ const Header = () => {
               </DropdownMenu>
             )}
 
-            {user?.role === 'admin' && (
+            {isTenantAdmin && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
@@ -93,8 +97,8 @@ const Header = () => {
                     <ChevronDown className="h-4 w-4" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent 
-                  align="start" 
+                <DropdownMenuContent
+                  align="start"
                   side="bottom"
                   sideOffset={16}
                   className="min-w-[--radix-dropdown-menu-trigger-width] rounded-t-none border-t-0 shadow-none"
@@ -105,6 +109,14 @@ const Header = () => {
                       User Management
                     </Link>
                   </DropdownMenuItem>
+                  {isAdmin && (
+                    <DropdownMenuItem asChild>
+                      <Link to="/settings/tenants" className="flex items-center gap-2">
+                        <Building2 className="h-4 w-4" />
+                        Tenants
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
@@ -127,8 +139,8 @@ const Header = () => {
                       <span className="text-sm font-medium leading-none">
                         {getDisplayName()}
                       </span>
-                      <span className="text-xs text-muted-foreground capitalize">
-                        {user?.role}
+                      <span className="text-xs text-muted-foreground">
+                        {user?.role ? roleLabels[user.role] : 'User'}
                       </span>
                     </div>
                   </button>
@@ -137,7 +149,10 @@ const Header = () => {
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium">{user?.full_name || user?.email}</p>
-                      <p className="text-xs text-muted-foreground capitalize">{user?.role} Account</p>
+                      <p className="text-xs text-muted-foreground">{user?.role ? roleLabels[user.role] : 'User'}</p>
+                      {!isAdmin && user?.tenantName && (
+                        <p className="text-xs text-muted-foreground">{user.tenantName}</p>
+                      )}
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />

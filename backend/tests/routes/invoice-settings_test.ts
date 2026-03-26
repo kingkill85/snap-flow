@@ -19,6 +19,7 @@ async function getAuthToken(): Promise<string> {
     email: 'test@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   // Login
@@ -42,6 +43,7 @@ Deno.test('PUT /projects/:id/invoice-settings - should update invoice settings',
   const project = await projectRepository.create({
     name: 'Test Project',
     customer_name: 'Test Customer',
+    tenant_id: 1,
   });
   
   try {
@@ -103,6 +105,7 @@ Deno.test('PUT /projects/:id/invoice-settings - should handle partial updates', 
   const project = await projectRepository.create({
     name: 'Test Project Partial',
     customer_name: 'Test Customer',
+    tenant_id: 1,
   });
   
   try {
@@ -149,6 +152,7 @@ Deno.test('GET /projects/:id/invoice-calculation - should return calculated invo
   const project = await projectRepository.create({
     name: 'Test Project Calc',
     customer_name: 'Test Customer',
+    tenant_id: 1,
   });
   
   // Update invoice settings

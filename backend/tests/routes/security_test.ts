@@ -80,6 +80,7 @@ Deno.test('Security - X-Forwarded-For header is ignored when TRUSTED_PROXY is fa
     email: 'ratelimit@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   // Make requests with different X-Forwarded-For headers

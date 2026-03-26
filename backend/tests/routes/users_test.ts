@@ -18,6 +18,7 @@ async function getAdminToken(): Promise<string> {
     email: 'admin@example.com',
     password_hash: passwordHash,
     role: 'admin',
+    tenant_id: 1,
   });
 
   // Login as admin
@@ -43,6 +44,7 @@ async function getUserToken(): Promise<string> {
     email: 'user@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   // Login as user
@@ -209,6 +211,7 @@ Deno.test('User management - cannot delete yourself', async () => {
     email: 'selfdelete@example.com',
     password_hash: passwordHash,
     role: 'admin',
+    tenant_id: 1,
   });
 
   const loginResponse = await testRequest('/api/auth/login', {

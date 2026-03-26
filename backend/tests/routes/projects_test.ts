@@ -18,7 +18,8 @@ async function getAuthToken(): Promise<string> {
   await userRepository.create({
     email: 'test@example.com',
     password_hash: passwordHash,
-    role: 'user',
+    role: 'tenant_admin',
+    tenant_id: 1,
   });
 
   // Login

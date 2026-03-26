@@ -21,6 +21,7 @@ Deno.test('BomEntryRepository - findByPicturePath', async (t) => {
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
+    tenant_id: 1,
   });
 
   const floorplan = await floorplanRepository.create({

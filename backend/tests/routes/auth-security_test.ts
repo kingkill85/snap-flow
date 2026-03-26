@@ -14,6 +14,7 @@ Deno.test('Token rotation - refresh returns new refresh token', async () => {
     email: 'rotation@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   // Login to get initial tokens
@@ -47,6 +48,7 @@ Deno.test('Token rotation - old refresh token is rejected after rotation', async
     email: 'rotation2@example.com',
     password_hash: passwordHash,
     role: 'user',
+    tenant_id: 1,
   });
 
   // Login
@@ -78,7 +80,7 @@ Deno.test('Token rotation - old refresh token is rejected after rotation', async
 Deno.test('PUT /auth/me - accepts password change', async () => {
   clearDatabase();
   const passwordHash = hashPassword('oldpass1234');
-  await userRepository.create({ email: 'profile@example.com', password_hash: passwordHash, role: 'user' });
+  await userRepository.create({ email: 'profile@example.com', password_hash: passwordHash, role: 'user', tenant_id: 1 });
 
   const loginRes = await testRequest('/api/auth/login', {
     method: 'POST',
@@ -99,7 +101,7 @@ Deno.test('PUT /auth/me - accepts password change', async () => {
 Deno.test('PUT /auth/me - rejects short password', async () => {
   clearDatabase();
   const passwordHash = hashPassword('oldpass1234');
-  await userRepository.create({ email: 'profile2@example.com', password_hash: passwordHash, role: 'user' });
+  await userRepository.create({ email: 'profile2@example.com', password_hash: passwordHash, role: 'user', tenant_id: 1 });
 
   const loginRes = await testRequest('/api/auth/login', {
     method: 'POST',

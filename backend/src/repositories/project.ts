@@ -1,82 +1,104 @@
 import { getDb } from '../config/database.ts';
 import type { Project, CreateProjectDTO, UpdateProjectDTO, UpdateInvoiceSettingsDTO } from '../models/index.ts';
+import type { TenantContext } from './user.ts';
+
+const PROJECT_COLUMNS = `id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
+             discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
+             exchange_rate, tenant_id`;
 
 /**
  * Project Repository
  * Handles all database operations for projects
  */
 export class ProjectRepository {
-  findAll(search?: string): Promise<Project[]> {
-    let sql = `
-      SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
-             discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
-             exchange_rate
-      FROM projects 
-    `;
+  findAll(search?: string, ctx?: TenantContext): Promise<Project[]> {
+    let sql = `SELECT ${PROJECT_COLUMNS} FROM projects`;
+    const conditions: string[] = [];
     const params: (string | number)[] = [];
-    
+
+    if (ctx && ctx.role !== 'admin') {
+      conditions.push('tenant_id = ?');
+      params.push(ctx.tenantId);
+    } else if (ctx && ctx.role === 'admin' && ctx.tenantId !== undefined) {
+      // Distributor filtering by specific tenant (via ?tenantId query param)
+      // Only apply if tenantId was explicitly set for filtering
+    }
+
     if (search) {
-      sql += ` WHERE name LIKE ? OR customer_name LIKE ?`;
+      conditions.push('(name LIKE ? OR customer_name LIKE ?)');
       const searchPattern = `%${search}%`;
       params.push(searchPattern, searchPattern);
     }
-    
+
+    if (conditions.length > 0) {
+      sql += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
     sql += ` ORDER BY created_at DESC`;
-    
+
     const result = getDb().queryEntries(sql, params);
     return Promise.resolve(result as unknown as Project[]);
   }
 
-  findById(id: number): Promise<Project | null> {
-    const result = getDb().queryEntries(`
-      SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
-             discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
-             exchange_rate
-      FROM projects 
-      WHERE id = ?
-    `, [id]);
-    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Project) : null);
+  findAllByTenant(tenantId: number, search?: string): Promise<Project[]> {
+    let sql = `SELECT ${PROJECT_COLUMNS} FROM projects WHERE tenant_id = ?`;
+    const params: (string | number)[] = [tenantId];
+
+    if (search) {
+      sql += ` AND (name LIKE ? OR customer_name LIKE ?)`;
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern);
+    }
+
+    sql += ` ORDER BY created_at DESC`;
+    const result = getDb().queryEntries(sql, params);
+    return Promise.resolve(result as unknown as Project[]);
   }
 
-  findByNameAndCustomer(name: string, customerName: string, excludeId?: number): Promise<Project | null> {
-    let sql = `
-      SELECT id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
-             discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
-             exchange_rate
-      FROM projects 
-      WHERE name = ? AND customer_name = ?
-    `;
-    const params: (string | number)[] = [name, customerName];
-    
-    if (excludeId) {
-      sql += ' AND id != ?';
-      params.push(excludeId);
+  findById(id: number, ctx?: TenantContext): Promise<Project | null> {
+    let sql = `SELECT ${PROJECT_COLUMNS} FROM projects WHERE id = ?`;
+    const params: (string | number)[] = [id];
+
+    if (ctx && ctx.role !== 'admin') {
+      sql += ` AND tenant_id = ?`;
+      params.push(ctx.tenantId);
     }
-    
+
     const result = getDb().queryEntries(sql, params);
     return Promise.resolve(result.length > 0 ? (result[0] as unknown as Project) : null);
   }
 
-  create(data: CreateProjectDTO): Promise<Project> {
+  findByNameAndCustomer(name: string, customerName: string, tenantId: number, excludeId?: number): Promise<Project | null> {
+    let sql = `SELECT ${PROJECT_COLUMNS} FROM projects WHERE name = ? AND customer_name = ? AND tenant_id = ?`;
+    const params: (string | number)[] = [name, customerName, tenantId];
+
+    if (excludeId) {
+      sql += ' AND id != ?';
+      params.push(excludeId);
+    }
+
+    const result = getDb().queryEntries(sql, params);
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Project) : null);
+  }
+
+  create(data: CreateProjectDTO & { tenant_id: number }): Promise<Project> {
     try {
       const result = getDb().queryEntries(`
-        INSERT INTO projects (name, status, customer_name, customer_email, customer_phone, customer_address) 
-        VALUES (?, ?, ?, ?, ?, ?)
-        RETURNING id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
-                  discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
-                  exchange_rate
+        INSERT INTO projects (name, status, customer_name, customer_email, customer_phone, customer_address, tenant_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        RETURNING ${PROJECT_COLUMNS}
       `, [
-        data.name, 
+        data.name,
         data.status || 'active',
         data.customer_name,
         data.customer_email || null,
         data.customer_phone || null,
-        data.customer_address || null
+        data.customer_address || null,
+        data.tenant_id
       ]);
-      
+
       return Promise.resolve(result[0] as unknown as Project);
     } catch (error: unknown) {
-      // Check for unique constraint violation
       const message = error instanceof Error ? error.message : 'Unknown error';
       if (message.includes('UNIQUE constraint failed') ||
           message.includes('idx_projects_unique_name_customer')) {
@@ -86,19 +108,17 @@ export class ProjectRepository {
     }
   }
 
-  async update(id: number, data: UpdateProjectDTO): Promise<Project | null> {
-    // Get current project to check for duplicates
-    const currentProject = await this.findById(id);
+  async update(id: number, data: UpdateProjectDTO, ctx?: TenantContext): Promise<Project | null> {
+    const currentProject = await this.findById(id, ctx);
     if (!currentProject) {
       return null;
     }
 
-    // Check for duplicate if name or customer_name is being changed
     const newName = data.name !== undefined ? data.name : currentProject.name;
     const newCustomerName = data.customer_name !== undefined ? data.customer_name : currentProject.customer_name;
-    
+
     if ((data.name !== undefined || data.customer_name !== undefined)) {
-      const existing = await this.findByNameAndCustomer(newName, newCustomerName, id);
+      const existing = await this.findByNameAndCustomer(newName, newCustomerName, currentProject.tenant_id, id);
       if (existing) {
         throw new Error(`A project with the name "${newName}" already exists for customer "${newCustomerName}"`);
       }
@@ -131,6 +151,10 @@ export class ProjectRepository {
       sets.push('customer_address = ?');
       values.push(data.customer_address);
     }
+    if (data.tenant_id !== undefined) {
+      sets.push('tenant_id = ?');
+      values.push(data.tenant_id);
+    }
 
     if (sets.length === 0) {
       return currentProject;
@@ -139,18 +163,15 @@ export class ProjectRepository {
     values.push(id);
 
     try {
-      const result = getDb().queryEntries(`
-        UPDATE projects 
-        SET ${sets.join(', ')} 
-        WHERE id = ?
-        RETURNING id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
-                  discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
-                  exchange_rate
-      `, values);
+      let sql = `UPDATE projects SET ${sets.join(', ')} WHERE id = ?`;
+      if (ctx && ctx.role !== 'admin') {
+        sql = `UPDATE projects SET ${sets.join(', ')} WHERE id = ? AND tenant_id = ${ctx.tenantId}`;
+      }
+      sql += ` RETURNING ${PROJECT_COLUMNS}`;
 
+      const result = getDb().queryEntries(sql, values);
       return result.length > 0 ? (result[0] as unknown as Project) : null;
     } catch (error: unknown) {
-      // Check for unique constraint violation
       const message = error instanceof Error ? error.message : 'Unknown error';
       if (message.includes('UNIQUE constraint failed') ||
           message.includes('idx_projects_unique_name_customer')) {
@@ -160,8 +181,12 @@ export class ProjectRepository {
     }
   }
 
-  delete(id: number): Promise<void> {
-    getDb().query(`DELETE FROM projects WHERE id = ?`, [id]);
+  delete(id: number, ctx?: TenantContext): Promise<void> {
+    if (ctx && ctx.role !== 'admin') {
+      getDb().query(`DELETE FROM projects WHERE id = ? AND tenant_id = ?`, [id, ctx.tenantId]);
+    } else {
+      getDb().query(`DELETE FROM projects WHERE id = ?`, [id]);
+    }
     return Promise.resolve();
   }
 
@@ -201,12 +226,10 @@ export class ProjectRepository {
     values.push(id);
 
     const result = getDb().queryEntries(`
-      UPDATE projects 
-      SET ${sets.join(', ')} 
+      UPDATE projects
+      SET ${sets.join(', ')}
       WHERE id = ?
-      RETURNING id, name, status, customer_name, customer_email, customer_phone, customer_address, created_at,
-                discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code,
-                exchange_rate
+      RETURNING ${PROJECT_COLUMNS}
     `, values);
 
     return Promise.resolve(result.length > 0 ? (result[0] as unknown as Project) : null);

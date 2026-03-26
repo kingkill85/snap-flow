@@ -12,6 +12,9 @@ import {
 } from '../services/refresh-token.ts';
 import { authMiddleware } from '../middleware/auth.ts';
 import { loginRateLimit, refreshRateLimit } from '../middleware/rate-limit.ts';
+import { TenantRepository } from '../repositories/tenant.ts';
+
+const tenantRepo = new TenantRepository();
 
 const authRoutes = new Hono();
 
@@ -40,8 +43,19 @@ authRoutes.post('/login', loginRateLimit(), zValidator('json', loginSchema), asy
       return c.json({ error: 'Invalid email or password' }, 401);
     }
 
+    // Check user is active
+    if (!user.is_active) {
+      return c.json({ error: 'Account disabled - contact your administrator' }, 403);
+    }
+
+    // Check tenant is active
+    const tenant = await tenantRepo.findById(user.tenant_id);
+    if (!tenant || !tenant.is_active) {
+      return c.json({ error: 'Account disabled - contact your administrator' }, 403);
+    }
+
     // Generate access token (short-lived)
-    const accessToken = await generateToken(user.id, user.email, user.role);
+    const accessToken = await generateToken(user.id, user.email, user.role, user.tenant_id);
 
     // Generate refresh token (long-lived)
     const refreshToken = await createRefreshToken(user.id);
@@ -53,6 +67,8 @@ authRoutes.post('/login', loginRateLimit(), zValidator('json', loginSchema), asy
           email: user.email,
           full_name: user.full_name,
           role: user.role,
+          tenantId: user.tenant_id,
+          tenantName: tenant.name,
         },
         accessToken,
         refreshToken,
@@ -131,8 +147,19 @@ authRoutes.post('/refresh', refreshRateLimit(), zValidator('json', refreshSchema
       return c.json({ error: 'User not found' }, 404);
     }
 
+    // Check user is still active
+    if (!user.is_active) {
+      return c.json({ error: 'Account disabled - contact your administrator' }, 403);
+    }
+
+    // Check tenant is still active
+    const tenant = await tenantRepo.findById(user.tenant_id);
+    if (!tenant || !tenant.is_active) {
+      return c.json({ error: 'Account disabled - contact your administrator' }, 403);
+    }
+
     // Generate new access token
-    const newAccessToken = await generateToken(user.id, user.email, user.role);
+    const newAccessToken = await generateToken(user.id, user.email, user.role, user.tenant_id);
 
     // Generate new refresh token (rotation)
     const newRefreshToken = await createRefreshToken(user.id);
@@ -160,12 +187,17 @@ authRoutes.get('/me', authMiddleware, async (c) => {
       return c.json({ error: 'User not found' }, 404);
     }
 
+    const tenant = await tenantRepo.findById(user.tenant_id);
+
     return c.json({
       data: {
         id: user.id,
         email: user.email,
         full_name: user.full_name,
         role: user.role,
+        tenant_id: user.tenant_id,
+        tenantId: user.tenant_id,
+        tenantName: tenant?.name || 'Unknown',
         created_at: user.created_at,
       },
     });

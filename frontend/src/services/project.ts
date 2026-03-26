@@ -16,6 +16,7 @@ export interface Project {
   services_usd: number;
   local_currency_code: string;
   exchange_rate: number;
+  tenant_id: number;
 }
 
 export interface CreateProjectDTO {

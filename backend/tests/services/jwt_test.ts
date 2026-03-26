@@ -7,7 +7,7 @@ await setupTestDatabase();
 Deno.test('JWT service - generateToken returns a non-empty string', async () => {
   clearDatabase();
 
-  const token = await generateToken(1, 'test@example.com', 'user');
+  const token = await generateToken(1, 'test@example.com', 'user', 1);
 
   assertExists(token);
   assertEquals(typeof token, 'string');
@@ -24,7 +24,7 @@ Deno.test('JWT service - verifyToken returns correct payload', async () => {
   const email = 'payload@example.com';
   const role = 'admin' as const;
 
-  const token = await generateToken(userId, email, role);
+  const token = await generateToken(userId, email, role, 1);
   const payload = await verifyToken(token);
 
   assertEquals(payload.sub, userId.toString());
@@ -39,7 +39,7 @@ Deno.test('JWT service - verifyToken returns correct payload', async () => {
 Deno.test('JWT service - verifyToken works for user role', async () => {
   clearDatabase();
 
-  const token = await generateToken(7, 'user@example.com', 'user');
+  const token = await generateToken(7, 'user@example.com', 'user', 1);
   const payload = await verifyToken(token);
 
   assertEquals(payload.sub, '7');
@@ -59,7 +59,7 @@ Deno.test('JWT service - verifyToken rejects an invalid token', async () => {
 Deno.test('JWT service - verifyToken rejects a token with tampered payload', async () => {
   clearDatabase();
 
-  const token = await generateToken(1, 'tamper@example.com', 'user');
+  const token = await generateToken(1, 'tamper@example.com', 'user', 1);
   // Replace the payload segment with a different base64 string
   const parts = token.split('.');
   const fakePayload = btoa(JSON.stringify({ sub: '999', email: 'hacker@evil.com', role: 'admin' }))

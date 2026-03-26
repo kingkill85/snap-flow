@@ -20,8 +20,9 @@ async function createUserAndToken(
     email,
     password_hash: hashPassword('password123'),
     role,
+    tenant_id: 1,
   });
-  const token = await generateToken(user.id, email, role);
+  const token = await generateToken(user.id, email, role, 1);
   return { token, userId: user.id };
 }
 

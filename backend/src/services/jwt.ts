@@ -1,5 +1,6 @@
 import { create, verify } from 'djwt';
 import { env } from '../config/env.ts';
+import type { UserRole } from '../models/index.ts';
 
 const JWT_SECRET = env.JWT_SECRET;
 // Access tokens expire in 15 minutes (900 seconds)
@@ -9,7 +10,8 @@ const ACCESS_TOKEN_EXPIRY = 60 * 15;
 export interface JWTPayload {
   sub: string;      // user id
   email: string;    // user email
-  role: 'admin' | 'user';
+  role: UserRole;
+  tenantId: number;
   exp: number;      // expiration time
   iat: number;      // issued at
 }
@@ -20,13 +22,15 @@ export interface JWTPayload {
 export async function generateToken(
   userId: number,
   email: string,
-  role: 'admin' | 'user'
+  role: UserRole,
+  tenantId: number
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const payload = {
     sub: userId.toString(),
     email,
     role,
+    tenantId,
     exp: now + ACCESS_TOKEN_EXPIRY,
     iat: now,
   };
