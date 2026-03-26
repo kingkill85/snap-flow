@@ -155,6 +155,7 @@ const ProjectDashboard = () => {
   // Placements hook - MUST be called before useEffect that uses fetchPlacements
   const {
     placements,
+    setPlacements,
     handlePlacementCreate,
     handlePlacementUpdate,
     handlePlacementDelete,
@@ -167,6 +168,7 @@ const ProjectDashboard = () => {
     persistSizeMemory,
     persistVariantMemory,
     setPlacementsVersion,
+    onPlacementChanged: activeFloorplan ? () => fetchAreas(activeFloorplan.id) : undefined,
   });
 
   // Areas hook
@@ -382,11 +384,11 @@ const ProjectDashboard = () => {
     isResizingRef,
     handlePlacementCreate,
     handlePlacementUpdate,
-    fetchPlacements,
-    setPlacementsVersion,
+    setPlacements,
     clearItemMemory,
     areas,
-    refreshAreas: refreshAfterContainment,
+    fetchAreas: activeFloorplan ? () => fetchAreas(activeFloorplan.id) : undefined,
+    setPlacementsVersion,
     handleAreaCreate: async (data) => {
       const AREA_COLORS = [
         '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6',
@@ -708,7 +710,6 @@ const ProjectDashboard = () => {
           </div>
         </div>
         
-        {/* Drag Overlay - only for items from palette, not for duplication */}
         <DragOverlay dropAnimation={null}>
           {activeDragItem && !isDropping && (
             <DragOverlayContent

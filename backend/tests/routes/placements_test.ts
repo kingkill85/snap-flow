@@ -2,6 +2,7 @@ import { assertEquals, assertExists } from '@std/assert';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
 import { hashPassword } from '../../src/services/password.ts';
+import { getDb } from '../../src/config/database.ts';
 import type { Placement } from '../../src/models/index.ts';
 
 // Setup test database before all tests
@@ -362,5 +363,210 @@ Deno.test('Placement - duplicate endpoint', async (t) => {
     assertEquals(response.status, 400);
     const data = await parseJSON(response);
     assertExists(data.error);
+  });
+
+  await t.step('Duplicate returns item_variant_image_path', async () => {
+    const response = await testRequest(`/api/placements/${originalPlacementId}/duplicate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ x: 300, y: 300 }),
+    });
+
+    assertEquals(response.status, 201);
+    const data = await parseJSON(response);
+    // findById now includes picture_path as item_variant_image_path
+    assertEquals(data.data.item_variant_image_path !== undefined, true);
+  });
+});
+
+Deno.test('Placement - duplicate assigns area_id via containment', async (t) => {
+  const token = await getAuthToken();
+
+  const db = getDb();
+
+  // Create project + floorplan
+  const project = await projectRepository.create({
+    name: 'Area Containment Test',
+    customer_name: 'Test Customer',
+    customer_address: '123 Test St',
+    status: 'active',
+    tenant_id: 1,
+  });
+
+  const floorplan = await floorplanRepository.create({
+    project_id: project.id,
+    name: 'Floor With Area',
+    image_path: 'floorplans/test.jpg',
+  });
+
+  // Create an area covering (0,0) to (500,500)
+  db.query(
+    `INSERT INTO placements (floorplan_id, type, x, y, width, height, rotation) VALUES (?, 'area', 0, 0, 500, 500, 0)`,
+    [floorplan.id],
+  );
+  const areaPlacementId = Number(db.lastInsertRowId);
+  db.query(
+    `INSERT INTO area_properties (placement_id, name, color, opacity) VALUES (?, 'Test Area', '#FF0000', 0.3)`,
+    [areaPlacementId],
+  );
+  // Create polygon vertices covering (0,0)-(500,0)-(500,500)-(0,500)
+  db.query(`INSERT INTO area_vertices (placement_id, vertex_index, x, y) VALUES (?, 0, 0, 0)`, [areaPlacementId]);
+  db.query(`INSERT INTO area_vertices (placement_id, vertex_index, x, y) VALUES (?, 1, 500, 0)`, [areaPlacementId]);
+  db.query(`INSERT INTO area_vertices (placement_id, vertex_index, x, y) VALUES (?, 2, 500, 500)`, [areaPlacementId]);
+  db.query(`INSERT INTO area_vertices (placement_id, vertex_index, x, y) VALUES (?, 3, 0, 500)`, [areaPlacementId]);
+
+  // Create category + item + variant
+  const category = await categoryRepository.create({ name: 'Area Test Category' });
+  const item = await itemRepository.create({
+    category_id: category.id,
+    name: 'Area Test Item',
+    description: 'Test',
+    base_model_number: 'AREA-001',
+    dimensions: '50x50',
+    is_active: true,
+  });
+  const variant = await itemVariantRepository.create({
+    item_id: item.id,
+    style_name: 'Default',
+    price: 10,
+    image_path: 'items/area-test.jpg',
+  });
+
+  // Create original placement inside the area
+  const createResponse = await testRequest('/api/placements', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      floorplan_id: floorplan.id,
+      item_variant_id: variant.id,
+      x: 100,
+      y: 100,
+      width: 50,
+      height: 50,
+    }),
+  });
+
+  const createData = await parseJSON(createResponse);
+  const originalId = createData.data.id;
+
+  await t.step('Original placement gets area_id from containment', async () => {
+    assertEquals(createData.data.area_id, areaPlacementId);
+  });
+
+  await t.step('Duplicate inside area gets area_id', async () => {
+    const response = await testRequest(`/api/placements/${originalId}/duplicate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ x: 200, y: 200 }),
+    });
+
+    assertEquals(response.status, 201);
+    const data = await parseJSON(response);
+    assertEquals(data.data.area_id, areaPlacementId);
+  });
+
+  await t.step('Duplicate outside area gets null area_id', async () => {
+    const response = await testRequest(`/api/placements/${originalId}/duplicate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ x: 600, y: 600 }),
+    });
+
+    assertEquals(response.status, 201);
+    const data = await parseJSON(response);
+    assertEquals(data.data.area_id, null);
+  });
+});
+
+Deno.test('Placement - findById returns image path', async (t) => {
+  const token = await getAuthToken();
+
+  const db = getDb();
+
+  const project = await projectRepository.create({
+    name: 'Image Path Test',
+    customer_name: 'Test',
+    customer_address: '123 St',
+    status: 'active',
+    tenant_id: 1,
+  });
+
+  const floorplan = await floorplanRepository.create({
+    project_id: project.id,
+    name: 'Floor',
+    image_path: 'floorplans/test.jpg',
+  });
+
+  const category = await categoryRepository.create({ name: 'Image Test Category' });
+  const item = await itemRepository.create({
+    category_id: category.id,
+    name: 'Image Test Item',
+    description: 'Test',
+    base_model_number: 'IMG-001',
+    dimensions: '50x50',
+    is_active: true,
+  });
+  const variant = await itemVariantRepository.create({
+    item_id: item.id,
+    style_name: 'Default',
+    price: 10,
+    image_path: 'items/test-image.jpg',
+  });
+
+  await t.step('Create placement response includes item_variant_image_path', async () => {
+    const response = await testRequest('/api/placements', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        floorplan_id: floorplan.id,
+        item_variant_id: variant.id,
+        x: 50,
+        y: 50,
+        width: 40,
+        height: 40,
+      }),
+    });
+
+    assertEquals(response.status, 201);
+    const data = await parseJSON(response);
+    assertExists(data.data.item_variant_image_path);
+  });
+
+  await t.step('Update placement response includes item_variant_image_path', async () => {
+    // Get the placement we just created
+    const listResponse = await testRequest(`/api/placements?floorplan_id=${floorplan.id}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const listData = await parseJSON(listResponse);
+    const placementId = listData.data[0].id;
+
+    const response = await testRequest(`/api/placements/${placementId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ x: 100, y: 100 }),
+    });
+
+    assertEquals(response.status, 200);
+    const data = await parseJSON(response);
+    assertExists(data.data.item_variant_image_path);
   });
 });

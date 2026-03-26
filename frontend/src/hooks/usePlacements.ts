@@ -10,6 +10,7 @@ interface UsePlacementsProps {
   persistSizeMemory: () => void;
   persistVariantMemory: () => void;
   setPlacementsVersion: React.Dispatch<React.SetStateAction<number>>;
+  onPlacementChanged?: () => void;
 }
 
 interface UsePlacementsReturn {
@@ -33,7 +34,7 @@ interface UsePlacementsReturn {
     item_variant_id?: number;
     addon_ids?: number[];
     rotation?: number;
-  }, isFinal?: boolean) => Promise<void>;
+  }, isFinal?: boolean) => Promise<Placement | undefined>;
   handlePlacementDelete: (id: number) => Promise<void>;
   fetchPlacements: (floorplanId: number, signal?: AbortSignal) => Promise<void>;
   placementAddons: React.MutableRefObject<Map<number, number[]>>;
@@ -46,6 +47,7 @@ export function usePlacements({
   persistSizeMemory,
   persistVariantMemory,
   setPlacementsVersion,
+  onPlacementChanged,
 }: UsePlacementsProps): UsePlacementsReturn {
   const [placements, setPlacements] = useState<Placement[]>([]);
   const placementsRef = useRef(placements);
@@ -87,10 +89,11 @@ export function usePlacements({
       height,
     };
 
-    const newPlacement = await placementService.create(createData);
+    let newPlacement = await placementService.create(createData);
 
     if (placement.addon_ids !== undefined) {
-      await placementService.updateBom(newPlacement.id, placement.item_variant_id, placement.addon_ids);
+      const result = await placementService.updateBom(newPlacement.id, placement.item_variant_id, placement.addon_ids);
+      newPlacement = result.placement;
     }
 
     if (!placement.ignoreDefaults) {
@@ -160,7 +163,10 @@ export function usePlacements({
     }
     
     if (isFinal !== false) {
-      await placementService.update(id, placement);
+      const updated = await placementService.update(id, placement);
+      // Apply server response (includes recalculated area_id from containment check)
+      setPlacements(prev => prev.map(p => p.id === id ? updated : p));
+      return updated;
     }
   }, [itemSizeMemory, itemVariantMemory, persistSizeMemory, persistVariantMemory, setPlacementsVersion]);
 
@@ -171,7 +177,8 @@ export function usePlacements({
       await fetchPlacements(activeFloorplan.id);
     }
     setPlacementsVersion(prev => prev + 1);
-  }, [activeFloorplan, fetchPlacements, setPlacementsVersion]);
+    onPlacementChanged?.();
+  }, [activeFloorplan, fetchPlacements, setPlacementsVersion, onPlacementChanged]);
 
   return {
     placements,

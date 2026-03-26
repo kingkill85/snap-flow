@@ -329,8 +329,12 @@ placementRoutes.post('/:id/duplicate', authMiddleware, zValidator('json', duplic
       rotation: placement.rotation,
     });
 
+    // Assign to containing area
+    await areaRepository.recheckContainment(placement.floorplan_id);
+    const updated = await placementRepository.findById(newPlacement!.id);
+
     return c.json({
-      data: newPlacement,
+      data: updated,
       message: 'Placement duplicated successfully',
     }, 201);
   } catch (error) {
