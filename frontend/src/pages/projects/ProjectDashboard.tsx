@@ -239,25 +239,38 @@ const ProjectDashboard = () => {
   }, [canvasBounds]);
 
   const handleAreaVertexMove = useCallback((id: number, vertexIndex: number, x: number, y: number) => {
+    let clampedX = x;
+    let clampedY = y;
+    if (canvasBounds.width > 0 && canvasBounds.height > 0) {
+      clampedX = Math.max(0, Math.min(x, canvasBounds.width));
+      clampedY = Math.max(0, Math.min(y, canvasBounds.height));
+    }
     setLocalAreas(prev => {
       const next = prev.map(a => {
         if (a.id !== id) return a;
         return {
           ...a,
-          vertices: a.vertices.map((v, i) => i === vertexIndex ? { ...v, x, y } : v),
+          vertices: a.vertices.map((v, i) => i === vertexIndex ? { ...v, x: clampedX, y: clampedY } : v),
         };
       });
       localAreasRef.current = next;
       return next;
     });
-  }, []);
+  }, [canvasBounds]);
 
   const handleAreaVerticesReplace = useCallback((id: number, updates: { index: number; x: number; y: number }[]) => {
+    const clampedUpdates = canvasBounds.width > 0 && canvasBounds.height > 0
+      ? updates.map(u => ({
+          ...u,
+          x: Math.max(0, Math.min(u.x, canvasBounds.width)),
+          y: Math.max(0, Math.min(u.y, canvasBounds.height)),
+        }))
+      : updates;
     setLocalAreas(prev => {
       const next = prev.map(a => {
         if (a.id !== id) return a;
         const newVertices = [...a.vertices];
-        for (const u of updates) {
+        for (const u of clampedUpdates) {
           const v = newVertices.find(v => v.vertex_index === u.index);
           if (v) { v.x = u.x; v.y = u.y; }
         }
@@ -266,7 +279,7 @@ const ProjectDashboard = () => {
       localAreasRef.current = next;
       return next;
     });
-  }, []);
+  }, [canvasBounds]);
 
   const handleAreaVertexAdd = useCallback((id: number, afterIndex: number, x: number, y: number) => {
     setLocalAreas(prev => {
