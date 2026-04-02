@@ -1508,7 +1508,7 @@ export function ConfiguratorCanvas({
                 onDragStart={(e) => e.preventDefault()}
               />
 
-              {/* Areas — sorted by id (newest on top), selected area rendered last */}
+              {/* Unselected areas — behind item placements */}
               {areas && areas.length > 0 && (
                 <svg
                   className="absolute inset-0"
@@ -1634,6 +1634,33 @@ export function ConfiguratorCanvas({
                   );
                 })}
 
+              {/* Selected area overlay — on top of items, pointer-events none so items stay interactive */}
+              {areas && selectedAreaId && !hiddenAreaIds?.has(selectedAreaId) && (() => {
+                const selectedArea = areas.find(a => a.id === selectedAreaId);
+                if (!selectedArea) return null;
+                return (
+                  <svg
+                    className="absolute inset-0"
+                    style={{ width: '100%', height: '100%', zIndex: 50, pointerEvents: 'none' }}
+                    viewBox={`0 0 ${imageNaturalSize.width} ${imageNaturalSize.height}`}
+                    preserveAspectRatio="xMinYMin meet"
+                  >
+                    <AreaPolygon
+                      key={selectedArea.id}
+                      area={selectedArea}
+                      isSelected={true}
+                      scale={(Math.min(scaleX, scaleY) * zoom) || 1}
+                      onSelect={(id) => { setSelectedPlacementId(null); onSelectArea?.(id); }}
+                      onMove={onAreaMove || (() => {})}
+                      onVertexMove={onAreaVertexMove || (() => {})}
+                      onVerticesReplace={onAreaVerticesReplace || (() => {})}
+                      onVertexAdd={onAreaVertexAdd || (() => {})}
+                      onVertexDelete={onAreaVertexDelete || (() => {})}
+                      onVerticesCommit={onAreaVerticesCommit || (() => {})}
+                    />
+                  </svg>
+                );
+              })()}
             </div>
           </div>
         ) : (
