@@ -256,18 +256,25 @@ export function useDragHandlers({
             screenY = event.delta.y;
           }
 
-          screenX = Math.max(0, Math.min(screenX, imageRect.width - 100));
-          screenY = Math.max(0, Math.min(screenY, imageRect.height - 100));
+          screenX = Math.max(0, Math.min(screenX, imageRect.width));
+          screenY = Math.max(0, Math.min(screenY, imageRect.height));
 
           const dropX = screenX / scaleX;
           const dropY = screenY / scaleY;
 
+          const areaWidth = 200;
+          const areaHeight = 150;
+          const maxW = floorplanImage.naturalWidth;
+          const maxH = floorplanImage.naturalHeight;
+          const clampedX = maxW > 0 ? Math.max(0, Math.min(dropX, maxW - areaWidth)) : dropX;
+          const clampedY = maxH > 0 ? Math.max(0, Math.min(dropY, maxH - areaHeight)) : dropY;
+
           await handleAreaCreate({
             floorplan_id: activeFloorplan.id,
-            x: dropX,
-            y: dropY,
-            width: 200,
-            height: 150,
+            x: clampedX,
+            y: clampedY,
+            width: areaWidth,
+            height: areaHeight,
           });
         } catch (err) {
           console.error('Failed to create area:', err);
