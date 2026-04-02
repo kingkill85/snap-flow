@@ -59,6 +59,7 @@ interface CanvasProps {
   onAreaVerticesCommit?: (id: number) => void;
   onAreaEdit?: (id: number) => void;
   onAreaDelete?: (id: number) => void;
+  onCanvasBoundsChange?: (bounds: { width: number; height: number }) => void;
 }
 
 interface DraggablePlacementProps {
@@ -1093,6 +1094,7 @@ export function ConfiguratorCanvas({
   onAreaVerticesCommit,
   onAreaEdit,
   onAreaDelete,
+  onCanvasBoundsChange,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -1112,6 +1114,10 @@ export function ConfiguratorCanvas({
       if (e.key === 'Control' || e.key === 'Meta') {
         setIsCtrlPressed(true);
       }
+      if (e.key === 'Escape') {
+        setSelectedPlacementId(null);
+        onSelectArea?.(null);
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -1127,7 +1133,7 @@ export function ConfiguratorCanvas({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [onSelectArea]);
 
   // Zoom and pan state
   const [zoom, setZoomState] = useState(1);
@@ -1270,6 +1276,12 @@ export function ConfiguratorCanvas({
 
   const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
   const [imageDisplaySize, setImageDisplaySize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (imageNaturalSize.width > 0 && imageNaturalSize.height > 0) {
+      onCanvasBoundsChange?.(imageNaturalSize);
+    }
+  }, [imageNaturalSize.width, imageNaturalSize.height, onCanvasBoundsChange]);
 
   const updateImageSize = useCallback(() => {
     if (imageRef.current && containerRef.current) {
@@ -1496,6 +1508,7 @@ export function ConfiguratorCanvas({
                 onDragStart={(e) => e.preventDefault()}
               />
 
+              {/* Areas — sorted by id (newest on top), selected area rendered last */}
               {areas && areas.length > 0 && (
                 <svg
                   className="absolute inset-0"
@@ -1503,10 +1516,14 @@ export function ConfiguratorCanvas({
                   viewBox={`0 0 ${imageNaturalSize.width} ${imageNaturalSize.height}`}
                   preserveAspectRatio="xMinYMin meet"
                 >
-                  {/* Transparent rect to pass through clicks to canvas below */}
                   <rect width="100%" height="100%" fill="none" style={{ pointerEvents: 'none' }} />
                   <g>
-                    {[...areas].filter(a => !hiddenAreaIds?.has(a.id)).sort((a, b) => (b.width * b.height) - (a.width * a.height)).map(area => (
+                    {[...areas].filter(a => !hiddenAreaIds?.has(a.id)).sort((a, b) => {
+                      const aSelected = a.id === selectedAreaId ? 1 : 0;
+                      const bSelected = b.id === selectedAreaId ? 1 : 0;
+                      if (aSelected !== bSelected) return aSelected - bSelected;
+                      return a.id - b.id;
+                    }).map(area => (
                       <AreaPolygon
                         key={area.id}
                         area={area}
@@ -1616,6 +1633,7 @@ export function ConfiguratorCanvas({
                     />
                   );
                 })}
+
             </div>
           </div>
         ) : (
@@ -1692,6 +1710,7 @@ export function ConfiguratorCanvas({
             <p><span className="text-muted-foreground">Ctrl+Shift+drag:</span> Angle snap (5°)</p>
             <p><span className="text-muted-foreground">Ctrl+click edge:</span> Add vertex</p>
             <p><span className="text-muted-foreground">Ctrl+right-click vertex:</span> Remove vertex</p>
+            <p><span className="text-muted-foreground">Esc:</span> Deselect</p>
             <p className="border-t border-border pt-1.5 mt-1.5"><span className="text-muted-foreground">Canvas:</span> Ctrl+wheel to zoom, Ctrl+drag to pan</p>
           </div>
         </div>

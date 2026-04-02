@@ -179,8 +179,16 @@ export function useDragHandlers({
         const deltaX = event.delta.x / scaleX;
         const deltaY = event.delta.y / scaleY;
 
-        const newX = placement.x + deltaX;
-        const newY = placement.y + deltaY;
+        let newX = placement.x + deltaX;
+        let newY = placement.y + deltaY;
+
+        // Clamp placement within floorplan bounds
+        const maxW = floorplanImage.naturalWidth;
+        const maxH = floorplanImage.naturalHeight;
+        if (maxW > 0 && maxH > 0) {
+          newX = Math.max(0, Math.min(newX, maxW - placement.width));
+          newY = Math.max(0, Math.min(newY, maxH - placement.height));
+        }
 
         const oldAreaId = placement.area_id;
 
@@ -248,18 +256,25 @@ export function useDragHandlers({
             screenY = event.delta.y;
           }
 
-          screenX = Math.max(0, Math.min(screenX, imageRect.width - 100));
-          screenY = Math.max(0, Math.min(screenY, imageRect.height - 100));
+          screenX = Math.max(0, Math.min(screenX, imageRect.width));
+          screenY = Math.max(0, Math.min(screenY, imageRect.height));
 
           const dropX = screenX / scaleX;
           const dropY = screenY / scaleY;
 
+          const areaWidth = 200;
+          const areaHeight = 150;
+          const maxW = floorplanImage.naturalWidth;
+          const maxH = floorplanImage.naturalHeight;
+          const clampedX = maxW > 0 ? Math.max(0, Math.min(dropX, maxW - areaWidth)) : dropX;
+          const clampedY = maxH > 0 ? Math.max(0, Math.min(dropY, maxH - areaHeight)) : dropY;
+
           await handleAreaCreate({
             floorplan_id: activeFloorplan.id,
-            x: dropX,
-            y: dropY,
-            width: 200,
-            height: 150,
+            x: clampedX,
+            y: clampedY,
+            width: areaWidth,
+            height: areaHeight,
           });
         } catch (err) {
           console.error('Failed to create area:', err);
@@ -392,9 +407,20 @@ export function useDragHandlers({
               }
             }
 
+            let placementX = dropX - placementWidth / 2;
+            let placementY = dropY - placementHeight / 2;
+
+            // Clamp within floorplan bounds
+            const maxW = floorplanImage.naturalWidth;
+            const maxH = floorplanImage.naturalHeight;
+            if (maxW > 0 && maxH > 0) {
+              placementX = Math.max(0, Math.min(placementX, maxW - placementWidth));
+              placementY = Math.max(0, Math.min(placementY, maxH - placementHeight));
+            }
+
             await handlePlacementCreate({
-              x: dropX - placementWidth / 2,
-              y: dropY - placementHeight / 2,
+              x: placementX,
+              y: placementY,
               width: placementWidth,
               height: placementHeight,
               item_id: itemData.itemId,
