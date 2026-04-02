@@ -382,7 +382,7 @@ export function AreaPolygon({
   return (
     <g
       data-area-id={area.id}
-      style={{ cursor: isSelected ? 'move' : 'pointer' }}
+      style={{ cursor: 'move' }}
       onPointerDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
     >
       {/* Polygon fill + border — subtle when unselected, prominent when selected */}
@@ -395,7 +395,7 @@ export function AreaPolygon({
         strokeOpacity={1}
         onMouseDown={handlePolygonMouseDown}
         onClick={handlePolygonClick}
-        style={{ cursor: isSelected ? 'default' : 'pointer' }}
+        style={{ cursor: 'move' }}
       />
 
       {/* Name label — on the longest edge, offset inward, with dark pill background */}

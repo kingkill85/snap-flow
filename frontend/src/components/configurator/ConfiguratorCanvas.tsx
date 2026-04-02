@@ -1114,6 +1114,10 @@ export function ConfiguratorCanvas({
       if (e.key === 'Control' || e.key === 'Meta') {
         setIsCtrlPressed(true);
       }
+      if (e.key === 'Escape') {
+        setSelectedPlacementId(null);
+        onSelectArea?.(null);
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -1129,7 +1133,7 @@ export function ConfiguratorCanvas({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [onSelectArea]);
 
   // Zoom and pan state
   const [zoom, setZoomState] = useState(1);
@@ -1504,7 +1508,7 @@ export function ConfiguratorCanvas({
                 onDragStart={(e) => e.preventDefault()}
               />
 
-              {/* Unselected areas — behind item placements */}
+              {/* Areas — sorted by id (newest on top), selected area rendered last */}
               {areas && areas.length > 0 && (
                 <svg
                   className="absolute inset-0"
@@ -1514,11 +1518,16 @@ export function ConfiguratorCanvas({
                 >
                   <rect width="100%" height="100%" fill="none" style={{ pointerEvents: 'none' }} />
                   <g>
-                    {[...areas].filter(a => !hiddenAreaIds?.has(a.id) && a.id !== selectedAreaId).sort((a, b) => a.id - b.id).map(area => (
+                    {[...areas].filter(a => !hiddenAreaIds?.has(a.id)).sort((a, b) => {
+                      const aSelected = a.id === selectedAreaId ? 1 : 0;
+                      const bSelected = b.id === selectedAreaId ? 1 : 0;
+                      if (aSelected !== bSelected) return aSelected - bSelected;
+                      return a.id - b.id;
+                    }).map(area => (
                       <AreaPolygon
                         key={area.id}
                         area={area}
-                        isSelected={false}
+                        isSelected={selectedAreaId === area.id}
                         scale={(Math.min(scaleX, scaleY) * zoom) || 1}
                         onSelect={(id) => { setSelectedPlacementId(null); onSelectArea?.(id); }}
                         onMove={onAreaMove || (() => {})}
@@ -1625,34 +1634,6 @@ export function ConfiguratorCanvas({
                   );
                 })}
 
-              {/* Selected area — on top of item placements */}
-              {areas && selectedAreaId && !hiddenAreaIds?.has(selectedAreaId) && (() => {
-                const selectedArea = areas.find(a => a.id === selectedAreaId);
-                if (!selectedArea) return null;
-                return (
-                  <svg
-                    className="absolute inset-0"
-                    style={{ width: '100%', height: '100%', zIndex: 50, pointerEvents: isItemDragging ? 'none' : undefined }}
-                    viewBox={`0 0 ${imageNaturalSize.width} ${imageNaturalSize.height}`}
-                    preserveAspectRatio="xMinYMin meet"
-                  >
-                    <rect width="100%" height="100%" fill="none" style={{ pointerEvents: 'none' }} />
-                    <AreaPolygon
-                      key={selectedArea.id}
-                      area={selectedArea}
-                      isSelected={true}
-                      scale={(Math.min(scaleX, scaleY) * zoom) || 1}
-                      onSelect={(id) => { setSelectedPlacementId(null); onSelectArea?.(id); }}
-                      onMove={onAreaMove || (() => {})}
-                      onVertexMove={onAreaVertexMove || (() => {})}
-                      onVerticesReplace={onAreaVerticesReplace || (() => {})}
-                      onVertexAdd={onAreaVertexAdd || (() => {})}
-                      onVertexDelete={onAreaVertexDelete || (() => {})}
-                      onVerticesCommit={onAreaVerticesCommit || (() => {})}
-                    />
-                  </svg>
-                );
-              })()}
             </div>
           </div>
         ) : (
@@ -1729,6 +1710,7 @@ export function ConfiguratorCanvas({
             <p><span className="text-muted-foreground">Ctrl+Shift+drag:</span> Angle snap (5°)</p>
             <p><span className="text-muted-foreground">Ctrl+click edge:</span> Add vertex</p>
             <p><span className="text-muted-foreground">Ctrl+right-click vertex:</span> Remove vertex</p>
+            <p><span className="text-muted-foreground">Esc:</span> Deselect</p>
             <p className="border-t border-border pt-1.5 mt-1.5"><span className="text-muted-foreground">Canvas:</span> Ctrl+wheel to zoom, Ctrl+drag to pan</p>
           </div>
         </div>
