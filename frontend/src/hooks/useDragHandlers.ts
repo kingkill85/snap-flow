@@ -179,8 +179,16 @@ export function useDragHandlers({
         const deltaX = event.delta.x / scaleX;
         const deltaY = event.delta.y / scaleY;
 
-        const newX = placement.x + deltaX;
-        const newY = placement.y + deltaY;
+        let newX = placement.x + deltaX;
+        let newY = placement.y + deltaY;
+
+        // Clamp placement within floorplan bounds
+        const maxW = floorplanImage.naturalWidth;
+        const maxH = floorplanImage.naturalHeight;
+        if (maxW > 0 && maxH > 0) {
+          newX = Math.max(0, Math.min(newX, maxW - placement.width));
+          newY = Math.max(0, Math.min(newY, maxH - placement.height));
+        }
 
         const oldAreaId = placement.area_id;
 
@@ -392,9 +400,20 @@ export function useDragHandlers({
               }
             }
 
+            let placementX = dropX - placementWidth / 2;
+            let placementY = dropY - placementHeight / 2;
+
+            // Clamp within floorplan bounds
+            const maxW = floorplanImage.naturalWidth;
+            const maxH = floorplanImage.naturalHeight;
+            if (maxW > 0 && maxH > 0) {
+              placementX = Math.max(0, Math.min(placementX, maxW - placementWidth));
+              placementY = Math.max(0, Math.min(placementY, maxH - placementHeight));
+            }
+
             await handlePlacementCreate({
-              x: dropX - placementWidth / 2,
-              y: dropY - placementHeight / 2,
+              x: placementX,
+              y: placementY,
               width: placementWidth,
               height: placementHeight,
               item_id: itemData.itemId,
