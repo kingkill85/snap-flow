@@ -1506,7 +1506,12 @@ export function ConfiguratorCanvas({
                   {/* Transparent rect to pass through clicks to canvas below */}
                   <rect width="100%" height="100%" fill="none" style={{ pointerEvents: 'none' }} />
                   <g>
-                    {[...areas].filter(a => !hiddenAreaIds?.has(a.id)).sort((a, b) => (b.width * b.height) - (a.width * a.height)).map(area => (
+                    {[...areas].filter(a => !hiddenAreaIds?.has(a.id)).sort((a, b) => {
+                      const aSelected = a.id === selectedAreaId ? 1 : 0;
+                      const bSelected = b.id === selectedAreaId ? 1 : 0;
+                      if (aSelected !== bSelected) return aSelected - bSelected;
+                      return a.id - b.id;
+                    }).map(area => (
                       <AreaPolygon
                         key={area.id}
                         area={area}
