@@ -1507,7 +1507,7 @@ export function ConfiguratorCanvas({
               {areas && areas.length > 0 && (
                 <svg
                   className="absolute inset-0"
-                  style={{ width: '100%', height: '100%', pointerEvents: isItemDragging ? 'none' : undefined }}
+                  style={{ width: '100%', height: '100%', pointerEvents: isItemDragging ? 'none' : undefined, zIndex: selectedAreaId ? 10 : undefined }}
                   viewBox={`0 0 ${imageNaturalSize.width} ${imageNaturalSize.height}`}
                   preserveAspectRatio="xMinYMin meet"
                 >
