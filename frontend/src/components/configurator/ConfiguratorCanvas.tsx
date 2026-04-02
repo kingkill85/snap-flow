@@ -1504,26 +1504,21 @@ export function ConfiguratorCanvas({
                 onDragStart={(e) => e.preventDefault()}
               />
 
+              {/* Unselected areas — behind item placements */}
               {areas && areas.length > 0 && (
                 <svg
                   className="absolute inset-0"
-                  style={{ width: '100%', height: '100%', pointerEvents: isItemDragging ? 'none' : undefined, zIndex: selectedAreaId ? 10 : undefined }}
+                  style={{ width: '100%', height: '100%', pointerEvents: isItemDragging ? 'none' : undefined }}
                   viewBox={`0 0 ${imageNaturalSize.width} ${imageNaturalSize.height}`}
                   preserveAspectRatio="xMinYMin meet"
                 >
-                  {/* Transparent rect to pass through clicks to canvas below */}
                   <rect width="100%" height="100%" fill="none" style={{ pointerEvents: 'none' }} />
                   <g>
-                    {[...areas].filter(a => !hiddenAreaIds?.has(a.id)).sort((a, b) => {
-                      const aSelected = a.id === selectedAreaId ? 1 : 0;
-                      const bSelected = b.id === selectedAreaId ? 1 : 0;
-                      if (aSelected !== bSelected) return aSelected - bSelected;
-                      return a.id - b.id;
-                    }).map(area => (
+                    {[...areas].filter(a => !hiddenAreaIds?.has(a.id) && a.id !== selectedAreaId).sort((a, b) => a.id - b.id).map(area => (
                       <AreaPolygon
                         key={area.id}
                         area={area}
-                        isSelected={selectedAreaId === area.id}
+                        isSelected={false}
                         scale={(Math.min(scaleX, scaleY) * zoom) || 1}
                         onSelect={(id) => { setSelectedPlacementId(null); onSelectArea?.(id); }}
                         onMove={onAreaMove || (() => {})}
@@ -1629,6 +1624,35 @@ export function ConfiguratorCanvas({
                     />
                   );
                 })}
+
+              {/* Selected area — on top of item placements */}
+              {areas && selectedAreaId && !hiddenAreaIds?.has(selectedAreaId) && (() => {
+                const selectedArea = areas.find(a => a.id === selectedAreaId);
+                if (!selectedArea) return null;
+                return (
+                  <svg
+                    className="absolute inset-0"
+                    style={{ width: '100%', height: '100%', zIndex: 50, pointerEvents: isItemDragging ? 'none' : undefined }}
+                    viewBox={`0 0 ${imageNaturalSize.width} ${imageNaturalSize.height}`}
+                    preserveAspectRatio="xMinYMin meet"
+                  >
+                    <rect width="100%" height="100%" fill="none" style={{ pointerEvents: 'none' }} />
+                    <AreaPolygon
+                      key={selectedArea.id}
+                      area={selectedArea}
+                      isSelected={true}
+                      scale={(Math.min(scaleX, scaleY) * zoom) || 1}
+                      onSelect={(id) => { setSelectedPlacementId(null); onSelectArea?.(id); }}
+                      onMove={onAreaMove || (() => {})}
+                      onVertexMove={onAreaVertexMove || (() => {})}
+                      onVerticesReplace={onAreaVerticesReplace || (() => {})}
+                      onVertexAdd={onAreaVertexAdd || (() => {})}
+                      onVertexDelete={onAreaVertexDelete || (() => {})}
+                      onVerticesCommit={onAreaVerticesCommit || (() => {})}
+                    />
+                  </svg>
+                );
+              })()}
             </div>
           </div>
         ) : (
