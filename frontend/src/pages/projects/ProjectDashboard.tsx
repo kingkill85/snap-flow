@@ -48,7 +48,6 @@ const ProjectDashboard = () => {
   const projectId = parseInt(id || '0');
 
   const [placementsVersion, setPlacementsVersion] = useState(0);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [canvasBounds, setCanvasBounds] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
   // Project data hook
@@ -206,17 +205,38 @@ const ProjectDashboard = () => {
     setLocalAreas(prev => {
       const next = prev.map(a => {
         if (a.id !== id) return a;
+
+        // Compute proposed new vertices
+        let proposedVertices = a.vertices.map(v => ({ ...v, x: v.x + dx, y: v.y + dy }));
+
+        // Clamp: if any vertex goes out of bounds, adjust dx/dy
+        if (canvasBounds.width > 0 && canvasBounds.height > 0) {
+          const minX = Math.min(...proposedVertices.map(v => v.x));
+          const maxX = Math.max(...proposedVertices.map(v => v.x));
+          const minY = Math.min(...proposedVertices.map(v => v.y));
+          const maxY = Math.max(...proposedVertices.map(v => v.y));
+
+          let clampDx = 0;
+          let clampDy = 0;
+          if (minX < 0) clampDx = -minX;
+          else if (maxX > canvasBounds.width) clampDx = canvasBounds.width - maxX;
+          if (minY < 0) clampDy = -minY;
+          else if (maxY > canvasBounds.height) clampDy = canvasBounds.height - maxY;
+
+          proposedVertices = proposedVertices.map(v => ({ ...v, x: v.x + clampDx, y: v.y + clampDy }));
+        }
+
         return {
           ...a,
-          x: a.x + dx,
-          y: a.y + dy,
-          vertices: a.vertices.map(v => ({ ...v, x: v.x + dx, y: v.y + dy })),
+          x: proposedVertices[0]?.x ?? a.x + dx,
+          y: proposedVertices[0]?.y ?? a.y + dy,
+          vertices: proposedVertices,
         };
       });
       localAreasRef.current = next;
       return next;
     });
-  }, []);
+  }, [canvasBounds]);
 
   const handleAreaVertexMove = useCallback((id: number, vertexIndex: number, x: number, y: number) => {
     setLocalAreas(prev => {
