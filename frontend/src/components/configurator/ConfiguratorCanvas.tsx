@@ -59,6 +59,7 @@ interface CanvasProps {
   onAreaVerticesCommit?: (id: number) => void;
   onAreaEdit?: (id: number) => void;
   onAreaDelete?: (id: number) => void;
+  onCanvasBoundsChange?: (bounds: { width: number; height: number }) => void;
 }
 
 interface DraggablePlacementProps {
@@ -1093,6 +1094,7 @@ export function ConfiguratorCanvas({
   onAreaVerticesCommit,
   onAreaEdit,
   onAreaDelete,
+  onCanvasBoundsChange,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -1270,6 +1272,12 @@ export function ConfiguratorCanvas({
 
   const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
   const [imageDisplaySize, setImageDisplaySize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (imageNaturalSize.width > 0 && imageNaturalSize.height > 0) {
+      onCanvasBoundsChange?.(imageNaturalSize);
+    }
+  }, [imageNaturalSize.width, imageNaturalSize.height, onCanvasBoundsChange]);
 
   const updateImageSize = useCallback(() => {
     if (imageRef.current && containerRef.current) {

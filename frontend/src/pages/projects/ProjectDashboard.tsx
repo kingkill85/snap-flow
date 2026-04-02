@@ -48,6 +48,8 @@ const ProjectDashboard = () => {
   const projectId = parseInt(id || '0');
 
   const [placementsVersion, setPlacementsVersion] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [canvasBounds, setCanvasBounds] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
   // Project data hook
   const {
@@ -594,6 +596,7 @@ const ProjectDashboard = () => {
                           await deleteArea(id);
                           if (activeFloorplan) fetchPlacements(activeFloorplan.id);
                         } : () => {}}
+                        onCanvasBoundsChange={setCanvasBounds}
                       />
                     </div>
                   </div>
