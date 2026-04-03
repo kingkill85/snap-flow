@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import type { Project } from '@/services/project';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/services/floorplan';
+import { itemTypeService, type ItemType } from '@/services/item-type';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -195,6 +196,50 @@ const ProjectDashboard = () => {
       return new Set(areas.map(a => a.id)); // some visible → hide all
     });
   }, [areas]);
+
+  // Item type visibility
+  const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+  const [hiddenTypeIds, setHiddenTypeIds] = useState<Set<number>>(new Set());
+
+  const handleToggleTypeVisibility = useCallback((typeId: number) => {
+    setHiddenTypeIds(prev => {
+      const next = new Set(prev);
+      if (next.has(typeId)) next.delete(typeId);
+      else next.add(typeId);
+      return next;
+    });
+  }, []);
+
+  const handleToggleAllTypeVisibility = useCallback((visible: boolean) => {
+    if (visible) {
+      setHiddenTypeIds(new Set());
+    } else {
+      setHiddenTypeIds(new Set(itemTypes.map(t => t.id)));
+    }
+  }, [itemTypes]);
+
+  // Fetch item types
+  useEffect(() => {
+    const controller = new AbortController();
+    itemTypeService.getAll(controller.signal).then(types => {
+      setItemTypes(types);
+    }).catch(() => {
+      // Silently ignore — item types are optional enhancement
+    });
+    return () => controller.abort();
+  }, []);
+
+  // Build type color map for canvas
+  const typeColorMap = useMemo(() => {
+    const map = new Map<number, { color: string; name: string }>();
+    itemTypes.forEach(t => {
+      map.set(t.id, { color: t.color, name: t.name });
+    });
+    return map;
+  }, [itemTypes]);
+
+  // Project item type IDs
+  const projectItemTypeIds = useMemo(() => project?.item_type_ids, [project]);
 
   // Local area state for optimistic vertex updates during drag
   const [localAreas, setLocalAreas] = useState<Area[]>([]);
@@ -630,6 +675,8 @@ const ProjectDashboard = () => {
                           if (activeFloorplan) fetchPlacements(activeFloorplan.id);
                         } : () => {}}
                         onCanvasBoundsChange={setCanvasBounds}
+                        hiddenTypeIds={hiddenTypeIds}
+                        typeColorMap={typeColorMap}
                       />
                     </div>
                   </div>
@@ -668,6 +715,10 @@ const ProjectDashboard = () => {
                   onToggleCategory={handleToggleCategory}
                   onToggleAllCategories={handleToggleAllCategories}
                   categoryCounts={categoryCounts}
+                  projectItemTypeIds={projectItemTypeIds}
+                  hiddenTypeIds={hiddenTypeIds}
+                  onToggleTypeVisibility={handleToggleTypeVisibility}
+                  onToggleAllTypeVisibility={handleToggleAllTypeVisibility}
                 />
               </TabsContent>
 
@@ -676,19 +727,21 @@ const ProjectDashboard = () => {
                 forceMount
                 className={`flex-1 m-0 overflow-hidden ${activeTab !== 'areas' ? 'hidden' : ''}`}
               >
-                <AreasPanel
-                  areas={areas}
-                  selectedAreaId={selectedAreaId}
-                  onSelectArea={setSelectedAreaId}
-                  onEditArea={canEdit ? (id) => setEditingArea(areas.find(a => a.id === id) || null) : () => {}}
-                  onDeleteArea={canEdit ? async (id) => {
-                    await deleteArea(id);
-                    if (activeFloorplan) fetchPlacements(activeFloorplan.id);
-                  } : () => {}}
-                  onToggleAreaVisibility={handleToggleAreaVisibility}
-                  onToggleAllAreasVisibility={handleToggleAllAreasVisibility}
-                  hiddenAreaIds={hiddenAreaIds}
-                />
+                <div className="flex flex-col h-full overflow-y-auto">
+                  <AreasPanel
+                    areas={areas}
+                    selectedAreaId={selectedAreaId}
+                    onSelectArea={setSelectedAreaId}
+                    onEditArea={canEdit ? (id) => setEditingArea(areas.find(a => a.id === id) || null) : () => {}}
+                    onDeleteArea={canEdit ? async (id) => {
+                      await deleteArea(id);
+                      if (activeFloorplan) fetchPlacements(activeFloorplan.id);
+                    } : () => {}}
+                    onToggleAreaVisibility={handleToggleAreaVisibility}
+                    onToggleAllAreasVisibility={handleToggleAllAreasVisibility}
+                    hiddenAreaIds={hiddenAreaIds}
+                  />
+                </div>
               </TabsContent>
 
               <TabsContent

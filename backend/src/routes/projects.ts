@@ -43,6 +43,7 @@ const createProjectSchema = z.object({
   customer_email: z.string().email().optional().or(z.literal('')),
   customer_phone: z.string().max(50).optional().or(z.literal('')),
   customer_address: z.string().max(500).optional().or(z.literal('')),
+  item_type_ids: z.array(z.number()).optional(),
 });
 
 // Validation schema for updating projects
@@ -54,6 +55,7 @@ const updateProjectSchema = z.object({
   customer_phone: z.string().max(50).optional().or(z.literal('')),
   customer_address: z.string().max(500).optional().or(z.literal('')),
   tenant_id: z.number().optional(),
+  item_type_ids: z.array(z.number()).optional(),
 });
 
 // Validation schema for updating invoice settings
@@ -74,8 +76,17 @@ projectRoutes.get('/', authMiddleware, async (c) => {
     const search = c.req.query('search');
     const ctx = getTenantCtx(c);
     const projects = await projectRepository.findAll(search || undefined, ctx);
+
+    // Enrich each project with item_type_ids
+    const projectsWithTypeIds = await Promise.all(
+      projects.map(async (project) => {
+        const itemTypeIds = await projectRepository.getItemTypeIds(project.id);
+        return { ...project, item_type_ids: itemTypeIds };
+      })
+    );
+
     return c.json({
-      data: projects,
+      data: projectsWithTypeIds,
     });
   } catch (error) {
     console.error('List projects error:', error);
@@ -156,8 +167,10 @@ projectRoutes.get('/:id', authMiddleware, async (c) => {
       return c.json({ error: 'Project not found' }, 404);
     }
 
+    const itemTypeIds = await projectRepository.getItemTypeIds(id);
+
     return c.json({
-      data: project,
+      data: { ...project, item_type_ids: itemTypeIds },
     });
   } catch (error) {
     console.error('Get project error:', error);
@@ -167,7 +180,7 @@ projectRoutes.get('/:id', authMiddleware, async (c) => {
 
 // POST /projects - Create new project
 projectRoutes.post('/', authMiddleware, zValidator('json', createProjectSchema), async (c) => {
-  const { name, status, customer_name, customer_email, customer_phone, customer_address } = c.req.valid('json');
+  const { name, status, customer_name, customer_email, customer_phone, customer_address, item_type_ids } = c.req.valid('json');
 
   try {
     // Create project with customer info
@@ -185,8 +198,17 @@ projectRoutes.post('/', authMiddleware, zValidator('json', createProjectSchema),
 
     const project = await projectRepository.create(createData);
 
+    // Set item type IDs for the project
+    if (item_type_ids && item_type_ids.length > 0) {
+      await projectRepository.setItemTypeIds(project.id, item_type_ids);
+    } else {
+      await projectRepository.setDefaultItemTypes(project.id);
+    }
+
+    const itemTypeIds = await projectRepository.getItemTypeIds(project.id);
+
     return c.json({
-      data: project,
+      data: { ...project, item_type_ids: itemTypeIds },
       message: 'Project created successfully',
     }, 201);
   } catch (error: unknown) {
@@ -234,7 +256,7 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
   if (isNaN(id)) {
     return c.json({ error: 'Invalid ID' }, 400);
   }
-  const { name, status, customer_name, customer_email, customer_phone, customer_address, tenant_id } = c.req.valid('json');
+  const { name, status, customer_name, customer_email, customer_phone, customer_address, tenant_id, item_type_ids } = c.req.valid('json');
   const callerRole = c.get('userRole') as string;
 
   try {
@@ -270,8 +292,15 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
 
     const project = await projectRepository.update(id, updateData, ctx);
 
+    // Update item type IDs if provided
+    if (item_type_ids !== undefined) {
+      await projectRepository.setItemTypeIds(id, item_type_ids);
+    }
+
+    const projectItemTypeIds = await projectRepository.getItemTypeIds(id);
+
     return c.json({
-      data: project,
+      data: { ...project, item_type_ids: projectItemTypeIds },
       message: 'Project updated successfully',
     });
   } catch (error: unknown) {

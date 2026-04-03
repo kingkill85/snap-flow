@@ -80,5 +80,6 @@ vi.mock('../src/services/auth', () => ({
 
 - Modals must be extracted into separate components (never inline in pages)
 - Modal pattern: `user: User | null` prop — null = create mode, object = edit mode
+- Modal scroll pattern: `<form className="flex flex-col flex-1 min-h-0">` wrapping a `<div className="flex-1 overflow-y-auto px-1 space-y-4">` for fields, with `<DialogFooter>` outside the scrollable div but inside the form. Base `DialogContent` already provides `max-h-[90vh] flex flex-col`.
 - Button labels: "Create" / "Update" / "Cancel" / "Delete"
 - Table action buttons: Edit (`color="light"`) before Delete (`color="failure"`), both `size="xs"` with icon + text label

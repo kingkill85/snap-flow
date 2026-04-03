@@ -38,6 +38,7 @@ Deno.test('BOM Image Migration - runs automatically and is idempotent', async (t
     name: 'Test Item',
     base_model_number: 'TEST-001',
     is_active: true,
+    type_id: 1,
   });
 
   // Create test image

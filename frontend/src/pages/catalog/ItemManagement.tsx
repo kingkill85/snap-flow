@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  itemService, 
-  type Item, 
+import {
+  itemService,
+  type Item,
   type ItemVariant,
   type CreateItemDTO,
   type UpdateItemDTO,
@@ -9,6 +9,8 @@ import {
   type UpdateVariantDTO,
 } from '@/services/item';
 import { categoryService, type Category } from '@/services/category';
+import { itemTypeService, type ItemType } from '@/services/item-type';
+import ItemTypeBadge from '@/components/items/ItemTypeBadge';
 import { useDebounce } from '@/hooks/useDebounce';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -63,6 +65,8 @@ const ItemManagement = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+  const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [showInactive, setShowInactive] = useState(false);
@@ -88,10 +92,10 @@ const ItemManagement = () => {
 
   const itemsPerPage = 10;
 
-  // Fetch categories
+  // Fetch categories and item types
   useEffect(() => {
     const controller = new AbortController();
-    
+
     const fetchCategories = async () => {
       try {
         const data = await categoryService.getAll(controller.signal, true);
@@ -103,8 +107,21 @@ const ItemManagement = () => {
         }
       }
     };
-    
+
+    const fetchItemTypes = async () => {
+      try {
+        const data = await itemTypeService.getAll(controller.signal, true);
+        setItemTypes(data);
+      } catch (err: unknown) {
+        const errorMessage = extractErrorMessage(err, '');
+        if (errorMessage !== 'AbortError' && errorMessage !== 'CanceledError') {
+          console.error('Failed to fetch item types:', err);
+        }
+      }
+    };
+
     fetchCategories();
+    fetchItemTypes();
     return () => controller.abort();
   }, []);
 
@@ -117,8 +134,9 @@ const ItemManagement = () => {
         setIsLoading(true);
         setError('');
         
-        const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
+        const filter: { category_id?: number | null; type_id?: number | null; search?: string; include_inactive?: boolean } = {};
         if (selectedCategory !== 'all') filter.category_id = selectedCategory === 'null' ? null : parseInt(selectedCategory);
+        if (selectedTypeId !== null) filter.type_id = selectedTypeId;
         if (debouncedSearchQuery) filter.search = debouncedSearchQuery;
         if (showInactive) filter.include_inactive = true;
 
@@ -139,10 +157,10 @@ const ItemManagement = () => {
         setIsLoading(false);
       }
     };
-    
+
     fetchItems();
     return () => controller.abort();
-  }, [selectedCategory, debouncedSearchQuery, currentPage, showInactive]);
+  }, [selectedCategory, selectedTypeId, debouncedSearchQuery, currentPage, showInactive]);
 
   // Clear variant cache when showInactive changes to force refetch with correct filter
   useEffect(() => {
@@ -404,6 +422,22 @@ const ItemManagement = () => {
                 </SelectContent>
               </Select>
             </div>
+            <div className="w-40">
+              <Select value={selectedTypeId?.toString() ?? 'all'} onValueChange={(v) => {
+                setSelectedTypeId(v === 'all' ? null : parseInt(v));
+                setCurrentPage(1);
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {itemTypes.map(t => (
+                    <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -430,6 +464,7 @@ const ItemManagement = () => {
                 <TableHead className="w-16">Image</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Model</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-32"></TableHead>
@@ -438,13 +473,13 @@ const ItemManagement = () => {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8">
+                  <TableCell colSpan={8} className="text-center py-8">
                     <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     No items found. Create your first item to get started.
                   </TableCell>
                 </TableRow>
@@ -486,6 +521,13 @@ const ItemManagement = () => {
                         </TableCell>
                         <TableCell className="font-medium">{item.name}</TableCell>
                         <TableCell className="text-muted-foreground">{item.base_model_number || '-'}</TableCell>
+                        <TableCell>
+                          {item.type_abbreviation && item.type_color ? (
+                            <ItemTypeBadge abbreviation={item.type_abbreviation} color={item.type_color} />
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
                         <TableCell>{category?.name || 'Unknown'}</TableCell>
                         <TableCell>
                           {item.is_active ? (
@@ -527,7 +569,7 @@ const ItemManagement = () => {
                       {/* Variants Subtable */}
                       {isExpanded && (
                         <TableRow>
-                          <TableCell colSpan={7} className="p-0">
+                          <TableCell colSpan={8} className="p-0">
                             <div className="mx-4 mb-4 border rounded-lg bg-muted/30">
                               <div className="flex justify-between items-center px-4 py-3 border-b bg-muted rounded-t-lg">
                                 <h4 className="text-sm font-semibold flex items-center">
@@ -686,6 +728,7 @@ const ItemManagement = () => {
       <ItemFormModal
         item={itemToEdit}
         categories={categories}
+        itemTypes={itemTypes}
         isOpen={showItemModal}
         onClose={closeItemModal}
         onSubmit={handleItemSubmit}

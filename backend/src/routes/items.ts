@@ -31,13 +31,14 @@ const itemRoutes = new Hono();
 itemRoutes.get('/', async (c) => {
   try {
     const categoryId = c.req.query('category_id');
+    const typeId = c.req.query('type_id');
     const search = c.req.query('search');
     const page = parseInt(c.req.query('page') || '1', 10);
     const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
     // Only allow include_inactive for authenticated users
     const includeInactive = c.req.query('include_inactive') === 'true' && !!c.get('userId');
 
-    const filter: { category_id?: number | null; search?: string; include_inactive?: boolean } = {};
+    const filter: { category_id?: number | null; type_id?: number; search?: string; include_inactive?: boolean } = {};
     
     if (categoryId) {
       if (categoryId === 'null') {
@@ -47,6 +48,10 @@ itemRoutes.get('/', async (c) => {
       }
     }
     
+    if (typeId) {
+      filter.type_id = parseInt(typeId, 10);
+    }
+
     if (search) {
       filter.search = search;
     }
@@ -231,11 +236,11 @@ itemRoutes.post(
   async (c) => {
     try {
       const body = await c.req.json();
-      const { category_id, name, description, base_model_number, dimensions } = body;
+      const { category_id, type_id, name, description, base_model_number, dimensions } = body;
 
       // Validate required fields
-      if (!category_id || !name) {
-        return c.json({ error: 'Missing required fields: category_id, name' }, 400);
+      if (!category_id || !name || type_id === undefined || type_id === null) {
+        return c.json({ error: 'Missing required fields: category_id, type_id, name' }, 400);
       }
 
       const categoryIdNum = parseInt(category_id);
@@ -263,11 +268,17 @@ itemRoutes.post(
         }
       }
 
+      const typeIdNum = parseInt(type_id);
+      if (isNaN(typeIdNum)) {
+        return c.json({ error: 'Invalid type_id' }, 400);
+      }
+
       const createData: CreateItemDTO = {
         category_id: categoryIdNum,
+        type_id: typeIdNum,
         name,
       };
-      
+
       if (description) createData.description = description;
       if (base_model_number) createData.base_model_number = base_model_number;
       if (dimensions) createData.dimensions = dimensions;
@@ -297,7 +308,7 @@ itemRoutes.put(
         return c.json({ error: 'Invalid ID' }, 400);
       }
       const body = await c.req.json();
-      const { category_id, name, description, base_model_number, dimensions } = body;
+      const { category_id, type_id, name, description, base_model_number, dimensions } = body;
 
       const existingItem = await itemRepository.findById(id);
       if (!existingItem) {
@@ -343,6 +354,7 @@ itemRoutes.put(
 
       const updateData: UpdateItemDTO = {};
       if (category_id !== undefined) updateData.category_id = parseInt(category_id);
+      if (type_id !== undefined) updateData.type_id = parseInt(type_id);
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
       if (base_model_number !== undefined) updateData.base_model_number = base_model_number;
@@ -890,17 +902,29 @@ itemRoutes.post('/sync-catalog', authMiddleware, adminMiddleware, uploadMiddlewa
       return c.json({ error: uploadResult?.error || 'No file uploaded' }, 400);
     }
 
+    // Validate type_id parameter
+    const typeIdParam = c.req.query('type_id');
+    if (!typeIdParam) {
+      await fileStorageService.deleteFile(uploadResult.filePath);
+      return c.json({ error: 'type_id is required' }, 400);
+    }
+    const typeId = parseInt(typeIdParam);
+    if (isNaN(typeId)) {
+      await fileStorageService.deleteFile(uploadResult.filePath);
+      return c.json({ error: 'Invalid type_id' }, 400);
+    }
+
     // Validate Excel file extension
     const fileName = uploadResult.originalName || '';
     const isExcelFile = fileName.toLowerCase().endsWith('.xlsx') || fileName.toLowerCase().endsWith('.xls');
-    
+
     if (!isExcelFile) {
       await fileStorageService.deleteFile(uploadResult.filePath);
       return c.json({ error: 'Invalid file type. Only .xlsx and .xls files are allowed' }, 400);
     }
 
     // Perform sync
-    const result = await excelSyncService.syncCatalog(uploadResult.filePath);
+    const result = await excelSyncService.syncCatalog(uploadResult.filePath, typeId);
 
     // Clean up uploaded file
     await fileStorageService.deleteFile(uploadResult.filePath);

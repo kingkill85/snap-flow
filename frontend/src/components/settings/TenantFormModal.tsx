@@ -96,55 +96,56 @@ export function TenantFormModal({ tenant, isOpen, onClose, onSubmit }: TenantFor
           </DialogDescription>
         </DialogHeader>
 
-        {error && (
-          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) =>
-                setFormData({ ...formData, name: e.target.value })
-              }
-              placeholder="Company name"
-              required
-            />
-          </div>
-
-          {isEdit && !tenant?.is_distributor && (
-            <div className="flex items-center justify-between">
-              <Label htmlFor="is_active">Active</Label>
-              <Switch
-                id="is_active"
-                checked={!!formData.is_active}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, is_active: checked ? 1 : 0 })
-                }
-              />
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          {error && (
+            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
+              {error}
             </div>
           )}
+          <div className="flex-1 overflow-y-auto px-1 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+                placeholder="Company name"
+                required
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="type">Type</Label>
-            <Select
-              value={formData.is_distributor.toString()}
-              onValueChange={(value) =>
-                setFormData({ ...formData, is_distributor: parseInt(value) })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="0">Partner</SelectItem>
-                <SelectItem value="1">Distributor</SelectItem>
-              </SelectContent>
-            </Select>
+            {isEdit && !tenant?.is_distributor && (
+              <div className="flex items-center justify-between">
+                <Label htmlFor="is_active">Active</Label>
+                <Switch
+                  id="is_active"
+                  checked={!!formData.is_active}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, is_active: checked ? 1 : 0 })
+                  }
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="type">Type</Label>
+              <Select
+                value={formData.is_distributor.toString()}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, is_distributor: parseInt(value) })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Partner</SelectItem>
+                  <SelectItem value="1">Distributor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <DialogFooter>

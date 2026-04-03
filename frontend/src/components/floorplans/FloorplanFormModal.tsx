@@ -188,86 +188,87 @@ export function FloorplanFormModal({ floorplan, projectId, isOpen, onClose, onSu
           </DialogDescription>
         </DialogHeader>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          
-          {/* Floorplan Name */}
-          <div>
-            <Label htmlFor="name">Floorplan Name *</Label>
-            <Input
-              id="name"
-              type="text"
-              placeholder="Ground Floor"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-          </div>
-
-          {/* Image Upload */}
-          <div>
-            <Label>{isEdit ? 'Floorplan Image' : 'Floorplan Image *'}</Label>
-            <div
-              className="mt-2 border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer bg-muted/30"
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={handleFileChange}
+          <div className="flex-1 overflow-y-auto px-1 space-y-4">
+            {/* Floorplan Name */}
+            <div>
+              <Label htmlFor="name">Floorplan Name *</Label>
+              <Input
+                id="name"
+                type="text"
+                placeholder="Ground Floor"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
-              
-                  {previewUrl ? (
-                <div className="relative">
-                  <img
-                    src={previewUrl}
-                    alt="Preview"
-                    className="max-h-48 mx-auto rounded shadow"
-                  />
-                  <div className="mt-2 flex justify-center gap-2">
-                    {!isEdit && (
+            </div>
+
+            {/* Image Upload */}
+            <div>
+              <Label>{isEdit ? 'Floorplan Image' : 'Floorplan Image *'}</Label>
+              <div
+                className="mt-2 border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer bg-muted/30"
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+
+                    {previewUrl ? (
+                  <div className="relative">
+                    <img
+                      src={previewUrl}
+                      alt="Preview"
+                      className="max-h-48 mx-auto rounded shadow"
+                    />
+                    <div className="mt-2 flex justify-center gap-2">
+                      {!isEdit && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearFile();
+                          }}
+                        >
+                          <X className="mr-1 h-4 w-4" />
+                          Remove
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
-                          clearFile();
+                          fileInputRef.current?.click();
                         }}
                       >
-                        <X className="mr-1 h-4 w-4" />
-                        Remove
+                        <Upload className="mr-1 h-4 w-4" />
+                        Change
                       </Button>
-                    )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        fileInputRef.current?.click();
-                      }}
-                    >
-                      <Upload className="mr-1 h-4 w-4" />
-                      Change
-                    </Button>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="text-muted-foreground">
-                  <ImageIcon className="mx-auto h-12 w-12 mb-2" />
-                  <p className="text-sm">Click to upload, drag and drop, or paste (Ctrl+V)</p>
-                  <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WebP (max 5MB)</p>
-                </div>
-              )}
+                ) : (
+                  <div className="text-muted-foreground">
+                    <ImageIcon className="mx-auto h-12 w-12 mb-2" />
+                    <p className="text-sm">Click to upload, drag and drop, or paste (Ctrl+V)</p>
+                    <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WebP (max 5MB)</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

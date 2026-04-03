@@ -3,6 +3,10 @@ import api from './api';
 export interface Item {
   id: number;
   category_id: number;
+  type_id: number | null;
+  type_name?: string | null;
+  type_abbreviation?: string | null;
+  type_color?: string | null;
   name: string;
   description: string;
   base_model_number: string;
@@ -26,6 +30,7 @@ export interface ItemVariant {
 
 export interface CreateItemDTO {
   category_id: number;
+  type_id?: number;
   name: string;
   description?: string;
   base_model_number?: string;
@@ -35,6 +40,7 @@ export interface CreateItemDTO {
 
 export interface UpdateItemDTO {
   category_id?: number;
+  type_id?: number;
   name?: string;
   description?: string;
   base_model_number?: string;
@@ -58,6 +64,7 @@ export interface UpdateVariantDTO {
 
 export interface ItemFilter {
   category_id?: number | null;
+  type_id?: number | null;
   search?: string;
   include_inactive?: boolean;
 }
@@ -97,6 +104,9 @@ export const itemService = {
     
     if (filter?.category_id !== undefined) {
       params.append('category_id', filter.category_id === null ? 'null' : filter.category_id.toString());
+    }
+    if (filter?.type_id !== undefined && filter.type_id !== null) {
+      params.append('type_id', filter.type_id.toString());
     }
     if (filter?.search) {
       params.append('search', filter.search);
@@ -188,11 +198,11 @@ export const itemService = {
     return response.data.data;
   },
 
-  async syncCatalog(file: File, signal?: AbortSignal): Promise<unknown> {
+  async syncCatalog(file: File, typeId: number, signal?: AbortSignal): Promise<unknown> {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await api.post('/items/sync-catalog', formData, { signal });
+    const response = await api.post(`/items/sync-catalog?type_id=${typeId}`, formData, { signal });
     return response.data.data;
   },
 

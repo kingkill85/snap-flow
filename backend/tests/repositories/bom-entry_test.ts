@@ -41,6 +41,7 @@ Deno.test('BomEntryRepository - findByPicturePath', async (t) => {
       name: 'Test Item',
       base_model_number: 'TEST-001',
       is_active: true,
+      type_id: 1,
     });
     
     const variant = await itemVariantRepository.create({
@@ -86,6 +87,7 @@ Deno.test('BomEntryRepository - findByPicturePath', async (t) => {
       name: 'Item 1',
       base_model_number: 'TEST-001',
       is_active: true,
+      type_id: 1,
     });
     
     const variant1 = await itemVariantRepository.create({
@@ -99,6 +101,7 @@ Deno.test('BomEntryRepository - findByPicturePath', async (t) => {
       name: 'Item 2',
       base_model_number: 'TEST-002',
       is_active: true,
+      type_id: 1,
     });
     
     const variant2 = await itemVariantRepository.create({
@@ -149,6 +152,7 @@ Deno.test('BomEntryRepository - findByPicturePath', async (t) => {
       name: 'Item No Image',
       base_model_number: 'TEST-003',
       is_active: true,
+      type_id: 1,
     });
     
     const variant3 = await itemVariantRepository.create({

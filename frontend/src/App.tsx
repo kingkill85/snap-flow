@@ -17,6 +17,7 @@ import UserManagement from '@/pages/settings/UserManagement';
 import TenantManagement from './pages/settings/TenantManagement';
 import CategoryManagement from '@/pages/catalog/CategoryManagement';
 import ItemManagement from '@/pages/catalog/ItemManagement';
+import ItemTypeManagement from '@/pages/catalog/ItemTypeManagement';
 
 function App() {
   return (
@@ -52,6 +53,11 @@ function App() {
               <Route path="catalog/categories" element={
                 <ProtectedRoute>
                   <CategoryManagement />
+                </ProtectedRoute>
+              } />
+              <Route path="catalog/item-types" element={
+                <ProtectedRoute>
+                  <ItemTypeManagement />
                 </ProtectedRoute>
               } />
 

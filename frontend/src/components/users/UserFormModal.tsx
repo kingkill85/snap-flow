@@ -116,111 +116,112 @@ export function UserFormModal({ user, currentUserRole, tenants, isOpen, onClose,
           </DialogDescription>
         </DialogHeader>
 
-        {error && (
-          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="full_name">Full Name</Label>
-            <Input
-              id="full_name"
-              value={formData.full_name}
-              onChange={(e) =>
-                setFormData({ ...formData, full_name: e.target.value })
-              }
-              placeholder="John Doe"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={(e) =>
-                setFormData({ ...formData, email: e.target.value })
-              }
-              placeholder="john@example.com"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="password">
-              {isEdit ? 'New Password (leave blank to keep current)' : 'Password'}
-            </Label>
-            <Input
-              id="password"
-              type="password"
-              value={formData.password}
-              onChange={(e) =>
-                setFormData({ ...formData, password: e.target.value })
-              }
-              placeholder={isEdit ? '••••••••' : 'Enter password'}
-              required={!isEdit}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="role">Role</Label>
-            <Select
-              value={formData.role}
-              onValueChange={(value: UserRole) =>
-                setFormData({ ...formData, role: value })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="user">User</SelectItem>
-                <SelectItem value="tenant_admin">Tenant Admin</SelectItem>
-                {currentUserRole === 'admin' && (
-                  <SelectItem value="admin">Admin</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {isAdmin && tenants && tenants.length > 0 && (
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          {error && (
+            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
+              {error}
+            </div>
+          )}
+          <div className="flex-1 overflow-y-auto px-1 space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="tenant">Tenant</Label>
+              <Label htmlFor="full_name">Full Name</Label>
+              <Input
+                id="full_name"
+                value={formData.full_name}
+                onChange={(e) =>
+                  setFormData({ ...formData, full_name: e.target.value })
+                }
+                placeholder="John Doe"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
+                placeholder="john@example.com"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">
+                {isEdit ? 'New Password (leave blank to keep current)' : 'Password'}
+              </Label>
+              <Input
+                id="password"
+                type="password"
+                value={formData.password}
+                onChange={(e) =>
+                  setFormData({ ...formData, password: e.target.value })
+                }
+                placeholder={isEdit ? '••••••••' : 'Enter password'}
+                required={!isEdit}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="role">Role</Label>
               <Select
-                value={formData.tenant_id.toString()}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, tenant_id: parseInt(value) })
+                value={formData.role}
+                onValueChange={(value: UserRole) =>
+                  setFormData({ ...formData, role: value })
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a tenant" />
+                  <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent>
-                  {tenants.map((t) => (
-                    <SelectItem key={t.id} value={t.id.toString()}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="tenant_admin">Tenant Admin</SelectItem>
+                  {currentUserRole === 'admin' && (
+                    <SelectItem value="admin">Admin</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
-          )}
 
-          {isEdit && user?.role !== 'admin' && (
-            <div className="flex items-center justify-between">
-              <Label htmlFor="is_active">Active</Label>
-              <Switch
-                id="is_active"
-                checked={!!formData.is_active}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, is_active: checked ? 1 : 0 })
-                }
-              />
-            </div>
-          )}
+            {isAdmin && tenants && tenants.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="tenant">Tenant</Label>
+                <Select
+                  value={formData.tenant_id.toString()}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, tenant_id: parseInt(value) })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a tenant" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenants.map((t) => (
+                      <SelectItem key={t.id} value={t.id.toString()}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {isEdit && user?.role !== 'admin' && (
+              <div className="flex items-center justify-between">
+                <Label htmlFor="is_active">Active</Label>
+                <Switch
+                  id="is_active"
+                  checked={!!formData.is_active}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, is_active: checked ? 1 : 0 })
+                  }
+                />
+              </div>
+            )}
+          </div>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

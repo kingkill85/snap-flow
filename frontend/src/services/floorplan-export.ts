@@ -116,6 +116,7 @@ export async function exportFloorplanImage(
   visibleCategoryIds?: Set<number>,
   areas?: Area[],
   hiddenAreaIds?: Set<number>,
+  hiddenTypeIds?: Set<number>,
 ): Promise<void> {
   const { quality = EXPORT_CONFIG.DEFAULT_QUALITY, backgroundColor } = options;
 
@@ -164,11 +165,7 @@ export async function exportFloorplanImage(
       ctx.globalAlpha = area.opacity;
       ctx.fill();
 
-      // Border
-      ctx.globalAlpha = 0.8;
-      ctx.strokeStyle = area.color;
-      ctx.lineWidth = 3;
-      ctx.stroke();
+      // No border on areas in export — fill only
 
       ctx.globalAlpha = 1;
 
@@ -221,14 +218,14 @@ export async function exportFloorplanImage(
     }
   }
 
-  // Filter placements by visible categories
-  const filteredPlacements = visibleCategoryIds
-    ? placements.filter(placement => {
-        const item = items.find(i => i.id === placement.item_id);
-        if (!item) return true;
-        return visibleCategoryIds.has(item.category_id);
-      })
-    : placements;
+  // Filter placements by visible categories and visible types
+  const filteredPlacements = placements.filter(placement => {
+    const item = items.find(i => i.id === placement.item_id);
+    if (!item) return true;
+    if (visibleCategoryIds && !visibleCategoryIds.has(item.category_id)) return false;
+    if (hiddenTypeIds && hiddenTypeIds.size > 0 && item.type_id && hiddenTypeIds.has(item.type_id)) return false;
+    return true;
+  });
 
   for (const placement of filteredPlacements) {
     try {
@@ -251,9 +248,10 @@ export async function exportFloorplanImage(
 async function drawPlacement(
   ctx: CanvasRenderingContext2D,
   placement: Placement,
-  items: Item[]
+  items: Item[],
 ): Promise<void> {
   const item = items.find(i => i.id === placement.item_id);
+  const borderColor = item?.type_color || getPrimaryColor();
   const variant = item?.variants?.find(v => v.id === placement.item_variant_id);
 
   const imagePath = placement.item_variant_image_path
@@ -274,7 +272,7 @@ async function drawPlacement(
 
   try {
     const image = await loadImage(imageUrl, { timeout: EXPORT_CONFIG.IMAGE_LOAD_TIMEOUT });
-    drawPlacementImage(ctx, placement, image);
+    drawPlacementImage(ctx, placement, image, borderColor);
   } catch (error) {
     console.warn(`Failed to draw placement ${placement.id}:`, error);
     drawPlaceholder(ctx, placement);
@@ -284,7 +282,8 @@ async function drawPlacement(
 function drawPlacementImage(
   ctx: CanvasRenderingContext2D,
   placement: Placement,
-  image: HTMLImageElement
+  image: HTMLImageElement,
+  borderColor: string,
 ): void {
   const centerX = placement.x + placement.width / 2;
   const centerY = placement.y + placement.height / 2;
@@ -308,7 +307,7 @@ function drawPlacementImage(
     placement.width,
     placement.height,
     EXPORT_CONFIG.BORDER_RADIUS,
-    { stroke: getPrimaryColor(), lineWidth: EXPORT_CONFIG.BORDER_WIDTH }
+    { stroke: borderColor, lineWidth: EXPORT_CONFIG.BORDER_WIDTH }
   );
 
   ctx.restore();

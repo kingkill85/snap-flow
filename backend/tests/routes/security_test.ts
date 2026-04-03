@@ -58,8 +58,8 @@ Deno.test('Security - unauthenticated include_inactive returns only active items
   const { itemRepository } = await import('../../src/repositories/item.ts');
 
   const category = await categoryRepository.create({ name: 'Test Category' });
-  await itemRepository.create({ name: 'Active Item', category_id: category.id });
-  const inactiveItem = await itemRepository.create({ name: 'Inactive Item', category_id: category.id });
+  await itemRepository.create({ name: 'Active Item', category_id: category.id, type_id: 1 });
+  const inactiveItem = await itemRepository.create({ name: 'Inactive Item', category_id: category.id, type_id: 1 });
   await itemRepository.deactivate(inactiveItem.id);
 
   // Unauthenticated request with include_inactive=true should NOT return inactive items

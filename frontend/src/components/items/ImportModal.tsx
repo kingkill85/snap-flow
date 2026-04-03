@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -10,8 +10,17 @@ import {
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { Upload, Loader2, CheckCircle, AlertCircle, FileSpreadsheet, FileText, X, Check } from 'lucide-react';
 import { itemService } from '@/services/item';
+import { itemTypeService, type ItemType } from '@/services/item-type';
 import { extractErrorMessage } from '@/utils';
 
 interface ImportModalProps {
@@ -68,6 +77,20 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
   const [result, setResult] = useState<SyncResult | null>(null);
   const [progress, setProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+  const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const controller = new AbortController();
+    itemTypeService.getAll(controller.signal).then(types => {
+      setItemTypes(types);
+      if (types.length > 0 && selectedTypeId === null) {
+        setSelectedTypeId(types[0].id);
+      }
+    }).catch(() => {/* ignore */});
+    return () => controller.abort();
+  }, [isOpen]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -128,7 +151,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
         });
       }, 500);
 
-      const response = await itemService.syncCatalog(selectedFile) as SyncResult;
+      const response = await itemService.syncCatalog(selectedFile, selectedTypeId!) as SyncResult;
       
       clearInterval(progressInterval);
       setProgress(100);
@@ -154,6 +177,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
     setError(null);
     setResult(null);
     setProgress(0);
+    setSelectedTypeId(itemTypes.length > 0 ? itemTypes[0].id : null);
     onClose();
   };
 
@@ -184,6 +208,23 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
+
+            <div className="space-y-2">
+              <Label>Product Type *</Label>
+              <Select
+                value={selectedTypeId?.toString() ?? ''}
+                onValueChange={(v) => setSelectedTypeId(parseInt(v))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select product type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {itemTypes.map(t => (
+                    <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <div
               onDrop={handleDrop}
@@ -434,7 +475,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
               </Button>
               <Button
                 onClick={handleStartSync}
-                disabled={!selectedFile || isUploading}
+                disabled={!selectedFile || isUploading || !selectedTypeId}
               >
                 {isUploading ? (
                   <>

@@ -11,6 +11,7 @@ import { cleanupExpiredTokens } from './services/refresh-token.ts';
 import authRoutes from './routes/auth.ts';
 import userRoutes from './routes/users.ts';
 import categoryRoutes from './routes/categories.ts';
+import { itemTypeRoutes } from './routes/item-types.ts';
 import itemRoutes from './routes/items.ts';
 import projectRoutes from './routes/projects.ts';
 import floorplanRoutes from './routes/floorplans.ts';
@@ -82,6 +83,9 @@ api.route('/users', userRoutes);
 
 // Category routes at /api/categories/*
 api.route('/categories', categoryRoutes);
+
+// Item type routes at /api/item-types/*
+api.route('/item-types', itemTypeRoutes);
 
 // Item routes at /api/items/*
 api.route('/items', itemRoutes);

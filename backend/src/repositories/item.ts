@@ -5,6 +5,7 @@ import { bomEntryRepository } from './bom-entry.ts';
 
 export interface ItemFilter {
   category_id?: number | null;
+  type_id?: number;
   search?: string;
 }
 
@@ -47,6 +48,11 @@ export class ItemRepository {
       }
     }
 
+    if (filter?.type_id !== undefined) {
+      whereConditions.push('i.type_id = ?');
+      values.push(filter.type_id);
+    }
+
     if (filter?.search) {
       whereConditions.push('(i.name LIKE ? OR i.description LIKE ? OR i.base_model_number LIKE ?)');
       const searchPattern = `%${filter.search}%`;
@@ -58,25 +64,30 @@ export class ItemRepository {
     }
 
     // Get total count
-    const countResult = getDb().query(`SELECT COUNT(*) as total FROM items i ${whereClause}`, values);
+    const countResult = getDb().query(`SELECT COUNT(*) as total FROM items i LEFT JOIN item_types it ON i.type_id = it.id ${whereClause}`, values);
     const total = countResult[0][0] as number;
 
     // Build query with first variant image
     let query = `
-      SELECT 
-        i.id, 
-        i.category_id, 
-        i.name, 
-        i.description, 
-        i.base_model_number, 
-        i.dimensions, 
-        i.created_at, 
+      SELECT
+        i.id,
+        i.category_id,
+        i.type_id,
+        i.name,
+        i.description,
+        i.base_model_number,
+        i.dimensions,
+        i.created_at,
         i.is_active,
-        (SELECT iv.image_path FROM item_variants iv 
+        it.name as type_name,
+        it.abbreviation as type_abbreviation,
+        it.color as type_color,
+        (SELECT iv.image_path FROM item_variants iv
          WHERE iv.item_id = i.id AND iv.is_active = true
-         ORDER BY iv.sort_order ASC, iv.id ASC 
+         ORDER BY iv.sort_order ASC, iv.id ASC
          LIMIT 1) as preview_image
       FROM items i
+      LEFT JOIN item_types it ON i.type_id = it.id
       ${whereClause}
       ORDER BY i.name ASC
     `;
@@ -109,9 +120,11 @@ export class ItemRepository {
 
   async findById(id: number, includeRelations: boolean = false): Promise<Item | null> {
     const result = getDb().queryEntries(`
-      SELECT id, category_id, name, description, base_model_number, dimensions, created_at, is_active
-      FROM items
-      WHERE id = ?
+      SELECT i.id, i.category_id, i.type_id, i.name, i.description, i.base_model_number, i.dimensions, i.created_at, i.is_active,
+        it.name as type_name, it.abbreviation as type_abbreviation, it.color as type_color
+      FROM items i
+      LEFT JOIN item_types it ON i.type_id = it.id
+      WHERE i.id = ?
     `, [id]);
 
     if (result.length === 0) {
@@ -134,18 +147,22 @@ export class ItemRepository {
 
   findByBaseModelNumber(baseModelNumber: string): Promise<Item | null> {
     const result = getDb().queryEntries(`
-      SELECT id, category_id, name, description, base_model_number, dimensions, created_at, is_active
-      FROM items
-      WHERE base_model_number = ?
+      SELECT i.id, i.category_id, i.type_id, i.name, i.description, i.base_model_number, i.dimensions, i.created_at, i.is_active,
+        it.name as type_name, it.abbreviation as type_abbreviation, it.color as type_color
+      FROM items i
+      LEFT JOIN item_types it ON i.type_id = it.id
+      WHERE i.base_model_number = ?
     `, [baseModelNumber]);
     return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
   }
 
   findByName(name: string): Promise<Item | null> {
     const result = getDb().queryEntries(`
-      SELECT id, category_id, name, description, base_model_number, dimensions, created_at, is_active
-      FROM items
-      WHERE name = ?
+      SELECT i.id, i.category_id, i.type_id, i.name, i.description, i.base_model_number, i.dimensions, i.created_at, i.is_active,
+        it.name as type_name, it.abbreviation as type_abbreviation, it.color as type_color
+      FROM items i
+      LEFT JOIN item_types it ON i.type_id = it.id
+      WHERE i.name = ?
     `, [name]);
     return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
   }
@@ -153,16 +170,20 @@ export class ItemRepository {
   findByCategory(categoryId: number, includeInactive = false): Promise<Item[]> {
     const query = includeInactive
       ? `
-        SELECT id, category_id, name, description, base_model_number, dimensions, created_at, is_active
-        FROM items
-        WHERE category_id = ?
-        ORDER BY name ASC
+        SELECT i.id, i.category_id, i.type_id, i.name, i.description, i.base_model_number, i.dimensions, i.created_at, i.is_active,
+          it.name as type_name, it.abbreviation as type_abbreviation, it.color as type_color
+        FROM items i
+        LEFT JOIN item_types it ON i.type_id = it.id
+        WHERE i.category_id = ?
+        ORDER BY i.name ASC
       `
       : `
-        SELECT id, category_id, name, description, base_model_number, dimensions, created_at, is_active
-        FROM items
-        WHERE category_id = ? AND is_active = true
-        ORDER BY name ASC
+        SELECT i.id, i.category_id, i.type_id, i.name, i.description, i.base_model_number, i.dimensions, i.created_at, i.is_active,
+          it.name as type_name, it.abbreviation as type_abbreviation, it.color as type_color
+        FROM items i
+        LEFT JOIN item_types it ON i.type_id = it.id
+        WHERE i.category_id = ? AND i.is_active = true
+        ORDER BY i.name ASC
       `;
     const result = getDb().queryEntries(query, [categoryId]);
     return Promise.resolve(result as unknown as Item[]);
@@ -171,11 +192,12 @@ export class ItemRepository {
   create(data: CreateItemDTO): Promise<Item> {
     const isActive = data.is_active ?? true;
     const result = getDb().queryEntries(`
-      INSERT INTO items (category_id, name, description, base_model_number, dimensions, is_active)
-      VALUES (?, ?, ?, ?, ?, ?)
-      RETURNING id, category_id, name, description, base_model_number, dimensions, created_at, is_active
+      INSERT INTO items (category_id, type_id, name, description, base_model_number, dimensions, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
     `, [
       data.category_id,
+      data.type_id,
       data.name,
       data.description || null,
       data.base_model_number || null,
@@ -193,6 +215,10 @@ export class ItemRepository {
     if (data.category_id !== undefined) {
       sets.push('category_id = ?');
       values.push(data.category_id);
+    }
+    if (data.type_id !== undefined) {
+      sets.push('type_id = ?');
+      values.push(data.type_id);
     }
     if (data.name !== undefined) {
       sets.push('name = ?');
@@ -225,7 +251,7 @@ export class ItemRepository {
       UPDATE items
       SET ${sets.join(', ')}
       WHERE id = ?
-      RETURNING id, category_id, name, description, base_model_number, dimensions, created_at, is_active
+      RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
     `, values);
 
     return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
@@ -237,7 +263,7 @@ export class ItemRepository {
       UPDATE items
       SET is_active = false
       WHERE id = ?
-      RETURNING id, category_id, name, description, base_model_number, dimensions, created_at, is_active
+      RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
     `, [id]);
 
     if (result.length === 0) {
@@ -259,7 +285,7 @@ export class ItemRepository {
       UPDATE items
       SET is_active = true
       WHERE id = ?
-      RETURNING id, category_id, name, description, base_model_number, dimensions, created_at, is_active
+      RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
     `, [id]);
 
     return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
@@ -282,7 +308,8 @@ export class ItemRepository {
     name: string,
     baseModelNumber: string,
     description?: string,
-    dimensions?: string
+    dimensions?: string,
+    typeId?: number
   ): Promise<Item> {
     const existing = await this.findByBaseModelNumber(baseModelNumber);
     if (existing) {
@@ -291,6 +318,7 @@ export class ItemRepository {
 
     const createData: CreateItemDTO = {
       category_id: categoryId,
+      type_id: typeId ?? 0,
       name,
       base_model_number: baseModelNumber,
     };

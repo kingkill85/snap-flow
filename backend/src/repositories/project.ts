@@ -234,6 +234,37 @@ export class ProjectRepository {
 
     return Promise.resolve(result.length > 0 ? (result[0] as unknown as Project) : null);
   }
+
+  getItemTypeIds(projectId: number): Promise<number[]> {
+    const result = getDb().queryEntries(
+      'SELECT item_type_id FROM project_item_types WHERE project_id = ? ORDER BY item_type_id',
+      [projectId]
+    );
+    return Promise.resolve((result as unknown as { item_type_id: number }[]).map(r => r.item_type_id));
+  }
+
+  setItemTypeIds(projectId: number, typeIds: number[]): Promise<void> {
+    getDb().query('DELETE FROM project_item_types WHERE project_id = ?', [projectId]);
+    for (const typeId of typeIds) {
+      getDb().query(
+        'INSERT INTO project_item_types (project_id, item_type_id) VALUES (?, ?)',
+        [projectId, typeId]
+      );
+    }
+    return Promise.resolve();
+  }
+
+  setDefaultItemTypes(projectId: number): Promise<void> {
+    const types = getDb().queryEntries('SELECT id FROM item_types WHERE is_active = 1');
+    for (const t of types) {
+      const typeId = (t as unknown as { id: number }).id;
+      getDb().query(
+        'INSERT OR IGNORE INTO project_item_types (project_id, item_type_id) VALUES (?, ?)',
+        [projectId, typeId]
+      );
+    }
+    return Promise.resolve();
+  }
 }
 
 export const projectRepository = new ProjectRepository();
