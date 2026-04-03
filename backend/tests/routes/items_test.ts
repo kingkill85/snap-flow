@@ -45,11 +45,13 @@ Deno.test('GET /items - should list all items (public)', async () => {
     name: 'Smart Bulb',
     base_model_number: 'SB-100',
     description: 'A smart light bulb',
+    type_id: 1,
   });
   await itemRepository.create({
     category_id: category.id,
     name: 'Smart Switch',
     base_model_number: 'SS-200',
+    type_id: 1,
   });
 
   const response = await testRequest('/api/items');
@@ -72,11 +74,13 @@ Deno.test('GET /items - should filter by category', async () => {
     category_id: cat1.id,
     name: 'Smart Bulb',
     base_model_number: 'SB-100',
+    type_id: 1,
   });
   await itemRepository.create({
     category_id: cat2.id,
     name: 'Security Camera',
     base_model_number: 'SC-100',
+    type_id: 1,
   });
 
   const response = await testRequest(`/api/items?category_id=${cat1.id}`);
@@ -95,11 +99,13 @@ Deno.test('GET /items - should search items', async () => {
     category_id: category.id,
     name: 'Smart Bulb Pro',
     base_model_number: 'SB-PRO',
+    type_id: 1,
   });
   await itemRepository.create({
     category_id: category.id,
     name: 'Smart Switch',
     base_model_number: 'SS-200',
+    type_id: 1,
   });
 
   const response = await testRequest('/api/items?search=Bulb');
@@ -118,6 +124,7 @@ Deno.test('GET /items/:id - should get single item with variants', async () => {
     category_id: category.id,
     name: 'Smart Bulb',
     base_model_number: 'SB-100',
+    type_id: 1,
   });
   
   // Create a variant
@@ -216,6 +223,7 @@ Deno.test('POST /items - should create base item (admin)', async () => {
       description: 'A smart wall switch',
       base_model_number: 'SS-100',
       dimensions: '120x80mm',
+      type_id: 1,
     }),
   });
 
@@ -241,6 +249,7 @@ Deno.test('POST /items - should reject invalid category', async () => {
     body: JSON.stringify({
       category_id: 99999,
       name: 'Test Item',
+      type_id: 1,
     }),
   });
 
@@ -275,6 +284,7 @@ Deno.test('PUT /items/:id - should update item (admin)', async () => {
     category_id: category.id,
     name: 'Old Name',
     base_model_number: 'ON-100',
+    type_id: 1,
   });
 
   const response = await testRequest(`/api/items/${item.id}`, {
@@ -304,6 +314,7 @@ Deno.test('DELETE /items/:id - should delete item and variants (admin)', async (
     category_id: category.id,
     name: 'To Delete',
     base_model_number: 'TD-100',
+    type_id: 1,
   });
   
   // Create a variant
@@ -341,6 +352,7 @@ Deno.test('GET /items/:id/variants - should list variants', async () => {
     category_id: category.id,
     name: 'Smart Bulb',
     base_model_number: 'SB-100',
+    type_id: 1,
   });
   
   await itemVariantRepository.create({
@@ -370,6 +382,7 @@ Deno.test('POST /items/:id/variants - should create variant (admin)', async () =
     category_id: category.id,
     name: 'Smart Bulb',
     base_model_number: 'SB-100',
+    type_id: 1,
   });
 
   const formData = new FormData();
@@ -398,6 +411,7 @@ Deno.test('DELETE /items/:id/variants/:variantId - should delete variant (admin)
     category_id: category.id,
     name: 'Smart Bulb',
     base_model_number: 'SB-100',
+    type_id: 1,
   });
   const variant = await itemVariantRepository.create({
     item_id: item.id,
@@ -429,6 +443,7 @@ Deno.test('PUT /items/:id/variants/:variantId - should update variant (admin)', 
     category_id: category.id,
     name: 'Smart Bulb',
     base_model_number: 'SB-100',
+    type_id: 1,
   });
   const variant = await itemVariantRepository.create({
     item_id: item.id,
@@ -463,6 +478,7 @@ Deno.test('PUT /items/:id/variants/:variantId - should remove image when flag is
     category_id: category.id,
     name: 'Smart Bulb',
     base_model_number: 'SB-100',
+    type_id: 1,
   });
   const variant = await itemVariantRepository.create({
     item_id: item.id,
@@ -505,6 +521,7 @@ Deno.test('GET /items/:id/variants/:variantId/addons - should list variant addon
     category_id: category.id,
     name: 'Smart Switch',
     base_model_number: 'SS-100',
+    type_id: 1,
   });
   const variant = await itemVariantRepository.create({
     item_id: item.id,
@@ -517,6 +534,7 @@ Deno.test('GET /items/:id/variants/:variantId/addons - should list variant addon
     category_id: category.id,
     name: 'Wall Plate',
     base_model_number: 'WP-100',
+    type_id: 1,
   });
   const addonVariant = await itemVariantRepository.create({
     item_id: addonItem.id,
@@ -560,6 +578,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should add addon (admin)
     category_id: category.id,
     name: 'Smart Switch',
     base_model_number: 'SS-100',
+    type_id: 1,
   });
   const variant = await itemVariantRepository.create({
     item_id: item.id,
@@ -571,6 +590,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should add addon (admin)
     category_id: category.id,
     name: 'Wall Plate',
     base_model_number: 'WP-100',
+    type_id: 1,
   });
   const addonVariant = await itemVariantRepository.create({
     item_id: addonItem.id,
@@ -606,6 +626,7 @@ Deno.test('DELETE /items/:id/variants/:variantId/addons/:addonId - should remove
     category_id: category.id,
     name: 'Smart Switch',
     base_model_number: 'SS-100',
+    type_id: 1,
   });
   const variant = await itemVariantRepository.create({
     item_id: item.id,
@@ -617,6 +638,7 @@ Deno.test('DELETE /items/:id/variants/:variantId/addons/:addonId - should remove
     category_id: category.id,
     name: 'Wall Plate',
     base_model_number: 'WP-100',
+    type_id: 1,
   });
   const addonVariant = await itemVariantRepository.create({
     item_id: addonItem.id,
@@ -661,6 +683,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should reject duplicate 
     category_id: category.id,
     name: 'Smart Switch',
     base_model_number: 'SS-100',
+    type_id: 1,
   });
   const variant = await itemVariantRepository.create({
     item_id: item.id,
@@ -672,6 +695,7 @@ Deno.test('POST /items/:id/variants/:variantId/addons - should reject duplicate 
     category_id: category.id,
     name: 'Wall Plate',
     base_model_number: 'WP-100',
+    type_id: 1,
   });
   const addonVariant = await itemVariantRepository.create({
     item_id: addonItem.id,

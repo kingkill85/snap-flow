@@ -60,6 +60,8 @@ interface CanvasProps {
   onAreaEdit?: (id: number) => void;
   onAreaDelete?: (id: number) => void;
   onCanvasBoundsChange?: (bounds: { width: number; height: number }) => void;
+  hiddenTypeIds?: Set<number>;
+  typeColorMap?: Map<number, { color: string; name: string }>;
 }
 
 interface DraggablePlacementProps {
@@ -79,6 +81,8 @@ interface DraggablePlacementProps {
   isNew?: boolean;
   isCtrlPressed?: boolean;
   isDuplicating?: boolean;
+  typeColor?: string;
+  typeName?: string;
 }
 
 interface AddonWithVariant {
@@ -112,6 +116,8 @@ function DraggablePlacement({
   isNew,
   isCtrlPressed,
   isDuplicating,
+  typeColor,
+  typeName,
 }: DraggablePlacementProps) {
   const [isResizing, setIsResizing] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
@@ -480,13 +486,17 @@ function DraggablePlacement({
         transformOrigin: 'center center',
         zIndex: isResizing ? 200 : isDragging ? 100 : isNew ? 1 : 1,
         animation: undefined,
+        ...(isSelected
+          ? { '--tw-ring-color': typeColor || 'hsl(var(--primary))' } as React.CSSProperties
+          : { borderColor: typeColor || 'hsl(var(--primary))' }
+        ),
       }}
       className={`rounded select-none group ${
         isSelected
-          ? 'ring-2 ring-destructive shadow-lg z-50'
+          ? 'ring-2 shadow-lg z-50'
           : isDuplicating && isDragging
-            ? 'border-2 border-dashed border-primary overflow-hidden opacity-60'
-            : 'border-2 border-primary overflow-hidden'
+            ? 'border-2 border-dashed overflow-hidden opacity-60'
+            : 'border-2 overflow-hidden'
       } ${isDragging ? (isCtrlPressed ? 'cursor-copy z-50' : 'cursor-grabbing z-50') : isResizing ? 'cursor-nwse-resize z-50' : isSelected ? 'cursor-default' : isCtrlPressed ? 'cursor-copy' : 'cursor-move'}`}
       title={displayName}
       onClick={handleClick}
@@ -503,6 +513,7 @@ function DraggablePlacement({
           <span className="text-xs text-muted-foreground">No image</span>
         </div>
       )}
+
 
       {isSelected && (
         <>
@@ -1095,6 +1106,8 @@ export function ConfiguratorCanvas({
   onAreaEdit,
   onAreaDelete,
   onCanvasBoundsChange,
+  hiddenTypeIds,
+  typeColorMap,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -1358,7 +1371,7 @@ export function ConfiguratorCanvas({
 
   const handleExportImage = async () => {
     try {
-      await exportFloorplanImage(floorplan, placements, items, {}, visibleCategoryIds, areas, hiddenAreaIds);
+      await exportFloorplanImage(floorplan, placements, items, {}, visibleCategoryIds, areas, hiddenAreaIds, hiddenTypeIds);
     } catch (err) {
       console.error('Failed to export floorplan:', err);
     }
@@ -1590,12 +1603,13 @@ export function ConfiguratorCanvas({
 
               {[...placements]
                 .filter((placement) => {
-                  // Filter by visible categories
-                  // Item visibility controlled only by category (Products tab)
-                  if (!visibleCategoryIds) return true;
                   const item = items.find((i) => i.id === placement.item_id);
                   if (!item) return true;
-                  return visibleCategoryIds.has(item.category_id);
+                  // Filter by visible categories
+                  if (visibleCategoryIds && !visibleCategoryIds.has(item.category_id)) return false;
+                  // Filter by hidden type IDs
+                  if (hiddenTypeIds && hiddenTypeIds.size > 0 && item.type_id && hiddenTypeIds.has(item.type_id)) return false;
+                  return true;
                 })
                 .sort((a, b) => {
                   // Selected placement should be rendered last (on top)
@@ -1605,6 +1619,7 @@ export function ConfiguratorCanvas({
                 })
                 .map((placement) => {
                   const item = items.find((i) => i.id === placement.item_id);
+                  const typeInfo = item?.type_id ? typeColorMap?.get(item.type_id) : undefined;
 
                   const isNewPlacement = newPlacementIdsRef.current.has(placement.id);
 
@@ -1630,6 +1645,8 @@ export function ConfiguratorCanvas({
                       isNew={isNewPlacement}
                       isCtrlPressed={isCtrlPressed}
                       isDuplicating={isDuplicating}
+                      typeColor={typeInfo?.color}
+                      typeName={typeInfo?.name}
                     />
                   );
                 })}
@@ -1718,6 +1735,29 @@ export function ConfiguratorCanvas({
             <span className="text-xs font-medium">{Math.round(zoom * 100)}%</span>
           </div>
         </div>
+
+        {/* Type Legend */}
+        {(() => {
+          if (!typeColorMap || typeColorMap.size === 0) return null;
+          const typesOnFloorplan = new Set<number>();
+          placements.filter(p => p.type === 'item').forEach(p => {
+            const item = items.find(i => i.id === p.item_id);
+            if (item?.type_id) typesOnFloorplan.add(item.type_id);
+          });
+          const legendEntries = [...typeColorMap.entries()]
+            .filter(([id]) => typesOnFloorplan.has(id) && (!hiddenTypeIds || !hiddenTypeIds.has(id)));
+          if (legendEntries.length <= 1) return null;
+          return (
+            <div className="absolute bottom-12 left-2 bg-background/90 backdrop-blur-sm border rounded-md p-2 text-xs space-y-1 z-20">
+              {legendEntries.map(([id, t]) => (
+                <div key={id} className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
+                  <span>{t.name}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* Help tooltip — small ? icon, expands on hover */}
         <div className="absolute bottom-2 left-2 z-20 group">

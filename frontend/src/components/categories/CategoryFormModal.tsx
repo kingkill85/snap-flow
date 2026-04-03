@@ -67,36 +67,37 @@ export function CategoryFormModal({ category, isOpen, onClose, onSubmit }: Categ
           </DialogDescription>
         </DialogHeader>
 
-        {error && (
-          <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Category Name</Label>
-            <Input
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Lighting, Security, Climate"
-              required
-            />
-          </div>
-
-          {isEdit && (
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="is_active"
-                checked={isActive}
-                onCheckedChange={setIsActive}
-              />
-              <Label htmlFor="is_active" className="text-sm font-normal cursor-pointer">
-                Active
-              </Label>
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          {error && (
+            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
+              {error}
             </div>
           )}
+          <div className="flex-1 overflow-y-auto px-1 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Category Name</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., Lighting, Security, Climate"
+                required
+              />
+            </div>
+
+            {isEdit && (
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="is_active"
+                  checked={isActive}
+                  onCheckedChange={setIsActive}
+                />
+                <Label htmlFor="is_active" className="text-sm font-normal cursor-pointer">
+                  Active
+                </Label>
+              </div>
+            )}
+          </div>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

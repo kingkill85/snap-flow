@@ -206,6 +206,7 @@ Deno.test('ExcelImportService - executeImport updates existing item', async () =
     description: 'Old description',
     base_model_number: 'SENSOR-001',
     dimensions: '5x5x5',
+    type_id: 1,
   });
 
   const item = makePreviewItem({

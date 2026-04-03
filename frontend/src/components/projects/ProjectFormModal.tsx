@@ -22,6 +22,7 @@ import { Separator } from '@/components/ui/separator';
 import { Loader2, FolderPlus, Save, X } from 'lucide-react';
 import type { Project, CreateProjectDTO, UpdateProjectDTO } from '@/services/project';
 import type { Tenant } from '@/services/tenants';
+import { itemTypeService, type ItemType } from '@/services/item-type';
 import { extractErrorMessage } from '@/utils';
 
 interface ProjectFormModalProps {
@@ -44,6 +45,8 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
     customer_address: '',
     tenant_id: 0,
   });
+  const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+  const [selectedTypeIds, setSelectedTypeIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -71,6 +74,19 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
         });
       }
       setError('');
+
+      // Fetch item types
+      const controller = new AbortController();
+      itemTypeService.getAll(controller.signal).then(types => {
+        setItemTypes(types);
+        if (project && project.item_type_ids) {
+          setSelectedTypeIds(new Set(project.item_type_ids));
+        } else {
+          // Creating: select all active types
+          setSelectedTypeIds(new Set(types.filter(t => t.is_active).map(t => t.id)));
+        }
+      }).catch(() => {/* ignore */});
+      return () => controller.abort();
     }
   }, [project, isOpen]);
 
@@ -89,6 +105,7 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
           customer_email: formData.customer_email,
           customer_phone: formData.customer_phone,
           customer_address: formData.customer_address,
+          item_type_ids: Array.from(selectedTypeIds),
         };
         if (isAdmin && formData.tenant_id) updateData.tenant_id = formData.tenant_id;
         await onSubmit(updateData);
@@ -97,6 +114,7 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
           name: formData.name,
           status: formData.status,
           customer_name: formData.customer_name,
+          item_type_ids: Array.from(selectedTypeIds),
         };
         if (formData.customer_email) createData.customer_email = formData.customer_email;
         if (formData.customer_phone) createData.customer_phone = formData.customer_phone;
@@ -123,13 +141,14 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
           </DialogDescription>
         </DialogHeader>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="flex-1 overflow-y-auto px-1 space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Project Name *</Label>
             <Input
@@ -184,6 +203,30 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
             </div>
           )}
 
+          {itemTypes.length > 0 && (
+            <div className="space-y-2">
+              <Label>Product Types</Label>
+              <div className="flex flex-wrap gap-3">
+                {itemTypes.map(t => (
+                  <label key={t.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedTypeIds.has(t.id)}
+                      onChange={() => {
+                        const next = new Set(selectedTypeIds);
+                        if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
+                        if (next.size > 0) setSelectedTypeIds(next);
+                      }}
+                      className="rounded"
+                    />
+                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
+                    {t.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           <Separator />
 
           <div>
@@ -231,6 +274,8 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
                 />
               </div>
             </div>
+          </div>
+
           </div>
 
           <DialogFooter>

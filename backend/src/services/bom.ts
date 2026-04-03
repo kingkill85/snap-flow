@@ -4,6 +4,7 @@ import { floorplanRepository } from '../repositories/floorplan.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { itemRepository } from '../repositories/item.ts';
 import { variantAddonRepository } from '../repositories/variant-addon.ts';
+import { itemTypeRepository } from '../repositories/item-type.ts';
 import { fileStorageService } from './file-storage.ts';
 import { getDb } from '../config/database.ts';
 import type { ProjectBom, Item, ItemVariant } from '../models/index.ts';
@@ -106,6 +107,9 @@ export class BomService {
       throw new Error('Item not found');
     }
 
+    // Look up item type name for snapshot
+    const itemType = item.type_id ? await itemTypeRepository.findById(item.type_id) : null;
+
     // Create main BOM entry (without image path initially)
     const mainEntry = await bomEntryRepository.create({
       project_id: projectId,
@@ -114,6 +118,7 @@ export class BomService {
       variant_id: variantId,
       parent_bom_id: null,
       item_name: item.name,
+      item_type_name: itemType?.name ?? null,
       style_name: variant.style_name,
       model_number: item.base_model_number || `${variant.style_name}`,
       unit_price: variant.price,
@@ -155,6 +160,9 @@ export class BomService {
         continue;
       }
 
+      // Look up addon item type name for snapshot
+      const addonItemType = addonItem.type_id ? await itemTypeRepository.findById(addonItem.type_id) : null;
+
       // Create addon entry (without image path initially)
       const addonEntry = await bomEntryRepository.create({
         project_id: projectId,
@@ -163,6 +171,7 @@ export class BomService {
         variant_id: addon.addon_variant_id,
         parent_bom_id: mainEntry.id,
         item_name: addonItem.name,
+        item_type_name: addonItemType?.name ?? null,
         style_name: addon.addon_variant.style_name,
         model_number: addonItem.base_model_number || '',
         unit_price: addon.addon_variant.price,
@@ -175,13 +184,13 @@ export class BomService {
         addonEntry.id,
         addon.addon_variant.image_path
       );
-      
+
       if (addonCopiedPath) {
         await bomEntryRepository.update(addonEntry.id, {
           picture_path: addonCopiedPath
         });
       }
-      
+
       console.log(`  Created addon: ${addonItem.name}`);
     }
 
@@ -212,6 +221,9 @@ export class BomService {
       throw new Error('Item not found');
     }
 
+    // Look up item type name for snapshot
+    const switchItemType = item.type_id ? await itemTypeRepository.findById(item.type_id) : null;
+
     // Copy new variant image to project folder
     const copiedImagePath = await this.copyImageToProject(
       entry.project_id,
@@ -223,6 +235,7 @@ export class BomService {
     const updated = await bomEntryRepository.update(bomEntryId, {
       variant_id: newVariantId,
       item_name: item.name,
+      item_type_name: switchItemType?.name ?? null,
       style_name: newVariant.style_name,
       model_number: item.base_model_number || `${newVariant.style_name}`,
       unit_price: newVariant.price,
@@ -251,6 +264,9 @@ export class BomService {
       const addonItem = await itemRepository.findById(addon.addon_variant.item_id);
       if (!addonItem) continue;
 
+      // Look up addon item type name for snapshot
+      const switchAddonItemType = addonItem.type_id ? await itemTypeRepository.findById(addonItem.type_id) : null;
+
       // Create addon entry (without image path initially)
       const addonEntry = await bomEntryRepository.create({
         project_id: entry.project_id,
@@ -259,6 +275,7 @@ export class BomService {
         variant_id: addon.addon_variant_id,
         parent_bom_id: bomEntryId,
         item_name: addonItem.name,
+        item_type_name: switchAddonItemType?.name ?? null,
         style_name: addon.addon_variant.style_name,
         model_number: addonItem.base_model_number || '',
         unit_price: addon.addon_variant.price,
@@ -271,7 +288,7 @@ export class BomService {
         addonEntry.id,
         addon.addon_variant.image_path
       );
-      
+
       if (addonCopiedPath) {
         await bomEntryRepository.update(addonEntry.id, {
           picture_path: addonCopiedPath
@@ -317,6 +334,9 @@ export class BomService {
       throw new Error('Item not found');
     }
 
+    // Look up item type name for snapshot
+    const itemType = item.type_id ? await itemTypeRepository.findById(item.type_id) : null;
+
     // ALWAYS create a new BOM entry for this specific placement configuration
     // Don't reuse existing entries - each placement gets its own BOM entry
     // This allows different placements of the same variant to have different addons
@@ -327,6 +347,7 @@ export class BomService {
       variant_id: newVariantId,
       parent_bom_id: null,
       item_name: item.name,
+      item_type_name: itemType?.name ?? null,
       style_name: newVariant.style_name,
       model_number: item.base_model_number || `${newVariant.style_name}`,
       unit_price: newVariant.price,
@@ -355,6 +376,9 @@ export class BomService {
       const addonItem = await itemRepository.findById(addonVariant.item_id);
       if (!addonItem) continue;
 
+      // Look up addon item type name for snapshot
+      const addonItemType = addonItem.type_id ? await itemTypeRepository.findById(addonItem.type_id) : null;
+
       // Create addon entry (without image path initially)
       const addonEntry = await bomEntryRepository.create({
         project_id: floorplan.project_id,
@@ -363,6 +387,7 @@ export class BomService {
         variant_id: addonVariantId,
         parent_bom_id: newMainEntry.id,
         item_name: addonItem.name,
+        item_type_name: addonItemType?.name ?? null,
         style_name: addonVariant.style_name,
         model_number: addonItem.base_model_number || '',
         unit_price: addonVariant.price,

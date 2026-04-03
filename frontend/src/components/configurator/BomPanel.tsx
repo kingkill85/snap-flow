@@ -166,17 +166,22 @@ export function BOMPanel({ floorplanId, bom, areas = [], placements = [], classN
                   </span>
                 )}
 
-                <div className="w-12 h-12 bg-muted rounded flex-shrink-0 overflow-hidden">
-                  {group.mainEntry.picture_path ? (
-                    <img
-                      src={itemService.getImageUrl(group.mainEntry.picture_path)}
-                      alt={group.mainEntry.item_name}
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
-                      No img
-                    </div>
+                <div className="flex-shrink-0">
+                  <div className="w-12 h-12 bg-muted rounded overflow-hidden">
+                    {group.mainEntry.picture_path ? (
+                      <img
+                        src={itemService.getImageUrl(group.mainEntry.picture_path)}
+                        alt={group.mainEntry.item_name}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
+                        No img
+                      </div>
+                    )}
+                  </div>
+                  {group.mainEntry.item_type_name && (
+                    <p className="text-[9px] text-muted-foreground text-center mt-0.5 truncate w-12">{group.mainEntry.item_type_name}</p>
                   )}
                 </div>
 

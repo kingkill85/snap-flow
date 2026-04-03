@@ -69,6 +69,7 @@ Deno.test('BOM - Create placement auto-creates BOM entry with required addons', 
     name: 'Smart Panel',
     base_model_number: 'SP-001',
     is_active: true,
+    type_id: 1,
   });
 
   // Create variant for main item
@@ -86,6 +87,7 @@ Deno.test('BOM - Create placement auto-creates BOM entry with required addons', 
     name: 'Wall Mount',
     base_model_number: 'WM-001',
     is_active: true,
+    type_id: 1,
   });
 
   // Create addon variant
@@ -170,6 +172,7 @@ Deno.test('BOM - Get BOM for floorplan returns hierarchical structure', async ()
     name: 'Touch Screen',
     base_model_number: 'TS-001',
     is_active: true,
+    type_id: 1,
   });
 
   const variant = await itemVariantRepository.create({
@@ -246,6 +249,7 @@ Deno.test('BOM - Delete last placement removes BOM entry', async () => {
     name: 'Light Switch',
     base_model_number: 'LS-001',
     is_active: true,
+    type_id: 1,
   });
 
   const variant = await itemVariantRepository.create({
@@ -327,6 +331,7 @@ Deno.test('BOM - Get project total sums all floorplan totals', async () => {
     name: 'Item 1',
     base_model_number: 'ITM-001',
     is_active: true,
+    type_id: 1,
   });
 
   const variant1 = await itemVariantRepository.create({
@@ -341,6 +346,7 @@ Deno.test('BOM - Get project total sums all floorplan totals', async () => {
     name: 'Item 2',
     base_model_number: 'ITM-002',
     is_active: true,
+    type_id: 1,
   });
 
   const variant2 = await itemVariantRepository.create({

@@ -17,6 +17,7 @@ export interface Project {
   local_currency_code: string;
   exchange_rate: number;
   tenant_id: number;
+  item_type_ids?: number[];
 }
 
 export interface CreateProjectDTO {
@@ -26,6 +27,7 @@ export interface CreateProjectDTO {
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
+  item_type_ids?: number[];
 }
 
 export interface UpdateProjectDTO {
@@ -35,6 +37,7 @@ export interface UpdateProjectDTO {
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
+  item_type_ids?: number[];
 }
 
 export const projectService = {

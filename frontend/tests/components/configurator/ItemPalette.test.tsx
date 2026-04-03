@@ -20,6 +20,12 @@ vi.mock('@/services/category', () => ({
   },
 }));
 
+vi.mock('@/services/item-type', () => ({
+  itemTypeService: {
+    getAll: vi.fn().mockResolvedValue([]),
+  },
+}));
+
 // Mock DndKit
 vi.mock('@dnd-kit/core', () => ({
   useDraggable: () => ({
@@ -41,6 +47,7 @@ const mockItems: Item[] = [
   {
     id: 1,
     category_id: 1,
+    type_id: 1,
     name: 'Zigbee Gateway',
     description: 'Gateway device',
     base_model_number: 'GW-001',
@@ -52,6 +59,7 @@ const mockItems: Item[] = [
   {
     id: 2,
     category_id: 2,
+    type_id: 1,
     name: 'Motion Sensor',
     description: 'Sensor device',
     base_model_number: 'SEN-001',

@@ -71,7 +71,7 @@ Deno.test('deleteByFloorplan - placements are cleaned up', async () => {
   const project = await projectRepository.create({ name: 'Test Project', customer_name: 'Test Customer', tenant_id: 1 });
   const floorplan = await floorplanRepository.create({ project_id: project.id, name: 'Floor 1', image_path: 'test.png' });
   const category = await categoryRepository.create({ name: 'Cat1' });
-  const item = await itemRepository.create({ name: 'Item1', category_id: category.id });
+  const item = await itemRepository.create({ name: 'Item1', category_id: category.id, type_id: 1 });
   const variant = await itemVariantRepository.create({
     item_id: item.id,
     style_name: 'Default',
@@ -141,14 +141,14 @@ Deno.test('ItemRepository.delete - no nested transaction error with variants and
 
   // Create full chain: category → item → variant → addon variant → addon link
   const category = await categoryRepository.create({ name: 'NestCat' });
-  const item = await itemRepository.create({ name: 'NestItem', category_id: category.id });
+  const item = await itemRepository.create({ name: 'NestItem', category_id: category.id, type_id: 1 });
   const variant = await itemVariantRepository.create({
     item_id: item.id,
     style_name: 'Style1',
     price: 50,
   });
   // Create a second item/variant to use as addon
-  const addonItem = await itemRepository.create({ name: 'AddonItem', category_id: category.id });
+  const addonItem = await itemRepository.create({ name: 'AddonItem', category_id: category.id, type_id: 1 });
   const addonVariant = await itemVariantRepository.create({
     item_id: addonItem.id,
     style_name: 'AddonStyle',
@@ -180,7 +180,7 @@ Deno.test('ItemRepository.delete - rolls back on error', async () => {
   clearDatabase();
 
   const category = await categoryRepository.create({ name: 'RollbackCat' });
-  const item = await itemRepository.create({ name: 'RollbackItem', category_id: category.id });
+  const item = await itemRepository.create({ name: 'RollbackItem', category_id: category.id, type_id: 1 });
   await itemVariantRepository.create({
     item_id: item.id,
     style_name: 'Style1',
@@ -203,7 +203,7 @@ Deno.test('BomEntry.delete - cleans up child placements', async () => {
   const project = await projectRepository.create({ name: 'BomDelProject', customer_name: 'Test', tenant_id: 1 });
   const floorplan = await floorplanRepository.create({ project_id: project.id, name: 'Floor', image_path: 'test.png' });
   const category = await categoryRepository.create({ name: 'Cat' });
-  const item = await itemRepository.create({ name: 'Item', category_id: category.id });
+  const item = await itemRepository.create({ name: 'Item', category_id: category.id, type_id: 1 });
   const variant = await itemVariantRepository.create({ item_id: item.id, style_name: 'S', price: 100 });
 
   const bomEntry = await bomService.createBomEntry(project.id, floorplan.id, variant.id);
@@ -250,7 +250,7 @@ Deno.test('BomService.updateFromCatalog - totalAfter reflects updated prices', a
   const project = await projectRepository.create({ name: 'TotalProject', customer_name: 'Test', tenant_id: 1 });
   const floorplan = await floorplanRepository.create({ project_id: project.id, name: 'Floor', image_path: 'test.png' });
   const category = await categoryRepository.create({ name: 'Cat' });
-  const item = await itemRepository.create({ name: 'Item', category_id: category.id });
+  const item = await itemRepository.create({ name: 'Item', category_id: category.id, type_id: 1 });
   const variant = await itemVariantRepository.create({ item_id: item.id, style_name: 'S', price: 100 });
 
   // Create BOM entry (snapshot at price=100) and placement
@@ -276,7 +276,7 @@ Deno.test('BomService.updateFromCatalog - updates snapshot including picture_pat
   const project = await projectRepository.create({ name: 'ImgProject', customer_name: 'Test', tenant_id: 1 });
   const floorplan = await floorplanRepository.create({ project_id: project.id, name: 'Floor', image_path: 'test.png' });
   const category = await categoryRepository.create({ name: 'Cat' });
-  const item = await itemRepository.create({ name: 'Item', category_id: category.id });
+  const item = await itemRepository.create({ name: 'Item', category_id: category.id, type_id: 1 });
   const variant = await itemVariantRepository.create({ item_id: item.id, style_name: 'S', price: 100 });
 
   const bomEntry = await bomService.createBomEntry(project.id, floorplan.id, variant.id);

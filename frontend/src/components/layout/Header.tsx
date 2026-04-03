@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from '@/components/common/ThemeToggle';
-import { User, LogOut, LayoutGrid, Tags, Settings, ChevronDown, Building2 } from 'lucide-react';
+import { User, LogOut, LayoutGrid, Tags, Layers, Settings, ChevronDown, Building2 } from 'lucide-react';
 
 const Header = () => {
   const { user, isAuthenticated, logout } = useAuth();
@@ -77,6 +77,12 @@ const Header = () => {
                     <Link to="/catalog/products" className="flex items-center gap-2">
                       <LayoutGrid className="h-4 w-4" />
                       Products
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/catalog/item-types" className="flex items-center gap-2">
+                      <Layers className="h-4 w-4" />
+                      Product Types
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>

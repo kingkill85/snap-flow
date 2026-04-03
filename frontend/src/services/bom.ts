@@ -10,6 +10,7 @@ export interface BomEntry {
   parent_bom_id: number | null;
   area_id: number | null;
   item_name: string;
+  item_type_name: string | null;
   style_name: string | null;
   model_number: string | null;
   unit_price: number;
@@ -46,6 +47,7 @@ export interface FloorplanItem {
   categoryName: string;
   isAddon: boolean;
   parentItemName: string | null;
+  itemTypeName: string | null;
 }
 
 export interface FloorplanTotal {

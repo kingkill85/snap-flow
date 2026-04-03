@@ -35,6 +35,7 @@ interface PivotItem {
   categoryName: string;
   isAddon: boolean;
   parentItemName: string | null;
+  itemTypeName: string | null;
 }
 
 interface InvoiceDocxData {
@@ -47,6 +48,8 @@ interface InvoiceDocxData {
   items: Item[];
   categories: Category[];
   floorplanAreaData?: FloorplanAreaData[];
+  filterTypeName?: string;
+  filenameSuffix?: string;
 }
 
 const createBorder = {
@@ -57,14 +60,17 @@ const createBorder = {
 };
 
 // Transform data to pivot format, sorted by category then interleaved addons
-const transformToPivot = (floorplanTotals: FloorplanTotal[]): { items: PivotItem[], floorplans: Floorplan[] } => {
+const transformToPivot = (floorplanTotals: FloorplanTotal[], filterTypeName?: string): { items: PivotItem[], floorplans: Floorplan[] } => {
   const itemMap = new Map<string, PivotItem>();
   const floorplans: Floorplan[] = floorplanTotals.map(ft => ft.floorplan);
 
   floorplanTotals.forEach((floorplanData) => {
     const floorplanId = floorplanData.floorplan.id;
 
-    floorplanData.items.forEach((item: FloorplanItem) => {
+    floorplanData.items.filter((item: FloorplanItem) => {
+      if (!filterTypeName) return true;
+      return item.itemTypeName === filterTypeName;
+    }).forEach((item: FloorplanItem) => {
       // For addons, key by parentItemName + " > " + name to prevent cross-parent merging
       const pivotKey = item.isAddon ? `${item.parentItemName} > ${item.name}` : item.name;
       const existingItem = itemMap.get(pivotKey);
@@ -85,6 +91,7 @@ const transformToPivot = (floorplanTotals: FloorplanTotal[]): { items: PivotItem
           categoryName: item.categoryName,
           isAddon: item.isAddon,
           parentItemName: item.parentItemName,
+          itemTypeName: item.itemTypeName,
         });
       }
     });
@@ -145,9 +152,15 @@ function createAreaSummarySection(
   placements: Placement[],
   items: Item[],
   categories: Category[],
+  filterTypeName?: string,
 ): (Paragraph | Table)[] {
-  // Only consider item-type placements
-  const itemPlacements = placements.filter(p => p.type === 'item');
+  // Only consider item-type placements, filtered by type if specified
+  const itemPlacements = placements.filter(p => {
+    if (p.type !== 'item') return false;
+    if (!filterTypeName) return true;
+    const item = items.find(i => i.id === p.item_id);
+    return item?.type_name === filterTypeName;
+  });
 
   // Collect unique category IDs that appear in placements for this floorplan
   const categoryIdSet = new Set<number>();
@@ -290,7 +303,13 @@ function createAreaSummarySection(
 }
 
 export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> => {
-  const { items, floorplans } = transformToPivot(data.floorplanTotals);
+  const { items, floorplans } = transformToPivot(data.floorplanTotals, data.filterTypeName);
+
+  // When filtering by type, recalculate project total from the filtered items
+  const effectiveProjectTotal = data.filterTypeName
+    ? items.reduce((sum, item) => sum + item.total, 0)
+    : data.projectTotal;
+
   const rows: TableRow[] = [];
 
   // Calculate column widths
@@ -425,7 +444,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
   // Calculate summary values
   const discount = data.invoiceSettings?.discount_usd || 0;
   const services = data.invoiceSettings?.services_usd || 0;
-  const afterDiscount = Math.max(0, data.projectTotal - discount);
+  const afterDiscount = Math.max(0, effectiveProjectTotal - discount);
   const grandTotalUsd = Math.max(0, afterDiscount + services);
   const exchangeRate = data.invoiceSettings?.exchange_rate || 0;
   const grandTotalLocal = grandTotalUsd * exchangeRate;
@@ -452,7 +471,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         new TableCell({
           children: [
             new Paragraph({
-              children: [new TextRun({ text: `$${data.projectTotal.toLocaleString('en-US')}`, bold: true, font: 'Bahnschrift Light', size: 20 })],
+              children: [new TextRun({ text: `$${effectiveProjectTotal.toLocaleString('en-US')}`, bold: true, font: 'Bahnschrift Light', size: 20 })],
               alignment: AlignmentType.RIGHT,
             }),
           ],
@@ -632,6 +651,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
         fpData.placements,
         data.items,
         data.categories,
+        data.filterTypeName,
       );
       areaSummaryElements.push(...elements);
     });
@@ -680,7 +700,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${data.projectName.replace(/[^a-zA-Z0-9-_ ]/g, '')}_Proposal.docx`;
+  a.download = `${data.projectName.replace(/[^a-zA-Z0-9-_ ]/g, '')}${data.filenameSuffix || ''}_Proposal.docx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

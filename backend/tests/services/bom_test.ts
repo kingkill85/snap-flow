@@ -44,6 +44,7 @@ Deno.test('BOM Service - createBomEntry adds required addons', async (t) => {
     base_model_number: 'MAIN-001',
     dimensions: '100x100',
     is_active: true,
+    type_id: 1,
   });
 
   // Create main variant
@@ -62,6 +63,7 @@ Deno.test('BOM Service - createBomEntry adds required addons', async (t) => {
     base_model_number: 'ADDON-001',
     dimensions: '50x50',
     is_active: true,
+    type_id: 1,
   });
 
   // Create addon variant
@@ -126,6 +128,7 @@ Deno.test('BOM Service - createBomEntry adds required addons', async (t) => {
       base_model_number: 'MAIN-001',
       dimensions: '100x100',
       is_active: true,
+      type_id: 1,
     });
 
     const mainVariant2 = await itemVariantRepository.create({
@@ -142,6 +145,7 @@ Deno.test('BOM Service - createBomEntry adds required addons', async (t) => {
       base_model_number: 'ADDON-001',
       dimensions: '50x50',
       is_active: true,
+      type_id: 1,
     });
 
     const addonVariant2 = await itemVariantRepository.create({
@@ -201,6 +205,7 @@ Deno.test('BOM Service - recreateBomEntry with addons', async (t) => {
     base_model_number: 'MAIN-001',
     dimensions: '100x100',
     is_active: true,
+    type_id: 1,
   });
 
   const mainVariant = await itemVariantRepository.create({
@@ -217,6 +222,7 @@ Deno.test('BOM Service - recreateBomEntry with addons', async (t) => {
     base_model_number: 'ADDON-001',
     dimensions: '50x50',
     is_active: true,
+    type_id: 1,
   });
 
   const addonVariant = await itemVariantRepository.create({
@@ -293,6 +299,7 @@ Deno.test('BOM Service - createBomEntry handles image copying', async (t) => {
     base_model_number: 'MAIN-001',
     dimensions: '100x100',
     is_active: true,
+    type_id: 1,
   });
 
   // Create test image file for main variant
@@ -319,6 +326,7 @@ Deno.test('BOM Service - createBomEntry handles image copying', async (t) => {
     base_model_number: 'ADDON-001',
     dimensions: '50x50',
     is_active: true,
+    type_id: 1,
   });
 
   // Create test image file for addon
@@ -441,6 +449,7 @@ Deno.test('BOM Service - recreateBomEntry copies new images', async (t) => {
     base_model_number: 'TEST-001',
     dimensions: '100x100',
     is_active: true,
+    type_id: 1,
   });
 
   const variant1 = await itemVariantRepository.create({
@@ -539,6 +548,7 @@ Deno.test('BOM Service - switchVariant copies new variant image', async (t) => {
     base_model_number: 'TEST-001',
     dimensions: '100x100',
     is_active: true,
+    type_id: 1,
   });
 
   const variant1 = await itemVariantRepository.create({
@@ -619,6 +629,7 @@ Deno.test('BOM Service - deleteBomEntry cleans up images', async (t) => {
     base_model_number: 'TEST-001',
     dimensions: '100x100',
     is_active: true,
+    type_id: 1,
   });
 
   const variant = await itemVariantRepository.create({

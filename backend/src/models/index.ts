@@ -76,10 +76,38 @@ export interface UpdateCategoryDTO {
   is_active?: boolean;
 }
 
+// === Item Types ===
+export interface ItemType {
+  id: number;
+  name: string;
+  abbreviation: string;
+  color: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface CreateItemTypeDTO {
+  name: string;
+  abbreviation: string;
+  color?: string;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
+export interface UpdateItemTypeDTO {
+  name?: string;
+  abbreviation?: string;
+  color?: string;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
 // Item (Base Product)
 export interface Item {
   id: number;
   category_id: number;
+  type_id: number;
   name: string;
   description: string;
   base_model_number: string;
@@ -87,12 +115,17 @@ export interface Item {
   created_at: string;
   is_active: boolean;
   preview_image?: string | null;
+  // Joined type info
+  type_name?: string;
+  type_abbreviation?: string;
+  type_color?: string;
   // Relations
   variants?: ItemVariant[];
 }
 
 export interface CreateItemDTO {
   category_id: number;
+  type_id: number;
   name: string;
   description?: string;
   base_model_number?: string;
@@ -102,6 +135,7 @@ export interface CreateItemDTO {
 
 export interface UpdateItemDTO {
   category_id?: number;
+  type_id?: number;
   name?: string;
   description?: string;
   base_model_number?: string;
@@ -198,6 +232,7 @@ export interface CreateProjectDTO {
   customer_phone?: string;
   customer_address?: string;
   tenant_id: number;
+  item_type_ids?: number[];
 }
 
 export interface UpdateProjectDTO {
@@ -208,6 +243,7 @@ export interface UpdateProjectDTO {
   customer_phone?: string;
   customer_address?: string;
   tenant_id?: number;
+  item_type_ids?: number[];
 }
 
 export interface UpdateInvoiceSettingsDTO {
@@ -298,6 +334,7 @@ export interface ProjectBom {
   parent_bom_id: number | null;
   area_id: number | null;
   item_name: string;
+  item_type_name: string | null;
   style_name: string | null;  // Snapshot of variant.style_name
   model_number: string | null;
   unit_price: number;
@@ -318,6 +355,7 @@ export interface CreateBomEntryDTO {
   variant_id: number;
   parent_bom_id?: number | null;
   item_name: string;
+  item_type_name?: string | null;
   style_name?: string | null;
   model_number?: string;
   unit_price: number;
@@ -327,6 +365,7 @@ export interface CreateBomEntryDTO {
 export interface UpdateBomEntryDTO {
   variant_id?: number;
   item_name?: string;
+  item_type_name?: string | null;
   style_name?: string | null;
   model_number?: string;
   unit_price?: number;

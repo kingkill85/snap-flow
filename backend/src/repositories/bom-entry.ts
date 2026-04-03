@@ -11,7 +11,7 @@ export class BomEntryRepository {
   findAll(): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
-             item_name, style_name, model_number, unit_price, picture_path,
+             item_name, item_type_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
       ORDER BY created_at DESC
@@ -22,7 +22,7 @@ export class BomEntryRepository {
   findByFloorplan(floorplanId: number): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
-             item_name, style_name, model_number, unit_price, picture_path,
+             item_name, item_type_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
       WHERE floorplan_id = ?
@@ -34,7 +34,7 @@ export class BomEntryRepository {
   findById(id: number): Promise<ProjectBom | null> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
-             item_name, style_name, model_number, unit_price, picture_path,
+             item_name, item_type_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
       WHERE id = ?
@@ -49,7 +49,7 @@ export class BomEntryRepository {
   ): Promise<ProjectBom | null> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
-             item_name, style_name, model_number, unit_price, picture_path,
+             item_name, item_type_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
       WHERE floorplan_id = ? AND variant_id = ? 
@@ -61,7 +61,7 @@ export class BomEntryRepository {
   findByItem(floorplanId: number, itemId: number): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
-             item_name, style_name, model_number, unit_price, picture_path,
+             item_name, item_type_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
       WHERE floorplan_id = ? AND item_id = ? AND parent_bom_id IS NULL
@@ -73,7 +73,7 @@ export class BomEntryRepository {
   findChildren(parentId: number): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
-             item_name, style_name, model_number, unit_price, picture_path,
+             item_name, item_type_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
       WHERE parent_bom_id = ?
@@ -84,12 +84,12 @@ export class BomEntryRepository {
 
   create(data: CreateBomEntryDTO): Promise<ProjectBom> {
     const result = getDb().queryEntries(`
-      INSERT INTO project_bom 
+      INSERT INTO project_bom
       (project_id, floorplan_id, item_id, variant_id, parent_bom_id,
-       item_name, style_name, model_number, unit_price, picture_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       item_name, item_type_name, style_name, model_number, unit_price, picture_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
-                item_name, style_name, model_number, unit_price, picture_path,
+                item_name, item_type_name, style_name, model_number, unit_price, picture_path,
                 created_at, updated_at
     `, [
       data.project_id,
@@ -98,6 +98,7 @@ export class BomEntryRepository {
       data.variant_id,
       data.parent_bom_id ?? null,
       data.item_name,
+      data.item_type_name ?? null,
       data.style_name ?? null,
       data.model_number ?? null,
       data.unit_price,
@@ -118,6 +119,10 @@ export class BomEntryRepository {
     if (data.item_name !== undefined) {
       sets.push('item_name = ?');
       values.push(data.item_name);
+    }
+    if (data.item_type_name !== undefined) {
+      sets.push('item_type_name = ?');
+      values.push(data.item_type_name);
     }
     if (data.style_name !== undefined) {
       sets.push('style_name = ?');
@@ -149,7 +154,7 @@ export class BomEntryRepository {
       SET ${sets.join(', ')}
       WHERE id = ?
       RETURNING id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
-                item_name, style_name, model_number, unit_price, picture_path,
+                item_name, item_type_name, style_name, model_number, unit_price, picture_path,
                 created_at, updated_at
     `, values);
 
@@ -224,7 +229,7 @@ export class BomEntryRepository {
   findByPicturePath(picturePath: string): Promise<ProjectBom[]> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, floorplan_id, item_id, variant_id, parent_bom_id, area_id,
-             item_name, style_name, model_number, unit_price, picture_path,
+             item_name, item_type_name, style_name, model_number, unit_price, picture_path,
              created_at, updated_at
       FROM project_bom
       WHERE picture_path = ?

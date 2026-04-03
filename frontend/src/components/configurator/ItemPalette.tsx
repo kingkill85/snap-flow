@@ -4,6 +4,7 @@ import type { Item } from '@/services/item';
 import { itemService } from '@/services/item';
 import type { Category } from '@/services/category';
 import { categoryService } from '@/services/category';
+import { itemTypeService, type ItemType } from '@/services/item-type';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -56,6 +57,7 @@ function DraggableItem({ item }: DraggableItemProps) {
       {...listeners}
       {...attributes}
       className="cursor-grab hover:shadow-md transition-shadow bg-background border border-border rounded-lg overflow-hidden"
+      style={{ borderTopWidth: 3, borderTopColor: item.type_color || 'hsl(var(--border))' }}
     >
       <div className="h-12 bg-muted relative">
         {imageUrl ? (
@@ -70,7 +72,7 @@ function DraggableItem({ item }: DraggableItemProps) {
           </div>
         )}
       </div>
-      
+
       <div className="px-1 py-0.5">
         <p className="text-[10px] font-medium text-foreground truncate leading-tight" title={item.name}>
           {item.name}
@@ -90,6 +92,10 @@ interface ItemPaletteProps {
   onToggleCategory?: (categoryId: number) => void;
   onToggleAllCategories?: (visible: boolean) => void;
   categoryCounts?: Map<number, number>;
+  projectItemTypeIds?: number[];
+  hiddenTypeIds?: Set<number>;
+  onToggleTypeVisibility?: (typeId: number) => void;
+  onToggleAllTypeVisibility?: (visible: boolean) => void;
 }
 
 export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function ItemPalette({
@@ -97,10 +103,16 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
   visibleCategories,
   onToggleCategory,
   onToggleAllCategories,
-  categoryCounts
+  categoryCounts,
+  projectItemTypeIds,
+  hiddenTypeIds,
+  onToggleTypeVisibility,
+  onToggleAllTypeVisibility,
 }, ref) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -153,12 +165,14 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
     const fetchData = async () => {
       try {
         setIsLoading(true);
-        const [categoriesData, itemsResult] = await Promise.all([
+        const [categoriesData, itemsResult, typesData] = await Promise.all([
           categoryService.getAll(),
           itemService.getAll({ include_inactive: false }, { page: 1, limit: 1000 }),
+          itemTypeService.getAll(),
         ]);
         setCategories(categoriesData.filter(c => c.is_active !== false));
         setItems(itemsResult.items);
+        setItemTypes(typesData);
         
         // Preload images and cache aspect ratios
         preloadImages(itemsResult.items);
@@ -192,30 +206,75 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
     );
   }
 
-  const allVisible = categories.every(cat => visibleCategories?.has(cat.id) ?? true);
+  const visibleProjectTypes = itemTypes.filter(t => !projectItemTypeIds || projectItemTypeIds.includes(t.id));
+  const allCategoriesVisible = categories.every(cat => visibleCategories?.has(cat.id) ?? true);
+  const allTypesVisible = visibleProjectTypes.every(t => !hiddenTypeIds?.has(t.id));
+  const allVisible = allCategoriesVisible && allTypesVisible;
 
   return (
     <div className={`flex flex-col h-full ${className}`}>
       {onToggleAllCategories && (
         <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Layers</span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => onToggleAllCategories(!allVisible)}
-          >
-            {allVisible ? (
-              <><EyeOff className="h-3 w-3 mr-1" /> Hide All</>
-            ) : (
-              <><Eye className="h-3 w-3 mr-1" /> Show All</>
-            )}
-          </Button>
+          <div className="flex items-center gap-1">
+            {onToggleTypeVisibility && visibleProjectTypes.length > 1 && visibleProjectTypes.map(t => {
+              const isVisible = !hiddenTypeIds?.has(t.id);
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => onToggleTypeVisibility(t.id)}
+                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold text-white leading-none transition-opacity ${isVisible ? 'opacity-100' : 'opacity-30'}`}
+                  style={{ backgroundColor: t.color }}
+                  title={isVisible ? `Hide ${t.name}` : `Show ${t.name}`}
+                >
+                  {t.abbreviation}
+                </button>
+              );
+            })}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs ml-1"
+              onClick={() => { onToggleAllCategories(!allVisible); onToggleAllTypeVisibility?.(!allVisible); }}
+            >
+              {allVisible ? (
+                <><EyeOff className="h-3 w-3 mr-1" /> Hide All</>
+              ) : (
+                <><Eye className="h-3 w-3 mr-1" /> Show All</>
+              )}
+            </Button>
+          </div>
         </div>
       )}
       <div className="flex-1 overflow-y-auto p-4">
+        {visibleProjectTypes.length > 1 && (
+          <div className="flex items-center gap-1.5 mb-3">
+            <button
+              onClick={() => setSelectedTypeFilter(null)}
+              className={`inline-flex items-center px-2 py-1 rounded text-[11px] font-semibold leading-none transition-opacity ${
+                selectedTypeFilter === null ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground opacity-50'
+              }`}
+            >All</button>
+            {visibleProjectTypes.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSelectedTypeFilter(selectedTypeFilter === t.id ? null : t.id)}
+                className={`inline-flex items-center px-1.5 py-1 rounded text-[11px] font-semibold text-white leading-none transition-opacity ${
+                  selectedTypeFilter !== null && selectedTypeFilter !== t.id ? 'opacity-30' : 'opacity-100'
+                }`}
+                style={{ backgroundColor: t.color }}
+                title={t.name}
+              >{t.abbreviation}</button>
+            ))}
+          </div>
+        )}
         {categories.map((category) => {
-          const categoryItems = items.filter((item) => item.category_id === category.id);
+          const categoryItems = items.filter((item) =>
+            item.category_id === category.id &&
+            (selectedTypeFilter === null
+              ? (!projectItemTypeIds || projectItemTypeIds.includes(item.type_id))
+              : item.type_id === selectedTypeFilter)
+          );
           if (categoryItems.length === 0) return null;
 
           const isVisible = visibleCategories?.has(category.id) ?? true;

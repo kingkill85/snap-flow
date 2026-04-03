@@ -21,11 +21,13 @@ import {
 } from '@/components/ui/select';
 import type { Item } from '@/services/item';
 import type { Category } from '@/services/category';
+import type { ItemType } from '@/services/item-type';
 import { X, Save, Plus } from 'lucide-react';
 import { extractErrorMessage } from '@/utils';
 
 export interface CreateItemDTO {
   category_id: number;
+  type_id?: number;
   name: string;
   description?: string;
   base_model_number?: string;
@@ -35,6 +37,7 @@ export interface CreateItemDTO {
 
 export interface UpdateItemDTO {
   category_id?: number;
+  type_id?: number;
   name?: string;
   description?: string;
   base_model_number?: string;
@@ -45,18 +48,20 @@ export interface UpdateItemDTO {
 interface ItemFormModalProps {
   item: Item | null;
   categories: Category[];
+  itemTypes?: ItemType[];
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: CreateItemDTO | UpdateItemDTO) => Promise<void>;
 }
 
-export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: ItemFormModalProps) {
+export function ItemFormModal({ item, categories, itemTypes = [], isOpen, onClose, onSubmit }: ItemFormModalProps) {
   const isEdit = !!item;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [baseModelNumber, setBaseModelNumber] = useState('');
   const [dimensions, setDimensions] = useState('');
   const [categoryId, setCategoryId] = useState<string>('');
+  const [typeId, setTypeId] = useState<string>('');
   const [isActive, setIsActive] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -68,6 +73,7 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
       setBaseModelNumber(item.base_model_number || '');
       setDimensions(item.dimensions || '');
       setCategoryId(item.category_id.toString());
+      setTypeId(item.type_id ? item.type_id.toString() : '');
       setIsActive(item.is_active);
     } else {
       setName('');
@@ -75,10 +81,11 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
       setBaseModelNumber('');
       setDimensions('');
       setCategoryId(categories.length > 0 ? categories[0].id.toString() : '');
+      setTypeId(itemTypes.length > 0 ? itemTypes[0].id.toString() : '');
       setIsActive(true);
     }
     setError('');
-  }, [item, isOpen, categories]);
+  }, [item, isOpen, categories, itemTypes]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +106,7 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
             base_model_number: baseModelNumber || undefined,
             dimensions: dimensions || undefined,
             category_id: parseInt(categoryId),
+            type_id: typeId ? parseInt(typeId) : undefined,
             is_active: isActive,
           }
         : {
@@ -107,6 +115,7 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
             base_model_number: baseModelNumber || undefined,
             dimensions: dimensions || undefined,
             category_id: parseInt(categoryId),
+            type_id: typeId ? parseInt(typeId) : undefined,
             is_active: isActive,
           };
 
@@ -165,6 +174,24 @@ export function ItemFormModal({ item, categories, isOpen, onClose, onSubmit }: I
               </SelectContent>
             </Select>
           </div>
+
+          {itemTypes.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="type">Type</Label>
+              <Select value={typeId} onValueChange={setTypeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {itemTypes.map((t) => (
+                    <SelectItem key={t.id} value={t.id.toString()}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>

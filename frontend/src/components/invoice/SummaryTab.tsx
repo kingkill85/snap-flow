@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Settings, FileDown, Receipt, Loader2 } from 'lucide-react';
 import { generateInvoiceDOCX, type FloorplanAreaData } from '@/services/invoice-docx';
+import ExportTypeDialog from '@/components/invoice/ExportTypeDialog';
+import { itemTypeService, type ItemType } from '@/services/item-type';
 import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { Floorplan } from '@/services/floorplan';
 import type { FloorplanTotal } from '@/services/bom';
@@ -37,6 +39,26 @@ export function SummaryTab({
   getFloorplanAreaData,
 }: SummaryTabProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+
+  // Fetch item types on mount
+  useEffect(() => {
+    const controller = new AbortController();
+    itemTypeService.getAll(controller.signal).then(setItemTypes).catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  // Determine which item types have placements in the current project
+  const typesWithPlacements = useMemo(() => {
+    const typeNamesInProject = new Set<string>();
+    floorplanTotals.forEach(ft => {
+      ft.items.forEach(item => {
+        if (item.itemTypeName) typeNamesInProject.add(item.itemTypeName);
+      });
+    });
+    return itemTypes.filter(t => typeNamesInProject.has(t.name));
+  }, [itemTypes, floorplanTotals]);
 
   const formatCurrency = (amount: number, decimals = 2) => {
     return amount.toLocaleString('en-US', {
@@ -60,23 +82,57 @@ export function SummaryTab({
     invoiceSettings.exchange_rate > 0
   );
 
-  const handleGenerateInvoice = async () => {
+  const generateForTypes = async (typeIds?: number[]) => {
     setIsGenerating(true);
     try {
       const floorplanAreaData = getFloorplanAreaData ? await getFloorplanAreaData() : undefined;
-      await generateInvoiceDOCX({
-        projectName,
-        projectNumber,
-        customerName,
-        floorplanTotals,
-        projectTotal,
-        invoiceSettings,
-        items,
-        categories,
-        floorplanAreaData,
-      });
+
+      if (!typeIds || typeIds.length === 0) {
+        // Generate a single unfiltered document
+        await generateInvoiceDOCX({
+          projectName,
+          projectNumber,
+          customerName,
+          floorplanTotals,
+          projectTotal,
+          invoiceSettings,
+          items,
+          categories,
+          floorplanAreaData,
+        });
+      } else {
+        // Generate one document per selected type
+        for (const typeId of typeIds) {
+          const itemType = itemTypes.find(t => t.id === typeId);
+          if (!itemType) continue;
+          await generateInvoiceDOCX({
+            projectName,
+            projectNumber,
+            customerName,
+            floorplanTotals,
+            projectTotal,
+            invoiceSettings,
+            items,
+            categories,
+            floorplanAreaData,
+            filterTypeName: itemType.name,
+            filenameSuffix: `_${itemType.name.replace(/[^a-zA-Z0-9-_ ]/g, '')}`,
+          });
+        }
+      }
     } finally {
       setIsGenerating(false);
+      setShowExportDialog(false);
+    }
+  };
+
+  const handleGenerateInvoice = () => {
+    if (typesWithPlacements.length <= 1) {
+      // Only one (or zero) type — generate directly without dialog
+      generateForTypes();
+    } else {
+      // Multiple types — show selection dialog
+      setShowExportDialog(true);
     }
   };
 
@@ -229,6 +285,14 @@ export function SummaryTab({
           </>
         )}
       </div>
+
+      <ExportTypeDialog
+        open={showExportDialog}
+        onClose={() => setShowExportDialog(false)}
+        onExport={generateForTypes}
+        availableTypes={typesWithPlacements}
+        isGenerating={isGenerating}
+      />
     </div>
   );
 }

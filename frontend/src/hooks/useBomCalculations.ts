@@ -15,7 +15,7 @@ export function useBomCalculations(
 ) {
   // Aggregate items from BOM groups, combining duplicate entries
   const aggregateItems = useCallback((groups: BomGroup[]): FloorplanItem[] => {
-    const itemTotals = new Map<string, { quantity: number; unitPrice: number; total: number; categoryId: number; categorySortOrder: number; categoryName: string; isAddon: boolean; parentItemName: string | null }>();
+    const itemTotals = new Map<string, { name: string; quantity: number; unitPrice: number; total: number; categoryId: number; categorySortOrder: number; categoryName: string; isAddon: boolean; parentItemName: string | null; itemTypeName: string | null }>();
 
     groups.forEach((group) => {
       // Look up category for the main entry
@@ -24,17 +24,20 @@ export function useBomCalculations(
       const categoryId = category?.id ?? 0;
       const categorySortOrder = category?.sort_order ?? Number.MAX_SAFE_INTEGER;
       const categoryName = category?.name ?? 'Other';
+      const itemTypeName = catalogItem?.type_name ?? null;
 
-      // Aggregate main entries
+      // Aggregate main entries — include type in key so same-named items of different types stay separate
       const mainName = `${group.mainEntry.item_name}${group.mainEntry.style_name ? ` (${group.mainEntry.style_name})` : ''}`;
+      const mainKey = itemTypeName ? `[${itemTypeName}] ${mainName}` : mainName;
       const mainTotal = group.mainEntry.unit_price * group.quantity;
-      const existingMain = itemTotals.get(mainName);
+      const existingMain = itemTotals.get(mainKey);
 
       if (existingMain) {
         existingMain.quantity += group.quantity;
         existingMain.total += mainTotal;
       } else {
-        itemTotals.set(mainName, {
+        itemTotals.set(mainKey, {
+          name: mainName,
           quantity: group.quantity,
           unitPrice: group.mainEntry.unit_price,
           total: mainTotal,
@@ -43,13 +46,14 @@ export function useBomCalculations(
           categoryName,
           isAddon: false,
           parentItemName: null,
+          itemTypeName,
         });
       }
 
       // Aggregate addon entries
       group.children.forEach((child) => {
         const childName = `${child.item_name}${child.style_name ? ` (${child.style_name})` : ''}`;
-        const addonKey = `${mainName} > ${childName}`;
+        const addonKey = `${mainKey} > ${childName}`;
         const childTotal = child.unit_price * group.quantity;
         const existingChild = itemTotals.get(addonKey);
 
@@ -58,6 +62,7 @@ export function useBomCalculations(
           existingChild.total += childTotal;
         } else {
           itemTotals.set(addonKey, {
+            name: childName,
             quantity: group.quantity,
             unitPrice: child.unit_price,
             total: childTotal,
@@ -66,13 +71,14 @@ export function useBomCalculations(
             categoryName,
             isAddon: true,
             parentItemName: mainName,
+            itemTypeName,
           });
         }
       });
     });
 
-    return Array.from(itemTotals.entries()).map(([key, data]) => ({
-      name: data.isAddon ? key.split(' > ').slice(1).join(' > ') : key,
+    return Array.from(itemTotals.entries()).map(([_key, data]) => ({
+      name: data.name,
       quantity: data.quantity,
       unitPrice: data.unitPrice,
       total: data.total,
@@ -81,6 +87,7 @@ export function useBomCalculations(
       categoryName: data.categoryName,
       isAddon: data.isAddon,
       parentItemName: data.parentItemName,
+      itemTypeName: data.itemTypeName,
     }));
   }, [items, categories]);
 

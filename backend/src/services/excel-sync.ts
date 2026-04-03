@@ -108,7 +108,7 @@ export class ExcelSyncService {
   /**
    * Main sync method - orchestrates all phases
    */
-  async syncCatalog(excelPath: string): Promise<SyncResult> {
+  async syncCatalog(excelPath: string, typeId: number): Promise<SyncResult> {
     const result: SyncResult = {
       success: true,
       phases: {
@@ -138,7 +138,7 @@ export class ExcelSyncService {
         await this.syncCategories(groupedItems, result);
 
         // Phase 2: Sync Base Items
-        const itemIdMap = await this.syncItems(groupedItems, result);
+        const itemIdMap = await this.syncItems(groupedItems, result, typeId);
 
         // Phase 3: Sync Variants with Images
         await this.syncVariants(groupedItems, itemIdMap, extractedImages, result);
@@ -488,17 +488,18 @@ export class ExcelSyncService {
    */
   private async syncItems(
     groupedItems: Record<string, GroupedItem>,
-    result: SyncResult
+    result: SyncResult,
+    typeId: number
   ): Promise<Map<string, number>> {
     this.log(result, '📦 Phase 2: Syncing base items...', 'items');
 
     const itemIdMap = new Map<string, number>();
     const excelModelNumbers = new Set(Object.keys(groupedItems));
 
-    // Get all existing items
-    const allItems = await itemRepository.findAll({}, { page: 1, limit: 10000 });
+    // Get all existing items scoped to this type
+    const allItems = await itemRepository.findAll({ type_id: typeId, include_inactive: true }, { page: 1, limit: 10000 });
     const existingItemsMap = new Map<string, typeof allItems.items[0]>();
-    
+
     for (const item of allItems.items) {
       if (item.base_model_number) {
         existingItemsMap.set(item.base_model_number, item);
@@ -526,6 +527,7 @@ export class ExcelSyncService {
           // Update existing
           await itemRepository.update(existingItem.id, {
             category_id: categoryId,
+            type_id: typeId,
             name: _groupedItem.name,
             description: _groupedItem.description,
             dimensions: _groupedItem.dimensions,
@@ -538,6 +540,7 @@ export class ExcelSyncService {
           // Create new
           const newItem = await itemRepository.create({
             category_id: categoryId,
+            type_id: typeId,
             name: _groupedItem.name,
             description: _groupedItem.description,
             base_model_number: baseModel,

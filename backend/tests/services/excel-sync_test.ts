@@ -73,7 +73,8 @@ Deno.test("ExcelSyncService - item repository can create items with base model",
     description: 'Test Description',
     base_model_number: 'MODEL123',
     dimensions: '100x50x20',
-    is_active: true
+    is_active: true,
+    type_id: 1,
   });
   
   assertExists(item);
@@ -94,7 +95,8 @@ Deno.test("ExcelSyncService - variant repository can create variants", async () 
     category_id: category.id,
     name: 'Test Product',
     base_model_number: 'MODEL1',
-    is_active: true
+    is_active: true,
+    type_id: 1,
   });
   
   // Create variants
@@ -130,7 +132,8 @@ Deno.test("ExcelSyncService - variant can have image path", async () => {
     category_id: category.id,
     name: 'Test Product',
     base_model_number: 'MODEL1',
-    is_active: true
+    is_active: true,
+    type_id: 1,
   });
   
   // Create variant with image
@@ -163,7 +166,8 @@ Deno.test("ExcelSyncService - variant addons can be linked", async () => {
     category_id: category.id,
     name: 'Parent Product',
     base_model_number: 'PARENT1',
-    is_active: true
+    is_active: true,
+    type_id: 1,
   });
   
   const parentVariant = await itemVariantRepository.create({
@@ -177,7 +181,8 @@ Deno.test("ExcelSyncService - variant addons can be linked", async () => {
     category_id: category.id,
     name: 'Addon Product',
     base_model_number: 'ADDON1',
-    is_active: true
+    is_active: true,
+    type_id: 1,
   });
   
   const addonVariant = await itemVariantRepository.create({

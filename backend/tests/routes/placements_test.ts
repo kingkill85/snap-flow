@@ -76,6 +76,7 @@ Deno.test('Placement - CRUD operations', async (t) => {
     base_model_number: 'TEST-001',
     dimensions: '100x100',
     is_active: true,
+    type_id: 1,
   });
   const itemId = item.id;
 
@@ -250,6 +251,7 @@ Deno.test('Placement - duplicate endpoint', async (t) => {
     base_model_number: 'TEST-001',
     dimensions: '100x100',
     is_active: true,
+    type_id: 1,
   });
   const itemId = item.id;
 
@@ -427,6 +429,7 @@ Deno.test('Placement - duplicate assigns area_id via containment', async (t) => 
     base_model_number: 'AREA-001',
     dimensions: '50x50',
     is_active: true,
+    type_id: 1,
   });
   const variant = await itemVariantRepository.create({
     item_id: item.id,
@@ -517,6 +520,7 @@ Deno.test('Placement - findById returns image path', async (t) => {
     base_model_number: 'IMG-001',
     dimensions: '50x50',
     is_active: true,
+    type_id: 1,
   });
   const variant = await itemVariantRepository.create({
     item_id: item.id,

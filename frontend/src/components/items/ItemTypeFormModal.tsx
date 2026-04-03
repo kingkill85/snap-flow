@@ -10,62 +10,68 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { X, Save } from 'lucide-react';
-import type { Area, UpdateAreaDTO } from '@/services/area';
+import { X, Save, Plus } from 'lucide-react';
+import { extractErrorMessage } from '@/utils';
+import type { ItemType, CreateItemTypeDTO, UpdateItemTypeDTO } from '@/services/item-type';
+import ItemTypeBadge from './ItemTypeBadge';
 
-export interface AreaEditModalProps {
-  area: Area | null; // null = closed
-  onSave: (id: number, data: UpdateAreaDTO) => Promise<void>;
+interface ItemTypeFormModalProps {
+  itemType: ItemType | null;
+  open: boolean;
   onClose: () => void;
+  onSubmit: (data: CreateItemTypeDTO | UpdateItemTypeDTO) => Promise<void>;
 }
 
-export function AreaEditModal({ area, onSave, onClose }: AreaEditModalProps) {
+const PRESET_COLORS = [
+  '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6',
+  '#06b6d4', '#ec4899', '#14b8a6', '#f97316',
+];
+
+export function ItemTypeFormModal({ itemType, open, onClose, onSubmit }: ItemTypeFormModalProps) {
+  const isEdit = !!itemType;
   const [name, setName] = useState('');
+  const [abbreviation, setAbbreviation] = useState('');
   const [color, setColor] = useState('#3b82f6');
-  const [opacity, setOpacity] = useState(10); // 0–100 (%)
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (area) {
-      setName(area.name || '');
-      setColor(area.color || '#3b82f6');
-      setOpacity(Math.round(area.opacity * 100));
+    if (itemType) {
+      setName(itemType.name);
+      setAbbreviation(itemType.abbreviation);
+      setColor(itemType.color);
     } else {
       setName('');
+      setAbbreviation('');
       setColor('#3b82f6');
-      setOpacity(10);
     }
     setError('');
-  }, [area]);
+  }, [itemType, open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!area) return;
     setError('');
     setIsLoading(true);
+
     try {
-      await onSave(area.id, {
-        name: name.trim() || undefined,
-        color,
-        opacity: opacity / 100,
-      });
+      await onSubmit({ name, abbreviation, color });
       onClose();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save area';
-      setError(message);
+      setError(extractErrorMessage(err, 'Failed to save product type'));
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <Dialog open={area !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[400px]">
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Edit Area</DialogTitle>
+          <DialogTitle>{isEdit ? 'Edit Product Type' : 'Create Product Type'}</DialogTitle>
           <DialogDescription>
-            Update the area name, color, and transparency.
+            {isEdit
+              ? 'Update product type details below.'
+              : 'Fill in the details to create a new product type.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -75,24 +81,39 @@ export function AreaEditModal({ area, onSave, onClose }: AreaEditModalProps) {
               {error}
             </div>
           )}
-          <div className="flex-1 overflow-y-auto px-1 space-y-5">
-            {/* Room Name */}
+          <div className="flex-1 overflow-y-auto px-1 space-y-4">
+            {/* Name */}
             <div className="space-y-2">
-              <Label htmlFor="area-name">Name</Label>
+              <Label htmlFor="item-type-name">Name</Label>
               <Input
-                id="area-name"
+                id="item-type-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., Living Room, Kitchen"
+                placeholder="e.g., Sensor, Switch, Controller"
+                required
                 autoFocus
               />
             </div>
 
-            {/* Shape Color */}
+            {/* Abbreviation */}
+            <div className="space-y-2">
+              <Label htmlFor="item-type-abbreviation">Abbreviation</Label>
+              <Input
+                id="item-type-abbreviation"
+                value={abbreviation}
+                onChange={(e) => setAbbreviation(e.target.value.toUpperCase().slice(0, 10))}
+                placeholder="e.g., SEN, SW, CTR"
+                maxLength={10}
+                required
+                className="font-mono uppercase"
+              />
+            </div>
+
+            {/* Color */}
             <div className="space-y-2">
               <Label>Color</Label>
               <div className="flex flex-wrap gap-2">
-                {['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#06b6d4','#ec4899','#14b8a6','#f97316'].map(c => (
+                {PRESET_COLORS.map((c) => (
                   <button
                     key={c}
                     type="button"
@@ -104,7 +125,6 @@ export function AreaEditModal({ area, onSave, onClose }: AreaEditModalProps) {
               </div>
               <div className="flex items-center gap-3">
                 <input
-                  id="area-color"
                   type="color"
                   value={color}
                   onChange={(e) => setColor(e.target.value)}
@@ -125,44 +145,17 @@ export function AreaEditModal({ area, onSave, onClose }: AreaEditModalProps) {
               </div>
             </div>
 
-            {/* Transparency */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="area-opacity">Transparency</Label>
-                <span className="text-sm text-muted-foreground">{opacity}%</span>
-              </div>
-              <input
-                id="area-opacity"
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={opacity}
-                onChange={(e) => setOpacity(Number(e.target.value))}
-                className="w-full h-2 cursor-pointer accent-primary"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>0% (invisible)</span>
-                <span>100% (solid)</span>
-              </div>
-            </div>
-
-            {/* Preview swatch */}
+            {/* Preview */}
             <div className="space-y-2">
               <Label>Preview</Label>
-              <div className="h-10 rounded-md border border-border overflow-hidden bg-muted relative">
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    backgroundImage:
-                      'repeating-conic-gradient(#cbd5e1 0% 25%, transparent 0% 50%)',
-                    backgroundSize: '12px 12px',
-                  }}
+              <div className="flex items-center gap-3 p-3 rounded-md border border-border bg-muted">
+                <ItemTypeBadge
+                  abbreviation={abbreviation || '...'}
+                  color={color}
                 />
-                <div
-                  className="absolute inset-0 rounded-md"
-                  style={{ backgroundColor: color, opacity: opacity / 100 }}
-                />
+                <span className="text-sm text-muted-foreground">
+                  {name || 'Type Name'}
+                </span>
               </div>
             </div>
           </div>
@@ -175,10 +168,15 @@ export function AreaEditModal({ area, onSave, onClose }: AreaEditModalProps) {
             <Button type="submit" disabled={isLoading}>
               {isLoading ? (
                 'Saving...'
-              ) : (
+              ) : isEdit ? (
                 <>
                   <Save className="mr-2 h-4 w-4" />
                   Update
+                </>
+              ) : (
+                <>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create
                 </>
               )}
             </Button>

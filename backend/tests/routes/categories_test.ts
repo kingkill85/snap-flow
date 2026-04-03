@@ -292,6 +292,7 @@ Deno.test('PUT /categories/:id - should deactivate category and cascade to items
     category_id: category.id,
     name: 'Test Item',
     base_model_number: 'TI-001',
+    type_id: 1,
   });
   
   // Create variants for item
@@ -379,6 +380,7 @@ Deno.test('PUT /categories/:id - should activate category without cascading to c
     name: 'Test Item',
     base_model_number: 'TI-001',
     is_active: false,
+    type_id: 1,
   });
 
   // Activate category
