@@ -206,6 +206,7 @@ export class ExcelImportService {
 
           const item = await itemRepository.create({
             category_id: category.id,
+            type_id: 1,
             name: previewItem.name,
             description: previewItem.description,
             base_model_number: previewItem.baseModelNumber,

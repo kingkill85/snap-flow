@@ -341,7 +341,7 @@ Deno.test('ExcelSyncService - syncCatalog handles missing file gracefully', asyn
   const { excelSyncService } = await import('../../src/services/excel-sync.ts');
 
   // Sync with non-existent file should fail gracefully with result.success = false
-  const result = await excelSyncService.syncCatalog('/nonexistent/file.xlsx');
+  const result = await excelSyncService.syncCatalog('/nonexistent/file.xlsx', 1);
 
   assertEquals(result.success, false);
   assertEquals(result.errors.length > 0, true);
