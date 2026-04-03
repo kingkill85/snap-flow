@@ -117,7 +117,6 @@ function DraggablePlacement({
   isCtrlPressed,
   isDuplicating,
   typeColor,
-  typeName,
 }: DraggablePlacementProps) {
   const [isResizing, setIsResizing] = useState(false);
   const [isRotating, setIsRotating] = useState(false);

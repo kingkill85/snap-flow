@@ -272,7 +272,7 @@ export const ItemPalette = forwardRef<ItemPaletteRef, ItemPaletteProps>(function
           const categoryItems = items.filter((item) =>
             item.category_id === category.id &&
             (selectedTypeFilter === null
-              ? (!projectItemTypeIds || projectItemTypeIds.includes(item.type_id))
+              ? (!projectItemTypeIds || !item.type_id || projectItemTypeIds.includes(item.type_id))
               : item.type_id === selectedTypeFilter)
           );
           if (categoryItems.length === 0) return null;
