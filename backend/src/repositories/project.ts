@@ -265,6 +265,24 @@ export class ProjectRepository {
     }
     return Promise.resolve();
   }
+
+  groupHasFloorplans(groupId: number): Promise<boolean> {
+    const result = getDb().queryEntries(`
+      SELECT COUNT(DISTINCT f.id) as count 
+      FROM floorplans f
+      JOIN projects p ON p.id = f.project_id
+      WHERE p.project_group_id = ?
+    `, [groupId]);
+    return Promise.resolve((result[0] as Record<string, unknown>).count as number > 0);
+  }
+
+  countVersions(groupId: number): Promise<number> {
+    const result = getDb().queryEntries(
+      `SELECT COUNT(*) as count FROM projects WHERE project_group_id = ?`,
+      [groupId]
+    );
+    return Promise.resolve((result[0] as Record<string, unknown>).count as number);
+  }
 }
 
 export const projectRepository = new ProjectRepository();
