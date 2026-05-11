@@ -1,48 +1,45 @@
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowLeft, Plus } from 'lucide-react';
 import type { Project } from '@/services/project';
 
 interface ProjectHeaderProps {
   project: Project;
   onBack: () => void;
+  onCreateVersion?: () => void;
 }
 
-const generateProjectNumber = (project: Project): string => {
-  const date = new Date(project.created_at);
-  const formattedDate = date.toISOString().split('T')[0];
-  const customerName = project.customer_name || 'Unknown';
-  const address = project.customer_address || 'No Address';
-  return `${formattedDate}_${customerName}_${address}`;
+const statusConfig: Record<string, { label: string; colorClass: string }> = {
+  active: { label: 'Active', colorClass: 'bg-green-100 text-green-700 border-green-200' },
+  completed: { label: 'Completed', colorClass: 'bg-blue-100 text-blue-700 border-blue-200' },
+  cancelled: { label: 'Cancelled', colorClass: 'bg-red-100 text-red-700 border-red-200' },
 };
 
-export function ProjectHeader({ project, onBack }: ProjectHeaderProps) {
+export function ProjectHeader({ project, onBack, onCreateVersion }: ProjectHeaderProps) {
+  const status = statusConfig[project.status] || statusConfig.active;
+
   return (
-    <div className="bg-card border-b px-2 flex items-center gap-2 flex-shrink-0 h-8">
-      <Button variant="ghost" size="icon" className="h-6 w-6 p-0" onClick={onBack}>
-        <ArrowLeft className="h-3 w-3" />
-      </Button>
-      <div className="h-4 w-px bg-border"></div>
-      <div className="text-sm text-muted-foreground leading-none">{generateProjectNumber(project)}</div>
-      <div className="h-4 w-px bg-border"></div>
-      <div className="font-medium text-sm truncate max-w-[200px] leading-none">{project.name}</div>
-      <div className="h-4 w-px bg-border"></div>
-      <div className="text-sm text-muted-foreground truncate max-w-[150px] leading-none">{project.customer_name}</div>
-      <div className="h-4 w-px bg-border"></div>
-      {project.status === 'active' ? (
-        <span className="inline-flex items-center text-green-600 text-sm leading-none">
-          <CheckCircle className="w-4 h-4 mr-1" />
-          Active
-        </span>
-      ) : project.status === 'completed' ? (
-        <span className="inline-flex items-center text-blue-600 text-sm leading-none">
-          <CheckCircle className="w-4 h-4 mr-1" />
-          Completed
-        </span>
-      ) : (
-        <span className="inline-flex items-center text-destructive text-sm leading-none">
-          <XCircle className="w-4 h-4 mr-1" />
-          Cancelled
-        </span>
+    <div className="bg-card border-b px-4 flex items-center justify-between h-14">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="h-5 w-px bg-border" />
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-semibold leading-none">
+            {project.group?.name || project.group_name || 'Group'}
+          </span>
+          <span className="text-muted-foreground leading-none">{'>'}</span>
+          <span className="text-lg leading-none">{project.version_name}</span>
+          <span className={`ml-2 px-2 py-0.5 rounded text-xs border ${status.colorClass}`}>
+            {status.label}
+          </span>
+        </div>
+      </div>
+      {onCreateVersion && (
+        <Button variant="outline" size="sm" onClick={onCreateVersion}>
+          <Plus className="mr-1 h-4 w-4" />
+          Create Version
+        </Button>
       )}
     </div>
   );

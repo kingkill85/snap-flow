@@ -19,7 +19,9 @@ import { FloorplanTabs } from '@/components/floorplans/FloorplanTabs';
 import { InvoiceSettingsModal, SummaryTab } from '@/components/invoice';
 import type { FloorplanAreaData } from '@/services/invoice-docx';
 import { ProjectHeader } from '@/components/projects/ProjectHeader';
+import { CreateVersionModal } from '@/components/projects/CreateVersionModal';
 import { EmptyFloorplanState } from '@/components/projects/EmptyFloorplanState';
+import { projectGroupService } from '@/services/projectGroup';
 
 import { extractErrorMessage, formatCurrency } from '@/utils';
 import { areaService } from '@/services/area';
@@ -37,8 +39,8 @@ import type { Area } from '@/services/area';
 const generateProjectNumber = (project: Project): string => {
   const date = new Date(project.created_at);
   const formattedDate = date.toISOString().split('T')[0];
-  const customerName = project.customer_name || 'Unknown';
-  const address = project.customer_address || 'No Address';
+  const customerName = project.group?.customer_name || project.customer_name || 'Unknown';
+  const address = project.group?.customer_address || project.customer_address || 'No Address';
   return `${formattedDate}_${customerName}_${address}`;
 };
 
@@ -87,6 +89,10 @@ const ProjectDashboard = () => {
 
   // Invoice settings state
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+
+  // Create Version modal state
+  const [showCreateVersionModal, setShowCreateVersionModal] = useState(false);
+  const [existingVersionNames, setExistingVersionNames] = useState<string[]>([]);
 
   // Active tab state for right panel
   const [activeTab, setActiveTab] = useState('products');
@@ -581,6 +587,32 @@ const ProjectDashboard = () => {
     setActiveTab('summary');
   };
 
+  const handleOpenCreateVersion = async () => {
+    if (!project?.group) return;
+    try {
+      const group = await projectGroupService.getById(project.group.id);
+      setExistingVersionNames(group.versions.map(v => v.version_name));
+      setShowCreateVersionModal(true);
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Failed to fetch version list'));
+    }
+  };
+
+  const handleCreateVersion = async (data: { version_name: string }) => {
+    if (!project?.group) return;
+    try {
+      const newProject = await projectGroupService.createVersion(
+        project.group.id,
+        { version_name: data.version_name }
+      );
+      setShowCreateVersionModal(false);
+      // Navigate to the newly created version
+      navigate(`/projects/${newProject.id}`);
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Failed to create version'));
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -607,7 +639,11 @@ const ProjectDashboard = () => {
 
   return (
     <div className="fixed inset-0 top-12 flex flex-col">
-      <ProjectHeader project={project} onBack={() => navigate('/projects')} />
+      <ProjectHeader
+        project={project}
+        onBack={() => navigate('/projects')}
+        onCreateVersion={handleOpenCreateVersion}
+      />
 
       {!canEdit && (
         <div className="bg-muted border-b px-4 py-2 text-sm text-muted-foreground text-center">
@@ -770,9 +806,9 @@ const ProjectDashboard = () => {
                 className={`flex-1 m-0 overflow-hidden ${activeTab !== 'summary' ? 'hidden' : ''}`}
               >
                 <SummaryTab
-                  projectName={project?.name || ''}
+                  projectName={project?.version_name || ''}
                   projectNumber={generateProjectNumber(project)}
-                  customerName={project?.customer_name || ''}
+                  customerName={project?.group?.customer_name || project?.customer_name || ''}
                   floorplans={floorplans}
                   floorplanTotals={floorplanTotals}
                   projectTotal={projectTotal}
@@ -853,6 +889,17 @@ const ProjectDashboard = () => {
         isOpen={showDeleteFloorplanModal}
         onClose={() => setShowDeleteFloorplanModal(false)}
         onConfirm={handleDeleteFloorplan}
+      />
+
+      <CreateVersionModal
+        groupName={project.group?.name || project.group_name || ''}
+        existingVersionNames={existingVersionNames}
+        isOpen={showCreateVersionModal}
+        onClose={() => {
+          setShowCreateVersionModal(false);
+          setExistingVersionNames([]);
+        }}
+        onSubmit={handleCreateVersion}
       />
 
       {error && (

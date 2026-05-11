@@ -33,18 +33,32 @@ interface ProjectFormModalProps {
   onSubmit: (data: CreateProjectDTO | UpdateProjectDTO) => Promise<void>;
 }
 
+interface FormData {
+  version_name: string;
+  status: 'active' | 'completed' | 'cancelled';
+  group_name: string;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  customer_address: string;
+  tenant_id: number;
+}
+
+const initialFormData: FormData = {
+  version_name: '',
+  status: 'active',
+  group_name: '',
+  customer_name: '',
+  customer_email: '',
+  customer_phone: '',
+  customer_address: '',
+  tenant_id: 0,
+};
+
 export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }: ProjectFormModalProps) {
   const isEdit = !!project;
   const isAdmin = tenants && tenants.length > 0;
-  const [formData, setFormData] = useState({
-    name: '',
-    status: 'active' as 'active' | 'completed' | 'cancelled',
-    customer_name: '',
-    customer_email: '',
-    customer_phone: '',
-    customer_address: '',
-    tenant_id: 0,
-  });
+  const [formData, setFormData] = useState<FormData>(initialFormData);
   const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
   const [selectedTypeIds, setSelectedTypeIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState('');
@@ -54,22 +68,18 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
     if (isOpen) {
       if (project) {
         setFormData({
-          name: project.name,
+          version_name: project.version_name || '',
           status: project.status,
-          customer_name: project.customer_name,
-          customer_email: project.customer_email || '',
-          customer_phone: project.customer_phone || '',
-          customer_address: project.customer_address || '',
+          group_name: project.group?.name || project.group_name || '',
+          customer_name: project.group?.customer_name || project.customer_name || '',
+          customer_email: project.group?.customer_email || project.customer_email || '',
+          customer_phone: project.group?.customer_phone || project.customer_phone || '',
+          customer_address: project.group?.customer_address || project.customer_address || '',
           tenant_id: project.tenant_id || 0,
         });
       } else {
         setFormData({
-          name: '',
-          status: 'active',
-          customer_name: '',
-          customer_email: '',
-          customer_phone: '',
-          customer_address: '',
+          ...initialFormData,
           tenant_id: tenants?.[0]?.id ?? 0,
         });
       }
@@ -88,7 +98,7 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
       }).catch(() => {/* ignore */});
       return () => controller.abort();
     }
-  }, [project, isOpen]);
+  }, [project, isOpen, tenants]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,23 +107,18 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
 
     try {
       if (isEdit) {
-        // Always include all fields so clearing optional fields actually saves
-        const updateData: UpdateProjectDTO & { tenant_id?: number } = {
-          name: formData.name,
+        const updateData: UpdateProjectDTO = {
+          version_name: formData.version_name,
           status: formData.status,
-          customer_name: formData.customer_name,
-          customer_email: formData.customer_email,
-          customer_phone: formData.customer_phone,
-          customer_address: formData.customer_address,
           item_type_ids: Array.from(selectedTypeIds),
         };
-        if (isAdmin && formData.tenant_id) updateData.tenant_id = formData.tenant_id;
         await onSubmit(updateData);
       } else {
-        const createData: CreateProjectDTO & { tenant_id?: number } = {
-          name: formData.name,
-          status: formData.status,
+        const createData: CreateProjectDTO = {
+          group_name: formData.group_name,
           customer_name: formData.customer_name,
+          version_name: formData.version_name || undefined,
+          status: formData.status,
           item_type_ids: Array.from(selectedTypeIds),
         };
         if (formData.customer_email) createData.customer_email = formData.customer_email;
@@ -124,21 +129,22 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
       }
       onClose();
     } catch (err: unknown) {
-      const errorMessage = extractErrorMessage(err, `Failed to ${isEdit ? 'update' : 'create'} project`);
+      const errorMessage = extractErrorMessage(err, `Failed to ${isEdit ? 'update' : 'create'} version`);
       setError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const modalTitle = isEdit ? 'Edit Version' : 'Create Project';
+  const modalDescription = isEdit ? 'Update version details below.' : 'Fill in the details to create a new project.';
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit Project' : 'Create Project'}</DialogTitle>
-          <DialogDescription>
-            {isEdit ? 'Update project details below.' : 'Fill in the details to create a new project.'}
-          </DialogDescription>
+          <DialogTitle>{modalTitle}</DialogTitle>
+          <DialogDescription>{modalDescription}</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
@@ -149,133 +155,157 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
           )}
 
           <div className="flex-1 overflow-y-auto px-1 space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Project Name *</Label>
-            <Input
-              id="name"
-              type="text"
-              placeholder="Living Room Renovation"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
-            <Select
-              value={formData.status}
-              onValueChange={(value: 'active' | 'completed' | 'cancelled') =>
-                setFormData({ ...formData, status: value })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {isAdmin && (
+            {/* Version Name - shown in both create and edit */}
             <div className="space-y-2">
-              <Label htmlFor="tenant">Tenant</Label>
+              <Label htmlFor="version_name">Version Name {isEdit ? '*' : ''}</Label>
+              <Input
+                id="version_name"
+                type="text"
+                placeholder={isEdit ? 'v1' : undefined}
+                required={isEdit}
+                value={formData.version_name}
+                onChange={(e) => setFormData({ ...formData, version_name: e.target.value })}
+              />
+            </div>
+
+            {/* Status - shown in both create and edit */}
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
               <Select
-                value={formData.tenant_id.toString()}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, tenant_id: parseInt(value) })
+                value={formData.status}
+                onValueChange={(value: 'active' | 'completed' | 'cancelled') =>
+                  setFormData({ ...formData, status: value })
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a tenant" />
+                  <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
-                  {tenants!.map((t) => (
-                    <SelectItem key={t.id} value={t.id.toString()}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          )}
 
-          {itemTypes.length > 0 && (
-            <div className="space-y-2">
-              <Label>Product Types</Label>
-              <div className="flex flex-wrap gap-3">
-                {itemTypes.map(t => (
-                  <label key={t.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedTypeIds.has(t.id)}
-                      onChange={() => {
-                        const next = new Set(selectedTypeIds);
-                        if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
-                        if (next.size > 0) setSelectedTypeIds(next);
-                      }}
-                      className="rounded"
-                    />
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
-                    {t.name}
-                  </label>
-                ))}
+            {/* Item Types - shown in both create and edit */}
+            {itemTypes.length > 0 && (
+              <div className="space-y-2">
+                <Label>Product Types</Label>
+                <div className="flex flex-wrap gap-3">
+                  {itemTypes.map(t => (
+                    <label key={t.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedTypeIds.has(t.id)}
+                        onChange={() => {
+                          const next = new Set(selectedTypeIds);
+                          if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
+                          if (next.size > 0) setSelectedTypeIds(next);
+                        }}
+                        className="rounded"
+                      />
+                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
+                      {t.name}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <Separator />
+            {/* Create-mode-only fields */}
+            {!isEdit && (
+              <>
+                <Separator />
 
-          <div>
-            <h4 className="text-sm font-semibold mb-3">Customer Information</h4>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="customer_name">Customer Name *</Label>
-                <Input
-                  id="customer_name"
-                  type="text"
-                  placeholder="John Doe"
-                  required
-                  value={formData.customer_name}
-                  onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customer_email">Email</Label>
-                <Input
-                  id="customer_email"
-                  type="email"
-                  placeholder="john@example.com"
-                  value={formData.customer_email}
-                  onChange={(e) => setFormData({ ...formData, customer_email: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customer_phone">Phone</Label>
-                <Input
-                  id="customer_phone"
-                  type="tel"
-                  placeholder="+1 234 567 8900"
-                  value={formData.customer_phone}
-                  onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customer_address">Address</Label>
-                <Input
-                  id="customer_address"
-                  type="text"
-                  placeholder="123 Main St, City, Country"
-                  value={formData.customer_address}
-                  onChange={(e) => setFormData({ ...formData, customer_address: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
+                {/* Group Name */}
+                <div className="space-y-2">
+                  <Label htmlFor="group_name">Group Name *</Label>
+                  <Input
+                    id="group_name"
+                    type="text"
+                    placeholder="My Project Group"
+                    required
+                    value={formData.group_name}
+                    onChange={(e) => setFormData({ ...formData, group_name: e.target.value })}
+                  />
+                </div>
 
+                {/* Tenant (admin only) */}
+                {isAdmin && (
+                  <div className="space-y-2">
+                    <Label htmlFor="tenant">Tenant</Label>
+                    <Select
+                      value={formData.tenant_id.toString()}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, tenant_id: parseInt(value) })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a tenant" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tenants!.map((t) => (
+                          <SelectItem key={t.id} value={t.id.toString()}>
+                            {t.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <Separator />
+
+                {/* Customer Information */}
+                <div>
+                  <h4 className="text-sm font-semibold mb-3">Customer Information</h4>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="customer_name">Customer Name *</Label>
+                      <Input
+                        id="customer_name"
+                        type="text"
+                        placeholder="John Doe"
+                        required
+                        value={formData.customer_name}
+                        onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="customer_email">Email</Label>
+                      <Input
+                        id="customer_email"
+                        type="email"
+                        placeholder="john@example.com"
+                        value={formData.customer_email}
+                        onChange={(e) => setFormData({ ...formData, customer_email: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="customer_phone">Phone</Label>
+                      <Input
+                        id="customer_phone"
+                        type="tel"
+                        placeholder="+1 234 567 8900"
+                        value={formData.customer_phone}
+                        onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="customer_address">Address</Label>
+                      <Input
+                        id="customer_address"
+                        type="text"
+                        placeholder="123 Main St, City, Country"
+                        value={formData.customer_address}
+                        onChange={(e) => setFormData({ ...formData, customer_address: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <DialogFooter>
