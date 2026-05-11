@@ -67,6 +67,20 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
         categoryService.getAll(signal),
       ]);
 
+      // Normalize nested group data for backward compatibility
+      if (projectData.group) {
+        // @ts-expect-error - backward compat
+        projectData.group_name = projectData.group.name;
+        // @ts-expect-error - backward compat
+        projectData.customer_name = projectData.group.customer_name;
+        // @ts-expect-error - backward compat
+        projectData.customer_email = projectData.group.customer_email;
+        // @ts-expect-error - backward compat
+        projectData.customer_phone = projectData.group.customer_phone;
+        // @ts-expect-error - backward compat
+        projectData.customer_address = projectData.group.customer_address;
+      }
+
       setProject(projectData);
       setFloorplans(floorplansData);
       setItems(itemsResult.items);
