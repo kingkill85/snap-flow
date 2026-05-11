@@ -1,13 +1,21 @@
 import api from './api';
 
-export interface Project {
+export interface ProjectGroup {
   id: number;
   name: string;
-  status: 'active' | 'completed' | 'cancelled';
   customer_name: string;
   customer_email: string | null;
   customer_phone: string | null;
   customer_address: string | null;
+  tenant_id: number;
+  created_at: string;
+}
+
+export interface Project {
+  id: number;
+  version_name: string;
+  status: 'active' | 'completed' | 'cancelled';
+  tenant_id: number;
   created_at: string;
   // Invoice settings
   discount_percentage: number;
@@ -16,27 +24,33 @@ export interface Project {
   services_usd: number;
   local_currency_code: string;
   exchange_rate: number;
-  tenant_id: number;
+  google_exchange_rate: number;
   item_type_ids?: number[];
+  // Joined group info (from API)
+  group?: ProjectGroup;
+  // For backward compat with flat responses
+  group_name?: string;
+  customer_name?: string;
+  customer_email?: string | null;
+  customer_phone?: string | null;
+  customer_address?: string | null;
 }
 
 export interface CreateProjectDTO {
-  name: string;
-  status?: 'active' | 'completed' | 'cancelled';
+  group_name: string;
   customer_name: string;
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
+  version_name?: string;
+  status?: 'active' | 'completed' | 'cancelled';
   item_type_ids?: number[];
 }
 
 export interface UpdateProjectDTO {
-  name?: string;
+  version_name?: string;
   status?: 'active' | 'completed' | 'cancelled';
-  customer_name?: string;
-  customer_email?: string;
-  customer_phone?: string;
-  customer_address?: string;
+  tenant_id?: number;
   item_type_ids?: number[];
 }
 

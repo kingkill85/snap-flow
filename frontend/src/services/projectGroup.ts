@@ -1,0 +1,60 @@
+import api from './api';
+import type { Project } from './project';
+
+export interface ProjectGroup {
+  id: number;
+  name: string;
+  customer_name: string;
+  customer_email: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
+  tenant_id: number;
+  created_at: string;
+  versions: ProjectVersion[];
+}
+
+export interface ProjectVersion {
+  id: number;
+  version_name: string;
+  status: 'active' | 'completed' | 'cancelled';
+  created_at: string;
+}
+
+export interface UpdateProjectGroupDTO {
+  name?: string;
+  customer_name?: string;
+  customer_email?: string;
+  customer_phone?: string;
+  customer_address?: string;
+}
+
+export interface CreateVersionDTO {
+  version_name: string;
+}
+
+export const projectGroupService = {
+  async getAll(search?: string, signal?: AbortSignal): Promise<ProjectGroup[]> {
+    const params = search ? { search } : undefined;
+    const response = await api.get('/project-groups', { params, signal });
+    return response.data.data;
+  },
+
+  async getById(id: number, signal?: AbortSignal): Promise<ProjectGroup> {
+    const response = await api.get(`/project-groups/${id}`, { signal });
+    return response.data.data;
+  },
+
+  async update(id: number, data: UpdateProjectGroupDTO, signal?: AbortSignal): Promise<ProjectGroup> {
+    const response = await api.put(`/project-groups/${id}`, data, { signal });
+    return response.data.data;
+  },
+
+  async createVersion(id: number, data: CreateVersionDTO, signal?: AbortSignal): Promise<Project> {
+    const response = await api.post(`/project-groups/${id}/versions`, data, { signal });
+    return response.data.data;
+  },
+
+  async delete(id: number, signal?: AbortSignal): Promise<void> {
+    await api.delete(`/project-groups/${id}`, { signal });
+  },
+};
