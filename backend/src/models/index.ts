@@ -204,15 +204,12 @@ export interface UpdatePlacementDTO {
   area_id?: number | null | undefined;
 }
 
-// Project (includes customer information directly)
+// Project (linked to project_group, has version_name)
 export interface Project {
   id: number;
-  name: string;
+  project_group_id: number;
+  version_name: string;
   status: 'active' | 'completed' | 'cancelled';
-  customer_name: string;
-  customer_email: string | null;
-  customer_phone: string | null;
-  customer_address: string | null;
   tenant_id: number;
   created_at: string;
   // Invoice settings
@@ -222,26 +219,24 @@ export interface Project {
   services_usd: number;
   local_currency_code: string;
   exchange_rate: number;
+  google_exchange_rate: number;
 }
 
 export interface CreateProjectDTO {
-  name: string;
-  status?: 'active' | 'completed' | 'cancelled';
+  group_name: string;        // NEW: group name
   customer_name: string;
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
+  version_name?: string;     // NEW: defaults to 'v1'
+  status?: 'active' | 'completed' | 'cancelled';
   tenant_id: number;
   item_type_ids?: number[];
 }
 
 export interface UpdateProjectDTO {
-  name?: string;
+  version_name?: string;
   status?: 'active' | 'completed' | 'cancelled';
-  customer_name?: string;
-  customer_email?: string;
-  customer_phone?: string;
-  customer_address?: string;
   tenant_id?: number;
   item_type_ids?: number[];
 }
