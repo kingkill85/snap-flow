@@ -2,12 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import ProjectList from '@/pages/projects/ProjectList';
-import { projectService } from '@/services/project';
+import { projectGroupService } from '@/services/projectGroup';
 
-vi.mock('@/services/project', () => ({
-  projectService: {
+vi.mock('@/services/projectGroup', () => ({
+  projectGroupService: {
     getAll: vi.fn(),
-    delete: vi.fn(),
   },
 }));
 
@@ -19,16 +18,24 @@ vi.mock('@/context/AuthContext', () => ({
 }));
 
 describe('ProjectList', () => {
-  const mockProjects = [
+  const mockGroups = [
     {
       id: 1,
+      name: 'Living Room Smart Home',
       customer_name: 'John Doe',
       customer_address: '123 Main St',
       customer_email: 'john@example.com',
       customer_phone: '555-0123',
-      status: 'active',
-      total_value: 15000,
+      tenant_id: 1,
       created_at: '2024-01-15T10:00:00Z',
+      versions: [
+        {
+          id: 1,
+          version_name: 'v1.0',
+          status: 'active',
+          created_at: '2024-01-15T10:00:00Z',
+        },
+      ],
     },
   ];
 
@@ -38,7 +45,7 @@ describe('ProjectList', () => {
 
   it('renders without crashing', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (projectService.getAll as any).mockResolvedValue(mockProjects);
+    (projectGroupService.getAll as any).mockResolvedValue(mockGroups);
 
     render(
       <BrowserRouter>
@@ -48,7 +55,7 @@ describe('ProjectList', () => {
 
     // Wait for async operations to complete
     await waitFor(() => {
-      expect(projectService.getAll).toHaveBeenCalled();
+      expect(projectGroupService.getAll).toHaveBeenCalled();
     });
   });
 });
