@@ -173,7 +173,7 @@ const ProjectList = () => {
       setShowDeleteGroupModal(false);
       setGroupToDelete(null);
       fetchGroups();
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       /* ignore - error shown elsewhere or not */
     } finally {
       setIsDeletingGroup(false);
@@ -187,9 +187,8 @@ const ProjectList = () => {
       await projectService.delete(versionToDelete.id);
       setShowDeleteVersionModal(false);
       setVersionToDelete(null);
-      setFloorplanCount(0);
       fetchGroups();
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       /* ignore - error shown elsewhere or not */
     } finally {
       setIsDeletingVersion(false);
