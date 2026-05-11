@@ -73,7 +73,7 @@ Deno.test('Projects tenant - admin can change project tenant_id via PUT', async 
       'Authorization': `Bearer ${adminToken}`,
     },
     body: JSON.stringify({
-      name: 'Moveable Project',
+      group_name: 'Moveable Project',
       customer_name: 'Customer X',
     }),
   });
@@ -129,7 +129,7 @@ Deno.test('Projects tenant - tenant admin cannot change project tenant_id (ignor
       'Authorization': `Bearer ${taToken}`,
     },
     body: JSON.stringify({
-      name: 'Locked Project',
+      group_name: 'Locked Project',
       customer_name: 'Customer Y',
     }),
   });
@@ -144,7 +144,7 @@ Deno.test('Projects tenant - tenant admin cannot change project tenant_id (ignor
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${taToken}`,
     },
-    body: JSON.stringify({ tenant_id: otherTenant, name: 'Renamed Project' }),
+    body: JSON.stringify({ tenant_id: otherTenant, version_name: 'Renamed Version' }),
   });
 
   const data = await parseJSON(res);
@@ -152,8 +152,8 @@ Deno.test('Projects tenant - tenant admin cannot change project tenant_id (ignor
   assertEquals(res.status, 200);
   // tenant_id should remain the original
   assertEquals(data.data.tenant_id, tenantId);
-  // Name should still be updated
-  assertEquals(data.data.name, 'Renamed Project');
+  // version_name should still be updated
+  assertEquals(data.data.version_name, 'Renamed Version');
 });
 
 // ──────────────────────────────────────────────
@@ -173,7 +173,7 @@ Deno.test('Projects tenant - new project gets caller tenant_id', async () => {
       'Authorization': `Bearer ${userToken}`,
     },
     body: JSON.stringify({
-      name: 'Tenant Project',
+      group_name: 'Tenant Project',
       customer_name: 'My Customer',
     }),
   });
@@ -208,7 +208,7 @@ Deno.test('Projects tenant - tenant user only sees own tenant projects', async (
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${tokenA}`,
     },
-    body: JSON.stringify({ name: 'Project A1', customer_name: 'Cust A1' }),
+    body: JSON.stringify({ group_name: 'Project A1', customer_name: 'Cust A1' }),
   });
   await testRequest('/api/projects', {
     method: 'POST',
@@ -216,7 +216,7 @@ Deno.test('Projects tenant - tenant user only sees own tenant projects', async (
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${tokenA}`,
     },
-    body: JSON.stringify({ name: 'Project A2', customer_name: 'Cust A2' }),
+    body: JSON.stringify({ group_name: 'Project A2', customer_name: 'Cust A2' }),
   });
   await testRequest('/api/projects', {
     method: 'POST',
@@ -224,7 +224,7 @@ Deno.test('Projects tenant - tenant user only sees own tenant projects', async (
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${tokenB}`,
     },
-    body: JSON.stringify({ name: 'Project B1', customer_name: 'Cust B1' }),
+    body: JSON.stringify({ group_name: 'Project B1', customer_name: 'Cust B1' }),
   });
 
   // User A should only see their 2 projects
@@ -273,7 +273,7 @@ Deno.test('Projects tenant - admin sees all projects across tenants', async () =
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${tokenA}`,
     },
-    body: JSON.stringify({ name: 'Proj A', customer_name: 'Cust A' }),
+    body: JSON.stringify({ group_name: 'Proj A', customer_name: 'Cust A' }),
   });
   await testRequest('/api/projects', {
     method: 'POST',
@@ -281,7 +281,7 @@ Deno.test('Projects tenant - admin sees all projects across tenants', async () =
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${tokenB}`,
     },
-    body: JSON.stringify({ name: 'Proj B', customer_name: 'Cust B' }),
+    body: JSON.stringify({ group_name: 'Proj B', customer_name: 'Cust B' }),
   });
 
   // Admin should see all projects
@@ -316,13 +316,13 @@ Deno.test('Projects tenant - user cannot delete projects (403)', async () => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${userToken}`,
     },
-    body: JSON.stringify({ name: 'User Project', customer_name: 'Cust' }),
+    body: JSON.stringify({ group_name: 'User Project', customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
   const projectId = createData.data.id;
 
-  // Attempt to delete — should be forbidden
+  // Attempt to delete — should be forbidden (user role, not admin/tenant_admin)
   const res = await testRequest(`/api/projects/${projectId}`, {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${userToken}` },
@@ -332,10 +332,10 @@ Deno.test('Projects tenant - user cannot delete projects (403)', async () => {
 });
 
 // ──────────────────────────────────────────────
-// Tenant admin can delete projects
+// Tenant admin cannot delete the last version in a group (400)
 // ──────────────────────────────────────────────
 
-Deno.test('Projects tenant - tenant admin can delete projects', async () => {
+Deno.test('Projects tenant - tenant admin cannot delete last version (400)', async () => {
   clearDatabase();
   const tenantId = createTenant('TA Delete Tenant');
   createUser('ta@example.com', 'password123', tenantId, 'tenant_admin');
@@ -348,26 +348,28 @@ Deno.test('Projects tenant - tenant admin can delete projects', async () => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${taToken}`,
     },
-    body: JSON.stringify({ name: 'TA Project', customer_name: 'Cust' }),
+    body: JSON.stringify({ group_name: 'TA Project', customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
   const projectId = createData.data.id;
 
-  // Delete — should succeed
+  // Delete — should fail (last version in group)
   const res = await testRequest(`/api/projects/${projectId}`, {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${taToken}` },
   });
 
-  assertEquals(res.status, 200);
+  assertEquals(res.status, 400);
+  const data = await parseJSON(res);
+  assertEquals(data.error.includes('last version'), true);
 });
 
 // ──────────────────────────────────────────────
-// Admin can delete projects
+// Admin cannot delete the last version in a group (400)
 // ──────────────────────────────────────────────
 
-Deno.test('Projects tenant - admin can delete projects', async () => {
+Deno.test('Projects tenant - admin cannot delete last version (400)', async () => {
   clearDatabase();
   createUser('admin@example.com', 'password123', 1, 'admin');
   const adminToken = await login('admin@example.com', 'password123');
@@ -379,19 +381,21 @@ Deno.test('Projects tenant - admin can delete projects', async () => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${adminToken}`,
     },
-    body: JSON.stringify({ name: 'Admin Project', customer_name: 'Cust' }),
+    body: JSON.stringify({ group_name: 'Admin Project', customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
   const projectId = createData.data.id;
 
-  // Delete — should succeed
+  // Delete — should fail (last version in group)
   const res = await testRequest(`/api/projects/${projectId}`, {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${adminToken}` },
   });
 
-  assertEquals(res.status, 200);
+  assertEquals(res.status, 400);
+  const data = await parseJSON(res);
+  assertEquals(data.error.includes('last version'), true);
 });
 
 // ──────────────────────────────────────────────
@@ -411,7 +415,7 @@ Deno.test('Projects tenant - user cannot edit non-active projects (403)', async 
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${userToken}`,
     },
-    body: JSON.stringify({ name: 'Soon Completed', customer_name: 'Cust' }),
+    body: JSON.stringify({ group_name: 'Soon Completed', customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
@@ -428,7 +432,7 @@ Deno.test('Projects tenant - user cannot edit non-active projects (403)', async 
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${userToken}`,
     },
-    body: JSON.stringify({ name: 'Renamed' }),
+    body: JSON.stringify({ version_name: 'Renamed' }),
   });
 
   assertEquals(res.status, 403);
@@ -451,7 +455,7 @@ Deno.test('Projects tenant - user can edit active projects', async () => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${userToken}`,
     },
-    body: JSON.stringify({ name: 'Active Project', customer_name: 'Cust' }),
+    body: JSON.stringify({ group_name: 'Active Project', customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
@@ -464,12 +468,12 @@ Deno.test('Projects tenant - user can edit active projects', async () => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${userToken}`,
     },
-    body: JSON.stringify({ name: 'Renamed Active' }),
+    body: JSON.stringify({ version_name: 'Renamed Active' }),
   });
 
   const data = await parseJSON(res);
   assertEquals(res.status, 200);
-  assertEquals(data.data.name, 'Renamed Active');
+  assertEquals(data.data.version_name, 'Renamed Active');
 });
 
 // ──────────────────────────────────────────────
@@ -489,7 +493,7 @@ Deno.test('Projects tenant - tenant admin can edit non-active projects', async (
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${taToken}`,
     },
-    body: JSON.stringify({ name: 'Completed Project', customer_name: 'Cust' }),
+    body: JSON.stringify({ group_name: 'Completed Project', customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
@@ -506,10 +510,10 @@ Deno.test('Projects tenant - tenant admin can edit non-active projects', async (
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${taToken}`,
     },
-    body: JSON.stringify({ name: 'TA Renamed Completed' }),
+    body: JSON.stringify({ version_name: 'TA Renamed Completed' }),
   });
 
   const data = await parseJSON(res);
   assertEquals(res.status, 200);
-  assertEquals(data.data.name, 'TA Renamed Completed');
+  assertEquals(data.data.version_name, 'TA Renamed Completed');
 });

@@ -215,7 +215,7 @@ Deno.test('POST /projects - should auto-assign all active item types when none s
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      name: 'Test Project',
+      group_name: 'Test Project',
       customer_name: 'Test Customer',
     }),
   });
@@ -249,7 +249,7 @@ Deno.test('PUT /projects/:id - should update item_type_ids in junction table', a
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      name: 'Update Types Project',
+      group_name: 'Update Types Project',
       customer_name: 'Test Customer',
     }),
   });
@@ -308,7 +308,7 @@ Deno.test('POST /placements - BOM entry should snapshot item_type_name', async (
 
   // Create project and floorplan
   const project = await projectRepository.create({
-    name: 'BOM Test Project',
+    group_name: 'BOM Test Project',
     customer_name: 'BOM Customer',
     tenant_id: 1,
   });

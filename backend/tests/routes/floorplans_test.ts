@@ -39,7 +39,7 @@ Deno.test('Floorplan - CRUD operations', async (t) => {
   
   // Create project
   const project = await projectRepository.create({
-    name: 'Test Project',
+    group_name: 'Test Project',
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
@@ -144,7 +144,7 @@ Deno.test('Floorplan - validation and errors', async (t) => {
 
   // Create project
   const project = await projectRepository.create({
-    name: 'Test Project',
+    group_name: 'Test Project',
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
@@ -211,7 +211,7 @@ Deno.test('Floorplan - reorder functionality', async (t) => {
 
   // Create project
   const project = await projectRepository.create({
-    name: 'Test Project',
+    group_name: 'Test Project',
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',
@@ -334,7 +334,7 @@ Deno.test('Floorplan - delete with image cleanup', async (t) => {
 
   // Create project
   const project = await projectRepository.create({
-    name: 'Test Project',
+    group_name: 'Test Project',
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
     status: 'active',

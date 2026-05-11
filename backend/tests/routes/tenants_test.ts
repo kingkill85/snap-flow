@@ -76,12 +76,17 @@ function createUser(email: string, tenantId: number, role = 'user'): number {
 function createProject(name: string, tenantId: number): number {
   const db = getDb();
   db.query(
-    'INSERT INTO projects (name, customer_name, tenant_id) VALUES (?, ?, ?)',
+    'INSERT INTO project_groups (name, customer_name, tenant_id) VALUES (?, ?, ?)',
     [name, 'Test Customer', tenantId],
   );
+  const groupId = Number(db.lastInsertRowId);
+  db.query(
+    'INSERT INTO projects (project_group_id, version_name, status, tenant_id) VALUES (?, ?, ?, ?)',
+    [groupId, 'v1', 'active', tenantId],
+  );
   const rows = db.queryEntries<{ id: number }>(
-    'SELECT id FROM projects WHERE name = ? AND tenant_id = ?',
-    [name, tenantId],
+    'SELECT id FROM projects WHERE project_group_id = ? AND tenant_id = ?',
+    [groupId, tenantId],
   );
   return rows[0].id;
 }

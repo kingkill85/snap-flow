@@ -47,7 +47,7 @@ Deno.test('BOM - Create placement auto-creates BOM entry with required addons', 
   
   // Create project
   const project = await projectRepository.create({
-    name: 'Test Project',
+    group_name: 'Test Project',
     customer_name: 'Test Customer',
     status: 'active',
     tenant_id: 1,
@@ -150,7 +150,7 @@ Deno.test('BOM - Get BOM for floorplan returns hierarchical structure', async ()
   
   // Create project
   const project = await projectRepository.create({
-    name: 'Test Project 2',
+    group_name: 'Test Project 2',
     customer_name: 'Test Customer',
     status: 'active',
     tenant_id: 1,
@@ -227,7 +227,7 @@ Deno.test('BOM - Delete last placement removes BOM entry', async () => {
   
   // Create project
   const project = await projectRepository.create({
-    name: 'Test Project 3',
+    group_name: 'Test Project 3',
     customer_name: 'Test Customer',
     status: 'active',
     tenant_id: 1,
@@ -303,7 +303,7 @@ Deno.test('BOM - Get project total sums all floorplan totals', async () => {
   
   // Create project
   const project = await projectRepository.create({
-    name: 'Test Project 4',
+    group_name: 'Test Project 4',
     customer_name: 'Test Customer',
     status: 'active',
     tenant_id: 1,

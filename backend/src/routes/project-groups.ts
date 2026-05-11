@@ -88,9 +88,9 @@ projectGroupRoutes.put('/:id', authMiddleware, zValidator('json', updateGroupSch
 
     if (name !== undefined) updateData.name = name;
     if (customer_name !== undefined) updateData.customer_name = customer_name;
-    if (customer_email !== undefined) updateData.customer_email = customer_email || null;
-    if (customer_phone !== undefined) updateData.customer_phone = customer_phone || null;
-    if (customer_address !== undefined) updateData.customer_address = customer_address || null;
+    if (customer_email !== undefined) updateData.customer_email = customer_email;
+    if (customer_phone !== undefined) updateData.customer_phone = customer_phone;
+    if (customer_address !== undefined) updateData.customer_address = customer_address;
 
     const updated = await projectGroupRepository.update(id, updateData);
 

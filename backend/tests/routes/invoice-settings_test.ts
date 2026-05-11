@@ -41,7 +41,7 @@ Deno.test('PUT /projects/:id/invoice-settings - should update invoice settings',
   
   // Create a test project
   const project = await projectRepository.create({
-    name: 'Test Project',
+    group_name: 'Test Project',
     customer_name: 'Test Customer',
     tenant_id: 1,
   });
@@ -73,7 +73,6 @@ Deno.test('PUT /projects/:id/invoice-settings - should update invoice settings',
     assertEquals(data.data.exchange_rate, 280);
     assertEquals(data.data.local_currency_code, 'PKR');
   } finally {
-    await projectRepository.delete(project.id);
     clearDatabase();
   }
 });
@@ -103,7 +102,7 @@ Deno.test('PUT /projects/:id/invoice-settings - should handle partial updates', 
   const token = await getAuthToken();
   
   const project = await projectRepository.create({
-    name: 'Test Project Partial',
+    group_name: 'Test Project Partial',
     customer_name: 'Test Customer',
     tenant_id: 1,
   });
@@ -141,7 +140,6 @@ Deno.test('PUT /projects/:id/invoice-settings - should handle partial updates', 
     assertEquals(data.data.discount_usd, 100); // Should retain old value
     assertEquals(data.data.services_usd, 200); // Should be updated
   } finally {
-    await projectRepository.delete(project.id);
     clearDatabase();
   }
 });
@@ -150,7 +148,7 @@ Deno.test('GET /projects/:id/invoice-calculation - should return calculated invo
   const token = await getAuthToken();
   
   const project = await projectRepository.create({
-    name: 'Test Project Calc',
+    group_name: 'Test Project Calc',
     customer_name: 'Test Customer',
     tenant_id: 1,
   });
@@ -179,7 +177,6 @@ Deno.test('GET /projects/:id/invoice-calculation - should return calculated invo
     assertEquals(typeof data.data.grandTotalUsd, 'number');
     assertEquals(typeof data.data.grandTotalLocal, 'number');
   } finally {
-    await projectRepository.delete(project.id);
     clearDatabase();
   }
 });

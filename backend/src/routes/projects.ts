@@ -37,23 +37,20 @@ const projectRoutes = new Hono();
 
 // Validation schema for creating projects
 const createProjectSchema = z.object({
-  name: z.string().min(1).max(200),
+  group_name: z.string().min(1).max(200),
   status: z.enum(['active', 'completed', 'cancelled']).optional(),
   customer_name: z.string().min(1).max(200),
   customer_email: z.string().email().optional().or(z.literal('')),
   customer_phone: z.string().max(50).optional().or(z.literal('')),
   customer_address: z.string().max(500).optional().or(z.literal('')),
+  version_name: z.string().min(1).max(100).optional(),
   item_type_ids: z.array(z.number()).optional(),
 });
 
 // Validation schema for updating projects
 const updateProjectSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
+  version_name: z.string().min(1).max(100).optional(),
   status: z.enum(['active', 'completed', 'cancelled']).optional(),
-  customer_name: z.string().min(1).max(200).optional(),
-  customer_email: z.string().email().optional().or(z.literal('')),
-  customer_phone: z.string().max(50).optional().or(z.literal('')),
-  customer_address: z.string().max(500).optional().or(z.literal('')),
   tenant_id: z.number().optional(),
   item_type_ids: z.array(z.number()).optional(),
 });
@@ -70,7 +67,7 @@ const updateInvoiceSettingsSchema = z.object({
 });
 
 // GET /projects - List all projects with optional search
-// Query param: search (filters by project name or customer name)
+// Query param: search (filters by version name, group name or customer name)
 projectRoutes.get('/', authMiddleware, async (c) => {
   try {
     const search = c.req.query('search');
@@ -180,13 +177,16 @@ projectRoutes.get('/:id', authMiddleware, async (c) => {
 
 // POST /projects - Create new project
 projectRoutes.post('/', authMiddleware, zValidator('json', createProjectSchema), async (c) => {
-  const { name, status, customer_name, customer_email, customer_phone, customer_address, item_type_ids } = c.req.valid('json');
+  const {
+    group_name, status, customer_name, customer_email, customer_phone,
+    customer_address, version_name, item_type_ids,
+  } = c.req.valid('json');
 
   try {
-    // Create project with customer info
     const tenantId = c.get('tenantId') as number;
-    const createData: CreateProjectDTO & { tenant_id: number } = {
-      name,
+
+    const createData: CreateProjectDTO = {
+      group_name,
       customer_name,
       tenant_id: tenantId,
     };
@@ -195,25 +195,21 @@ projectRoutes.post('/', authMiddleware, zValidator('json', createProjectSchema),
     if (customer_email) createData.customer_email = customer_email;
     if (customer_phone) createData.customer_phone = customer_phone;
     if (customer_address) createData.customer_address = customer_address;
+    if (version_name) createData.version_name = version_name;
+    if (item_type_ids) createData.item_type_ids = item_type_ids;
 
     const project = await projectRepository.create(createData);
 
-    // Set item type IDs for the project
-    if (item_type_ids && item_type_ids.length > 0) {
-      await projectRepository.setItemTypeIds(project.id, item_type_ids);
-    } else {
-      await projectRepository.setDefaultItemTypes(project.id);
-    }
-
-    const itemTypeIds = await projectRepository.getItemTypeIds(project.id);
+    // findById with joined group info for response
+    const fullProject = await projectRepository.findById(project.id);
+    const returnedItemTypeIds = await projectRepository.getItemTypeIds(project.id);
 
     return c.json({
-      data: { ...project, item_type_ids: itemTypeIds },
+      data: { ...fullProject, item_type_ids: returnedItemTypeIds },
       message: 'Project created successfully',
     }, 201);
   } catch (error: unknown) {
     console.error('Create project error:', error);
-    // Check for duplicate project error
     const message = error instanceof Error ? error.message : 'Unknown error';
     if (message.includes('already exists')) {
       return c.json({ error: message }, 400);
@@ -256,7 +252,7 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
   if (isNaN(id)) {
     return c.json({ error: 'Invalid ID' }, 400);
   }
-  const { name, status, customer_name, customer_email, customer_phone, customer_address, tenant_id, item_type_ids } = c.req.valid('json');
+  const { version_name, status, tenant_id, item_type_ids } = c.req.valid('json');
   const callerRole = c.get('userRole') as string;
 
   try {
@@ -273,21 +269,13 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
     }
 
     const updateData: {
-      name?: string;
+      version_name?: string;
       status?: 'active' | 'completed' | 'cancelled';
-      customer_name?: string;
-      customer_email?: string;
-      customer_phone?: string;
-      customer_address?: string;
       tenant_id?: number;
     } = {};
 
-    if (name !== undefined) updateData.name = name;
+    if (version_name !== undefined) updateData.version_name = version_name;
     if (status !== undefined) updateData.status = status;
-    if (customer_name !== undefined) updateData.customer_name = customer_name;
-    if (customer_email !== undefined && customer_email !== '') updateData.customer_email = customer_email;
-    if (customer_phone !== undefined && customer_phone !== '') updateData.customer_phone = customer_phone;
-    if (customer_address !== undefined && customer_address !== '') updateData.customer_address = customer_address;
     if (tenant_id !== undefined && callerRole === 'admin') updateData.tenant_id = tenant_id;
 
     const project = await projectRepository.update(id, updateData, ctx);
@@ -305,7 +293,6 @@ projectRoutes.put('/:id', authMiddleware, zValidator('json', updateProjectSchema
     });
   } catch (error: unknown) {
     console.error('Update project error:', error);
-    // Check for duplicate project error
     const message = error instanceof Error ? error.message : 'Unknown error';
     if (message.includes('already exists')) {
       return c.json({ error: message }, 400);
@@ -342,12 +329,16 @@ projectRoutes.delete('/:id', authMiddleware, async (c) => {
     }
 
     await projectRepository.delete(id, ctx);
-    
+
     return c.json({
       message: 'Project deleted successfully',
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Delete project error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message.includes('last version')) {
+      return c.json({ error: message }, 400);
+    }
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

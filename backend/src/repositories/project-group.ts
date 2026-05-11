@@ -154,7 +154,7 @@ export class ProjectGroupRepository {
     return Promise.resolve();
   }
 
-  async createVersion(groupId: number, data: CreateVersionDTO, tenantId: number): Promise<Project> {
+  createVersion(groupId: number, data: CreateVersionDTO, tenantId: number): Promise<Project> {
     return withTransactionAsync(async () => {
       const db = getDb();
 
@@ -363,7 +363,7 @@ export class ProjectGroupRepository {
   /**
    * Copy a floorplan image file to a new location
    */
-  private async _copyFloorplanImage(sourcePath: string): Promise<string> {
+  private _copyFloorplanImage(sourcePath: string): Promise<string> {
     return fileStorageService.copyFile(sourcePath, 'floorplans');
   }
 }
