@@ -49,7 +49,11 @@ export const projectGroupService = {
     return response.data.data;
   },
 
-  async createVersion(id: number, data: CreateVersionDTO, signal?: AbortSignal): Promise<Project> {
+  async createVersion(
+    id: number,
+    data: CreateVersionDTO & { source_project_id: number },
+    signal?: AbortSignal
+  ): Promise<Project> {
     const response = await api.post(`/project-groups/${id}/versions`, data, { signal });
     return response.data.data;
   },

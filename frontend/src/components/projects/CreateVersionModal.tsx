@@ -17,14 +17,16 @@ import { extractErrorMessage } from '@/utils';
 interface CreateVersionModalProps {
   groupName: string;
   existingVersionNames: string[];
+  sourceProjectId: number;
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: { version_name: string }) => Promise<void>;
+  onSubmit: (data: { version_name: string; source_project_id: number }) => Promise<void>;
 }
 
 export function CreateVersionModal({
   groupName,
   existingVersionNames,
+  sourceProjectId,
   isOpen,
   onClose,
   onSubmit,
@@ -58,7 +60,7 @@ export function CreateVersionModal({
 
     setIsSubmitting(true);
     try {
-      await onSubmit({ version_name: trimmed });
+      await onSubmit({ version_name: trimmed, source_project_id: sourceProjectId });
       onClose();
     } catch (err: unknown) {
       const errorMessage = extractErrorMessage(err, 'Failed to create version');

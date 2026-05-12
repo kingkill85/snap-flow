@@ -1,11 +1,10 @@
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import type { Project } from '@/services/project';
 
 interface ProjectHeaderProps {
   project: Project;
   onBack: () => void;
-  onCreateVersion?: () => void;
 }
 
 const statusConfig: Record<string, { label: string; colorClass: string }> = {
@@ -14,7 +13,7 @@ const statusConfig: Record<string, { label: string; colorClass: string }> = {
   cancelled: { label: 'Cancelled', colorClass: 'bg-red-100 text-red-700 border-red-200' },
 };
 
-export function ProjectHeader({ project, onBack, onCreateVersion }: ProjectHeaderProps) {
+export function ProjectHeader({ project, onBack }: ProjectHeaderProps) {
   const status = statusConfig[project.status] || statusConfig.active;
 
   return (
@@ -35,12 +34,6 @@ export function ProjectHeader({ project, onBack, onCreateVersion }: ProjectHeade
           </span>
         </div>
       </div>
-      {onCreateVersion && (
-        <Button variant="outline" size="sm" onClick={onCreateVersion}>
-          <Plus className="mr-1 h-4 w-4" />
-          Create Version
-        </Button>
-      )}
     </div>
   );
 }

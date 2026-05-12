@@ -79,6 +79,7 @@ const ProjectList = () => {
   const [groupToDelete, setGroupToDelete] = useState<ProjectGroup | null>(null);
   const [groupForAction, setGroupForAction] = useState<ProjectGroup | null>(null);
   const [versionForAction, setVersionForAction] = useState<ProjectVersion | null>(null);
+  const [sourceProjectId, setSourceProjectId] = useState<number | null>(null);
   const [floorplanCount, setFloorplanCount] = useState<number>(0);
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
   const [isEditVersionSubmitting, setIsEditVersionSubmitting] = useState(false);
@@ -206,8 +207,9 @@ const ProjectList = () => {
     }
   };
 
-  const openCreateVersion = (group: ProjectGroup) => {
+  const openCreateVersion = (group: ProjectGroup, sourceVersionId: number) => {
     setGroupForAction(group);
+    setSourceProjectId(sourceVersionId);
     setShowCreateVersionModal(true);
   };
 
@@ -221,8 +223,8 @@ const ProjectList = () => {
     setShowDeleteGroupModal(true);
   };
 
-  const handleCreateVersion = async (groupId: number, versionName: string) => {
-    await projectGroupService.createVersion(groupId, { version_name: versionName });
+  const handleCreateVersion = async (groupId: number, versionName: string, sourceProjectId: number) => {
+    await projectGroupService.createVersion(groupId, { version_name: versionName, source_project_id: sourceProjectId });
     fetchGroups();
   };
 
@@ -445,14 +447,6 @@ const ProjectList = () => {
                             <Eye className="mr-1 h-3 w-3" />
                             Open
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openCreateVersion(group)}
-                          >
-                            <Plus className="mr-1 h-3 w-3" />
-                            Create Version
-                          </Button>
                           {canManage && (
                             <Button
                               variant="outline"
@@ -500,6 +494,16 @@ const ProjectList = () => {
                                   <Eye className="mr-1 h-3 w-3" />
                                   Open
                                 </Button>
+                                {canManage && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openCreateVersion(group, version.id)}
+                                  >
+                                    <Plus className="mr-1 h-3 w-3" />
+                                    Create Version
+                                  </Button>
+                                )}
                                 {(canManage || version.status === 'active') && (
                                   <Button
                                     variant="outline"
@@ -548,14 +552,16 @@ const ProjectList = () => {
       <CreateVersionModal
         groupName={groupForAction?.name || ''}
         existingVersionNames={groupForAction?.versions.map(v => v.version_name) || []}
+        sourceProjectId={sourceProjectId ?? 0}
         isOpen={showCreateVersionModal}
         onClose={() => {
           setShowCreateVersionModal(false);
           setGroupForAction(null);
+          setSourceProjectId(null);
         }}
         onSubmit={async (data) => {
-          if (groupForAction) {
-            await handleCreateVersion(groupForAction.id, data.version_name);
+          if (groupForAction && data.source_project_id) {
+            await handleCreateVersion(groupForAction.id, data.version_name, data.source_project_id);
           }
         }}
       />
