@@ -8,6 +8,14 @@ import { floorplanService } from '@/services/floorplan';
 import { tenantService, type Tenant } from '@/services/tenants';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Table,
   TableBody,
@@ -31,7 +39,7 @@ import { ProjectFormModal } from '@/components/projects/ProjectFormModal';
 import { CreateVersionModal } from '@/components/projects/CreateVersionModal';
 import { EditGroupModal } from '@/components/projects/EditGroupModal';
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
-import { Plus, Pencil, Trash2, Eye, Search, Loader2, CheckCircle, XCircle, ChevronDown, ChevronRight, Save, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, Search, Loader2, ChevronDown, ChevronRight, Save, X, GitBranch, MoreVertical } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -295,32 +303,10 @@ const ProjectList = () => {
     return numA.localeCompare(numB);
   });
 
-  const renderStatusBadge = (status: string) => {
-    if (status === 'active') {
-      return (
-        <span className="inline-flex items-center text-green-600 text-sm">
-          <CheckCircle className="w-4 h-4 mr-1" />
-          Active
-        </span>
-      );
-    }
-    if (status === 'completed') {
-      return (
-        <span className="inline-flex items-center text-blue-600 text-sm">
-          <CheckCircle className="w-4 h-4 mr-1" />
-          Completed
-        </span>
-      );
-    }
-    if (status === 'cancelled') {
-      return (
-        <span className="inline-flex items-center text-red-600 text-sm">
-          <XCircle className="w-4 h-4 mr-1" />
-          Cancelled
-        </span>
-      );
-    }
-    return <span className="text-muted-foreground text-sm">{status}</span>;
+  const getGroupStatus = (group: ProjectGroup): VersionStatus | string => {
+    if (group.versions.length === 0) return '-';
+    if (group.versions.some(v => v.status === 'active')) return 'active';
+    return group.versions[0].status;
   };
 
   if (isLoading) {
@@ -436,7 +422,16 @@ const ProjectList = () => {
                           {tenantMap[group.tenant_id] || '—'}
                         </TableCell>
                       )}
-                      <TableCell>{renderStatusBadge(getGroupStatus(group))}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const s = getGroupStatus(group);
+                          return (
+                            <Badge variant={s === 'active' ? 'default' : s === 'completed' ? 'secondary' : 'destructive'} className="text-xs">
+                              {s.charAt(0).toUpperCase() + s.slice(1)}
+                            </Badge>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell>
                         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                           <Button
@@ -470,25 +465,43 @@ const ProjectList = () => {
                         </div>
                       </TableCell>
                     </TableRow>
-                    {expandedGroups.has(group.id) && (
+                    {expandedGroups.has(group.id) && group.versions.length > 0 && (
                       <>
                         {group.versions.map((version) => (
-                          <TableRow key={`version-${version.id}`} className="bg-muted/30">
-                            <TableCell className="p-2"></TableCell>
+                          <TableRow key={`version-${version.id}`} className="border-l-2 border-l-primary/60 bg-muted/20 hover:bg-muted/40 transition-colors">
+                            {/* Indent / branch icon */}
+                            <TableCell className="p-2">
+                              <div className="flex justify-center">
+                                <GitBranch className="h-4 w-4 text-muted-foreground rotate-90" />
+                              </div>
+                            </TableCell>
+                            {/* Empty cells for Project Number and Group Name */}
                             <TableCell></TableCell>
-                            <TableCell className="pl-8 font-medium text-sm">
-                              {version.version_name}
+                            <TableCell></TableCell>
+                            {/* Version name + create date */}
+                            <TableCell className="pl-4">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-sm">
+                                  {version.version_name}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(version.created_at).toLocaleDateString('de-DE')}
+                                </span>
+                              </div>
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {new Date(version.created_at).toLocaleDateString()}
-                            </TableCell>
-                            {isAdmin && <TableCell></TableCell>}
-                            <TableCell>{renderStatusBadge(version.status)}</TableCell>
+                            {/* Status badge */}
                             <TableCell>
-                              <div className="flex gap-2">
+                              <Badge variant={version.status === 'active' ? 'default' : version.status === 'completed' ? 'secondary' : 'destructive'} className="text-xs">
+                                {version.status.charAt(0).toUpperCase() + version.status.slice(1)}
+                              </Badge>
+                            </TableCell>
+                            {/* Actions */}
+                            <TableCell>
+                              <div className="flex items-center gap-2">
                                 <Button
-                                  variant="outline"
+                                  variant="default"
                                   size="sm"
+                                  className="h-8"
                                   onClick={() => navigate(`/projects/${version.id}`)}
                                 >
                                   <Eye className="mr-1 h-3 w-3" />
@@ -498,32 +511,40 @@ const ProjectList = () => {
                                   <Button
                                     variant="outline"
                                     size="sm"
+                                    className="h-8"
                                     onClick={() => openCreateVersion(group, version.id)}
                                   >
                                     <Plus className="mr-1 h-3 w-3" />
-                                    Create Version
+                                    Copy
                                   </Button>
                                 )}
-                                {(canManage || version.status === 'active') && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => openEditVersion(version)}
-                                  >
-                                    <Pencil className="mr-1 h-3 w-3" />
-                                    Edit
-                                  </Button>
-                                )}
-                                {canManage && (
-                                  <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={() => openDeleteVersion(version)}
-                                  >
-                                    <Trash2 className="mr-1 h-3 w-3" />
-                                    Delete
-                                  </Button>
-                                )}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    {(canManage || version.status === 'active') && (
+                                      <DropdownMenuItem onClick={() => openEditVersion(version)}>
+                                        <Pencil className="mr-2 h-4 w-4" />
+                                        Edit
+                                      </DropdownMenuItem>
+                                    )}
+                                    {canManage && (
+                                      <>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                          onClick={() => openDeleteVersion(version)}
+                                          className="text-red-600 focus:text-red-600"
+                                        >
+                                          <Trash2 className="mr-2 h-4 w-4" />
+                                          Delete
+                                        </DropdownMenuItem>
+                                      </>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </div>
                             </TableCell>
                           </TableRow>
