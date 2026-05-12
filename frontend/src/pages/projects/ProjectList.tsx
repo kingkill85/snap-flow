@@ -303,12 +303,6 @@ const ProjectList = () => {
     return numA.localeCompare(numB);
   });
 
-  const getGroupStatus = (group: ProjectGroup): VersionStatus | string => {
-    if (group.versions.length === 0) return '-';
-    if (group.versions.some(v => v.status === 'active')) return 'active';
-    return group.versions[0].status;
-  };
-
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
