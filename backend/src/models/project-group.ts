@@ -39,4 +39,5 @@ export interface UpdateProjectGroupDTO {
 
 export interface CreateVersionDTO {
   version_name: string;
+  source_project_id: number;
 }

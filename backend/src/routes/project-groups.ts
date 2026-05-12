@@ -27,6 +27,7 @@ const updateGroupSchema = z.object({
 
 const createVersionSchema = z.object({
   version_name: z.string().min(1).max(100),
+  source_project_id: z.number().int().positive(),
 });
 
 // GET /project-groups - List all groups
@@ -115,7 +116,7 @@ projectGroupRoutes.post('/:id/versions', authMiddleware, zValidator('json', crea
   if (isNaN(id)) {
     return c.json({ error: 'Invalid ID' }, 400);
   }
-  const { version_name } = c.req.valid('json');
+  const { version_name, source_project_id } = c.req.valid('json');
 
   try {
     // Check if group exists
@@ -125,6 +126,12 @@ projectGroupRoutes.post('/:id/versions', authMiddleware, zValidator('json', crea
       return c.json({ error: 'Project group not found' }, 404);
     }
 
+    // Validate that source_project_id belongs to this group
+    const sourceProjectExists = group.versions.some((v) => v.id === source_project_id);
+    if (!sourceProjectExists) {
+      return c.json({ error: 'Source version not found in this group' }, 404);
+    }
+
     // Check duplicate version name
     const duplicate = group.versions.some((v) => v.version_name === version_name);
     if (duplicate) {
@@ -132,7 +139,7 @@ projectGroupRoutes.post('/:id/versions', authMiddleware, zValidator('json', crea
     }
 
     const tenantId = c.get('tenantId') as number;
-    const newProject = await projectGroupRepository.createVersion(id, { version_name }, tenantId);
+    const newProject = await projectGroupRepository.createVersion(source_project_id, { version_name, source_project_id }, tenantId);
 
     return c.json({
       data: newProject,
@@ -141,7 +148,7 @@ projectGroupRoutes.post('/:id/versions', authMiddleware, zValidator('json', crea
   } catch (error: unknown) {
     console.error('Create version error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    if (message.includes('No versions found')) {
+    if (message.includes('Source version not found')) {
       return c.json({ error: message }, 400);
     }
     return c.json({ error: 'Internal server error' }, 500);

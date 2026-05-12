@@ -154,26 +154,24 @@ export class ProjectGroupRepository {
     return Promise.resolve();
   }
 
-  createVersion(groupId: number, data: CreateVersionDTO, tenantId: number): Promise<Project> {
+  createVersion(sourceProjectId: number, data: CreateVersionDTO, tenantId: number): Promise<Project> {
     return withTransactionAsync(async () => {
       const db = getDb();
 
-      // Step a: Find latest version in group
-      const latestVersions = db.queryEntries(`
-        SELECT id, status, discount_percentage, discount_usd,
+      // Step a: Load source project directly
+      const sourceProjects = db.queryEntries(`
+        SELECT id, project_group_id, status, discount_percentage, discount_usd,
                services_percentage, services_usd, local_currency_code,
                exchange_rate, google_exchange_rate
         FROM projects
-        WHERE project_group_id = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-      `, [groupId]) as unknown as Project[];
+        WHERE id = ?
+      `, [sourceProjectId]) as unknown as Project[];
 
-      if (latestVersions.length === 0) {
-        throw new Error('No versions found in group');
+      if (sourceProjects.length === 0) {
+        throw new Error('Source version not found');
       }
 
-      const sourceProject = latestVersions[0];
+      const sourceProject = sourceProjects[0];
 
       // Step b: Create new project row
       const newProjectRows = db.queryEntries(`
@@ -186,7 +184,7 @@ export class ProjectGroupRepository {
                   discount_percentage, discount_usd, services_percentage, services_usd,
                   local_currency_code, exchange_rate, google_exchange_rate
       `, [
-        groupId,
+        sourceProject.project_group_id,
         data.version_name,
         sourceProject.status,
         tenantId,
@@ -228,13 +226,80 @@ export class ProjectGroupRepository {
         floorplanIdMap.set(fp.id, newFpId);
       }
 
-      // Steps d-h: Copy placements, areas, and their related data
+      // Step d: Copy project_bom entries (two-pass for parent_bom_id)
+      const oldFloorplanIds = Array.from(floorplanIdMap.keys());
+      const bomIdMap = new Map<number, number>();
+
+      if (oldFloorplanIds.length > 0) {
+        const fpPlaceholders = oldFloorplanIds.map(() => '?').join(',');
+
+        const bomEntries = db.queryEntries(`
+          SELECT id, floorplan_id, item_id, variant_id, parent_bom_id,
+                 item_name, style_name, model_number, unit_price, picture_path, area_id, item_type_name
+          FROM project_bom
+          WHERE floorplan_id IN (${fpPlaceholders})
+        `, oldFloorplanIds) as unknown as Array<{
+          id: number;
+          floorplan_id: number;
+          item_id: number;
+          variant_id: number;
+          parent_bom_id: number | null;
+          item_name: string;
+          style_name: string | null;
+          model_number: string | null;
+          unit_price: number;
+          picture_path: string | null;
+          area_id: number | null;
+          item_type_name: string | null;
+        }>;
+
+        // First pass: insert all with parent_bom_id = null, build bomIdMap
+        for (const bom of bomEntries) {
+          const newFloorplanId = floorplanIdMap.get(bom.floorplan_id);
+          if (!newFloorplanId) continue;
+
+          const newBomRows = db.queryEntries(`
+            INSERT INTO project_bom (
+              project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+              item_name, style_name, model_number, unit_price, picture_path, area_id, item_type_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+          `, [
+            newProject.id,
+            newFloorplanId,
+            bom.item_id,
+            bom.variant_id,
+            null,
+            bom.item_name,
+            bom.style_name,
+            bom.model_number,
+            bom.unit_price,
+            bom.picture_path,
+            bom.area_id,
+            bom.item_type_name,
+          ]);
+
+          const newBomId = (newBomRows[0] as Record<string, unknown>).id as number;
+          bomIdMap.set(bom.id, newBomId);
+        }
+
+        // Second pass: update parent_bom_id using bomIdMap
+        for (const bom of bomEntries) {
+          if (bom.parent_bom_id !== null && bomIdMap.has(bom.parent_bom_id)) {
+            const newBomId = bomIdMap.get(bom.id)!;
+            const newParentId = bomIdMap.get(bom.parent_bom_id);
+            db.query(`UPDATE project_bom SET parent_bom_id = ? WHERE id = ?`, [newParentId, newBomId]);
+          }
+        }
+      }
+
+      // Steps e-h: Copy placements, areas, and their related data
       const floorplanIds = Array.from(floorplanIdMap.keys());
 
       if (floorplanIds.length > 0) {
         const placeholders = floorplanIds.map(() => '?').join(',');
 
-        // Step d: Copy placements and build ID map
+        // Step e: Copy placements and build ID map
         const placements = db.queryEntries(`
           SELECT id, bom_id, floorplan_id, type, area_id, x, y, width, height, rotation
           FROM placements
@@ -258,12 +323,14 @@ export class ProjectGroupRepository {
           const newFloorplanId = floorplanIdMap.get(p.floorplan_id);
           if (!newFloorplanId) continue;
 
+          const newBomId = p.bom_id !== null ? bomIdMap.get(p.bom_id) ?? null : null;
+
           const newPlacementRows = db.queryEntries(`
             INSERT INTO placements (bom_id, floorplan_id, type, area_id, x, y, width, height, rotation)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
           `, [
-            null,
+            newBomId,
             newFloorplanId,
             p.type,
             null,
@@ -278,7 +345,7 @@ export class ProjectGroupRepository {
           placementIdMap.set(p.id, newPlacementId);
         }
 
-        // Step e: Fix area_id references on placements
+        // Step f: Fix area_id references on placements
         for (const p of placements) {
           if (p.area_id !== null && placementIdMap.has(p.area_id)) {
             const newId = placementIdMap.get(p.id)!;
@@ -287,7 +354,7 @@ export class ProjectGroupRepository {
           }
         }
 
-        // Step f: Copy area_properties
+        // Step g: Copy area_properties
         const areaProperties = db.queryEntries(`
           SELECT ap.placement_id, ap.name, ap.color, ap.opacity
           FROM area_properties ap
@@ -310,7 +377,7 @@ export class ProjectGroupRepository {
           `, [newPlacementId, ap.name, ap.color, ap.opacity]);
         }
 
-        // Step g: Copy area_vertices
+        // Step h: Copy area_vertices
         const areaVertices = db.queryEntries(`
           SELECT av.placement_id, av.vertex_index, av.x, av.y
           FROM area_vertices av
