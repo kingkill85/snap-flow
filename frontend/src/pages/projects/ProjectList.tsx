@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { projectService, type Project, type CreateProjectDTO, type UpdateProjectDTO } from '@/services/project';
@@ -410,8 +410,8 @@ const ProjectList = () => {
                 </TableRow>
               ) : (
                 filteredGroups.map((group) => (
-                  <>
-                    <TableRow key={`group-${group.id}`} className="cursor-pointer hover:bg-muted/50" onClick={() => toggleExpand(group.id)}>
+                  <Fragment key={`group-${group.id}`}>
+                    <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggleExpand(group.id)}>
                       <TableCell className="p-2">
                         <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={(e) => { e.stopPropagation(); toggleExpand(group.id); }}>
                           {expandedGroups.has(group.id) ? (
@@ -530,7 +530,7 @@ const ProjectList = () => {
                         ))}
                       </>
                     )}
-                  </>
+                  </Fragment>
                 ))
               )}
             </TableBody>
