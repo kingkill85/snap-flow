@@ -8,7 +8,6 @@ import { floorplanService } from '@/services/floorplan';
 import { tenantService, type Tenant } from '@/services/tenants';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,8 +56,6 @@ const generateProjectNumber = (group: ProjectGroup): string => {
   const address = group.customer_address || 'No Address';
   return `${formattedDate}_${customerName}_${address}`;
 };
-
-type VersionStatus = 'active' | 'completed' | 'cancelled';
 
 const ProjectList = () => {
   const navigate = useNavigate();
@@ -286,12 +283,6 @@ const ProjectList = () => {
     });
   };
 
-  const getGroupStatus = (group: ProjectGroup): VersionStatus | string => {
-    if (group.versions.length === 0) return '-';
-    if (group.versions.some(v => v.status === 'active')) return 'active';
-    return group.versions[0].status;
-  };
-
   const filteredGroups = groups.filter(group => {
     if (filterStatus !== 'all') {
       return group.versions.some(v => v.status === filterStatus);
@@ -374,17 +365,16 @@ const ProjectList = () => {
               <TableRow>
                 <TableHead className="w-8"></TableHead>
                 <TableHead>Project Number</TableHead>
-                <TableHead>Group Name</TableHead>
+                <TableHead>Project</TableHead>
                 <TableHead>Customer</TableHead>
                 {isAdmin && <TableHead>Tenant</TableHead>}
-                <TableHead>Status</TableHead>
-                <TableHead className="w-40"></TableHead>
+                <TableHead className="w-48"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredGroups.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={isAdmin ? 6 : 5} className="text-center py-8 text-muted-foreground">
                     No projects found. Create your first project to get started.
                   </TableCell>
                 </TableRow>
@@ -416,16 +406,6 @@ const ProjectList = () => {
                           {tenantMap[group.tenant_id] || '—'}
                         </TableCell>
                       )}
-                      <TableCell>
-                        {(() => {
-                          const s = getGroupStatus(group);
-                          return (
-                            <Badge variant={s === 'active' ? 'default' : s === 'completed' ? 'secondary' : 'destructive'} className="text-xs">
-                              {s.charAt(0).toUpperCase() + s.slice(1)}
-                            </Badge>
-                          );
-                        })()}
-                      </TableCell>
                       <TableCell>
                         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                           <Button
@@ -460,90 +440,81 @@ const ProjectList = () => {
                       </TableCell>
                     </TableRow>
                     {expandedGroups.has(group.id) && group.versions.length > 0 && (
-                      <>
-                        {group.versions.map((version) => (
-                          <TableRow key={`version-${version.id}`} className="border-l-2 border-l-primary/60 bg-muted/20 hover:bg-muted/40 transition-colors">
-                            {/* Indent / branch icon */}
-                            <TableCell className="p-2">
-                              <div className="flex justify-center">
-                                <GitBranch className="h-4 w-4 text-muted-foreground rotate-90" />
-                              </div>
-                            </TableCell>
-                            {/* Empty cells for Project Number and Group Name */}
-                            <TableCell></TableCell>
-                            <TableCell></TableCell>
-                            {/* Version name + create date */}
-                            <TableCell className="pl-4">
-                              <div className="flex flex-col">
-                                <span className="font-medium text-sm">
-                                  {version.version_name}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {new Date(version.created_at).toLocaleDateString('de-DE')}
-                                </span>
-                              </div>
-                            </TableCell>
-                            {/* Status badge */}
-                            <TableCell>
-                              <Badge variant={version.status === 'active' ? 'default' : version.status === 'completed' ? 'secondary' : 'destructive'} className="text-xs">
-                                {version.status.charAt(0).toUpperCase() + version.status.slice(1)}
-                              </Badge>
-                            </TableCell>
-                            {/* Actions */}
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  variant="default"
-                                  size="sm"
-                                  className="h-8"
-                                  onClick={() => navigate(`/projects/${version.id}`)}
-                                >
-                                  <Eye className="mr-1 h-3 w-3" />
-                                  Open
-                                </Button>
-                                {canManage && (
+                      <TableRow key={`versions-${group.id}`} className="border-0 hover:bg-transparent">
+                        <TableCell colSpan={isAdmin ? 6 : 5} className="p-0">
+                          <div className="border-l-2 border-l-primary/30 bg-muted/10 mx-4 mb-2 rounded-r-md">
+                            {group.versions.map((version, idx) => (
+                              <div
+                                key={version.id}
+                                className={`flex items-center justify-between px-4 py-3 ${
+                                  idx !== group.versions.length - 1 ? 'border-b border-border/40' : ''
+                                }`}
+                              >
+                                {/* Left: icon + name + date */}
+                                <div className="flex items-center gap-3">
+                                  <GitBranch className="h-4 w-4 text-muted-foreground" />
+                                  <div>
+                                    <span className="font-medium text-sm">{version.version_name}</span>
+                                    <span className="text-xs text-muted-foreground ml-3">
+                                      {new Date(version.created_at).toLocaleDateString('de-DE')}
+                                    </span>
+                                  </div>
+                                </div>
+                                {/* Right: actions */}
+                                <div className="flex items-center gap-2">
                                   <Button
-                                    variant="outline"
+                                    variant="default"
                                     size="sm"
                                     className="h-8"
-                                    onClick={() => openCreateVersion(group, version.id)}
+                                    onClick={() => navigate(`/projects/${version.id}`)}
                                   >
-                                    <Plus className="mr-1 h-3 w-3" />
-                                    Copy
+                                    <Eye className="mr-1 h-3 w-3" />
+                                    Open
                                   </Button>
-                                )}
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                      <MoreVertical className="h-4 w-4" />
+                                  {canManage && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8"
+                                      onClick={() => openCreateVersion(group, version.id)}
+                                    >
+                                      <Plus className="mr-1 h-3 w-3" />
+                                      Copy
                                     </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    {(canManage || version.status === 'active') && (
-                                      <DropdownMenuItem onClick={() => openEditVersion(version)}>
-                                        <Pencil className="mr-2 h-4 w-4" />
-                                        Edit
-                                      </DropdownMenuItem>
-                                    )}
-                                    {canManage && (
-                                      <>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem
-                                          onClick={() => openDeleteVersion(version)}
-                                          className="text-red-600 focus:text-red-600"
-                                        >
-                                          <Trash2 className="mr-2 h-4 w-4" />
-                                          Delete
+                                  )}
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                        <MoreVertical className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      {(canManage || version.status === 'active') && (
+                                        <DropdownMenuItem onClick={() => openEditVersion(version)}>
+                                          <Pencil className="mr-2 h-4 w-4" />
+                                          Edit
                                         </DropdownMenuItem>
-                                      </>
-                                    )}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                      )}
+                                      {canManage && (
+                                        <>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem
+                                            onClick={() => openDeleteVersion(version)}
+                                            className="text-red-600 focus:text-red-600"
+                                          >
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Delete
+                                          </DropdownMenuItem>
+                                        </>
+                                      )}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
                               </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </>
+                            ))}
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     )}
                   </Fragment>
                 ))
