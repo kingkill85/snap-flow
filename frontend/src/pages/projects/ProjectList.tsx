@@ -365,7 +365,6 @@ const ProjectList = () => {
               <TableRow>
                 <TableHead className="w-8"></TableHead>
                 <TableHead>Project Number</TableHead>
-                <TableHead>Project</TableHead>
                 <TableHead>Customer</TableHead>
                 {isAdmin && <TableHead>Tenant</TableHead>}
                 <TableHead className="w-48"></TableHead>
@@ -374,7 +373,7 @@ const ProjectList = () => {
             <TableBody>
               {filteredGroups.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={isAdmin ? 6 : 5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={isAdmin ? 5 : 4} className="text-center py-8 text-muted-foreground">
                     No projects found. Create your first project to get started.
                   </TableCell>
                 </TableRow>
@@ -393,12 +392,6 @@ const ProjectList = () => {
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {generateProjectNumber(group)}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {group.name}{' '}
-                        <span className="text-muted-foreground text-xs">
-                          ({group.versions.length} versions)
-                        </span>
                       </TableCell>
                       <TableCell>{group.customer_name}</TableCell>
                       {isAdmin && (
@@ -441,7 +434,7 @@ const ProjectList = () => {
                     </TableRow>
                     {expandedGroups.has(group.id) && group.versions.length > 0 && (
                       <TableRow key={`versions-${group.id}`} className="border-0 hover:bg-transparent">
-                        <TableCell colSpan={isAdmin ? 6 : 5} className="p-0">
+                        <TableCell colSpan={isAdmin ? 5 : 4} className="p-0">
                           <div className="border-l-2 border-l-primary/30 bg-muted/10 mx-4 mb-2 rounded-r-md">
                             {group.versions.map((version, idx) => (
                               <div
