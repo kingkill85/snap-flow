@@ -1,9 +1,20 @@
-import type { InvoiceCalculationResult } from '../models/index.ts';
-
 /**
  * Invoice Calculation Service
  * Calculates invoice totals based on BOM total and invoice settings
  */
+
+interface InvoiceCalculationResult {
+  bomTotal: number;
+  discountAmount: number;
+  discountPercentage: number;
+  servicesAmount: number;
+  servicesPercentage: number;
+  totalAfterDiscount: number;
+  grandTotalUsd: number;
+  grandTotalLocal: number;
+  localCurrencyCode: string;
+  exchangeRate: number;
+}
 
 interface InvoiceSettings {
   discount_percentage: number;

@@ -4,7 +4,6 @@ import { floorplanService, type Floorplan } from '@/services/floorplan';
 import { itemService, type Item } from '@/services/item';
 import { categoryService, type Category } from '@/services/category';
 import { bomService } from '@/services/bom';
-import type { InvoiceSettings } from '@/services/invoice-settings';
 import type { FloorplanBom } from '@/services/bom';
 import { extractErrorMessage } from '@/utils';
 
@@ -31,8 +30,6 @@ interface UseProjectDataReturn {
   setError: React.Dispatch<React.SetStateAction<string>>;
   visibleCategories: Set<number>;
   setVisibleCategories: React.Dispatch<React.SetStateAction<Set<number>>>;
-  invoiceSettings: InvoiceSettings | null;
-  setInvoiceSettings: React.Dispatch<React.SetStateAction<InvoiceSettings | null>>;
   floorplanBoms: Map<number, FloorplanBom>;
   setFloorplanBoms: React.Dispatch<React.SetStateAction<Map<number, FloorplanBom>>>;
   fetchProjectData: (signal?: AbortSignal) => Promise<void>;
@@ -49,7 +46,6 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
   const [showNotFound, setShowNotFound] = useState(false);
   const [error, setError] = useState('');
   const [visibleCategories, setVisibleCategories] = useState<Set<number>>(new Set());
-  const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings | null>(null);
   const [floorplanBoms, setFloorplanBoms] = useState<Map<number, FloorplanBom>>(new Map());
 
   // Use ref to avoid circular dependency
@@ -70,8 +66,6 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
       // Normalize nested group data for backward compatibility
       if (projectData.group) {
         // @ts-expect-error - backward compat
-        projectData.group_name = projectData.group.name;
-        // @ts-expect-error - backward compat
         projectData.customer_name = projectData.group.customer_name;
         // @ts-expect-error - backward compat
         projectData.customer_email = projectData.group.customer_email;
@@ -89,17 +83,7 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
       // Initialize visible categories with all category IDs from items
       const categoryIds = new Set(itemsResult.items.map(item => item.category_id));
       setVisibleCategories(categoryIds);
-      
-      // Extract invoice settings from project data
-      setInvoiceSettings({
-        discount_percentage: projectData.discount_percentage,
-        discount_usd: projectData.discount_usd,
-        services_percentage: projectData.services_percentage,
-        services_usd: projectData.services_usd,
-        local_currency_code: projectData.local_currency_code,
-        exchange_rate: projectData.exchange_rate,
-      });
-      
+
       if (floorplansData.length > 0) {
         // Use ref to get current value without dependency
         const currentActive = activeFloorplanRef.current;
@@ -164,8 +148,6 @@ export function useProjectData({ projectId }: UseProjectDataProps): UseProjectDa
     setError,
     visibleCategories,
     setVisibleCategories,
-    invoiceSettings,
-    setInvoiceSettings,
     floorplanBoms,
     setFloorplanBoms,
     fetchProjectData,

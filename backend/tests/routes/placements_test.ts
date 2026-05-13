@@ -48,10 +48,9 @@ Deno.test('Placement - CRUD operations', async (t) => {
   
   // Create project
   const project = await projectRepository.create({
-    group_name: 'Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
   const projectId = project.id;
@@ -223,10 +222,9 @@ Deno.test('Placement - duplicate endpoint', async (t) => {
   
   // Create project
   const project = await projectRepository.create({
-    group_name: 'Duplicate Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
   const projectId = project.id;
@@ -391,10 +389,9 @@ Deno.test('Placement - duplicate assigns area_id via containment', async (t) => 
 
   // Create project + floorplan
   const project = await projectRepository.create({
-    group_name: 'Area Containment Test',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
 
@@ -499,10 +496,9 @@ Deno.test('Placement - findById returns image path', async (t) => {
   const _db = getDb();
 
   const project = await projectRepository.create({
-    group_name: 'Image Path Test',
+   
     customer_name: 'Test',
     customer_address: '123 St',
-    status: 'active',
     tenant_id: 1,
   });
 

@@ -8,24 +8,37 @@ export interface ProjectGroup {
   customer_email: string | null;
   customer_phone: string | null;
   customer_address: string | null;
+  status: 'active' | 'completed' | 'cancelled';
   tenant_id: number;
   created_at: string;
+  // Invoice settings
+  discount_percentage: number;
+  discount_usd: number;
+  services_percentage: number;
+  services_usd: number;
+  local_currency_code: string;
+  exchange_rate: number;
   versions: ProjectVersion[];
 }
 
 export interface ProjectVersion {
   id: number;
   version_name: string;
-  status: 'active' | 'completed' | 'cancelled';
   created_at: string;
 }
 
 export interface UpdateProjectGroupDTO {
-  name?: string;
+  status?: 'active' | 'completed' | 'cancelled';
   customer_name?: string;
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
+  discount_percentage?: number;
+  discount_usd?: number;
+  services_percentage?: number;
+  services_usd?: number;
+  local_currency_code?: string;
+  exchange_rate?: number;
 }
 
 export interface CreateVersionDTO {

@@ -30,11 +30,11 @@ export interface ExchangeRateResponse {
 
 export const invoiceSettingsService = {
   async saveSettings(
-    projectId: number, 
+    groupId: number, 
     settings: Partial<InvoiceSettings>, 
     signal?: AbortSignal
   ): Promise<InvoiceSettings> {
-    const response = await api.put(`/projects/${projectId}/invoice-settings`, settings, { signal });
+    const response = await api.put(`/project-groups/${groupId}/invoice-settings`, settings, { signal });
     return response.data.data;
   },
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { categoryService, type Category } from '@/services/category';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -15,7 +15,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
 import { Plus, Pencil, Trash2, ArrowUp, ArrowDown, Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { extractErrorMessage } from '@/utils';
 
 const CategoryManagement = () => {
@@ -30,7 +30,7 @@ const CategoryManagement = () => {
   const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
   const [showInactive, setShowInactive] = useState(false);
 
-  const fetchCategories = async (signal?: AbortSignal) => {
+  const fetchCategories = useCallback(async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
       const data = await categoryService.getAll(signal, showInactive);
@@ -44,7 +44,7 @@ const CategoryManagement = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [showInactive]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -53,7 +53,7 @@ const CategoryManagement = () => {
     return () => {
       controller.abort();
     };
-  }, [showInactive]);
+  }, [showInactive, fetchCategories]);
 
   const handleCreateCategory = async (data: { name: string; is_active: boolean }) => {
     await categoryService.create({ name: data.name });

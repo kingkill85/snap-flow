@@ -15,7 +15,7 @@ import { Loader2, Plus, X } from 'lucide-react';
 import { extractErrorMessage } from '@/utils';
 
 interface CreateVersionModalProps {
-  groupName: string;
+  customerName: string;
   existingVersionNames: string[];
   sourceProjectId: number;
   isOpen: boolean;
@@ -24,7 +24,7 @@ interface CreateVersionModalProps {
 }
 
 export function CreateVersionModal({
-  groupName,
+  customerName,
   existingVersionNames,
   sourceProjectId,
   isOpen,
@@ -76,7 +76,7 @@ export function CreateVersionModal({
         <DialogHeader>
           <DialogTitle>Create Version</DialogTitle>
           <DialogDescription>
-            Create a new version for group <strong>{groupName}</strong>.
+            Create a new version for <strong>{customerName}</strong>.
           </DialogDescription>
         </DialogHeader>
 

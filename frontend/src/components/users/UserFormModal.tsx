@@ -68,7 +68,7 @@ export function UserFormModal({ user, currentUserRole, tenants, isOpen, onClose,
       });
     }
     setError('');
-  }, [user, isOpen]);
+  }, [user, isOpen, tenants]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

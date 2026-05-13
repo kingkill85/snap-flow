@@ -74,12 +74,13 @@ Deno.test('Database - projects table has correct structure', () => {
   assertEquals(columnNames.includes('id'), true);
   assertEquals(columnNames.includes('project_group_id'), true);
   assertEquals(columnNames.includes('version_name'), true);
-  assertEquals(columnNames.includes('status'), true);
   assertEquals(columnNames.includes('tenant_id'), true);
-  assertEquals(columnNames.includes('discount_percentage'), true);
-  assertEquals(columnNames.includes('exchange_rate'), true);
-  assertEquals(columnNames.includes('local_currency_code'), true);
+  assertEquals(columnNames.includes('google_exchange_rate'), true);
   assertEquals(columnNames.includes('created_at'), true);
+  // Invoice settings moved to project_groups (migration 037)
+  assertEquals(columnNames.includes('discount_percentage'), false);
+  assertEquals(columnNames.includes('exchange_rate'), false);
+  assertEquals(columnNames.includes('local_currency_code'), false);
 });
 
 Deno.test('Database - projects has index on project_group_id and tenant_id', () => {

@@ -17,7 +17,7 @@ import { invoiceSettingsService, type InvoiceSettings } from '@/services/invoice
 import { extractErrorMessage } from '@/utils';
 
 interface InvoiceSettingsModalProps {
-  projectId: number;
+  groupId: number;
   bomTotal: number;
   isOpen: boolean;
   onClose: () => void;
@@ -36,7 +36,7 @@ interface FormData {
 }
 
 export function InvoiceSettingsModal({
-  projectId,
+  groupId,
   bomTotal,
   isOpen,
   onClose,
@@ -76,7 +76,7 @@ export function InvoiceSettingsModal({
           discount_usd: numToStr(initialSettings.discount_usd),
           services_percentage: numToStr(initialSettings.services_percentage),
           services_usd: numToStr(initialSettings.services_usd),
-          local_currency_code: initialSettings.local_currency_code,
+          local_currency_code: initialSettings.local_currency_code || 'PKR',
           exchange_rate: numToStr(initialSettings.exchange_rate),
         });
       } else {
@@ -122,6 +122,10 @@ export function InvoiceSettingsModal({
   }, [grandTotalUsd, exchangeRate]);
 
   const handleFetchGoogleRate = async () => {
+    if (!formData.local_currency_code) {
+      setError('Please select a currency code first');
+      return;
+    }
     setIsFetchingRate(true);
     try {
       const response = await invoiceSettingsService.getExchangeRate(formData.local_currency_code);
@@ -139,7 +143,7 @@ export function InvoiceSettingsModal({
     setIsSubmitting(true);
 
     try {
-      const savedSettings = await invoiceSettingsService.saveSettings(projectId, {
+      const savedSettings = await invoiceSettingsService.saveSettings(groupId, {
         discount_percentage: discountPercentage,
         discount_usd: discountUsd,
         services_percentage: servicesPercentage,

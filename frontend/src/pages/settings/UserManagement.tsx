@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/context/AuthContext';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { userService, type CreateUserDTO, type UpdateUserDTO } from '@/services/user';
 import { tenantService, type Tenant } from '@/services/tenants';
 import type { User } from '@/types';
@@ -35,7 +35,7 @@ const UserManagement = () => {
 
   const isAdmin = currentUser?.role === 'admin';
 
-  const fetchUsers = async (signal?: AbortSignal) => {
+  const fetchUsers = useCallback(async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
       const data = await userService.getAll(signal);
@@ -59,7 +59,7 @@ const UserManagement = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser?.role]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -68,7 +68,7 @@ const UserManagement = () => {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [fetchUsers]);
 
   const handleSubmitUser = async (data: CreateUserDTO | UpdateUserDTO) => {
     if (userToEdit) {

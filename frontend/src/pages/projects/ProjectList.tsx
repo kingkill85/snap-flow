@@ -1,20 +1,13 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { projectService, type Project, type CreateProjectDTO, type UpdateProjectDTO } from '@/services/project';
 import { projectGroupService } from '@/services/projectGroup';
 import type { ProjectGroup, ProjectVersion } from '@/services/projectGroup';
-import { floorplanService } from '@/services/floorplan';
 import { tenantService, type Tenant } from '@/services/tenants';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+
 import {
   Table,
   TableBody,
@@ -38,7 +31,7 @@ import { ProjectFormModal } from '@/components/projects/ProjectFormModal';
 import { CreateVersionModal } from '@/components/projects/CreateVersionModal';
 import { EditGroupModal } from '@/components/projects/EditGroupModal';
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
-import { Plus, Pencil, Trash2, Eye, Search, Loader2, ChevronDown, ChevronRight, Save, X, GitBranch, MoreVertical } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, Search, Loader2, ChevronDown, ChevronRight, Save, X, GitBranch, CheckCircle, XCircle } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -85,13 +78,14 @@ const ProjectList = () => {
   const [groupForAction, setGroupForAction] = useState<ProjectGroup | null>(null);
   const [versionForAction, setVersionForAction] = useState<ProjectVersion | null>(null);
   const [sourceProjectId, setSourceProjectId] = useState<number | null>(null);
-  const [floorplanCount, setFloorplanCount] = useState<number>(0);
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
   const [isEditVersionSubmitting, setIsEditVersionSubmitting] = useState(false);
   const [editVersionError, setEditVersionError] = useState('');
-  const [editVersionForm, setEditVersionForm] = useState({ version_name: '', status: 'active' as VersionStatus });
+  const [editVersionForm, setEditVersionForm] = useState({ version_name: '' });
   const [isDeletingVersion, setIsDeletingVersion] = useState(false);
+  const [deleteVersionError, setDeleteVersionError] = useState('');
   const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+  const [deleteGroupError, setDeleteGroupError] = useState('');
   const hasInitializedSearchRef = useRef(false);
   const searchQueryRef = useRef(searchQuery);
   searchQueryRef.current = searchQuery;
@@ -173,14 +167,17 @@ const ProjectList = () => {
 
   const handleDeleteGroup = async () => {
     if (!groupToDelete) return;
+    setDeleteGroupError('');
     setIsDeletingGroup(true);
     try {
       await projectGroupService.delete(groupToDelete.id);
       setShowDeleteGroupModal(false);
       setGroupToDelete(null);
       fetchGroups();
-    } catch (_err: unknown) {
-      /* ignore - error shown elsewhere or not */
+    } catch (err: unknown) {
+      const msg = extractErrorMessage(err, 'Failed to delete group');
+      setDeleteGroupError(msg);
+      throw err; // re-throw so modal stays open
     } finally {
       setIsDeletingGroup(false);
     }
@@ -188,14 +185,17 @@ const ProjectList = () => {
 
   const handleDeleteVersion = async () => {
     if (!versionToDelete) return;
+    setDeleteVersionError('');
     setIsDeletingVersion(true);
     try {
       await projectService.delete(versionToDelete.id);
       setShowDeleteVersionModal(false);
       setVersionToDelete(null);
       fetchGroups();
-    } catch (_err: unknown) {
-      /* ignore - error shown elsewhere or not */
+    } catch (err: unknown) {
+      const msg = extractErrorMessage(err, 'Failed to delete version');
+      setDeleteVersionError(msg);
+      throw err; // re-throw so modal stays open
     } finally {
       setIsDeletingVersion(false);
     }
@@ -235,7 +235,7 @@ const ProjectList = () => {
 
   const openEditVersion = (version: ProjectVersion) => {
     setVersionForAction(version);
-    setEditVersionForm({ version_name: version.version_name, status: version.status });
+    setEditVersionForm({ version_name: version.version_name });
     setEditVersionError('');
     setShowEditVersionModal(true);
   };
@@ -248,7 +248,6 @@ const ProjectList = () => {
     try {
       await projectService.update(versionForAction.id, {
         version_name: editVersionForm.version_name,
-        status: editVersionForm.status,
       });
       setShowEditVersionModal(false);
       setVersionForAction(null);
@@ -260,14 +259,8 @@ const ProjectList = () => {
     }
   };
 
-  const openDeleteVersion = async (version: ProjectVersion) => {
+  const openDeleteVersion = (version: ProjectVersion) => {
     setVersionToDelete(version);
-    try {
-      const floorplans = await floorplanService.getAll(version.id);
-      setFloorplanCount(floorplans.length);
-    } catch {
-      setFloorplanCount(0);
-    }
     setShowDeleteVersionModal(true);
   };
 
@@ -285,7 +278,7 @@ const ProjectList = () => {
 
   const filteredGroups = groups.filter(group => {
     if (filterStatus !== 'all') {
-      return group.versions.some(v => v.status === filterStatus);
+      return group.status === filterStatus;
     }
     return true;
   }).sort((a, b) => {
@@ -367,17 +360,18 @@ const ProjectList = () => {
                 <TableHead>Project Number</TableHead>
                 <TableHead>Customer</TableHead>
                 {isAdmin && <TableHead>Tenant</TableHead>}
+                <TableHead>Status</TableHead>
                 <TableHead className="w-48"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredGroups.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={isAdmin ? 5 : 4} className="text-center py-8 text-muted-foreground">
-                    No projects found. Create your first project to get started.
-                  </TableCell>
-                </TableRow>
-              ) : (
+                {filteredGroups.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={isAdmin ? 6 : 5} className="text-center py-8 text-muted-foreground">
+                      No projects found. Create your first project to get started.
+                    </TableCell>
+                  </TableRow>
+                ) : (
                 filteredGroups.map((group) => (
                   <Fragment key={`group-${group.id}`}>
                     <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggleExpand(group.id)}>
@@ -400,6 +394,32 @@ const ProjectList = () => {
                         </TableCell>
                       )}
                       <TableCell>
+                        {(() => {
+                          if (group.status === 'active') {
+                            return (
+                              <span className="inline-flex items-center text-green-600 text-sm">
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                Active
+                              </span>
+                            );
+                          }
+                          if (group.status === 'completed') {
+                            return (
+                              <span className="inline-flex items-center text-blue-600 text-sm">
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                Completed
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center text-red-600 text-sm">
+                              <XCircle className="w-4 h-4 mr-1" />
+                              Cancelled
+                            </span>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
                         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                           <Button
                             variant="outline"
@@ -410,31 +430,31 @@ const ProjectList = () => {
                             Open
                           </Button>
                           {canManage && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openEditGroup(group)}
-                            >
-                              <Pencil className="mr-1 h-3 w-3" />
-                              Edit Group
-                            </Button>
-                          )}
-                          {canManage && (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => openDeleteGroup(group)}
-                            >
-                              <Trash2 className="mr-1 h-3 w-3" />
-                              Delete Group
-                            </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditGroup(group)}
+                          >
+                            <Pencil className="mr-1 h-3 w-3" />
+                            Edit
+                          </Button>
+                        )}
+                        {canManage && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => openDeleteGroup(group)}
+                          >
+                            <Trash2 className="mr-1 h-3 w-3" />
+                            Delete
+                          </Button>
                           )}
                         </div>
                       </TableCell>
                     </TableRow>
                     {expandedGroups.has(group.id) && group.versions.length > 0 && (
                       <TableRow key={`versions-${group.id}`} className="border-0 hover:bg-transparent">
-                        <TableCell colSpan={isAdmin ? 5 : 4} className="p-0">
+                        <TableCell colSpan={isAdmin ? 6 : 5} className="p-0">
                           <div className="border-l-2 border-l-primary/30 bg-muted/10 mx-4 mb-2 rounded-r-md">
                             {group.versions.map((version, idx) => (
                               <div
@@ -456,7 +476,7 @@ const ProjectList = () => {
                                 {/* Right: actions */}
                                 <div className="flex items-center gap-2">
                                   <Button
-                                    variant="default"
+                                    variant="outline"
                                     size="sm"
                                     className="h-8"
                                     onClick={() => navigate(`/projects/${version.id}`)}
@@ -464,44 +484,33 @@ const ProjectList = () => {
                                     <Eye className="mr-1 h-3 w-3" />
                                     Open
                                   </Button>
-                                  {canManage && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-8"
-                                      onClick={() => openCreateVersion(group, version.id)}
-                                    >
-                                      <Plus className="mr-1 h-3 w-3" />
-                                      Copy
-                                    </Button>
-                                  )}
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                        <MoreVertical className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      {(canManage || version.status === 'active') && (
-                                        <DropdownMenuItem onClick={() => openEditVersion(version)}>
-                                          <Pencil className="mr-2 h-4 w-4" />
-                                          Edit
-                                        </DropdownMenuItem>
-                                      )}
-                                      {canManage && (
-                                        <>
-                                          <DropdownMenuSeparator />
-                                          <DropdownMenuItem
-                                            onClick={() => openDeleteVersion(version)}
-                                            className="text-red-600 focus:text-red-600"
-                                          >
-                                            <Trash2 className="mr-2 h-4 w-4" />
-                                            Delete
-                                          </DropdownMenuItem>
-                                        </>
-                                      )}
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8"
+                                    onClick={() => openCreateVersion(group, version.id)}
+                                  >
+                                    <Plus className="mr-1 h-3 w-3" />
+                                    Copy
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8"
+                                    onClick={() => openEditVersion(version)}
+                                  >
+                                    <Pencil className="mr-1 h-3 w-3" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="h-8"
+                                    onClick={() => openDeleteVersion(version)}
+                                  >
+                                    <Trash2 className="mr-1 h-3 w-3" />
+                                    Delete
+                                  </Button>
                                 </div>
                               </div>
                             ))}
@@ -529,7 +538,7 @@ const ProjectList = () => {
       />
 
       <CreateVersionModal
-        groupName={groupForAction?.name || ''}
+        customerName={groupForAction?.customer_name || ''}
         existingVersionNames={groupForAction?.versions.map(v => v.version_name) || []}
         sourceProjectId={sourceProjectId ?? 0}
         isOpen={showCreateVersionModal}
@@ -586,22 +595,6 @@ const ProjectList = () => {
                   onChange={(e) => setEditVersionForm({ ...editVersionForm, version_name: e.target.value })}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="version_status">Status</Label>
-                <Select
-                  value={editVersionForm.status}
-                  onValueChange={(value: VersionStatus) => setEditVersionForm({ ...editVersionForm, status: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowEditVersionModal(false)}>
@@ -627,18 +620,18 @@ const ProjectList = () => {
       </Dialog>
 
       <ConfirmDeleteModal
-        title={floorplanCount > 0 ? 'Cannot Delete Version' : 'Delete Version'}
+        title="Delete Version"
         itemName={versionToDelete?.version_name || ''}
-        warningText={floorplanCount > 0 ? undefined : 'This will permanently delete the version. This action cannot be undone.'}
+        warningText="This will permanently delete the version. This action cannot be undone."
         isOpen={showDeleteVersionModal}
         onClose={() => {
           setShowDeleteVersionModal(false);
           setVersionToDelete(null);
-          setFloorplanCount(0);
+          setDeleteVersionError('');
         }}
         onConfirm={handleDeleteVersion}
-        disabled={floorplanCount > 0 || isDeletingVersion}
-        disabledMessage={`This version has ${floorplanCount} floorplan${floorplanCount === 1 ? '' : 's'} and cannot be deleted. Please delete all floorplans first.`}
+        disabled={isDeletingVersion}
+        error={deleteVersionError}
       />
 
       <ConfirmDeleteModal
@@ -649,9 +642,11 @@ const ProjectList = () => {
         onClose={() => {
           setShowDeleteGroupModal(false);
           setGroupToDelete(null);
+          setDeleteGroupError('');
         }}
         onConfirm={handleDeleteGroup}
         disabled={isDeletingGroup}
+        error={deleteGroupError}
       />
     </div>
   );

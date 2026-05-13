@@ -14,6 +14,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Save, X } from 'lucide-react';
 import type { ProjectGroup, UpdateProjectGroupDTO } from '@/services/projectGroup';
 import { extractErrorMessage } from '@/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface EditGroupModalProps {
   group: ProjectGroup | null;
@@ -24,11 +31,11 @@ interface EditGroupModalProps {
 
 export function EditGroupModal({ group, isOpen, onClose, onSubmit }: EditGroupModalProps) {
   const [formData, setFormData] = useState({
-    name: '',
     customer_name: '',
     customer_email: '',
     customer_phone: '',
     customer_address: '',
+    status: 'active' as 'active' | 'completed' | 'cancelled',
   });
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -36,11 +43,11 @@ export function EditGroupModal({ group, isOpen, onClose, onSubmit }: EditGroupMo
   useEffect(() => {
     if (isOpen && group) {
       setFormData({
-        name: group.name || '',
         customer_name: group.customer_name || '',
         customer_email: group.customer_email || '',
         customer_phone: group.customer_phone || '',
         customer_address: group.customer_address || '',
+        status: group.status || 'active',
       });
       setError('');
     }
@@ -59,8 +66,8 @@ export function EditGroupModal({ group, isOpen, onClose, onSubmit }: EditGroupMo
     setIsSubmitting(true);
     try {
       const data: UpdateProjectGroupDTO = {
-        name: formData.name.trim() || undefined,
         customer_name: trimmedCustomerName,
+        status: formData.status,
       };
       if (formData.customer_email.trim()) data.customer_email = formData.customer_email.trim();
       if (formData.customer_phone.trim()) data.customer_phone = formData.customer_phone.trim();
@@ -92,17 +99,6 @@ export function EditGroupModal({ group, isOpen, onClose, onSubmit }: EditGroupMo
           )}
 
           <div className="flex-1 overflow-y-auto px-1 space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Group Name</Label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="Group Name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="customer_name">Customer Name *</Label>
               <Input
@@ -146,6 +142,25 @@ export function EditGroupModal({ group, isOpen, onClose, onSubmit }: EditGroupMo
                 value={formData.customer_address}
                 onChange={(e) => setFormData({ ...formData, customer_address: e.target.value })}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select
+                value={formData.status}
+                onValueChange={(value: 'active' | 'completed' | 'cancelled') =>
+                  setFormData({ ...formData, status: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

@@ -14,22 +14,12 @@ export interface ProjectGroup {
 export interface Project {
   id: number;
   version_name: string;
-  status: 'active' | 'completed' | 'cancelled';
   tenant_id: number;
   created_at: string;
-  // Invoice settings
-  discount_percentage: number;
-  discount_usd: number;
-  services_percentage: number;
-  services_usd: number;
-  local_currency_code: string;
-  exchange_rate: number;
   google_exchange_rate: number;
   item_type_ids?: number[];
   // Joined group info (from API)
   group?: ProjectGroup;
-  // For backward compat with flat responses
-  group_name?: string;
   customer_name?: string;
   customer_email?: string | null;
   customer_phone?: string | null;
@@ -37,19 +27,16 @@ export interface Project {
 }
 
 export interface CreateProjectDTO {
-  group_name: string;
   customer_name: string;
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
   version_name?: string;
-  status?: 'active' | 'completed' | 'cancelled';
   item_type_ids?: number[];
 }
 
 export interface UpdateProjectDTO {
   version_name?: string;
-  status?: 'active' | 'completed' | 'cancelled';
   tenant_id?: number;
   item_type_ids?: number[];
 }

@@ -10,7 +10,7 @@ import type { Project } from '../models/index.ts';
 import type { TenantContext } from './user.ts';
 import { fileStorageService } from '../services/file-storage.ts';
 
-const GROUP_COLUMNS = `id, name, customer_name, customer_email, customer_phone, customer_address, tenant_id, created_at`;
+const GROUP_COLUMNS = `id, customer_name, customer_email, customer_phone, customer_address, status, tenant_id, created_at, discount_percentage, discount_usd, services_percentage, services_usd, local_currency_code, exchange_rate`;
 
 /**
  * Project Group Repository
@@ -28,9 +28,9 @@ export class ProjectGroupRepository {
     }
 
     if (search) {
-      conditions.push('(name LIKE ? OR customer_name LIKE ?)');
+      conditions.push('(customer_name LIKE ?)');
       const pattern = `%${search}%`;
-      params.push(pattern, pattern);
+      params.push(pattern);
     }
 
     if (conditions.length > 0) {
@@ -44,7 +44,7 @@ export class ProjectGroupRepository {
 
     for (const group of groups) {
       const versions = getDb().queryEntries(
-        `SELECT id, version_name, status, created_at FROM projects WHERE project_group_id = ? ORDER BY created_at DESC`,
+        `SELECT id, version_name, created_at FROM projects WHERE project_group_id = ? ORDER BY created_at DESC`,
         [group.id]
       ) as unknown as ProjectGroupWithVersions['versions'];
 
@@ -68,7 +68,7 @@ export class ProjectGroupRepository {
 
     const group = groups[0];
     const versions = getDb().queryEntries(
-      `SELECT id, version_name, status, created_at FROM projects WHERE project_group_id = ? ORDER BY created_at DESC`,
+      `SELECT id, version_name, created_at FROM projects WHERE project_group_id = ? ORDER BY created_at DESC`,
       [id]
     ) as unknown as ProjectGroupWithVersions['versions'];
 
@@ -76,40 +76,26 @@ export class ProjectGroupRepository {
   }
 
   create(data: CreateProjectGroupDTO): Promise<ProjectGroup> {
-    try {
-      const result = getDb().queryEntries(`
-        INSERT INTO project_groups (name, customer_name, customer_email, customer_phone, customer_address, tenant_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-        RETURNING ${GROUP_COLUMNS}
-      `, [
-        data.name,
-        data.customer_name,
-        data.customer_email || null,
-        data.customer_phone || null,
-        data.customer_address || null,
-        data.tenant_id,
-      ]);
+    const result = getDb().queryEntries(`
+      INSERT INTO project_groups (customer_name, customer_email, customer_phone, customer_address, status, tenant_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+      RETURNING ${GROUP_COLUMNS}
+    `, [
+      data.customer_name,
+      data.customer_email || null,
+      data.customer_phone || null,
+      data.customer_address || null,
+      'active',
+      data.tenant_id,
+    ]);
 
-      return Promise.resolve(result[0] as unknown as ProjectGroup);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      if (message.includes('UNIQUE constraint failed')) {
-        throw new Error(
-          `A project group with the name "${data.name}" already exists for customer "${data.customer_name}"`
-        );
-      }
-      throw error;
-    }
+    return Promise.resolve(result[0] as unknown as ProjectGroup);
   }
 
   update(id: number, data: UpdateProjectGroupDTO): Promise<ProjectGroup | null> {
     const sets: string[] = [];
     const values: (string | number | null)[] = [];
 
-    if (data.name !== undefined) {
-      sets.push('name = ?');
-      values.push(data.name);
-    }
     if (data.customer_name !== undefined) {
       sets.push('customer_name = ?');
       values.push(data.customer_name);
@@ -127,26 +113,47 @@ export class ProjectGroupRepository {
       values.push(data.customer_address);
     }
 
+    if (data.status !== undefined) {
+      sets.push('status = ?');
+      values.push(data.status);
+    }
+    if (data.discount_percentage !== undefined) {
+      sets.push('discount_percentage = ?');
+      values.push(data.discount_percentage);
+    }
+    if (data.discount_usd !== undefined) {
+      sets.push('discount_usd = ?');
+      values.push(data.discount_usd);
+    }
+    if (data.services_percentage !== undefined) {
+      sets.push('services_percentage = ?');
+      values.push(data.services_percentage);
+    }
+    if (data.services_usd !== undefined) {
+      sets.push('services_usd = ?');
+      values.push(data.services_usd);
+    }
+    if (data.local_currency_code !== undefined) {
+      sets.push('local_currency_code = ?');
+      values.push(data.local_currency_code);
+    }
+    if (data.exchange_rate !== undefined) {
+      sets.push('exchange_rate = ?');
+      values.push(data.exchange_rate);
+    }
+
     if (sets.length === 0) {
       return this.findById(id);
     }
 
     values.push(id);
 
-    try {
-      const result = getDb().queryEntries(`
-        UPDATE project_groups SET ${sets.join(', ')} WHERE id = ?
-        RETURNING ${GROUP_COLUMNS}
-      `, values);
+    const result = getDb().queryEntries(`
+      UPDATE project_groups SET ${sets.join(', ')} WHERE id = ?
+      RETURNING ${GROUP_COLUMNS}
+    `, values);
 
-      return Promise.resolve(result.length > 0 ? (result[0] as unknown as ProjectGroup) : null);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      if (message.includes('UNIQUE constraint failed')) {
-        throw new Error('A project group with this name already exists for this customer');
-      }
-      throw error;
-    }
+    return Promise.resolve(result.length > 0 ? (result[0] as unknown as ProjectGroup) : null);
   }
 
   delete(id: number): Promise<void> {
@@ -160,9 +167,7 @@ export class ProjectGroupRepository {
 
       // Step a: Load source project directly
       const sourceProjects = db.queryEntries(`
-        SELECT id, project_group_id, status, discount_percentage, discount_usd,
-               services_percentage, services_usd, local_currency_code,
-               exchange_rate, google_exchange_rate
+        SELECT id, project_group_id, google_exchange_rate
         FROM projects
         WHERE id = ?
       `, [sourceProjectId]) as unknown as Project[];
@@ -176,24 +181,14 @@ export class ProjectGroupRepository {
       // Step b: Create new project row
       const newProjectRows = db.queryEntries(`
         INSERT INTO projects (
-          project_group_id, version_name, status, tenant_id,
-          discount_percentage, discount_usd, services_percentage, services_usd,
-          local_currency_code, exchange_rate, google_exchange_rate
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        RETURNING id, project_group_id, version_name, status, tenant_id, created_at,
-                  discount_percentage, discount_usd, services_percentage, services_usd,
-                  local_currency_code, exchange_rate, google_exchange_rate
+          project_group_id, version_name, tenant_id,
+          google_exchange_rate
+        ) VALUES (?, ?, ?, ?)
+        RETURNING id, project_group_id, version_name, tenant_id, created_at, google_exchange_rate
       `, [
         sourceProject.project_group_id,
         data.version_name,
-        sourceProject.status,
         tenantId,
-        sourceProject.discount_percentage,
-        sourceProject.discount_usd,
-        sourceProject.services_percentage,
-        sourceProject.services_usd,
-        sourceProject.local_currency_code,
-        sourceProject.exchange_rate,
         sourceProject.google_exchange_rate,
       ]) as unknown as Project[];
 
@@ -403,16 +398,22 @@ export class ProjectGroupRepository {
         // Note: placement_addons table does not exist in current schema; skipped
       }
 
-      // Step i: Copy project_item_types
-      const itemTypes = db.queryEntries(`
-        SELECT item_type_id FROM project_item_types WHERE project_id = ?
-      `, [sourceProject.id]) as unknown as Array<{ item_type_id: number }>;
+      // Step i: Copy project_item_types only if new project doesn't have any
+      const existingItemTypes = db.queryEntries(`
+        SELECT 1 FROM project_item_types WHERE project_id = ? LIMIT 1
+      `, [newProject.id]);
 
-      for (const it of itemTypes) {
-        db.query(`
-          INSERT INTO project_item_types (project_id, item_type_id)
-          VALUES (?, ?)
-        `, [newProject.id, it.item_type_id]);
+      if (existingItemTypes.length === 0) {
+        const itemTypes = db.queryEntries(`
+          SELECT item_type_id FROM project_item_types WHERE project_id = ?
+        `, [sourceProject.id]) as unknown as Array<{ item_type_id: number }>;
+
+        for (const it of itemTypes) {
+          db.query(`
+            INSERT INTO project_item_types (project_id, item_type_id)
+            VALUES (?, ?)
+          `, [newProject.id, it.item_type_id]);
+        }
       }
 
       return newProject;

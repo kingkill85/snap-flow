@@ -18,10 +18,9 @@ Deno.test('BOM Image Migration - runs automatically and is idempotent', async (t
 
   // Create test data
   const project = await projectRepository.create({
-    group_name: 'Migration Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
 

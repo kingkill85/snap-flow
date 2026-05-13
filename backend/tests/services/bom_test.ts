@@ -21,10 +21,9 @@ Deno.test('BOM Service - createBomEntry adds required addons', async (t) => {
 
   // Create test data
   const project = await projectRepository.create({
-    group_name: 'Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
 
@@ -106,10 +105,9 @@ Deno.test('BOM Service - createBomEntry adds required addons', async (t) => {
 
     // Recreate test data
     const project2 = await projectRepository.create({
-      group_name: 'Test Project 2',
+     
       customer_name: 'Test Customer',
       customer_address: '123 Test St',
-      status: 'active',
       tenant_id: 1,
     });
 
@@ -183,10 +181,9 @@ Deno.test('BOM Service - recreateBomEntry with addons', async (t) => {
 
   // Create test data
   const project = await projectRepository.create({
-    group_name: 'Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
 
@@ -276,10 +273,9 @@ Deno.test('BOM Service - createBomEntry handles image copying', async (t) => {
 
   // Create test data
   const project = await projectRepository.create({
-    group_name: 'Image Copy Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
 
@@ -428,10 +424,9 @@ Deno.test('BOM Service - recreateBomEntry copies new images', async (t) => {
 
   // Create test data
   const project = await projectRepository.create({
-    group_name: 'Recreate Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
 
@@ -527,10 +522,9 @@ Deno.test('BOM Service - switchVariant copies new variant image', async (t) => {
 
   // Create test data
   const project = await projectRepository.create({
-    group_name: 'Switch Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
 
@@ -608,10 +602,9 @@ Deno.test('BOM Service - deleteBomEntry cleans up images', async (t) => {
 
   // Create test data
   const project = await projectRepository.create({
-    group_name: 'Delete Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
 

@@ -11,9 +11,9 @@ const { areaRepository } = await import('../../src/repositories/area.ts');
  */
 function createTestFloorplan(): number {
   const db = getDb();
-  db.query(`INSERT INTO project_groups (name, customer_name, tenant_id) VALUES ('Test Project', 'Test Customer', 1)`);
+  db.query(`INSERT INTO project_groups (customer_name, tenant_id) VALUES ('Test Customer', 1)`);
   const groupId = Number(db.lastInsertRowId);
-  db.query(`INSERT INTO projects (project_group_id, version_name, status, tenant_id) VALUES (?, 'v1', 'active', 1)`, [groupId]);
+  db.query(`INSERT INTO projects (project_group_id, version_name, tenant_id) VALUES (?, 'v1', 1)`, [groupId]);
   const projectId = Number(db.lastInsertRowId);
   db.query(`INSERT INTO floorplans (project_id, name, image_path, sort_order) VALUES (?, 'Floor 1', 'test.png', 0)`, [projectId]);
   return Number(db.lastInsertRowId);
@@ -32,9 +32,9 @@ function createTestPlacementData(): {
 } {
   const db = getDb();
 
-  db.query(`INSERT INTO project_groups (name, customer_name, tenant_id) VALUES ('Placement Project', 'Test Customer', 1)`);
+  db.query(`INSERT INTO project_groups (customer_name, tenant_id) VALUES ('Test Customer', 1)`);
   const groupId = Number(db.lastInsertRowId);
-  db.query(`INSERT INTO projects (project_group_id, version_name, status, tenant_id) VALUES (?, 'v1', 'active', 1)`, [groupId]);
+  db.query(`INSERT INTO projects (project_group_id, version_name, tenant_id) VALUES (?, 'v1', 1)`, [groupId]);
   const projectId = Number(db.lastInsertRowId);
 
   db.query(`INSERT INTO floorplans (project_id, name, image_path, sort_order) VALUES (?, 'Floor 1', 'test.png', 0)`, [projectId]);

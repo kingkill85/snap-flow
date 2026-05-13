@@ -35,8 +35,6 @@ interface ProjectFormModalProps {
 
 interface FormData {
   version_name: string;
-  status: 'active' | 'completed' | 'cancelled';
-  group_name: string;
   customer_name: string;
   customer_email: string;
   customer_phone: string;
@@ -46,8 +44,6 @@ interface FormData {
 
 const initialFormData: FormData = {
   version_name: '',
-  status: 'active',
-  group_name: '',
   customer_name: '',
   customer_email: '',
   customer_phone: '',
@@ -69,8 +65,6 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
       if (project) {
         setFormData({
           version_name: project.version_name || '',
-          status: project.status,
-          group_name: project.group?.name || project.group_name || '',
           customer_name: project.group?.customer_name || project.customer_name || '',
           customer_email: project.group?.customer_email || project.customer_email || '',
           customer_phone: project.group?.customer_phone || project.customer_phone || '',
@@ -109,16 +103,12 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
       if (isEdit) {
         const updateData: UpdateProjectDTO = {
           version_name: formData.version_name,
-          status: formData.status,
           item_type_ids: Array.from(selectedTypeIds),
         };
         await onSubmit(updateData);
       } else {
         const createData: CreateProjectDTO = {
-          group_name: formData.group_name,
           customer_name: formData.customer_name,
-          version_name: formData.version_name || undefined,
-          status: formData.status,
           item_type_ids: Array.from(selectedTypeIds),
         };
         if (formData.customer_email) createData.customer_email = formData.customer_email;
@@ -155,38 +145,20 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
           )}
 
           <div className="flex-1 overflow-y-auto px-1 space-y-4">
-            {/* Version Name - shown in both create and edit */}
-            <div className="space-y-2">
-              <Label htmlFor="version_name">Version Name {isEdit ? '*' : ''}</Label>
-              <Input
-                id="version_name"
-                type="text"
-                placeholder={isEdit ? 'v1' : undefined}
-                required={isEdit}
-                value={formData.version_name}
-                onChange={(e) => setFormData({ ...formData, version_name: e.target.value })}
-              />
-            </div>
-
-            {/* Status - shown in both create and edit */}
-            <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
-              <Select
-                value={formData.status}
-                onValueChange={(value: 'active' | 'completed' | 'cancelled') =>
-                  setFormData({ ...formData, status: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Version Name - shown only in edit mode */}
+            {isEdit && (
+              <div className="space-y-2">
+                <Label htmlFor="version_name">Version Name *</Label>
+                <Input
+                  id="version_name"
+                  type="text"
+                  placeholder="v1"
+                  required
+                  value={formData.version_name}
+                  onChange={(e) => setFormData({ ...formData, version_name: e.target.value })}
+                />
+              </div>
+            )}
 
             {/* Item Types - shown in both create and edit */}
             {itemTypes.length > 0 && (
@@ -217,19 +189,6 @@ export function ProjectFormModal({ project, tenants, isOpen, onClose, onSubmit }
             {!isEdit && (
               <>
                 <Separator />
-
-                {/* Group Name */}
-                <div className="space-y-2">
-                  <Label htmlFor="group_name">Group Name *</Label>
-                  <Input
-                    id="group_name"
-                    type="text"
-                    placeholder="My Project Group"
-                    required
-                    value={formData.group_name}
-                    onChange={(e) => setFormData({ ...formData, group_name: e.target.value })}
-                  />
-                </div>
 
                 {/* Tenant (admin only) */}
                 {isAdmin && (

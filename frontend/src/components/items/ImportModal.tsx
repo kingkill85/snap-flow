@@ -90,7 +90,7 @@ export function ImportModal({ isOpen, onClose, onSuccess }: ImportModalProps) {
       }
     }).catch(() => {/* ignore */});
     return () => controller.abort();
-  }, [isOpen]);
+  }, [isOpen, selectedTypeId]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];

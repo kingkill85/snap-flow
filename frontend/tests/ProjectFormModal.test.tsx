@@ -66,8 +66,7 @@ describe('ProjectFormModal', () => {
     const versionNameInput = screen.getByDisplayValue('v1');
     expect(versionNameInput).toBeInTheDocument();
 
-    // In edit mode, customer/group fields should NOT be present
-    expect(document.body.textContent).not.toContain('Group Name');
+    // In edit mode, customer fields should NOT be present
     expect(document.body.textContent).not.toContain('Customer Name');
   });
 
@@ -87,7 +86,7 @@ describe('ProjectFormModal', () => {
     expect(mockOnClose).toHaveBeenCalled();
   });
 
-  it('shows required field labels for group_name and customer_name in create mode', async () => {
+  it('shows required customer_name field label in create mode', async () => {
     render(
       <ProjectFormModal
         project={null}
@@ -98,13 +97,11 @@ describe('ProjectFormModal', () => {
     );
 
     await waitFor(() => {
-      expect(document.body.textContent).toContain('Group Name *');
+      expect(document.body.textContent).toContain('Customer Name *');
     }, { timeout: 10000 });
 
-    expect(document.body.textContent).toContain('Customer Name *');
-
-    // Version Name should be present but optional in create mode (no *)
-    expect(document.body.textContent).toContain('Version Name');
+    // Version Name should NOT be present in create mode (auto-set to 'v1')
+    expect(document.body.textContent).not.toContain('Version Name');
   });
 
   it('shows required version_name label in edit mode', async () => {

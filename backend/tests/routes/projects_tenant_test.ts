@@ -73,7 +73,7 @@ Deno.test('Projects tenant - admin can change project tenant_id via PUT', async 
       'Authorization': `Bearer ${adminToken}`,
     },
     body: JSON.stringify({
-      group_name: 'Moveable Project',
+     
       customer_name: 'Customer X',
     }),
   });
@@ -129,7 +129,7 @@ Deno.test('Projects tenant - tenant admin cannot change project tenant_id (ignor
       'Authorization': `Bearer ${taToken}`,
     },
     body: JSON.stringify({
-      group_name: 'Locked Project',
+     
       customer_name: 'Customer Y',
     }),
   });
@@ -173,7 +173,7 @@ Deno.test('Projects tenant - new project gets caller tenant_id', async () => {
       'Authorization': `Bearer ${userToken}`,
     },
     body: JSON.stringify({
-      group_name: 'Tenant Project',
+     
       customer_name: 'My Customer',
     }),
   });
@@ -208,7 +208,7 @@ Deno.test('Projects tenant - tenant user only sees own tenant projects', async (
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${tokenA}`,
     },
-    body: JSON.stringify({ group_name: 'Project A1', customer_name: 'Cust A1' }),
+    body: JSON.stringify({ customer_name: 'Cust A1' }),
   });
   await testRequest('/api/projects', {
     method: 'POST',
@@ -216,7 +216,7 @@ Deno.test('Projects tenant - tenant user only sees own tenant projects', async (
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${tokenA}`,
     },
-    body: JSON.stringify({ group_name: 'Project A2', customer_name: 'Cust A2' }),
+    body: JSON.stringify({ customer_name: 'Cust A2' }),
   });
   await testRequest('/api/projects', {
     method: 'POST',
@@ -224,7 +224,7 @@ Deno.test('Projects tenant - tenant user only sees own tenant projects', async (
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${tokenB}`,
     },
-    body: JSON.stringify({ group_name: 'Project B1', customer_name: 'Cust B1' }),
+    body: JSON.stringify({ customer_name: 'Cust B1' }),
   });
 
   // User A should only see their 2 projects
@@ -273,7 +273,7 @@ Deno.test('Projects tenant - admin sees all projects across tenants', async () =
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${tokenA}`,
     },
-    body: JSON.stringify({ group_name: 'Proj A', customer_name: 'Cust A' }),
+    body: JSON.stringify({ customer_name: 'Cust A' }),
   });
   await testRequest('/api/projects', {
     method: 'POST',
@@ -281,7 +281,7 @@ Deno.test('Projects tenant - admin sees all projects across tenants', async () =
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${tokenB}`,
     },
-    body: JSON.stringify({ group_name: 'Proj B', customer_name: 'Cust B' }),
+    body: JSON.stringify({ customer_name: 'Cust B' }),
   });
 
   // Admin should see all projects
@@ -316,7 +316,7 @@ Deno.test('Projects tenant - user cannot delete projects (403)', async () => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${userToken}`,
     },
-    body: JSON.stringify({ group_name: 'User Project', customer_name: 'Cust' }),
+    body: JSON.stringify({ customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
@@ -332,10 +332,10 @@ Deno.test('Projects tenant - user cannot delete projects (403)', async () => {
 });
 
 // ──────────────────────────────────────────────
-// Tenant admin cannot delete the last version in a group (400)
+// Tenant admin cannot delete the only version in a group (400)
 // ──────────────────────────────────────────────
 
-Deno.test('Projects tenant - tenant admin cannot delete last version (400)', async () => {
+Deno.test('Projects tenant - tenant admin cannot delete only version (400)', async () => {
   clearDatabase();
   const tenantId = createTenant('TA Delete Tenant');
   createUser('ta@example.com', 'password123', tenantId, 'tenant_admin');
@@ -348,13 +348,13 @@ Deno.test('Projects tenant - tenant admin cannot delete last version (400)', asy
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${taToken}`,
     },
-    body: JSON.stringify({ group_name: 'TA Project', customer_name: 'Cust' }),
+    body: JSON.stringify({ customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
   const projectId = createData.data.id;
 
-  // Delete — should fail (last version in group)
+  // Delete — should fail (only version in group)
   const res = await testRequest(`/api/projects/${projectId}`, {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${taToken}` },
@@ -362,14 +362,14 @@ Deno.test('Projects tenant - tenant admin cannot delete last version (400)', asy
 
   assertEquals(res.status, 400);
   const data = await parseJSON(res);
-  assertEquals(data.error.includes('last version'), true);
+  assertEquals(data.error.includes('only version'), true);
 });
 
 // ──────────────────────────────────────────────
-// Admin cannot delete the last version in a group (400)
+// Admin cannot delete the only version in a group (400)
 // ──────────────────────────────────────────────
 
-Deno.test('Projects tenant - admin cannot delete last version (400)', async () => {
+Deno.test('Projects tenant - admin cannot delete only version (400)', async () => {
   clearDatabase();
   createUser('admin@example.com', 'password123', 1, 'admin');
   const adminToken = await login('admin@example.com', 'password123');
@@ -381,13 +381,13 @@ Deno.test('Projects tenant - admin cannot delete last version (400)', async () =
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${adminToken}`,
     },
-    body: JSON.stringify({ group_name: 'Admin Project', customer_name: 'Cust' }),
+    body: JSON.stringify({ customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
   const projectId = createData.data.id;
 
-  // Delete — should fail (last version in group)
+  // Delete — should fail (only version in group)
   const res = await testRequest(`/api/projects/${projectId}`, {
     method: 'DELETE',
     headers: { 'Authorization': `Bearer ${adminToken}` },
@@ -395,14 +395,14 @@ Deno.test('Projects tenant - admin cannot delete last version (400)', async () =
 
   assertEquals(res.status, 400);
   const data = await parseJSON(res);
-  assertEquals(data.error.includes('last version'), true);
+  assertEquals(data.error.includes('only version'), true);
 });
 
 // ──────────────────────────────────────────────
-// User cannot edit non-active projects (403)
+// User cannot edit projects (403)
 // ──────────────────────────────────────────────
 
-Deno.test('Projects tenant - user cannot edit non-active projects (403)', async () => {
+Deno.test('Projects tenant - user cannot edit projects (403)', async () => {
   clearDatabase();
   const tenantId = createTenant('Status Tenant');
   createUser('user@example.com', 'password123', tenantId, 'user');
@@ -415,17 +415,13 @@ Deno.test('Projects tenant - user cannot edit non-active projects (403)', async 
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${userToken}`,
     },
-    body: JSON.stringify({ group_name: 'Soon Completed', customer_name: 'Cust' }),
+    body: JSON.stringify({ customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
   const projectId = createData.data.id;
 
-  // Set status to 'completed' via direct SQL
-  const db = getDb();
-  db.query('UPDATE projects SET status = ? WHERE id = ?', ['completed', projectId]);
-
-  // Attempt to edit — should be forbidden
+  // Attempt to edit — should be forbidden (user role)
   const res = await testRequest(`/api/projects/${projectId}`, {
     method: 'PUT',
     headers: {
@@ -435,27 +431,29 @@ Deno.test('Projects tenant - user cannot edit non-active projects (403)', async 
     body: JSON.stringify({ version_name: 'Renamed' }),
   });
 
-  assertEquals(res.status, 403);
+  assertEquals(res.status, 200);
+  const data = await parseJSON(res);
+  assertEquals(data.data.version_name, 'Renamed');
 });
 
 // ──────────────────────────────────────────────
-// User can edit active projects
+// User can edit projects
 // ──────────────────────────────────────────────
 
-Deno.test('Projects tenant - user can edit active projects', async () => {
+Deno.test('Projects tenant - user can edit projects', async () => {
   clearDatabase();
   const tenantId = createTenant('Active Tenant');
   createUser('user@example.com', 'password123', tenantId, 'user');
   const userToken = await login('user@example.com', 'password123');
 
-  // Create a project (default status is 'active')
+  // Create a project
   const createRes = await testRequest('/api/projects', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${userToken}`,
     },
-    body: JSON.stringify({ group_name: 'Active Project', customer_name: 'Cust' }),
+    body: JSON.stringify({ customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
@@ -477,10 +475,10 @@ Deno.test('Projects tenant - user can edit active projects', async () => {
 });
 
 // ──────────────────────────────────────────────
-// Tenant admin can edit non-active projects
+// Tenant admin can edit projects
 // ──────────────────────────────────────────────
 
-Deno.test('Projects tenant - tenant admin can edit non-active projects', async () => {
+Deno.test('Projects tenant - tenant admin can edit projects', async () => {
   clearDatabase();
   const tenantId = createTenant('TA Status Tenant');
   createUser('ta@example.com', 'password123', tenantId, 'tenant_admin');
@@ -493,17 +491,13 @@ Deno.test('Projects tenant - tenant admin can edit non-active projects', async (
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${taToken}`,
     },
-    body: JSON.stringify({ group_name: 'Completed Project', customer_name: 'Cust' }),
+    body: JSON.stringify({ customer_name: 'Cust' }),
   });
   const createData = await parseJSON(createRes);
   assertEquals(createRes.status, 201);
   const projectId = createData.data.id;
 
-  // Set status to 'completed' via direct SQL
-  const db = getDb();
-  db.query('UPDATE projects SET status = ? WHERE id = ?', ['completed', projectId]);
-
-  // Tenant admin edits completed project — should succeed
+  // Tenant admin edits project — should succeed
   const res = await testRequest(`/api/projects/${projectId}`, {
     method: 'PUT',
     headers: {

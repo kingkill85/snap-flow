@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import type { Project } from '@/services/project';
+import { projectGroupService, type ProjectGroup } from '@/services/projectGroup';
 import { floorplanService, type Floorplan, type CreateFloorplanDTO } from '@/services/floorplan';
 import { itemTypeService, type ItemType } from '@/services/item-type';
 import type { InvoiceSettings } from '@/services/invoice-settings';
@@ -51,6 +52,9 @@ const ProjectDashboard = () => {
   const [placementsVersion, setPlacementsVersion] = useState(0);
   const [canvasBounds, setCanvasBounds] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
+  // Project group data (for invoice settings)
+  const [projectGroup, setProjectGroup] = useState<ProjectGroup | null>(null);
+
   // Project data hook
   const {
     project,
@@ -65,16 +69,14 @@ const ProjectDashboard = () => {
     setError,
     visibleCategories,
     setVisibleCategories,
-    invoiceSettings,
-    setInvoiceSettings,
     floorplanBoms,
     setFloorplanBoms,
     fetchProjectData,
     fetchFloorplanBom,
   } = useProjectData({ projectId });
 
-  // Users can only edit active projects; admins/tenant_admins can edit any
-  const canEdit = user?.role !== 'user' || project?.status === 'active';
+  // Users cannot edit at all (only admin/tenant_admin can edit)
+  const canEdit = user?.role !== 'user';
 
   // BOM calculations
   const { floorplanTotals, projectTotal } = useBomCalculations(floorplans, floorplanBoms, items, categories);
@@ -395,6 +397,17 @@ const ProjectDashboard = () => {
     return () => controller.abort();
   }, [projectId, fetchProjectData]);
 
+  // Fetch project group (for invoice settings) when project loads
+  useEffect(() => {
+    if (project && project.project_group_id) {
+      const controller = new AbortController();
+      projectGroupService.getById(project.project_group_id, controller.signal)
+        .then(group => setProjectGroup(group))
+        .catch(() => setProjectGroup(null));
+      return () => controller.abort();
+    }
+  }, [project]);
+
   // Note: Auto-selection of floorplan is handled by useProjectData hook in fetchProjectData
 
   // Toggle category visibility
@@ -576,10 +589,20 @@ const ProjectDashboard = () => {
   };
 
   const handleSaveInvoiceSettings = (settings: InvoiceSettings) => {
-    setInvoiceSettings(settings);
+    setProjectGroup(prev => prev ? { ...prev, ...settings } : null);
     // Switch to Summary tab after saving
     setActiveTab('summary');
   };
+
+  // Compute invoice settings from group data
+  const invoiceSettings: InvoiceSettings | null = projectGroup ? {
+    discount_percentage: projectGroup.discount_percentage,
+    discount_usd: projectGroup.discount_usd,
+    services_percentage: projectGroup.services_percentage,
+    services_usd: projectGroup.services_usd,
+    local_currency_code: projectGroup.local_currency_code,
+    exchange_rate: projectGroup.exchange_rate,
+  } : null;
 
   if (isLoading) {
     return (
@@ -837,7 +860,7 @@ const ProjectDashboard = () => {
 
       {/* Invoice Settings Modal */}
       <InvoiceSettingsModal
-        projectId={projectId}
+        groupId={projectGroup?.id ?? 0}
         bomTotal={projectTotal}
         isOpen={showInvoiceModal}
         onClose={() => setShowInvoiceModal(false)}
