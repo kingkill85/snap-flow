@@ -796,7 +796,7 @@ const ProjectDashboard = () => {
                 className={`flex-1 m-0 overflow-hidden ${activeTab !== 'summary' ? 'hidden' : ''}`}
               >
                 <SummaryTab
-                  projectName={project?.version_name || ''}
+                  projectName={`${project?.group?.customer_name || project?.customer_name || ''} - ${project?.version_name || ''}`}
                   projectNumber={generateProjectNumber(project)}
                   customerName={project?.group?.customer_name || project?.customer_name || ''}
                   floorplans={floorplans}

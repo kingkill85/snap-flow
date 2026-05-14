@@ -32,8 +32,10 @@ export function applyMigration(name: string, sql: string): Promise<void> {
   try {
     const db = getDb();
 
-    // For migrations that recreate tables, we need to disable foreign keys temporarily
-    const needsFkOff = name === '025_remove_all_cascade_constraints' || name === '031_multi_tenancy' || name === '033_project_versioning' || name === '037_move_invoice_settings_to_groups.sql';
+    // Some migrations drop tables that are referenced by other tables via FKs.
+    // SQLite ignores PRAGMA foreign_keys inside a transaction, so we must
+    // disable FKs OUTSIDE the transaction, then re-enable after commit.
+    const needsFkOff = name === '033_project_versioning' || name === '036_move_status_to_project_groups.sql' || name === '037_move_invoice_settings_to_groups.sql';
     if (needsFkOff) {
       db.query('PRAGMA foreign_keys = OFF');
     }
@@ -49,7 +51,6 @@ export function applyMigration(name: string, sql: string): Promise<void> {
       throw error;
     }
 
-    // Re-enable foreign keys if we disabled them
     if (needsFkOff) {
       db.query('PRAGMA foreign_keys = ON');
     }
@@ -845,7 +846,7 @@ export async function runMigrations(): Promise<void> {
 
         -- Step 3: Backfill: create one group per existing project with deduplication for duplicates
         INSERT INTO project_groups (
-          name, customer_name, customer_email, customer_phone, customer_address, tenant_id, source_project_id
+          name, customer_name, customer_email, customer_phone, customer_address, tenant_id, source_project_id, created_at
         )
         SELECT
           CASE
@@ -857,7 +858,8 @@ export async function runMigrations(): Promise<void> {
           customer_phone,
           customer_address,
           tenant_id,
-          id
+          id,
+          created_at
         FROM (
           SELECT
             *,
@@ -933,8 +935,7 @@ export async function runMigrations(): Promise<void> {
 
         -- Step 7: Recreate indexes
         CREATE INDEX idx_projects_group ON projects(project_group_id);
-        CREATE INDEX idx_projects_tenant ON projects(tenant_id);
-      `
+        CREATE INDEX idx_projects_tenant ON projects(tenant_id);`
     },
     {
       name: '034_add_project_version_unique_constraint.sql',
@@ -1065,6 +1066,8 @@ export async function runMigrations(): Promise<void> {
         -- Step 4: Recreate indexes
         CREATE INDEX idx_projects_group ON projects(project_group_id);
         CREATE INDEX idx_projects_tenant ON projects(tenant_id);
+
+        PRAGMA foreign_keys = ON;
       `
     }
   ];

@@ -1,5 +1,42 @@
 # AGENTS.md - SnapFlow Coding Guidelines
 
+## Quick Start - How to Run Both Servers
+
+**Backend (Terminal 1):**
+```bash
+cd /home/michael/Projects/kingkill85/snap-flow/backend
+deno run --allow-all src/main.ts
+```
+- Runs on: http://localhost:8000
+- API root: http://localhost:8000/api
+- Health check: http://localhost:8000/health
+- Runs migrations automatically on startup.
+
+**Frontend (Terminal 2):**
+```bash
+cd /home/michael/Projects/kingkill85/snap-flow/frontend
+npm run dev
+```
+- Runs on: http://localhost:5173
+- Hot reload enabled via Vite.
+
+**Both at once (Terminal 1, using root `package.json`):**
+```bash
+cd /home/michael/Projects/kingkill85/snap-flow
+npm run dev
+```
+
+**Background mode (if terminal is not available):**
+```bash
+# Backend
+cd /home/michael/Projects/kingkill85/snap-flow/backend
+nohup deno run --allow-all src/main.ts > /tmp/backend.log 2>&1 &
+
+# Frontend
+cd /home/michael/Projects/kingkill85/snap-flow/frontend
+nohup npm run dev > /tmp/frontend.log 2>&1 &
+```
+
 ## 🛑 CRITICAL: Never Commit to Main
 
 **BEFORE ANY WORK:**
