@@ -68,27 +68,30 @@ Deno.test('Database - projects table has correct structure', () => {
   const columns = getDb().queryEntries<{ name: string }>(
     "PRAGMA table_info(projects)"
   );
-  
+
   const columnNames = columns.map(c => c.name);
-  
+
   assertEquals(columnNames.includes('id'), true);
-  assertEquals(columnNames.includes('name'), true);
-  assertEquals(columnNames.includes('status'), true);
-  assertEquals(columnNames.includes('customer_name'), true);
-  assertEquals(columnNames.includes('customer_email'), true);
-  assertEquals(columnNames.includes('customer_phone'), true);
-  assertEquals(columnNames.includes('customer_address'), true);
+  assertEquals(columnNames.includes('project_group_id'), true);
+  assertEquals(columnNames.includes('version_name'), true);
+  assertEquals(columnNames.includes('tenant_id'), true);
+  assertEquals(columnNames.includes('google_exchange_rate'), true);
   assertEquals(columnNames.includes('created_at'), true);
+  // Invoice settings moved to project_groups (migration 037)
+  assertEquals(columnNames.includes('discount_percentage'), false);
+  assertEquals(columnNames.includes('exchange_rate'), false);
+  assertEquals(columnNames.includes('local_currency_code'), false);
 });
 
-Deno.test('Database - projects table has unique constraint on name and customer_name', () => {
+Deno.test('Database - projects has index on project_group_id and tenant_id', () => {
   const indexes = getDb().queryEntries<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='projects'"
   );
-  
+
   const indexNames = indexes.map(i => i.name);
-  
-  assertEquals(indexNames.includes('idx_projects_unique_name_customer'), true);
+
+  assertEquals(indexNames.includes('idx_projects_group'), true);
+  assertEquals(indexNames.includes('idx_projects_tenant'), true);
 });
 
 Deno.test('Database - floorplans table has correct structure', () => {

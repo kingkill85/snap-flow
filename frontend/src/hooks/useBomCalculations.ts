@@ -77,7 +77,7 @@ export function useBomCalculations(
       });
     });
 
-    return Array.from(itemTotals.entries()).map(([_key, data]) => ({
+    return Array.from(itemTotals.entries()).map(([, data]) => ({
       name: data.name,
       quantity: data.quantity,
       unitPrice: data.unitPrice,

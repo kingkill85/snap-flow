@@ -97,6 +97,7 @@ export function VariantFormModal({ itemId, item: _item, variant, availableVarian
       setIsRequired(false);
       setShowVariantDropdown(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, isEdit, variant, itemId]);
 
   // Close dropdown when clicking outside

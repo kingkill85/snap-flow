@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import type { Project } from '@/services/project';
 
 interface ProjectHeaderProps {
@@ -24,26 +24,9 @@ export function ProjectHeader({ project, onBack }: ProjectHeaderProps) {
       <div className="h-4 w-px bg-border"></div>
       <div className="text-sm text-muted-foreground leading-none">{generateProjectNumber(project)}</div>
       <div className="h-4 w-px bg-border"></div>
-      <div className="font-medium text-sm truncate max-w-[200px] leading-none">{project.name}</div>
+      <div className="font-medium text-sm truncate max-w-[200px] leading-none">{project.version_name}</div>
       <div className="h-4 w-px bg-border"></div>
-      <div className="text-sm text-muted-foreground truncate max-w-[150px] leading-none">{project.customer_name}</div>
-      <div className="h-4 w-px bg-border"></div>
-      {project.status === 'active' ? (
-        <span className="inline-flex items-center text-green-600 text-sm leading-none">
-          <CheckCircle className="w-4 h-4 mr-1" />
-          Active
-        </span>
-      ) : project.status === 'completed' ? (
-        <span className="inline-flex items-center text-blue-600 text-sm leading-none">
-          <CheckCircle className="w-4 h-4 mr-1" />
-          Completed
-        </span>
-      ) : (
-        <span className="inline-flex items-center text-destructive text-sm leading-none">
-          <XCircle className="w-4 h-4 mr-1" />
-          Cancelled
-        </span>
-      )}
+      <div className="font-medium text-sm truncate max-w-[150px] leading-none">{project.customer_name}</div>
     </div>
   );
 }

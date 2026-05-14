@@ -204,71 +204,43 @@ export interface UpdatePlacementDTO {
   area_id?: number | null | undefined;
 }
 
-// Project (includes customer information directly)
+// Project (linked to project_group, has version_name)
 export interface Project {
   id: number;
-  name: string;
-  status: 'active' | 'completed' | 'cancelled';
-  customer_name: string;
-  customer_email: string | null;
-  customer_phone: string | null;
-  customer_address: string | null;
+  project_group_id: number;
+  version_name: string;
   tenant_id: number;
   created_at: string;
-  // Invoice settings
-  discount_percentage: number;
-  discount_usd: number;
-  services_percentage: number;
-  services_usd: number;
-  local_currency_code: string;
-  exchange_rate: number;
+  google_exchange_rate: number;
+  // Joined group info
+  customer_name?: string;
+  customer_email?: string | null;
+  customer_phone?: string | null;
+  customer_address?: string | null;
 }
 
 export interface CreateProjectDTO {
-  name: string;
-  status?: 'active' | 'completed' | 'cancelled';
   customer_name: string;
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
+  version_name?: string;     // NEW: defaults to 'v1'
   tenant_id: number;
   item_type_ids?: number[];
 }
 
 export interface UpdateProjectDTO {
-  name?: string;
-  status?: 'active' | 'completed' | 'cancelled';
-  customer_name?: string;
-  customer_email?: string;
-  customer_phone?: string;
-  customer_address?: string;
+  version_name?: string;
   tenant_id?: number;
   item_type_ids?: number[];
 }
 
-export interface UpdateInvoiceSettingsDTO {
-  discount_percentage?: number | undefined;
-  discount_usd?: number | undefined;
-  services_percentage?: number | undefined;
-  services_usd?: number | undefined;
-  local_currency_code?: string | undefined;
-  exchange_rate?: number | undefined;
+export interface CreateFloorplanDTO {
+  project_id: number;
+  name: string;
+  image_path: string;
+  sort_order?: number;
 }
-
-export interface InvoiceCalculationResult {
-  bomTotal: number;
-  discountAmount: number;
-  discountPercentage: number;
-  servicesAmount: number;
-  servicesPercentage: number;
-  totalAfterDiscount: number;
-  grandTotalUsd: number;
-  grandTotalLocal: number;
-  localCurrencyCode: string;
-  exchangeRate: number;
-}
-
-// Floorplan
 export interface Floorplan {
   id: number;
   project_id: number;

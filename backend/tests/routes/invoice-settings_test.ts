@@ -8,11 +8,12 @@ await setupTestDatabase();
 
 // Import after database setup
 const { userRepository } = await import('../../src/repositories/user.ts');
+const { projectGroupRepository } = await import('../../src/repositories/project-group.ts');
 const { projectRepository } = await import('../../src/repositories/project.ts');
 
 async function getAuthToken(): Promise<string> {
   clearDatabase();
-  
+
   // Create user
   const passwordHash = hashPassword('password123');
   await userRepository.create({
@@ -36,20 +37,19 @@ async function getAuthToken(): Promise<string> {
   return loginData.data.accessToken;
 }
 
-Deno.test('PUT /projects/:id/invoice-settings - should update invoice settings', async () => {
+Deno.test('PUT /project-groups/:id/invoice-settings - should update invoice settings', async () => {
   const token = await getAuthToken();
-  
-  // Create a test project
+
+  // Create a test project (which also creates a group)
   const project = await projectRepository.create({
-    name: 'Test Project',
     customer_name: 'Test Customer',
     tenant_id: 1,
   });
-  
+
   try {
-    const response = await testRequest(`/api/projects/${project.id}/invoice-settings`, {
+    const response = await testRequest(`/api/project-groups/${project.project_group_id}/invoice-settings`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
@@ -62,9 +62,9 @@ Deno.test('PUT /projects/:id/invoice-settings - should update invoice settings',
         local_currency_code: 'PKR',
       }),
     });
-    
+
     assertEquals(response.status, 200);
-    
+
     const data = await parseJSON(response);
     assertEquals(data.data.discount_percentage, 10);
     assertEquals(data.data.discount_usd, 100);
@@ -73,17 +73,16 @@ Deno.test('PUT /projects/:id/invoice-settings - should update invoice settings',
     assertEquals(data.data.exchange_rate, 280);
     assertEquals(data.data.local_currency_code, 'PKR');
   } finally {
-    await projectRepository.delete(project.id);
     clearDatabase();
   }
 });
 
-Deno.test('PUT /projects/:id/invoice-settings - should return 404 for non-existent project', async () => {
+Deno.test('PUT /project-groups/:id/invoice-settings - should return 404 for non-existent group', async () => {
   const token = await getAuthToken();
-  
-  const response = await testRequest('/api/projects/99999/invoice-settings', {
+
+  const response = await testRequest('/api/project-groups/99999/invoice-settings', {
     method: 'PUT',
-    headers: { 
+    headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     },
@@ -92,27 +91,26 @@ Deno.test('PUT /projects/:id/invoice-settings - should return 404 for non-existe
       discount_usd: 100,
     }),
   });
-  
+
   assertEquals(response.status, 404);
-  
+
   const data = await parseJSON(response);
-  assertEquals(data.error, 'Project not found');
+  assertEquals(data.error, 'Project group not found');
 });
 
-Deno.test('PUT /projects/:id/invoice-settings - should handle partial updates', async () => {
+Deno.test('PUT /project-groups/:id/invoice-settings - should handle partial updates', async () => {
   const token = await getAuthToken();
-  
+
   const project = await projectRepository.create({
-    name: 'Test Project Partial',
     customer_name: 'Test Customer',
     tenant_id: 1,
   });
-  
+
   try {
     // First update
-    await testRequest(`/api/projects/${project.id}/invoice-settings`, {
+    await testRequest(`/api/project-groups/${project.project_group_id}/invoice-settings`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
@@ -121,11 +119,11 @@ Deno.test('PUT /projects/:id/invoice-settings - should handle partial updates', 
         discount_usd: 100,
       }),
     });
-    
+
     // Partial update
-    const response = await testRequest(`/api/projects/${project.id}/invoice-settings`, {
+    const response = await testRequest(`/api/project-groups/${project.project_group_id}/invoice-settings`, {
       method: 'PUT',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
@@ -133,30 +131,28 @@ Deno.test('PUT /projects/:id/invoice-settings - should handle partial updates', 
         services_usd: 200,
       }),
     });
-    
+
     assertEquals(response.status, 200);
-    
+
     const data = await parseJSON(response);
     assertEquals(data.data.discount_percentage, 10); // Should retain old value
     assertEquals(data.data.discount_usd, 100); // Should retain old value
     assertEquals(data.data.services_usd, 200); // Should be updated
   } finally {
-    await projectRepository.delete(project.id);
     clearDatabase();
   }
 });
 
 Deno.test('GET /projects/:id/invoice-calculation - should return calculated invoice', async () => {
   const token = await getAuthToken();
-  
+
   const project = await projectRepository.create({
-    name: 'Test Project Calc',
     customer_name: 'Test Customer',
     tenant_id: 1,
   });
-  
-  // Update invoice settings
-  await projectRepository.updateInvoiceSettings(project.id, {
+
+  // Update invoice settings on the group
+  await projectGroupRepository.update(project.project_group_id, {
     discount_percentage: 10,
     discount_usd: 100,
     services_percentage: 5,
@@ -164,37 +160,36 @@ Deno.test('GET /projects/:id/invoice-calculation - should return calculated invo
     exchange_rate: 280,
     local_currency_code: 'PKR',
   });
-  
+
   try {
     const response = await testRequest(`/api/projects/${project.id}/invoice-calculation`, {
-      headers: { 
+      headers: {
         'Authorization': `Bearer ${token}`,
       },
     });
-    
+
     assertEquals(response.status, 200);
-    
+
     const data = await parseJSON(response);
     assertEquals(typeof data.data.bomTotal, 'number');
     assertEquals(typeof data.data.grandTotalUsd, 'number');
     assertEquals(typeof data.data.grandTotalLocal, 'number');
   } finally {
-    await projectRepository.delete(project.id);
     clearDatabase();
   }
 });
 
 Deno.test('GET /currency/exchange-rate/:code - should return exchange rate', async () => {
   const token = await getAuthToken();
-  
+
   const response = await testRequest('/api/currency/exchange-rate/PKR', {
-    headers: { 
+    headers: {
       'Authorization': `Bearer ${token}`,
     },
   });
-  
+
   assertEquals(response.status, 200);
-  
+
   const data = await parseJSON(response);
   assertEquals(typeof data.data.rate, 'number');
   assertEquals(data.data.rate > 0, true);

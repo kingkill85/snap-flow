@@ -13,6 +13,7 @@ interface ConfirmDeleteModalProps {
   title: string;
   itemName: string;
   warningText?: string;
+  error?: string;
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => Promise<void>;
@@ -24,6 +25,7 @@ export function ConfirmDeleteModal({
   title,
   itemName,
   warningText,
+  error,
   isOpen,
   onClose,
   onConfirm,
@@ -31,8 +33,12 @@ export function ConfirmDeleteModal({
   disabledMessage,
 }: ConfirmDeleteModalProps) {
   const handleConfirm = async () => {
-    await onConfirm();
-    onClose();
+    try {
+      await onConfirm();
+      onClose();
+    } catch {
+      // Error handled by caller
+    }
   };
 
   return (
@@ -53,6 +59,12 @@ export function ConfirmDeleteModal({
         {!disabled && warningText && (
           <div className="bg-muted p-3 rounded-md text-sm text-muted-foreground">
             {warningText}
+          </div>
+        )}
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-md text-sm">
+            {error}
           </div>
         )}
 

@@ -48,10 +48,9 @@ Deno.test('Placement - CRUD operations', async (t) => {
   
   // Create project
   const project = await projectRepository.create({
-    name: 'Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
   const projectId = project.id;
@@ -223,10 +222,9 @@ Deno.test('Placement - duplicate endpoint', async (t) => {
   
   // Create project
   const project = await projectRepository.create({
-    name: 'Duplicate Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
   const projectId = project.id;
@@ -391,10 +389,9 @@ Deno.test('Placement - duplicate assigns area_id via containment', async (t) => 
 
   // Create project + floorplan
   const project = await projectRepository.create({
-    name: 'Area Containment Test',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
 
@@ -458,7 +455,7 @@ Deno.test('Placement - duplicate assigns area_id via containment', async (t) => 
   const createData = await parseJSON(createResponse);
   const originalId = createData.data.id;
 
-  await t.step('Original placement gets area_id from containment', async () => {
+  await t.step('Original placement gets area_id from containment', () => {
     assertEquals(createData.data.area_id, areaPlacementId);
   });
 
@@ -496,13 +493,12 @@ Deno.test('Placement - duplicate assigns area_id via containment', async (t) => 
 Deno.test('Placement - findById returns image path', async (t) => {
   const token = await getAuthToken();
 
-  const db = getDb();
+  const _db = getDb();
 
   const project = await projectRepository.create({
-    name: 'Image Path Test',
+   
     customer_name: 'Test',
     customer_address: '123 St',
-    status: 'active',
     tenant_id: 1,
   });
 

@@ -17,10 +17,9 @@ Deno.test('BomEntryRepository - findByPicturePath', async (t) => {
 
   // Create test data
   const project = await projectRepository.create({
-    name: 'Picture Path Test Project',
+   
     customer_name: 'Test Customer',
     customer_address: '123 Test St',
-    status: 'active',
     tenant_id: 1,
   });
 

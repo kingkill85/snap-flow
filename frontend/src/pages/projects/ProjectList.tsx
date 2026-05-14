@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { projectService, type Project, type CreateProjectDTO, type UpdateProjectDTO } from '@/services/project';
-import { floorplanService } from '@/services/floorplan';
+import { projectGroupService } from '@/services/projectGroup';
+import type { ProjectGroup, ProjectVersion } from '@/services/projectGroup';
 import { tenantService, type Tenant } from '@/services/tenants';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+
 import {
   Table,
   TableBody,
@@ -14,11 +16,22 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ProjectFormModal } from '@/components/projects/ProjectFormModal';
+import { CreateVersionModal } from '@/components/projects/CreateVersionModal';
+import { EditGroupModal } from '@/components/projects/EditGroupModal';
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
-import { Plus, Pencil, Trash2, Eye, Search, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, Search, Loader2, ChevronDown, ChevronRight, Save, X, GitBranch, CheckCircle, XCircle } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -29,11 +42,11 @@ import {
 import { extractErrorMessage } from '@/utils';
 
 // Generate project number: YYYY-MM-DD_Customer Name_Address
-const generateProjectNumber = (project: Project): string => {
-  const date = new Date(project.created_at);
+const generateProjectNumber = (group: ProjectGroup): string => {
+  const date = new Date(group.created_at);
   const formattedDate = date.toISOString().split('T')[0];
-  const customerName = project.customer_name || 'Unknown';
-  const address = project.customer_address || 'No Address';
+  const customerName = group.customer_name || 'Unknown';
+  const address = group.customer_address || 'No Address';
   return `${formattedDate}_${customerName}_${address}`;
 };
 
@@ -43,8 +56,9 @@ const ProjectList = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const isUser = user?.role === 'user';
-  const canManage = !isUser; // admin and tenant_admin can manage all projects
-  const [projects, setProjects] = useState<Project[]>([]);
+  const canManage = !isUser;
+
+  const [groups, setGroups] = useState<ProjectGroup[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantMap, setTenantMap] = useState<Record<number, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -53,38 +67,49 @@ const ProjectList = () => {
   const [filterStatus, setFilterStatus] = useState<string>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFormModal, setShowFormModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDeleteVersionModal, setShowDeleteVersionModal] = useState(false);
+  const [showDeleteGroupModal, setShowDeleteGroupModal] = useState(false);
+  const [showCreateVersionModal, setShowCreateVersionModal] = useState(false);
+  const [showEditGroupModal, setShowEditGroupModal] = useState(false);
+  const [showEditVersionModal, setShowEditVersionModal] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
-  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
-  const [floorplanCount, setFloorplanCount] = useState<number>(0);
+  const [versionToDelete, setVersionToDelete] = useState<ProjectVersion | null>(null);
+  const [groupToDelete, setGroupToDelete] = useState<ProjectGroup | null>(null);
+  const [groupForAction, setGroupForAction] = useState<ProjectGroup | null>(null);
+  const [versionForAction, setVersionForAction] = useState<ProjectVersion | null>(null);
+  const [sourceProjectId, setSourceProjectId] = useState<number | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  const [isEditVersionSubmitting, setIsEditVersionSubmitting] = useState(false);
+  const [editVersionError, setEditVersionError] = useState('');
+  const [editVersionForm, setEditVersionForm] = useState({ version_name: '' });
+  const [isDeletingVersion, setIsDeletingVersion] = useState(false);
+  const [deleteVersionError, setDeleteVersionError] = useState('');
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+  const [deleteGroupError, setDeleteGroupError] = useState('');
   const hasInitializedSearchRef = useRef(false);
   const searchQueryRef = useRef(searchQuery);
   searchQueryRef.current = searchQuery;
 
-  const fetchProjects = useCallback(async (signal?: AbortSignal, isSearch = false) => {
+  const fetchGroups = useCallback(async (signal?: AbortSignal, isSearch = false) => {
     try {
       if (isSearch) {
         setIsSearching(true);
       } else {
         setIsLoading(true);
       }
-      const data = await projectService.getAll(searchQueryRef.current || undefined, signal);
-      setProjects(data);
+      const data = await projectGroupService.getAll(searchQueryRef.current || undefined, signal);
+      setGroups(data);
       setError('');
-      if (!isSearch) {
-        setIsLoading(false);
-      } else {
-        setIsSearching(false);
-      }
     } catch (err: unknown) {
       const errorMessage = extractErrorMessage(err, '');
       if (errorMessage !== 'AbortError') {
         setError(extractErrorMessage(err) || 'Failed to fetch projects');
       }
-      if (!isSearch) {
-        setIsLoading(false);
-      } else {
+    } finally {
+      if (isSearch) {
         setIsSearching(false);
+      } else {
+        setIsLoading(false);
       }
     }
   }, []);
@@ -92,9 +117,7 @@ const ProjectList = () => {
   // Initial load
   useEffect(() => {
     const controller = new AbortController();
-    fetchProjects(controller.signal);
-
-    // Fetch tenants for admin
+    fetchGroups(controller.signal);
     if (isAdmin) {
       tenantService.getAll(controller.signal).then((data) => {
         setTenants(data);
@@ -103,11 +126,10 @@ const ProjectList = () => {
         setTenantMap(map);
       }).catch(() => { /* ignore */ });
     }
-
     return () => {
       controller.abort();
     };
-  }, [fetchProjects, isAdmin]);
+  }, [fetchGroups, isAdmin]);
 
   // Debounced search
   useEffect(() => {
@@ -115,17 +137,15 @@ const ProjectList = () => {
       hasInitializedSearchRef.current = true;
       return;
     }
-
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetchProjects(controller.signal, true);
+      fetchGroups(controller.signal, true);
     }, 300);
-
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [searchQuery, fetchProjects]);
+  }, [searchQuery, fetchGroups]);
 
   // Open create modal if navigated from Home "Get Started"
   useEffect(() => {
@@ -142,13 +162,43 @@ const ProjectList = () => {
     } else {
       await projectService.create(data as CreateProjectDTO);
     }
-    fetchProjects();
+    fetchGroups();
   };
 
-  const handleDeleteProject = async () => {
-    if (!projectToDelete) return;
-    await projectService.delete(projectToDelete.id);
-    fetchProjects();
+  const handleDeleteGroup = async () => {
+    if (!groupToDelete) return;
+    setDeleteGroupError('');
+    setIsDeletingGroup(true);
+    try {
+      await projectGroupService.delete(groupToDelete.id);
+      setShowDeleteGroupModal(false);
+      setGroupToDelete(null);
+      fetchGroups();
+    } catch (err: unknown) {
+      const msg = extractErrorMessage(err, 'Failed to delete group');
+      setDeleteGroupError(msg);
+      throw err; // re-throw so modal stays open
+    } finally {
+      setIsDeletingGroup(false);
+    }
+  };
+
+  const handleDeleteVersion = async () => {
+    if (!versionToDelete) return;
+    setDeleteVersionError('');
+    setIsDeletingVersion(true);
+    try {
+      await projectService.delete(versionToDelete.id);
+      setShowDeleteVersionModal(false);
+      setVersionToDelete(null);
+      fetchGroups();
+    } catch (err: unknown) {
+      const msg = extractErrorMessage(err, 'Failed to delete version');
+      setDeleteVersionError(msg);
+      throw err; // re-throw so modal stays open
+    } finally {
+      setIsDeletingVersion(false);
+    }
   };
 
   const openCreateModal = () => {
@@ -156,24 +206,80 @@ const ProjectList = () => {
     setShowFormModal(true);
   };
 
-  const openEditModal = (project: Project) => {
-    setProjectToEdit(project);
-    setShowFormModal(true);
-  };
-
-  const openDeleteModal = async (project: Project) => {
-    setProjectToDelete(project);
-    try {
-      const floorplans = await floorplanService.getAll(project.id);
-      setFloorplanCount(floorplans.length);
-    } catch {
-      setFloorplanCount(0);
+  const openLatest = (group: ProjectGroup) => {
+    if (group.versions.length > 0) {
+      navigate(`/projects/${group.versions[0].id}`);
     }
-    setShowDeleteModal(true);
   };
 
-  const filteredProjects = projects.filter(project => {
-    if (filterStatus !== 'all' && project.status !== filterStatus) return false;
+  const openCreateVersion = (group: ProjectGroup, sourceVersionId: number) => {
+    setGroupForAction(group);
+    setSourceProjectId(sourceVersionId);
+    setShowCreateVersionModal(true);
+  };
+
+  const openEditGroup = (group: ProjectGroup) => {
+    setGroupForAction(group);
+    setShowEditGroupModal(true);
+  };
+
+  const openDeleteGroup = (group: ProjectGroup) => {
+    setGroupToDelete(group);
+    setShowDeleteGroupModal(true);
+  };
+
+  const handleCreateVersion = async (groupId: number, versionName: string, sourceProjectId: number) => {
+    await projectGroupService.createVersion(groupId, { version_name: versionName, source_project_id: sourceProjectId });
+    fetchGroups();
+  };
+
+  const openEditVersion = (version: ProjectVersion) => {
+    setVersionForAction(version);
+    setEditVersionForm({ version_name: version.version_name });
+    setEditVersionError('');
+    setShowEditVersionModal(true);
+  };
+
+  const handleEditVersion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!versionForAction) return;
+    setEditVersionError('');
+    setIsEditVersionSubmitting(true);
+    try {
+      await projectService.update(versionForAction.id, {
+        version_name: editVersionForm.version_name,
+      });
+      setShowEditVersionModal(false);
+      setVersionForAction(null);
+      fetchGroups();
+    } catch (err: unknown) {
+      setEditVersionError(extractErrorMessage(err, 'Failed to update version'));
+    } finally {
+      setIsEditVersionSubmitting(false);
+    }
+  };
+
+  const openDeleteVersion = (version: ProjectVersion) => {
+    setVersionToDelete(version);
+    setShowDeleteVersionModal(true);
+  };
+
+  const toggleExpand = (groupId: number) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
+  const filteredGroups = groups.filter(group => {
+    if (filterStatus !== 'all') {
+      return group.status === filterStatus;
+    }
     return true;
   }).sort((a, b) => {
     const numA = generateProjectNumber(a);
@@ -250,67 +356,84 @@ const ProjectList = () => {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8"></TableHead>
                 <TableHead>Project Number</TableHead>
-                <TableHead>Project Name</TableHead>
                 <TableHead>Customer</TableHead>
                 {isAdmin && <TableHead>Tenant</TableHead>}
                 <TableHead>Status</TableHead>
-                <TableHead className="w-40"></TableHead>
+                <TableHead className="w-48"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredProjects.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={isAdmin ? 6 : 5} className="text-center py-8 text-muted-foreground">
-                    No projects found. Create your first project to get started.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredProjects.map((project) => (
-                  <TableRow key={project.id}>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {generateProjectNumber(project)}
+                {filteredGroups.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={isAdmin ? 6 : 5} className="text-center py-8 text-muted-foreground">
+                      No projects found. Create your first project to get started.
                     </TableCell>
-                    <TableCell className="font-medium">{project.name}</TableCell>
-                    <TableCell>{project.customer_name}</TableCell>
-                    {isAdmin && (
-                      <TableCell className="text-muted-foreground">
-                        {tenantMap[project.tenant_id] || '—'}
-                      </TableCell>
-                    )}
-                    <TableCell>
-                      {project.status === 'active' ? (
-                        <span className="inline-flex items-center text-green-600 text-sm">
-                          <CheckCircle className="w-4 h-4 mr-1" />
-                          Active
-                        </span>
-                      ) : project.status === 'completed' ? (
-                        <span className="inline-flex items-center text-blue-600 text-sm">
-                          <CheckCircle className="w-4 h-4 mr-1" />
-                          Completed
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center text-red-600 text-sm">
-                          <XCircle className="w-4 h-4 mr-1" />
-                          Cancelled
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigate(`/projects/${project.id}`)}
-                        >
-                          <Eye className="mr-1 h-3 w-3" />
-                          Open
+                  </TableRow>
+                ) : (
+                filteredGroups.map((group) => (
+                  <Fragment key={`group-${group.id}`}>
+                    <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggleExpand(group.id)}>
+                      <TableCell className="p-2">
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={(e) => { e.stopPropagation(); toggleExpand(group.id); }}>
+                          {expandedGroups.has(group.id) ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
                         </Button>
-                        {(canManage || project.status === 'active') && (
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {generateProjectNumber(group)}
+                      </TableCell>
+                      <TableCell>{group.customer_name}</TableCell>
+                      {isAdmin && (
+                        <TableCell className="text-muted-foreground">
+                          {tenantMap[group.tenant_id] || '—'}
+                        </TableCell>
+                      )}
+                      <TableCell>
+                        {(() => {
+                          if (group.status === 'active') {
+                            return (
+                              <span className="inline-flex items-center text-green-600 text-sm">
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                Active
+                              </span>
+                            );
+                          }
+                          if (group.status === 'completed') {
+                            return (
+                              <span className="inline-flex items-center text-blue-600 text-sm">
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                Completed
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center text-red-600 text-sm">
+                              <XCircle className="w-4 h-4 mr-1" />
+                              Cancelled
+                            </span>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => openEditModal(project)}
+                            onClick={() => openLatest(group)}
+                          >
+                            <Eye className="mr-1 h-3 w-3" />
+                            Open
+                          </Button>
+                          {canManage && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditGroup(group)}
                           >
                             <Pencil className="mr-1 h-3 w-3" />
                             Edit
@@ -320,15 +443,82 @@ const ProjectList = () => {
                           <Button
                             variant="destructive"
                             size="sm"
-                            onClick={() => openDeleteModal(project)}
+                            onClick={() => openDeleteGroup(group)}
                           >
                             <Trash2 className="mr-1 h-3 w-3" />
                             Delete
                           </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {expandedGroups.has(group.id) && group.versions.length > 0 && (
+                      <TableRow key={`versions-${group.id}`} className="border-0 hover:bg-transparent">
+                        <TableCell colSpan={isAdmin ? 6 : 5} className="p-0">
+                          <div className="border-l-2 border-l-primary/30 bg-muted/10 mx-4 mb-2 rounded-r-md">
+                            {group.versions.map((version, idx) => (
+                              <div
+                                key={version.id}
+                                className={`flex items-center justify-between px-4 py-3 ${
+                                  idx !== group.versions.length - 1 ? 'border-b border-border/40' : ''
+                                }`}
+                              >
+                                {/* Left: icon + name + date */}
+                                <div className="flex items-center gap-3">
+                                  <GitBranch className="h-4 w-4 text-muted-foreground" />
+                                  <div>
+                                    <span className="font-medium text-sm">{version.version_name}</span>
+                                    <span className="text-xs text-muted-foreground ml-3">
+                                      {new Date(version.created_at).toLocaleDateString('de-DE')}
+                                    </span>
+                                  </div>
+                                </div>
+                                {/* Right: actions */}
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8"
+                                    onClick={() => navigate(`/projects/${version.id}`)}
+                                  >
+                                    <Eye className="mr-1 h-3 w-3" />
+                                    Open
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8"
+                                    onClick={() => openCreateVersion(group, version.id)}
+                                  >
+                                    <Plus className="mr-1 h-3 w-3" />
+                                    Copy
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8"
+                                    onClick={() => openEditVersion(version)}
+                                  >
+                                    <Pencil className="mr-1 h-3 w-3" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="h-8"
+                                    onClick={() => openDeleteVersion(version)}
+                                  >
+                                    <Trash2 className="mr-1 h-3 w-3" />
+                                    Delete
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 ))
               )}
             </TableBody>
@@ -347,19 +537,116 @@ const ProjectList = () => {
         onSubmit={handleSubmitProject}
       />
 
-      <ConfirmDeleteModal
-        title={floorplanCount > 0 ? 'Cannot Delete Project' : 'Delete Project'}
-        itemName={projectToDelete?.name || ''}
-        warningText={floorplanCount > 0 ? undefined : 'This will permanently delete the project. This action cannot be undone.'}
-        isOpen={showDeleteModal}
+      <CreateVersionModal
+        customerName={groupForAction?.customer_name || ''}
+        existingVersionNames={groupForAction?.versions.map(v => v.version_name) || []}
+        sourceProjectId={sourceProjectId ?? 0}
+        isOpen={showCreateVersionModal}
         onClose={() => {
-          setShowDeleteModal(false);
-          setProjectToDelete(null);
-          setFloorplanCount(0);
+          setShowCreateVersionModal(false);
+          setGroupForAction(null);
+          setSourceProjectId(null);
         }}
-        onConfirm={handleDeleteProject}
-        disabled={floorplanCount > 0}
-        disabledMessage={`This project has ${floorplanCount} floorplan${floorplanCount === 1 ? '' : 's'} and cannot be deleted. Please delete all floorplans first.`}
+        onSubmit={async (data) => {
+          if (groupForAction && data.source_project_id) {
+            await handleCreateVersion(groupForAction.id, data.version_name, data.source_project_id);
+          }
+        }}
+      />
+
+      <EditGroupModal
+        group={groupForAction}
+        isOpen={showEditGroupModal}
+        onClose={() => {
+          setShowEditGroupModal(false);
+          setGroupForAction(null);
+        }}
+        onSubmit={async (data) => {
+          if (groupForAction) {
+            await projectGroupService.update(groupForAction.id, data);
+            fetchGroups();
+            setShowEditGroupModal(false);
+            setGroupForAction(null);
+          }
+        }}
+      />
+
+      {/* Edit Version Modal */}
+      <Dialog open={showEditVersionModal} onOpenChange={(open) => !open && setShowEditVersionModal(false)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Version</DialogTitle>
+            <DialogDescription>Update version details below.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditVersion}>
+            {editVersionError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>{editVersionError}</AlertDescription>
+              </Alert>
+            )}
+            <div className="space-y-4 mb-6">
+              <div className="space-y-2">
+                <Label htmlFor="version_name">Version Name *</Label>
+                <Input
+                  id="version_name"
+                  type="text"
+                  required
+                  value={editVersionForm.version_name}
+                  onChange={(e) => setEditVersionForm({ ...editVersionForm, version_name: e.target.value })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowEditVersionModal(false)}>
+                <X className="mr-2 h-4 w-4" />
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isEditVersionSubmitting}>
+                {isEditVersionSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Update
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDeleteModal
+        title="Delete Version"
+        itemName={versionToDelete?.version_name || ''}
+        warningText="This will permanently delete the version. This action cannot be undone."
+        isOpen={showDeleteVersionModal}
+        onClose={() => {
+          setShowDeleteVersionModal(false);
+          setVersionToDelete(null);
+          setDeleteVersionError('');
+        }}
+        onConfirm={handleDeleteVersion}
+        disabled={isDeletingVersion}
+        error={deleteVersionError}
+      />
+
+      <ConfirmDeleteModal
+        title="Delete Group"
+        itemName={groupToDelete?.name || ''}
+        warningText="This will permanently delete the group and all its versions. This action cannot be undone."
+        isOpen={showDeleteGroupModal}
+        onClose={() => {
+          setShowDeleteGroupModal(false);
+          setGroupToDelete(null);
+          setDeleteGroupError('');
+        }}
+        onConfirm={handleDeleteGroup}
+        disabled={isDeletingGroup}
+        error={deleteGroupError}
       />
     </div>
   );

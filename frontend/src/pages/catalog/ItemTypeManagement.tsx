@@ -15,7 +15,7 @@ import { ItemTypeFormModal } from '@/components/items/ItemTypeFormModal';
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
 import ItemTypeBadge from '@/components/items/ItemTypeBadge';
 import { Plus, Pencil, Trash2, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { extractErrorMessage } from '@/utils';
 import type { CreateItemTypeDTO, UpdateItemTypeDTO } from '@/services/item-type';
 

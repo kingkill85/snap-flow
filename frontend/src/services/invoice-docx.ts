@@ -700,7 +700,7 @@ export const generateInvoiceDOCX = async (data: InvoiceDocxData): Promise<void> 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${data.projectName.replace(/[^a-zA-Z0-9-_ ]/g, '')}${data.filenameSuffix || ''}_Proposal.docx`;
+  a.download = `${data.projectName.replace(/[/\\:*?"<>|]/g, '')}${data.filenameSuffix ? data.filenameSuffix.replace(/_/g, ' ') : ''} Proposal.docx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

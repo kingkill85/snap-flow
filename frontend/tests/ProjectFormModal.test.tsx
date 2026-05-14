@@ -10,6 +10,7 @@ vi.mock('@/services/auth', () => ({
 describe('ProjectFormModal', () => {
   const mockProject = {
     id: 1,
+    version_name: 'v1',
     name: 'Home Automation',
     status: 'active' as const,
     customer_name: 'John Doe',
@@ -56,19 +57,17 @@ describe('ProjectFormModal', () => {
     );
 
     await waitFor(() => {
-      expect(document.body.textContent).toContain('Edit Project');
+      expect(document.body.textContent).toContain('Edit Version');
     }, { timeout: 10000 });
 
-    expect(document.body.textContent).toContain('Update project details below.');
+    expect(document.body.textContent).toContain('Update version details below.');
 
-    const nameInput = screen.getByDisplayValue('Home Automation');
-    expect(nameInput).toBeInTheDocument();
+    // In edit mode, should show version_name pre-filled
+    const versionNameInput = screen.getByDisplayValue('v1');
+    expect(versionNameInput).toBeInTheDocument();
 
-    const customerNameInput = screen.getByDisplayValue('John Doe');
-    expect(customerNameInput).toBeInTheDocument();
-
-    const emailInput = screen.getByDisplayValue('john@example.com');
-    expect(emailInput).toBeInTheDocument();
+    // In edit mode, customer fields should NOT be present
+    expect(document.body.textContent).not.toContain('Customer Name');
   });
 
   it('calls onClose when cancel button is clicked', async () => {
@@ -87,7 +86,7 @@ describe('ProjectFormModal', () => {
     expect(mockOnClose).toHaveBeenCalled();
   });
 
-  it('shows required field labels for name and customer_name', async () => {
+  it('shows required customer_name field label in create mode', async () => {
     render(
       <ProjectFormModal
         project={null}
@@ -98,10 +97,26 @@ describe('ProjectFormModal', () => {
     );
 
     await waitFor(() => {
-      expect(document.body.textContent).toContain('Project Name *');
+      expect(document.body.textContent).toContain('Customer Name *');
     }, { timeout: 10000 });
 
-    expect(document.body.textContent).toContain('Customer Name *');
+    // Version Name should NOT be present in create mode (auto-set to 'v1')
+    expect(document.body.textContent).not.toContain('Version Name');
+  });
+
+  it('shows required version_name label in edit mode', async () => {
+    render(
+      <ProjectFormModal
+        project={mockProject}
+        isOpen={true}
+        onClose={mockOnClose}
+        onSubmit={mockOnSubmit}
+      />
+    );
+
+    await waitFor(() => {
+      expect(document.body.textContent).toContain('Version Name *');
+    }, { timeout: 10000 });
   });
 
   it('renders Update button in edit mode', async () => {
