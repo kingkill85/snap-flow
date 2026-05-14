@@ -14,6 +14,7 @@ export interface ProjectGroup {
 export interface Project {
   id: number;
   version_name: string;
+  project_group_id?: number;
   tenant_id: number;
   created_at: string;
   google_exchange_rate: number;
@@ -33,6 +34,7 @@ export interface CreateProjectDTO {
   customer_address?: string;
   version_name?: string;
   item_type_ids?: number[];
+  tenant_id?: number;
 }
 
 export interface UpdateProjectDTO {

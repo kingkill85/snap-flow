@@ -42,6 +42,7 @@ const createProjectSchema = z.object({
   customer_phone: z.string().max(50).optional().or(z.literal('')),
   customer_address: z.string().max(500).optional().or(z.literal('')),
   version_name: z.string().min(1).max(100).optional(),
+  tenant_id: z.number().optional(),
   item_type_ids: z.array(z.number()).optional(),
 });
 
@@ -171,11 +172,17 @@ projectRoutes.get('/:id', authMiddleware, async (c) => {
 projectRoutes.post('/', authMiddleware, zValidator('json', createProjectSchema), async (c) => {
   const {
     customer_name, customer_email, customer_phone,
-    customer_address, version_name, item_type_ids,
+    customer_address, version_name, tenant_id, item_type_ids,
   } = c.req.valid('json');
 
   try {
-    const tenantId = c.get('tenantId') as number;
+    const callerRole = c.get('userRole') as string;
+    let tenantId = c.get('tenantId') as number;
+
+    // Admin can override tenant_id during creation
+    if (callerRole === 'admin' && tenant_id !== undefined) {
+      tenantId = tenant_id;
+    }
 
     const createData: CreateProjectDTO = {
       customer_name,
