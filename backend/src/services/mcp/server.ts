@@ -1,10 +1,11 @@
 import type { Hono } from 'hono';
 import { listProjectsTool } from './tools/list-projects.ts';
 import { getProjectTool } from './tools/get-project.ts';
-import { getProjectTotalTool } from './tools/get-project-total.ts';
+import { getVersionTotalTool } from './tools/get-version-total.ts';
 import { searchItemsTool } from './tools/search-items.ts';
+import { zodToJsonSchema } from './zod-to-json-schema.ts';
 
-const allTools = [listProjectsTool, getProjectTool, getProjectTotalTool, searchItemsTool];
+const allTools = [listProjectsTool, getProjectTool, getVersionTotalTool, searchItemsTool];
 
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -41,7 +42,7 @@ export async function handleMcpRequest(
         tools: allTools.map((t) => ({
           name: t.name,
           description: t.description,
-          inputSchema: { type: 'object' },
+          inputSchema: zodToJsonSchema(t.inputSchema),
         })),
       },
     };
