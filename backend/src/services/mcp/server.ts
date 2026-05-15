@@ -3,9 +3,22 @@ import { listProjectsTool } from './tools/list-projects.ts';
 import { getProjectTool } from './tools/get-project.ts';
 import { getVersionTotalTool } from './tools/get-version-total.ts';
 import { searchItemsTool } from './tools/search-items.ts';
+import { listFloorplansTool } from './tools/list-floorplans.ts';
+import { getFloorplanBomTool } from './tools/get-floorplan-bom.ts';
+import { listAreasTool } from './tools/list-areas.ts';
+import { getInvoiceCalculationTool } from './tools/get-invoice-calculation.ts';
 import { zodToJsonSchema } from './zod-to-json-schema.ts';
 
-const allTools = [listProjectsTool, getProjectTool, getVersionTotalTool, searchItemsTool];
+const allTools = [
+  listProjectsTool,
+  getProjectTool,
+  getVersionTotalTool,
+  searchItemsTool,
+  listFloorplansTool,
+  getFloorplanBomTool,
+  listAreasTool,
+  getInvoiceCalculationTool,
+];
 
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
