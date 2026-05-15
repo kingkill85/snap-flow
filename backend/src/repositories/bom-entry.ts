@@ -185,9 +185,16 @@ export class BomEntryRepository {
       getDb().query(`DELETE FROM project_bom WHERE id = ?`, [id]);
     });
 
-    // Clean up image files outside transaction
+    // Clean up image files outside transaction. Skip any path still referenced
+    // by another BOM row — legacy data may share files between versions, see
+    // fix-shared-bom-images.ts.
+    const seen = new Set<string>();
     for (const imagePath of imagePaths) {
+      if (seen.has(imagePath)) continue;
+      seen.add(imagePath);
       try {
+        const stillReferenced = await this.findByPicturePath(imagePath);
+        if (stillReferenced.length > 0) continue;
         await fileStorageService.deleteFile(imagePath);
       } catch {
         // Ignore file cleanup errors — DB state is consistent

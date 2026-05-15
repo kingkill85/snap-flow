@@ -248,7 +248,10 @@ export class ProjectGroupRepository {
           item_type_name: string | null;
         }>;
 
-        // First pass: insert all with parent_bom_id = null, build bomIdMap
+        // First pass: insert all with parent_bom_id = null and picture_path = null,
+        // then copy the picture file and update the row. Each new BOM entry gets its
+        // own file under the new project's folder so deleting one version cannot
+        // unlink files referenced by another.
         for (const bom of bomEntries) {
           const newFloorplanId = floorplanIdMap.get(bom.floorplan_id);
           if (!newFloorplanId) continue;
@@ -269,13 +272,27 @@ export class ProjectGroupRepository {
             bom.style_name,
             bom.model_number,
             bom.unit_price,
-            bom.picture_path,
+            null,
             bom.area_id,
             bom.item_type_name,
           ]);
 
           const newBomId = (newBomRows[0] as Record<string, unknown>).id as number;
           bomIdMap.set(bom.id, newBomId);
+
+          if (bom.picture_path) {
+            const newPicturePath = await this._copyBomPicture(
+              bom.picture_path,
+              newProject.id,
+              newBomId,
+            );
+            if (newPicturePath) {
+              db.query(
+                `UPDATE project_bom SET picture_path = ? WHERE id = ?`,
+                [newPicturePath, newBomId],
+              );
+            }
+          }
         }
 
         // Second pass: update parent_bom_id using bomIdMap
@@ -433,6 +450,25 @@ export class ProjectGroupRepository {
    */
   private _copyFloorplanImage(sourcePath: string): Promise<string> {
     return fileStorageService.copyFile(sourcePath, 'floorplans');
+  }
+
+  /**
+   * Copy a BOM picture file into the new version's project folder.
+   * Returns the new relative path, or null if the source is missing
+   * (in which case the caller leaves picture_path NULL — the row stays
+   * recoverable from item_variants.image_path later).
+   */
+  private async _copyBomPicture(
+    sourcePath: string,
+    newProjectId: number,
+    newBomId: number,
+  ): Promise<string | null> {
+    const fileName = sourcePath.split('/').pop() || 'image.jpg';
+    const destSubdir = `projects/${newProjectId}/bom-images`;
+    const newFileName = `${newBomId}-${fileName}`;
+    const copied = await fileStorageService.copyFile(sourcePath, destSubdir, newFileName);
+    // copyFile returns the original source path when copy fails; treat that as "no copy"
+    return copied === sourcePath ? null : copied;
   }
 }
 
