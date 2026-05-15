@@ -10,13 +10,15 @@ vi.mock('@/context/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
-// Mock useNavigate
+// Mock useNavigate and useSearchParams
 const mockNavigate = vi.fn();
+let mockSearchParams = new URLSearchParams();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
   return {
     ...actual,
     useNavigate: () => mockNavigate,
+    useSearchParams: () => [mockSearchParams, vi.fn()],
   };
 });
 
@@ -25,6 +27,7 @@ describe('Login', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSearchParams = new URLSearchParams();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (useAuth as any).mockReturnValue({ login: mockLogin });
   });
@@ -244,5 +247,43 @@ describe('Login', () => {
     const passwordInput = screen.getByLabelText('Password');
     expect(passwordInput).toHaveAttribute('type', 'password');
     expect(passwordInput).toBeRequired();
+  });
+
+  it('navigates to return_to on successful login when present', async () => {
+    mockLogin.mockResolvedValueOnce(undefined);
+    mockSearchParams = new URLSearchParams('return_to=%2Foauth%2Fauthorize%3Fclient_id%3Dx');
+
+    render(
+      <BrowserRouter>
+        <Login />
+      </BrowserRouter>
+    );
+
+    await userEvent.type(screen.getByLabelText('Email'), 'a@a.a');
+    await userEvent.type(screen.getByLabelText('Password'), 'password');
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/oauth/authorize?client_id=x');
+    });
+  });
+
+  it('falls back to home when return_to is absent', async () => {
+    mockLogin.mockResolvedValueOnce(undefined);
+    // mockSearchParams stays empty (no return_to)
+
+    render(
+      <BrowserRouter>
+        <Login />
+      </BrowserRouter>
+    );
+
+    await userEvent.type(screen.getByLabelText('Email'), 'a@a.a');
+    await userEvent.type(screen.getByLabelText('Password'), 'password');
+    await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/');
+    });
   });
 });

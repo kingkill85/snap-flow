@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,7 @@ const Login = () => {
   
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +26,13 @@ const Login = () => {
 
     try {
       await login(email, password);
-      navigate('/');
+      const returnTo = searchParams.get('return_to');
+      if (returnTo && returnTo.startsWith('/')) {
+        // Only allow same-origin relative paths to prevent open-redirect via ?return_to=https://evil
+        navigate(returnTo);
+      } else {
+        navigate('/');
+      }
     } catch (err: unknown) {
       const errorMessage = extractErrorMessage(err) || 'Invalid email or password';
       setError(errorMessage);
