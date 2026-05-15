@@ -6,6 +6,7 @@ import { userRepository } from '../../src/repositories/user.ts';
 import { tenantRepository } from '../../src/repositories/tenant.ts';
 import { oauthClientRepository } from '../../src/repositories/oauth-client.ts';
 import { signSessionCookie } from '../../src/services/oauth/session-cookie.ts';
+import type { CreateTenantDTO, CreateUserDTO } from '../../src/models/index.ts';
 
 function buildApp(): Hono {
   const app = new Hono();
@@ -14,11 +15,11 @@ function buildApp(): Hono {
 }
 
 async function seed() {
-  const tenant = await tenantRepository.create({ name: 'T' } as any);
+  const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
   const user = await userRepository.create({
     email: 'consent@example.com', password_hash: 'x', role: 'user',
     full_name: 'C', tenant_id: tenant.id,
-  } as any);
+  } as CreateUserDTO & { password_hash: string });
   const client = await oauthClientRepository.create({
     redirect_uris: ['https://c/cb'], client_name: 'Claude',
   });

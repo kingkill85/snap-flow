@@ -8,6 +8,7 @@ import { tenantRepository } from '../../src/repositories/tenant.ts';
 import { oauthClientRepository } from '../../src/repositories/oauth-client.ts';
 import { oauthCodeRepository } from '../../src/repositories/oauth-code.ts';
 import { verifyToken } from '../../src/services/jwt.ts';
+import type { CreateTenantDTO, CreateUserDTO } from '../../src/models/index.ts';
 
 function buildApp(): Hono {
   const app = new Hono();
@@ -65,11 +66,11 @@ Deno.test('GET /oauth/authorize', async (t) => {
 
   await t.step('redirects to /oauth/consent when session cookie valid', async () => {
     await clearDatabase();
-    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
     const user = await userRepository.create({
       email: 'authtest@example.com', password_hash: 'x', role: 'user',
       full_name: 'A', tenant_id: tenant.id,
-    } as any);
+    } as CreateUserDTO & { password_hash: string });
     const client = await oauthClientRepository.create({ redirect_uris: ['https://c/cb'] });
     const cookie = await signSessionCookie(user.id);
 
@@ -106,11 +107,11 @@ Deno.test('POST /oauth/token (authorization_code)', async (t) => {
     const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
     const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 
-    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
     const user = await userRepository.create({
       email: 'tokenuser@example.com', password_hash: 'x', role: 'user',
       full_name: 'Z', tenant_id: tenant.id,
-    } as any);
+    } as CreateUserDTO & { password_hash: string });
     const client = await oauthClientRepository.create({ redirect_uris: ['https://c/cb'] });
     const created = await oauthCodeRepository.create({
       client_id: client.id, user_id: user.id,
@@ -144,11 +145,11 @@ Deno.test('POST /oauth/token (authorization_code)', async (t) => {
   await t.step('rejects wrong verifier', async () => {
     await clearDatabase();
     const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
-    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
     const user = await userRepository.create({
       email: 'wrongver@example.com', password_hash: 'x', role: 'user',
       full_name: 'Y', tenant_id: tenant.id,
-    } as any);
+    } as CreateUserDTO & { password_hash: string });
     const client = await oauthClientRepository.create({ redirect_uris: ['https://c/cb'] });
     const created = await oauthCodeRepository.create({
       client_id: client.id, user_id: user.id,
@@ -175,11 +176,11 @@ Deno.test('POST /oauth/token (authorization_code)', async (t) => {
     await clearDatabase();
     const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
     const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
-    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
     const user = await userRepository.create({
       email: 'reuser@example.com', password_hash: 'x', role: 'user',
       full_name: 'R', tenant_id: tenant.id,
-    } as any);
+    } as CreateUserDTO & { password_hash: string });
     const client = await oauthClientRepository.create({ redirect_uris: ['https://c/cb'] });
     const created = await oauthCodeRepository.create({
       client_id: client.id, user_id: user.id,
@@ -211,11 +212,11 @@ Deno.test('POST /oauth/token (refresh_token)', async (t) => {
   async function obtainTokenPair() {
     const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
     const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
-    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
     const user = await userRepository.create({
       email: 'refreshuser@example.com', password_hash: 'x', role: 'user',
       full_name: 'Q', tenant_id: tenant.id,
-    } as any);
+    } as CreateUserDTO & { password_hash: string });
     const client = await oauthClientRepository.create({ redirect_uris: ['https://c/cb'] });
     const created = await oauthCodeRepository.create({
       client_id: client.id, user_id: user.id,

@@ -5,17 +5,18 @@ import app from '../../src/main.ts';
 import { userRepository } from '../../src/repositories/user.ts';
 import { tenantRepository } from '../../src/repositories/tenant.ts';
 import { generateToken } from '../../src/services/jwt.ts';
+import type { CreateTenantDTO, CreateUserDTO } from '../../src/models/index.ts';
 
 Deno.test('dispatchToBackend', async (t) => {
   await setupTestDatabase();
 
   await t.step('returns parsed JSON body for 200 responses', async () => {
     await clearDatabase();
-    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
     const user = await userRepository.create({
       email: 'dispatcher@example.com', password_hash: 'x', role: 'user',
       full_name: 'D', tenant_id: tenant.id,
-    } as any);
+    } as CreateUserDTO & { password_hash: string });
     const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
     const result = await dispatchToBackend(app, {
       method: 'GET',

@@ -4,6 +4,7 @@ import app from '../../src/main.ts';
 import { userRepository } from '../../src/repositories/user.ts';
 import { tenantRepository } from '../../src/repositories/tenant.ts';
 import { generateToken } from '../../src/services/jwt.ts';
+import type { CreateTenantDTO, CreateUserDTO } from '../../src/models/index.ts';
 
 Deno.test('POST /mcp', async (t) => {
   await setupTestDatabase();
@@ -22,11 +23,11 @@ Deno.test('POST /mcp', async (t) => {
 
   await t.step('tools/list returns the 4 tools when authenticated', async () => {
     await clearDatabase();
-    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
     const user = await userRepository.create({
       email: 'mcptest@example.com', password_hash: 'x', role: 'user',
       full_name: 'M', tenant_id: tenant.id,
-    } as any);
+    } as CreateUserDTO & { password_hash: string });
     const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
 
     const res = await app.fetch(new Request('http://x/mcp', {

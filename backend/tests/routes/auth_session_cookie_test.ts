@@ -5,16 +5,18 @@ import { tenantRepository } from '../../src/repositories/tenant.ts';
 import { hashPassword } from '../../src/services/password.ts';
 import app from '../../src/main.ts';
 import { verifySessionCookie } from '../../src/services/oauth/session-cookie.ts';
+import type { CreateTenantDTO } from '../../src/models/index.ts';
+import type { CreateUserDTO } from '../../src/models/index.ts';
 
 Deno.test('POST /api/auth/login sets oauth_session cookie', async () => {
   await setupTestDatabase();
   await clearDatabase();
 
-  const tenant = await tenantRepository.create({ name: 'T' } as any);
+  const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
   await userRepository.create({
     email: 'user@test.com', password_hash: hashPassword('password123'),
     role: 'user', full_name: 'U', tenant_id: tenant.id,
-  } as any);
+  } as CreateUserDTO & { password_hash: string });
 
   const res = await app.fetch(new Request('http://x/api/auth/login', {
     method: 'POST',
