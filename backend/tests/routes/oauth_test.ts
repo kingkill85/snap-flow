@@ -33,9 +33,10 @@ Deno.test('POST /oauth/register', async (t) => {
     assertEquals(res.status, 201);
     const body = await res.json();
     assert(typeof body.client_id === 'string' && body.client_id.length > 0);
+    assert(typeof body.client_secret === 'string' && body.client_secret.length > 0);
     assertEquals(body.redirect_uris, ['https://claude.ai/api/mcp/auth_callback']);
     assertEquals(body.client_name, 'Claude');
-    assertEquals(body.token_endpoint_auth_method, 'none');
+    assertEquals(body.token_endpoint_auth_method, 'client_secret_post');
   });
 
   await t.step('rejects missing redirect_uris', async () => {
@@ -265,5 +266,120 @@ Deno.test('POST /oauth/token (refresh_token)', async (t) => {
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tok.refresh_token }).toString(),
     }));
     assertEquals(r2.status, 400);
+  });
+});
+
+Deno.test('POST /oauth/token client_secret', async (t) => {
+  await setupTestDatabase();
+
+  await t.step('rejects code grant without client_secret when client has one', async () => {
+    await clearDatabase();
+    const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'sec1@example.com', password_hash: 'x', role: 'user',
+      full_name: 'S', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    // Register via the register route so the client has a secret on file
+    const app = buildApp();
+    const reg = await app.fetch(new Request('https://x/oauth/register', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redirect_uris: ['https://c/cb'], client_name: 'X' }),
+    }));
+    const { client_id } = await reg.json();
+    const created = await oauthCodeRepository.create({
+      client_id, user_id: user.id, redirect_uri: 'https://c/cb', code_challenge: challenge,
+    });
+
+    const res = await app.fetch(new Request('https://x/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code', code: created.code,
+        redirect_uri: 'https://c/cb', client_id, code_verifier: verifier,
+        // missing client_secret
+      }).toString(),
+    }));
+    assertEquals(res.status, 401);
+    assertEquals((await res.json()).error, 'invalid_client');
+  });
+
+  await t.step('accepts code grant with correct client_secret', async () => {
+    await clearDatabase();
+    const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'sec2@example.com', password_hash: 'x', role: 'user',
+      full_name: 'S', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const app = buildApp();
+    const reg = await app.fetch(new Request('https://x/oauth/register', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redirect_uris: ['https://c/cb'], client_name: 'X' }),
+    }));
+    const { client_id, client_secret } = await reg.json();
+    const created = await oauthCodeRepository.create({
+      client_id, user_id: user.id, redirect_uri: 'https://c/cb', code_challenge: challenge,
+    });
+
+    const res = await app.fetch(new Request('https://x/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code', code: created.code,
+        redirect_uri: 'https://c/cb', client_id, code_verifier: verifier,
+        client_secret,
+      }).toString(),
+    }));
+    assertEquals(res.status, 200);
+  });
+
+  await t.step('refresh grant requires client_secret', async () => {
+    await clearDatabase();
+    const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'sec3@example.com', password_hash: 'x', role: 'user',
+      full_name: 'S', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const app = buildApp();
+    const reg = await app.fetch(new Request('https://x/oauth/register', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redirect_uris: ['https://c/cb'], client_name: 'X' }),
+    }));
+    const { client_id, client_secret } = await reg.json();
+    const code = await oauthCodeRepository.create({
+      client_id, user_id: user.id, redirect_uri: 'https://c/cb', code_challenge: challenge,
+    });
+    const t1 = await app.fetch(new Request('https://x/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code', code: code.code,
+        redirect_uri: 'https://c/cb', client_id, code_verifier: verifier, client_secret,
+      }).toString(),
+    }));
+    const tok = await t1.json();
+
+    // Refresh without client_secret → 401
+    const bad = await app.fetch(new Request('https://x/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tok.refresh_token, client_id }).toString(),
+    }));
+    assertEquals(bad.status, 401);
+
+    // Refresh with client_secret → 200
+    const good = await app.fetch(new Request('https://x/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token', refresh_token: tok.refresh_token, client_id, client_secret,
+      }).toString(),
+    }));
+    assertEquals(good.status, 200);
   });
 });

@@ -1,6 +1,7 @@
 import { assertEquals, assertNotEquals } from '@std/assert';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { oauthClientRepository } from '../../src/repositories/oauth-client.ts';
+import { generateClientSecret, hashClientSecret } from '../../src/services/oauth/client-secret.ts';
 
 Deno.test('oauth-client repository', async (t) => {
   await setupTestDatabase();
@@ -30,5 +31,32 @@ Deno.test('oauth-client repository', async (t) => {
     await clearDatabase();
     const found = await oauthClientRepository.findById('nope');
     assertEquals(found, null);
+  });
+
+  await t.step('verifySecret returns true for matching secret', async () => {
+    await clearDatabase();
+    const raw = generateClientSecret();
+    const hash = await hashClientSecret(raw);
+    const created = await oauthClientRepository.create({
+      redirect_uris: ['https://c/cb'],
+      client_secret_hash: hash,
+    });
+    assertEquals(await oauthClientRepository.verifySecret(created.id, raw), true);
+  });
+
+  await t.step('verifySecret returns false for wrong secret', async () => {
+    await clearDatabase();
+    const hash = await hashClientSecret(generateClientSecret());
+    const created = await oauthClientRepository.create({
+      redirect_uris: ['https://c/cb'],
+      client_secret_hash: hash,
+    });
+    assertEquals(await oauthClientRepository.verifySecret(created.id, 'wrong'), false);
+  });
+
+  await t.step('verifySecret returns false for client without secret', async () => {
+    await clearDatabase();
+    const created = await oauthClientRepository.create({ redirect_uris: ['https://c/cb'] });
+    assertEquals(await oauthClientRepository.verifySecret(created.id, 'anything'), false);
   });
 });

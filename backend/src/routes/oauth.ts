@@ -8,6 +8,7 @@ import { generateToken } from '../services/jwt.ts';
 import { createRefreshToken, verifyRefreshToken, revokeRefreshToken } from '../services/refresh-token.ts';
 import { userRepository } from '../repositories/user.ts';
 import { oauthCodeRepository } from '../repositories/oauth-code.ts';
+import { generateClientSecret, hashClientSecret } from '../services/oauth/client-secret.ts';
 
 export const oauthRoutes = new Hono();
 
@@ -18,16 +19,23 @@ const registerSchema = z.object({
 
 oauthRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
   const { redirect_uris, client_name } = c.req.valid('json');
+
+  const rawSecret = generateClientSecret();
+  const hash = await hashClientSecret(rawSecret);
+
   const client = await oauthClientRepository.create({
     redirect_uris,
     ...(client_name !== undefined ? { client_name } : {}),
+    client_secret_hash: hash,
   });
+
   return c.json({
     client_id: client.id,
+    client_secret: rawSecret,
     client_id_issued_at: Math.floor(Date.now() / 1000),
     redirect_uris: client.redirect_uris,
     client_name: client.client_name,
-    token_endpoint_auth_method: 'none',
+    token_endpoint_auth_method: 'client_secret_post',
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
   }, 201);
@@ -71,11 +79,39 @@ oauthRoutes.get('/authorize', async (c) => {
   return c.redirect(`/oauth/consent?${consentParams.toString()}`, 302);
 });
 
+async function verifyClient(
+  form: FormData,
+  requireClientId = true,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const clientId = String(form.get('client_id') ?? '');
+  const submittedSecret = String(form.get('client_secret') ?? '');
+  if (!clientId) {
+    // If client_id is not required (e.g. legacy public-client refresh flows),
+    // allow the request through without client authentication.
+    if (!requireClientId) return { ok: true };
+    return { ok: false, reason: 'missing client_id' };
+  }
+  const client = await oauthClientRepository.findById(clientId);
+  if (!client) return { ok: false, reason: 'unknown client_id' };
+  if (client.client_secret_hash === null) {
+    // Public client (no secret on file) — no verification required.
+    return { ok: true };
+  }
+  if (!submittedSecret) return { ok: false, reason: 'missing client_secret' };
+  const ok = await oauthClientRepository.verifySecret(clientId, submittedSecret);
+  return ok ? { ok: true } : { ok: false, reason: 'invalid client_secret' };
+}
+
 oauthRoutes.post('/token', async (c) => {
   const form = await c.req.formData();
   const grantType = String(form.get('grant_type') ?? '');
 
   if (grantType === 'authorization_code') {
+    const clientCheck = await verifyClient(form);
+    if (!clientCheck.ok) {
+      return c.json({ error: 'invalid_client', error_description: clientCheck.reason }, 401);
+    }
+
     const code = String(form.get('code') ?? '');
     const redirectUri = String(form.get('redirect_uri') ?? '');
     const clientId = String(form.get('client_id') ?? '');
@@ -115,6 +151,11 @@ oauthRoutes.post('/token', async (c) => {
   }
 
   if (grantType === 'refresh_token') {
+    const clientCheck = await verifyClient(form, false);
+    if (!clientCheck.ok) {
+      return c.json({ error: 'invalid_client', error_description: clientCheck.reason }, 401);
+    }
+
     const refreshToken = String(form.get('refresh_token') ?? '');
     if (!refreshToken) return c.json({ error: 'invalid_request' }, 400);
     const userId = await verifyRefreshToken(refreshToken);
