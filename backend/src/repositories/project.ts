@@ -199,42 +199,71 @@ export class ProjectRepository {
 
   /**
    * Internal: cascade delete all data attached to a version (files + DB records).
+   *
+   * BOM picture files are reference-counted: legacy data may share a single file
+   * between versions (see fix-shared-bom-images.ts). We collect the paths first,
+   * delete the DB rows, then unlink files only if no other project_bom row still
+   * references them.
    */
   private _deleteVersionData(projectId: number): Promise<void> {
     const db = getDb();
 
-    // Get floorplans for this project (need image paths before deletion)
     const floorplans = db.queryEntries(
       `SELECT id, image_path FROM floorplans WHERE project_id = ?`,
       [projectId]
     ) as unknown as Array<{ id: number; image_path: string }>;
 
+    const bomPicturePaths: string[] = [];
+    const floorplanImagePaths: string[] = [];
+
     for (const fp of floorplans) {
-      // Delete floorplan image file
-      fileStorageService.deleteFile(fp.image_path).catch(() => {});
+      floorplanImagePaths.push(fp.image_path);
 
-      // placements cascade to area_properties and area_vertices via FK ON DELETE CASCADE
-      db.query(`DELETE FROM placements WHERE floorplan_id = ?`, [fp.id]);
-
-      // Delete BOM entries for this floorplan (get picture paths first)
       const bomEntries = db.queryEntries(
         `SELECT picture_path FROM project_bom WHERE floorplan_id = ? AND picture_path IS NOT NULL`,
         [fp.id]
       ) as unknown as Array<{ picture_path: string }>;
       for (const bom of bomEntries) {
-        fileStorageService.deleteFile(bom.picture_path).catch(() => {});
+        bomPicturePaths.push(bom.picture_path);
       }
-      db.query(`DELETE FROM project_bom WHERE floorplan_id = ?`, [fp.id]);
     }
 
-    // Delete any remaining BOM entries by project_id
+    // Also pick up BOM rows attached to the project without a floorplan
+    const orphanedBom = db.queryEntries(
+      `SELECT picture_path FROM project_bom
+       WHERE project_id = ? AND floorplan_id IS NULL AND picture_path IS NOT NULL`,
+      [projectId]
+    ) as unknown as Array<{ picture_path: string }>;
+    for (const bom of orphanedBom) bomPicturePaths.push(bom.picture_path);
+
+    // Delete DB rows first so the reference check below sees a consistent state
+    for (const fp of floorplans) {
+      db.query(`DELETE FROM placements WHERE floorplan_id = ?`, [fp.id]);
+      db.query(`DELETE FROM project_bom WHERE floorplan_id = ?`, [fp.id]);
+    }
     db.query(`DELETE FROM project_bom WHERE project_id = ?`, [projectId]);
-
-    // Delete floorplans
     db.query(`DELETE FROM floorplans WHERE project_id = ?`, [projectId]);
-
-    // Delete project item types
     db.query(`DELETE FROM project_item_types WHERE project_id = ?`, [projectId]);
+
+    // Floorplan images are always copied per version — safe to delete unconditionally
+    for (const path of floorplanImagePaths) {
+      fileStorageService.deleteFile(path).catch(() => {});
+    }
+
+    // BOM pictures: only unlink if no surviving BOM row still references the path
+    const seen = new Set<string>();
+    for (const path of bomPicturePaths) {
+      if (seen.has(path)) continue;
+      seen.add(path);
+
+      const stillReferenced = db.queryEntries(
+        `SELECT 1 FROM project_bom WHERE picture_path = ? LIMIT 1`,
+        [path]
+      );
+      if (stillReferenced.length === 0) {
+        fileStorageService.deleteFile(path).catch(() => {});
+      }
+    }
 
     return Promise.resolve();
   }
@@ -309,7 +338,7 @@ export class ProjectRepository {
    * Delete all versions in a group.
    * Only called after verifying all versions are empty.
    */
-  deleteAllInGroup(groupId: number, ctx?: TenantContext): Promise<void> {
+  async deleteAllInGroup(groupId: number, ctx?: TenantContext): Promise<void> {
     const db = getDb();
 
     let sql = `SELECT id FROM projects WHERE project_group_id = ?`;
@@ -321,11 +350,9 @@ export class ProjectRepository {
     const projects = db.queryEntries(sql, params) as unknown as Array<{ id: number }>;
 
     for (const project of projects) {
-      this._deleteVersionData(project.id);
+      await this._deleteVersionData(project.id);
       db.query(`DELETE FROM projects WHERE id = ?`, [project.id]);
     }
-
-    return Promise.resolve();
   }
 }
 
