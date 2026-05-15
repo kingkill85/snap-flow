@@ -3,6 +3,11 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { oauthClientRepository } from '../repositories/oauth-client.ts';
 import { verifySessionCookie, OAUTH_SESSION_COOKIE_NAME } from '../services/oauth/session-cookie.ts';
+import { verifyS256 } from '../services/oauth/pkce.ts';
+import { generateToken } from '../services/jwt.ts';
+import { createRefreshToken } from '../services/refresh-token.ts';
+import { userRepository } from '../repositories/user.ts';
+import { oauthCodeRepository } from '../repositories/oauth-code.ts';
 
 export const oauthRoutes = new Hono();
 
@@ -64,6 +69,53 @@ oauthRoutes.get('/authorize', async (c) => {
   consentParams.set('state', state);
   consentParams.set('scope', scope);
   return c.redirect(`/oauth/consent?${consentParams.toString()}`, 302);
+});
+
+oauthRoutes.post('/token', async (c) => {
+  const form = await c.req.formData();
+  const grantType = String(form.get('grant_type') ?? '');
+
+  if (grantType === 'authorization_code') {
+    const code = String(form.get('code') ?? '');
+    const redirectUri = String(form.get('redirect_uri') ?? '');
+    const clientId = String(form.get('client_id') ?? '');
+    const verifier = String(form.get('code_verifier') ?? '');
+
+    if (!code || !redirectUri || !clientId || !verifier) {
+      return c.json({ error: 'invalid_request', error_description: 'missing field' }, 400);
+    }
+    const consumed = await oauthCodeRepository.consume(code);
+    if (!consumed) {
+      return c.json({ error: 'invalid_grant', error_description: 'code invalid/expired/reused' }, 400);
+    }
+    if (consumed.client_id !== clientId) {
+      return c.json({ error: 'invalid_grant', error_description: 'client_id mismatch' }, 400);
+    }
+    if (consumed.redirect_uri !== redirectUri) {
+      return c.json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' }, 400);
+    }
+    const pkceOk = await verifyS256(verifier, consumed.code_challenge);
+    if (!pkceOk) {
+      return c.json({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
+    }
+
+    const user = await userRepository.findById(consumed.user_id);
+    if (!user) return c.json({ error: 'invalid_grant', error_description: 'user gone' }, 400);
+
+    const accessToken = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const refreshToken = await createRefreshToken(user.id);
+
+    return c.json({
+      access_token: accessToken,
+      token_type: 'Bearer',
+      expires_in: 900,
+      refresh_token: refreshToken,
+      scope: consumed.scope ?? 'read',
+    });
+  }
+
+  // refresh_token grant is implemented in Task 12.
+  return c.json({ error: 'unsupported_grant_type' }, 400);
 });
 
 export default oauthRoutes;
