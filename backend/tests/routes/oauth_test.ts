@@ -1,4 +1,4 @@
-import { assertEquals, assert } from '@std/assert';
+import { assertEquals, assert, assertNotEquals } from '@std/assert';
 import { Hono } from 'hono';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { oauthRoutes } from '../../src/routes/oauth.ts';
@@ -202,5 +202,67 @@ Deno.test('POST /oauth/token (authorization_code)', async (t) => {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: makeBody(),
     }));
     assertEquals(second.status, 400);
+  });
+});
+
+Deno.test('POST /oauth/token (refresh_token)', async (t) => {
+  await setupTestDatabase();
+
+  async function obtainTokenPair() {
+    const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const user = await userRepository.create({
+      email: 'refreshuser@example.com', password_hash: 'x', role: 'user',
+      full_name: 'Q', tenant_id: tenant.id,
+    } as any);
+    const client = await oauthClientRepository.create({ redirect_uris: ['https://c/cb'] });
+    const created = await oauthCodeRepository.create({
+      client_id: client.id, user_id: user.id,
+      redirect_uri: 'https://c/cb', code_challenge: challenge,
+    });
+    const app = buildApp();
+    const res = await app.fetch(new Request('https://x/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code', code: created.code,
+        redirect_uri: 'https://c/cb', client_id: client.id, code_verifier: verifier,
+      }).toString(),
+    }));
+    return { app, tok: await res.json(), user };
+  }
+
+  await t.step('exchanges refresh token for new pair', async () => {
+    await clearDatabase();
+    const { app, tok } = await obtainTokenPair();
+
+    const res = await app.fetch(new Request('https://x/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tok.refresh_token }).toString(),
+    }));
+    assertEquals(res.status, 200);
+    const next = await res.json();
+    assert(typeof next.access_token === 'string');
+    assert(typeof next.refresh_token === 'string');
+    assertNotEquals(next.refresh_token, tok.refresh_token, 'refresh token must rotate');
+  });
+
+  await t.step('old refresh token is invalidated after rotation', async () => {
+    await clearDatabase();
+    const { app, tok } = await obtainTokenPair();
+    const r1 = await app.fetch(new Request('https://x/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tok.refresh_token }).toString(),
+    }));
+    assertEquals(r1.status, 200);
+    const r2 = await app.fetch(new Request('https://x/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tok.refresh_token }).toString(),
+    }));
+    assertEquals(r2.status, 400);
   });
 });

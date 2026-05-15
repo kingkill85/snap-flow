@@ -5,7 +5,7 @@ import { oauthClientRepository } from '../repositories/oauth-client.ts';
 import { verifySessionCookie, OAUTH_SESSION_COOKIE_NAME } from '../services/oauth/session-cookie.ts';
 import { verifyS256 } from '../services/oauth/pkce.ts';
 import { generateToken } from '../services/jwt.ts';
-import { createRefreshToken } from '../services/refresh-token.ts';
+import { createRefreshToken, verifyRefreshToken, revokeRefreshToken } from '../services/refresh-token.ts';
 import { userRepository } from '../repositories/user.ts';
 import { oauthCodeRepository } from '../repositories/oauth-code.ts';
 
@@ -114,7 +114,26 @@ oauthRoutes.post('/token', async (c) => {
     });
   }
 
-  // refresh_token grant is implemented in Task 12.
+  if (grantType === 'refresh_token') {
+    const refreshToken = String(form.get('refresh_token') ?? '');
+    if (!refreshToken) return c.json({ error: 'invalid_request' }, 400);
+    const userId = await verifyRefreshToken(refreshToken);
+    if (userId === null) return c.json({ error: 'invalid_grant' }, 400);
+    const user = await userRepository.findById(userId);
+    if (!user) return c.json({ error: 'invalid_grant' }, 400);
+
+    await revokeRefreshToken(refreshToken);
+    const accessToken = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const newRefresh = await createRefreshToken(user.id);
+    return c.json({
+      access_token: accessToken,
+      token_type: 'Bearer',
+      expires_in: 900,
+      refresh_token: newRefresh,
+      scope: 'read',
+    });
+  }
+
   return c.json({ error: 'unsupported_grant_type' }, 400);
 });
 
