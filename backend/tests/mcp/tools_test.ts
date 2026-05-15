@@ -4,10 +4,12 @@ import app from '../../src/main.ts';
 import { userRepository } from '../../src/repositories/user.ts';
 import { tenantRepository } from '../../src/repositories/tenant.ts';
 import { projectRepository } from '../../src/repositories/project.ts';
+import { itemRepository } from '../../src/repositories/item.ts';
 import { generateToken } from '../../src/services/jwt.ts';
 import { listProjectsTool } from '../../src/services/mcp/tools/list-projects.ts';
 import { getProjectTool } from '../../src/services/mcp/tools/get-project.ts';
 import { getProjectTotalTool } from '../../src/services/mcp/tools/get-project-total.ts';
+import { searchItemsTool } from '../../src/services/mcp/tools/search-items.ts';
 
 async function seedUserWithProjects() {
   const tenant = await tenantRepository.create({ name: 'T' } as any);
@@ -110,5 +112,41 @@ Deno.test('get_project_total tool', async (t) => {
     const result = await getProjectTotalTool.handler({ project_id: projects[0].id }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
     assert(result.content[0].text.length > 2);
+  });
+});
+
+Deno.test('search_items tool', async (t) => {
+  await setupTestDatabase();
+
+  await t.step('returns items matching query', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const user = await userRepository.create({
+      email: 'searchitem@example.com', password_hash: 'x', role: 'user',
+      full_name: 'S', tenant_id: tenant.id,
+    } as any);
+    await itemRepository.create({
+      name: 'Smart Switch',
+      category_id: null,
+      type_id: null,
+    } as any);
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+
+    const result = await searchItemsTool.handler({ query: 'Switch' }, { app, accessToken: token });
+    assertEquals(result.isError, undefined);
+    assert(result.content[0].text.includes('Smart Switch'));
+  });
+
+  await t.step('honors limit', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const user = await userRepository.create({
+      email: 'searchitem2@example.com', password_hash: 'x', role: 'user',
+      full_name: 'S', tenant_id: tenant.id,
+    } as any);
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+
+    const result = await searchItemsTool.handler({ limit: 5 }, { app, accessToken: token });
+    assertEquals(result.isError, undefined);
   });
 });
