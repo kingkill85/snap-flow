@@ -7,6 +7,8 @@ import { listFloorplansTool } from './tools/list-floorplans.ts';
 import { getFloorplanBomTool } from './tools/get-floorplan-bom.ts';
 import { listAreasTool } from './tools/list-areas.ts';
 import { getInvoiceCalculationTool } from './tools/get-invoice-calculation.ts';
+import { getItemPictureTool } from './tools/get-item-picture.ts';
+import { getFloorplanImageTool } from './tools/get-floorplan-image.ts';
 import { zodToJsonSchema } from './zod-to-json-schema.ts';
 
 const allTools = [
@@ -18,6 +20,8 @@ const allTools = [
   getFloorplanBomTool,
   listAreasTool,
   getInvoiceCalculationTool,
+  getItemPictureTool,
+  getFloorplanImageTool,
 ];
 
 export interface JsonRpcRequest {

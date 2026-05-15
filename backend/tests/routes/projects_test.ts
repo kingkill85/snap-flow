@@ -1,8 +1,9 @@
-import { assertEquals, assertExists } from '@std/assert';
+import { assertEquals, assert, assertExists } from '@std/assert';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
 import { hashPassword } from '../../src/services/password.ts';
 import { getDb } from '../../src/config/database.ts';
+import { fileStorageService } from '../../src/services/file-storage.ts';
 
 // Setup test database before all tests
 await setupTestDatabase();
@@ -380,6 +381,59 @@ Deno.test('Project - cannot access without auth', async () => {
 });
 
 // ── Delete Tests ─────────────────────────────────────────────────
+
+Deno.test('Project - deleting a version unlinks its BOM picture files', async () => {
+  const token = await getAuthToken();
+
+  const createResponse = await testRequest('/api/projects', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ customer_name: 'Folder Cleanup Test' }),
+  });
+  assertEquals(createResponse.status, 201);
+  const v1 = (await parseJSON(createResponse)).data;
+  const groupId = v1.project_group_id;
+
+  const v2Response = await testRequest(`/api/project-groups/${groupId}/versions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ version_name: 'v2', source_project_id: v1.id }),
+  });
+  assertEquals(v2Response.status, 201);
+
+  const db = getDb();
+  const fpRows = db.queryEntries<{ id: number }>(`
+    INSERT INTO floorplans (project_id, name, image_path, sort_order)
+    VALUES (?, ?, ?, 0)
+    RETURNING id
+  `, [v1.id, 'Cleanup Floor', `floorplans/dummy-${v1.id}.png`]);
+  const floorplanId = fpRows[0]!.id;
+
+  const v1Dir = `projects/${v1.id}/bom-images`;
+  await fileStorageService.ensureDirectory(v1Dir);
+  // Unique fixture name so this test doesn't collide with leftover dev data
+  const v1Path = `${v1Dir}/test-cleanup-${Date.now()}.png`;
+  await Deno.writeFile(fileStorageService.getFilePath(v1Path), new Uint8Array([0, 1, 2]));
+  db.query(`
+    INSERT INTO project_bom (
+      project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+      item_name, style_name, model_number, unit_price, picture_path
+    ) VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?, ?)
+  `, [v1.id, floorplanId, 'Cleanup Lamp', 0, v1Path]);
+
+  assert(await fileStorageService.fileExists(v1Path));
+
+  const deleteResponse = await testRequest(`/api/projects/${v1.id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assertEquals(deleteResponse.status, 200);
+
+  // File for the deleted version must be gone. (The empty-folder cleanup runs
+  // afterwards; we don't assert on the folder here because dev/test runs leave
+  // unrelated leftover files in projects/<id>/ that the test doesn't own.)
+  assertEquals(await fileStorageService.fileExists(v1Path), false);
+});
 
 Deno.test('Project - can delete a non-last version', async () => {
   const token = await getAuthToken();

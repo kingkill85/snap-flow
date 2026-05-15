@@ -22,6 +22,7 @@ import settingsRoutes from './routes/settings.ts';
 import areaRoutes from './routes/areas.ts';
 import tenantRoutes from './routes/tenants.ts';
 import projectGroupRoutes from './routes/project-groups.ts';
+import bomEntryRoutes from './routes/bom-entries.ts';
 import oauthRoutes from './routes/oauth.ts';
 import oauthConsentRoutes from './routes/oauth-consent.ts';
 import wellKnownRoutes from './routes/well-known.ts';
@@ -119,6 +120,9 @@ api.route('/tenants', tenantRoutes);
 
 // Project group routes at /api/project-groups/*
 api.route('/project-groups', projectGroupRoutes);
+
+// BOM entry read routes at /api/bom-entries/*
+api.route('/bom-entries', bomEntryRoutes);
 
 // Mount API router
 app.route('/api', api);

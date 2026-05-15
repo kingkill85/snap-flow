@@ -150,6 +150,22 @@ export class FileStorageService {
   }
 
   /**
+   * Remove a directory only if it is empty. Returns true on success, false if
+   * the directory is missing or still has contents.
+   */
+  async removeDirectoryIfEmpty(relativePath: string): Promise<boolean> {
+    const fullPath = `${this.uploadDir}/${relativePath}`;
+    try {
+      await Deno.remove(fullPath);
+      return true;
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) return false;
+      // Non-empty directories and other errors: leave the dir alone.
+      return false;
+    }
+  }
+
+  /**
    * Check if file exists
    */
   async fileExists(relativePath: string): Promise<boolean> {

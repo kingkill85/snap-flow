@@ -205,7 +205,7 @@ export class ProjectRepository {
    * delete the DB rows, then unlink files only if no other project_bom row still
    * references them.
    */
-  private _deleteVersionData(projectId: number): Promise<void> {
+  private async _deleteVersionData(projectId: number): Promise<void> {
     const db = getDb();
 
     const floorplans = db.queryEntries(
@@ -247,7 +247,7 @@ export class ProjectRepository {
 
     // Floorplan images are always copied per version — safe to delete unconditionally
     for (const path of floorplanImagePaths) {
-      fileStorageService.deleteFile(path).catch(() => {});
+      try { await fileStorageService.deleteFile(path); } catch { /* ignore */ }
     }
 
     // BOM pictures: only unlink if no surviving BOM row still references the path
@@ -261,11 +261,14 @@ export class ProjectRepository {
         [path]
       );
       if (stillReferenced.length === 0) {
-        fileStorageService.deleteFile(path).catch(() => {});
+        try { await fileStorageService.deleteFile(path); } catch { /* ignore */ }
       }
     }
 
-    return Promise.resolve();
+    // Tidy up empty per-version folders. removeDirectoryIfEmpty is a no-op if
+    // anything (e.g. a still-shared BOM picture) is left inside.
+    await fileStorageService.removeDirectoryIfEmpty(`projects/${projectId}/bom-images`);
+    await fileStorageService.removeDirectoryIfEmpty(`projects/${projectId}`);
   }
 
   getItemTypeIds(projectId: number): Promise<number[]> {
