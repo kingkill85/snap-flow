@@ -48,7 +48,7 @@ describe('Header', () => {
       );
     });
     
-    expect(screen.getByText('SnapFlow')).toBeInTheDocument();
+    expect(screen.getByAltText('SnapFlow')).toBeInTheDocument();
   });
 
   it('renders navigation links', async () => {

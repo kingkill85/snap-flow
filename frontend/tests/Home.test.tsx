@@ -11,7 +11,7 @@ describe('Home', () => {
       </BrowserRouter>
     );
 
-    expect(screen.getByText('Welcome to SnapFlow')).toBeInTheDocument();
+    expect(screen.getByAltText('SnapFlow')).toBeInTheDocument();
     expect(screen.getByText('Smart home automation configurator and proposal generator')).toBeInTheDocument();
   });
 

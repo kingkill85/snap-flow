@@ -7,9 +7,19 @@ const Home = () => {
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-4 py-12">
       {/* Hero Section */}
       <div className="text-center max-w-3xl mx-auto mb-16">
-        <h1 className="text-5xl font-bold tracking-tight mb-6">
-          Welcome to SnapFlow
-        </h1>
+        <div className="flex items-center justify-center mb-6">
+          <img
+            src="/snapflow-logo.png"
+            alt="SnapFlow"
+            className="h-24 w-auto dark:hidden"
+          />
+          <img
+            src="/snapflow-logo-dark.png"
+            alt=""
+            aria-hidden="true"
+            className="hidden h-24 w-auto dark:block"
+          />
+        </div>
         <p className="text-xl text-muted-foreground mb-8">
           Smart home automation configurator and proposal generator
         </p>
