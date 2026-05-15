@@ -37,10 +37,18 @@ const Header = () => {
       <div className="px-6">
         <div className="flex h-12 items-center justify-between">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
-            <span className="text-3xl font-extrabold text-primary tracking-tight">
-              SnapFlow
-            </span>
+          <Link to="/" className="flex items-center" aria-label="SnapFlow home">
+            <img
+              src="/snapflow-logo.png"
+              alt="SnapFlow"
+              className="h-12 w-auto origin-left scale-110 dark:hidden"
+            />
+            <img
+              src="/snapflow-logo-dark.png"
+              alt=""
+              aria-hidden="true"
+              className="hidden h-12 w-auto origin-left scale-110 dark:block"
+            />
           </Link>
 
           {/* Navigation */}

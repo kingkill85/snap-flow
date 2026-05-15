@@ -3,13 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend-v2\" --names \"BACKEND,FRONTEND-V2\" --prefix-colors \"blue,green\"",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" --names \"BACKEND,FRONTEND\" --prefix-colors \"blue,green\"",
     "dev:backend": "cd backend && deno task dev",
     "dev:frontend": "cd frontend && npm run dev",
-    "dev:frontend-v2": "cd frontend-v2 && npm run dev",
-    "install:all": "npm install && cd frontend-v2 && npm install",
-    "build": "cd frontend-v2 && npm run build",
-    "build:legacy": "cd frontend && npm run build"
+    "install:all": "npm install && cd frontend && npm install",
+    "build": "cd frontend && npm run build"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

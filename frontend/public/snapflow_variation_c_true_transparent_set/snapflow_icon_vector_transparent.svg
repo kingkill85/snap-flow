@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 2048 2048">
+  <defs>
+    <linearGradient id="snapflowGradient" x1="310" y1="1720" x2="1720" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6A0080"/>
+      <stop offset="54%" stop-color="#8C00AA"/>
+      <stop offset="100%" stop-color="#A020C0"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#snapflowGradient)" d="
+    M 596 320
+    L 1396 320
+    C 1573 320 1716 463 1716 640
+    L 1716 1130
+    C 1716 1430 1430 1716 1130 1716
+    L 596 1716
+    C 419 1716 332 1605 332 1428
+    L 332 608
+    C 332 431 419 320 596 320
+    Z"/>
+  <rect x="989" y="602" width="70" height="300" rx="35" fill="#FFFFFF"/>
+  <rect x="989" y="1146" width="70" height="300" rx="35" fill="#FFFFFF"/>
+  <rect x="646" y="989" width="300" height="70" rx="35" fill="#FFFFFF"/>
+  <rect x="1102" y="989" width="300" height="70" rx="35" fill="#FFFFFF"/>
+</svg>
