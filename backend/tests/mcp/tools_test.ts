@@ -7,6 +7,7 @@ import { projectRepository } from '../../src/repositories/project.ts';
 import { generateToken } from '../../src/services/jwt.ts';
 import { listProjectsTool } from '../../src/services/mcp/tools/list-projects.ts';
 import { getProjectTool } from '../../src/services/mcp/tools/get-project.ts';
+import { getProjectTotalTool } from '../../src/services/mcp/tools/get-project-total.ts';
 
 async function seedUserWithProjects() {
   const tenant = await tenantRepository.create({ name: 'T' } as any);
@@ -87,5 +88,27 @@ Deno.test('get_project tool', async (t) => {
     const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
     const result = await getProjectTool.handler({ project_id: 999999 }, { app, accessToken: token });
     assertEquals(result.isError, true);
+  });
+});
+
+Deno.test('get_project_total tool', async (t) => {
+  await setupTestDatabase();
+
+  await t.step('returns total for valid id', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as any);
+    const user = await userRepository.create({
+      email: 'gettotal@example.com', password_hash: 'x', role: 'user',
+      full_name: 'L', tenant_id: tenant.id,
+    } as any);
+    await projectRepository.create({
+      version_name: 'Alpha', customer_name: 'A Co', tenant_id: tenant.id,
+    } as any);
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const projects = await projectRepository.findAll(undefined, { tenantId: tenant.id, role: 'user' } as any);
+
+    const result = await getProjectTotalTool.handler({ project_id: projects[0].id }, { app, accessToken: token });
+    assertEquals(result.isError, undefined);
+    assert(result.content[0].text.length > 2);
   });
 });
