@@ -160,9 +160,7 @@ export class FileStorageService {
       return true;
     } catch (error) {
       if (error instanceof Deno.errors.NotFound) return false;
-      // Non-empty directories raise Deno.errors.PermissionDenied on some
-      // platforms and a plain Error elsewhere; either way we treat the
-      // dir as "leave it alone".
+      // Non-empty directories and other errors: leave the dir alone.
       return false;
     }
   }
