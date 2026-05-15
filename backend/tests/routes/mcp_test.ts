@@ -33,7 +33,7 @@ Deno.test('POST /mcp', async (t) => {
     assert(wwwAuth.includes('resource_metadata'));
   });
 
-  await t.step('tools/list returns the 4 tools when authenticated', async () => {
+  await t.step('tools/list returns the 8 tools when authenticated', async () => {
     await clearDatabase();
     const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
     const user = await userRepository.create({
@@ -50,6 +50,15 @@ Deno.test('POST /mcp', async (t) => {
     assertEquals(res.status, 200);
     const body = await res.json();
     const names = body.result.tools.map((t: { name: string }) => t.name).sort();
-    assertEquals(names, ['get_project', 'get_version_total', 'list_projects', 'search_items']);
+    assertEquals(names, [
+      'get_floorplan_bom',
+      'get_invoice_calculation',
+      'get_project',
+      'get_version_total',
+      'list_areas',
+      'list_floorplans',
+      'list_projects',
+      'search_items',
+    ]);
   });
 });
