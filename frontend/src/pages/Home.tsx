@@ -9,15 +9,15 @@ const Home = () => {
       <div className="text-center max-w-3xl mx-auto mb-16">
         <div className="flex items-center justify-center mb-6">
           <img
-            src="/snapflow-logo.png"
+            src="/snapflow-stacked.png"
             alt="SnapFlow"
-            className="h-24 w-auto dark:hidden"
+            className="h-32 w-auto dark:hidden"
           />
           <img
-            src="/snapflow-logo-dark.png"
+            src="/snapflow-stacked-dark.png"
             alt=""
             aria-hidden="true"
-            className="hidden h-24 w-auto dark:block"
+            className="hidden h-32 w-auto dark:block"
           />
         </div>
         <p className="text-xl text-muted-foreground mb-8">

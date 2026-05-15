@@ -41,13 +41,13 @@ const Header = () => {
             <img
               src="/snapflow-logo.png"
               alt="SnapFlow"
-              className="h-12 w-auto origin-left scale-110 dark:hidden"
+              className="h-7 w-auto dark:hidden"
             />
             <img
               src="/snapflow-logo-dark.png"
               alt=""
               aria-hidden="true"
-              className="hidden h-12 w-auto origin-left scale-110 dark:block"
+              className="hidden h-7 w-auto dark:block"
             />
           </Link>
 
