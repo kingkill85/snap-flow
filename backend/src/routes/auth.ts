@@ -13,6 +13,11 @@ import {
 import { authMiddleware } from '../middleware/auth.ts';
 import { loginRateLimit, refreshRateLimit } from '../middleware/rate-limit.ts';
 import { TenantRepository } from '../repositories/tenant.ts';
+import {
+  signSessionCookie,
+  OAUTH_SESSION_COOKIE_NAME,
+  OAUTH_SESSION_MAX_AGE,
+} from '../services/oauth/session-cookie.ts';
 
 const tenantRepo = new TenantRepository();
 
@@ -59,6 +64,12 @@ authRoutes.post('/login', loginRateLimit(), zValidator('json', loginSchema), asy
 
     // Generate refresh token (long-lived)
     const refreshToken = await createRefreshToken(user.id);
+
+    const oauthCookie = await signSessionCookie(user.id);
+    c.header(
+      'Set-Cookie',
+      `${OAUTH_SESSION_COOKIE_NAME}=${oauthCookie}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${OAUTH_SESSION_MAX_AGE}`
+    );
 
     return c.json({
       data: {
