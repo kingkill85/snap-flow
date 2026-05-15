@@ -21,6 +21,18 @@ Deno.test('POST /mcp', async (t) => {
     assert(wwwAuth.includes('resource_metadata'));
   });
 
+  await t.step('returns 401 with WWW-Authenticate when bearer is invalid', async () => {
+    const res = await app.fetch(new Request('http://x/mcp', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: 'Bearer garbage.invalid.token' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    }));
+    assertEquals(res.status, 401);
+    const wwwAuth = res.headers.get('www-authenticate') ?? '';
+    assert(wwwAuth.includes('Bearer'));
+    assert(wwwAuth.includes('resource_metadata'));
+  });
+
   await t.step('tools/list returns the 4 tools when authenticated', async () => {
     await clearDatabase();
     const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);

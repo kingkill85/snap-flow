@@ -8,6 +8,7 @@ import { env } from './config/env.ts';
 import { runMigrations } from './scripts/migrate.ts';
 import { runBomImageMigration } from './services/bom-image-migration.ts';
 import { cleanupExpiredTokens } from './services/refresh-token.ts';
+import { oauthCodeRepository } from './repositories/oauth-code.ts';
 import authRoutes from './routes/auth.ts';
 import userRoutes from './routes/users.ts';
 import categoryRoutes from './routes/categories.ts';
@@ -281,9 +282,13 @@ if (import.meta.main) {
     console.error('❌ Failed to run seed script:', error);
   }
 
-  // Schedule periodic cleanup of expired refresh tokens
+  // Schedule periodic cleanup of expired refresh tokens and oauth codes
   cleanupExpiredTokens();
-  setInterval(cleanupExpiredTokens, 60 * 60 * 1000); // Every hour
+  oauthCodeRepository.deleteExpired();
+  setInterval(() => {
+    cleanupExpiredTokens();
+    oauthCodeRepository.deleteExpired();
+  }, 60 * 60 * 1000); // Every hour
   console.log('🧹 Token cleanup scheduled (hourly)');
 
   // Start server

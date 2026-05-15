@@ -25,4 +25,17 @@ Deno.test('well-known metadata routes', async (t) => {
     const body = await res.json();
     assertEquals(body.resource, 'https://snapflow.example.com/mcp');
   });
+
+  await t.step('honors X-Forwarded-Proto and X-Forwarded-Host', async () => {
+    const app = buildApp();
+    const res = await app.fetch(new Request('http://internal/.well-known/oauth-authorization-server', {
+      headers: {
+        'X-Forwarded-Proto': 'https',
+        'X-Forwarded-Host': 'snapflow.example.com',
+      },
+    }));
+    const body = await res.json();
+    assertEquals(body.issuer, 'https://snapflow.example.com');
+    assertEquals(body.authorization_endpoint, 'https://snapflow.example.com/oauth/authorize');
+  });
 });
