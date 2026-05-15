@@ -25,6 +25,8 @@ interface BomGroup {
 
 interface FloorplanBomPayload {
   groups?: BomGroup[];
+  floorplan_name?: string;
+  version_name?: string;
   [key: string]: unknown;
 }
 
@@ -41,7 +43,7 @@ export const getFloorplanBomTool = {
     'Get the bill of materials (items placed) for a single floorplan — each entry includes the item name, variant (if any), quantity, unit price at placement time, and the human-readable area name when the placement is inside one. Pass a floorplan_id from list_floorplans.',
   inputSchema,
   handler: async (args: z.infer<typeof inputSchema>, ctx: ToolContext): Promise<ToolResult> => {
-    const [bomResult, areasResult] = await Promise.all([
+    const [bomResult, areasResult, floorplanResult] = await Promise.all([
       dispatchToBackend(ctx.app, {
         method: 'GET',
         path: `/api/floorplans/${args.floorplan_id}/bom`,
@@ -51,6 +53,11 @@ export const getFloorplanBomTool = {
         method: 'GET',
         path: '/api/areas',
         query: { floorplan_id: args.floorplan_id },
+        accessToken: ctx.accessToken,
+      }),
+      dispatchToBackend(ctx.app, {
+        method: 'GET',
+        path: `/api/floorplans/${args.floorplan_id}`,
         accessToken: ctx.accessToken,
       }),
     ]);
@@ -71,6 +78,20 @@ export const getFloorplanBomTool = {
       }
     }
 
+    const fp = floorplanResult.ok ? (floorplanResult.body?.data as { name?: string; project_id?: number } | undefined) : undefined;
+    let versionName: string | undefined;
+    if (fp?.project_id) {
+      const projectResult = await dispatchToBackend(ctx.app, {
+        method: 'GET',
+        path: `/api/projects/${fp.project_id}`,
+        accessToken: ctx.accessToken,
+      });
+      if (projectResult.ok) {
+        const project = projectResult.body?.data as { version_name?: string } | undefined;
+        versionName = project?.version_name;
+      }
+    }
+
     const payload = bomResult.body.data as FloorplanBomPayload;
     if (areasById.size > 0 && Array.isArray(payload?.groups)) {
       for (const group of payload.groups) {
@@ -80,6 +101,8 @@ export const getFloorplanBomTool = {
         }
       }
     }
+    if (fp?.name) payload.floorplan_name = fp.name;
+    if (versionName) payload.version_name = versionName;
 
     return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
   },

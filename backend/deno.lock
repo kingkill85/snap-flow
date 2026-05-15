@@ -2,6 +2,7 @@
   "version": "5",
   "specifiers": {
     "jsr:@std/assert@0.208": "0.208.0",
+    "jsr:@std/encoding@1": "1.0.10",
     "jsr:@std/fmt@0.208": "0.208.0",
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/path@1": "1.1.4",
@@ -17,6 +18,9 @@
       "dependencies": [
         "jsr:@std/fmt"
       ]
+    },
+    "@std/encoding@1.0.10": {
+      "integrity": "8783c6384a2d13abd5e9e87a7ae0520a30e9f56aeeaa3bdf910a3eaaf5c811a1"
     },
     "@std/fmt@0.208.0": {
       "integrity": "06584c97a1a7b934e8de185c45a595d8234c5312e51e61cb05650af4cb8eb65f"
@@ -316,6 +320,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@std/assert@0.208",
+      "jsr:@std/encoding@1",
       "jsr:@std/path@1",
       "npm:@hono/zod-validator@0.2",
       "npm:hono@4",

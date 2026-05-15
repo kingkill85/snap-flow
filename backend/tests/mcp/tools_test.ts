@@ -46,7 +46,7 @@ Deno.test('list_projects tool', async (t) => {
     const result = await listProjectsTool.handler({ query: undefined }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
     assertEquals(result.content.length, 1);
-    const text = result.content[0].text;
+    const text = result.content[0]!.text!;
     assert(text.includes('Alpha Customer'));
     assert(text.includes('Beta Customer'));
   });
@@ -56,8 +56,8 @@ Deno.test('list_projects tool', async (t) => {
     const { token } = await seedUserWithProjects();
     // Search by customer name (project-groups endpoint searches customer_name)
     const result = await listProjectsTool.handler({ query: 'Alpha' }, { app, accessToken: token });
-    assert(result.content[0].text.includes('Alpha Customer'));
-    assert(!result.content[0].text.includes('Beta Customer'));
+    assert(result.content[0]!.text!.includes('Alpha Customer'));
+    assert(!result.content[0]!.text!.includes('Beta Customer'));
   });
 
   await t.step('returns isError on bad auth', async () => {
@@ -88,7 +88,7 @@ Deno.test('get_project tool', async (t) => {
 
     const result = await getProjectTool.handler({ project_id: groupId }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
-    assert(result.content[0].text.includes('Alpha Customer'));
+    assert(result.content[0]!.text!.includes('Alpha Customer'));
   });
 
   await t.step('returns isError for unknown id', async () => {
@@ -123,7 +123,7 @@ Deno.test('get_version_total tool', async (t) => {
 
     const result = await getVersionTotalTool.handler({ version_id: projects[0].id }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
-    assert(result.content[0].text.length > 2);
+    assert(result.content[0]!.text!.length > 2);
   });
 });
 
@@ -144,7 +144,7 @@ Deno.test('search_items tool', async (t) => {
 
     const result = await searchItemsTool.handler({ query: 'Switch' }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
-    assert(result.content[0].text.includes('Smart Switch'));
+    assert(result.content[0]!.text!.includes('Smart Switch'));
   });
 
   await t.step('honors limit', async () => {
@@ -181,7 +181,7 @@ Deno.test('list_floorplans tool', async (t) => {
 
     const result = await listFloorplansTool.handler({ version_id: project.id }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
-    assert(result.content[0].text.includes('Ground Floor'));
+    assert(result.content[0]!.text!.includes('Ground Floor'));
   });
 
   await t.step('returns empty array when version has no floorplans', async () => {
@@ -199,7 +199,7 @@ Deno.test('list_floorplans tool', async (t) => {
     const result = await listFloorplansTool.handler({ version_id: project.id }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
     // Should return an empty array (serialized as "[]")
-    assert(result.content[0].text.includes('[]'));
+    assert(result.content[0]!.text!.includes('[]'));
   });
 
   await t.step('returns isError on bad auth', async () => {
@@ -230,7 +230,7 @@ Deno.test('get_floorplan_bom tool', async (t) => {
     const result = await getFloorplanBomTool.handler({ floorplan_id: floorplan.id }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
     // Empty BOM returns an empty array
-    assert(result.content[0].text.length > 0);
+    assert(result.content[0]!.text!.length > 0);
   });
 
   await t.step('returns isError for unknown floorplan_id', async () => {
@@ -270,7 +270,7 @@ Deno.test('list_areas tool', async (t) => {
 
     const result = await listAreasTool.handler({ floorplan_id: floorplan.id }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
-    assert(result.content[0].text.includes('Kitchen'));
+    assert(result.content[0]!.text!.includes('Kitchen'));
   });
 
   await t.step('returns empty array when floorplan has no areas', async () => {
@@ -290,7 +290,7 @@ Deno.test('list_areas tool', async (t) => {
 
     const result = await listAreasTool.handler({ floorplan_id: floorplan.id }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
-    assert(result.content[0].text.includes('[]'));
+    assert(result.content[0]!.text!.includes('[]'));
   });
 });
 
@@ -312,7 +312,7 @@ Deno.test('get_invoice_calculation tool', async (t) => {
     const result = await getInvoiceCalculationTool.handler({ version_id: project.id }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
     // Should contain numeric totals even for an empty BOM
-    assert(result.content[0].text.length > 2);
+    assert(result.content[0]!.text!.length > 2);
   });
 
   await t.step('returns isError for unknown version_id', async () => {

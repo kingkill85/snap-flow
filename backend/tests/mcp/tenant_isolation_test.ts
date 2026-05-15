@@ -27,7 +27,7 @@ Deno.test('Tenant A cannot see Tenant B projects via MCP', async () => {
   const result = await listProjectsTool.handler({ query: undefined }, { app, accessToken: tokenA });
 
   assertEquals(result.isError, undefined);
-  const text = result.content[0].text;
+  const text = result.content[0]!.text!;
   assert(text.includes('A-customer'), 'must include own-tenant project');
   assert(!text.includes('B-secret'), 'must NOT include other-tenant project (cross-tenant leak!)');
 });

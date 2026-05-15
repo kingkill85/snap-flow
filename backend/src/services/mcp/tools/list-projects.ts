@@ -7,8 +7,15 @@ export interface ToolContext {
   accessToken: string;
 }
 
+export interface ToolContentBlock {
+  type: 'text' | 'image';
+  text?: string;
+  data?: string;
+  mimeType?: string;
+}
+
 export interface ToolResult {
-  content: Array<{ type: 'text'; text: string }>;
+  content: ToolContentBlock[];
   isError?: boolean;
 }
 
