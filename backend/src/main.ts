@@ -21,6 +21,10 @@ import settingsRoutes from './routes/settings.ts';
 import areaRoutes from './routes/areas.ts';
 import tenantRoutes from './routes/tenants.ts';
 import projectGroupRoutes from './routes/project-groups.ts';
+import oauthRoutes from './routes/oauth.ts';
+import oauthConsentRoutes from './routes/oauth-consent.ts';
+import wellKnownRoutes from './routes/well-known.ts';
+import { buildMcpRoutes } from './routes/mcp.ts';
 
 const app: Hono = new Hono();
 
@@ -117,6 +121,17 @@ api.route('/project-groups', projectGroupRoutes);
 
 // Mount API router
 app.route('/api', api);
+
+// OAuth 2.1 endpoints (no /api prefix — at the app root per spec)
+app.route('/oauth', oauthRoutes);
+app.route('/oauth', oauthConsentRoutes);
+
+// /.well-known/* metadata
+app.route('/', wellKnownRoutes);
+
+// MCP endpoint (Streamable HTTP) — receives the top-level app so its
+// tools can dispatch back through it via app.fetch.
+app.route('/mcp', buildMcpRoutes(app));
 
 // 404 handler for unknown API routes (must come before static file serving)
 app.get('/api/*', (c: Context) => {
