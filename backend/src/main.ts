@@ -8,6 +8,7 @@ import { env } from './config/env.ts';
 import { runMigrations } from './scripts/migrate.ts';
 import { runBomImageMigration } from './services/bom-image-migration.ts';
 import { cleanupExpiredTokens } from './services/refresh-token.ts';
+import { oauthCodeRepository } from './repositories/oauth-code.ts';
 import authRoutes from './routes/auth.ts';
 import userRoutes from './routes/users.ts';
 import categoryRoutes from './routes/categories.ts';
@@ -21,6 +22,10 @@ import settingsRoutes from './routes/settings.ts';
 import areaRoutes from './routes/areas.ts';
 import tenantRoutes from './routes/tenants.ts';
 import projectGroupRoutes from './routes/project-groups.ts';
+import oauthRoutes from './routes/oauth.ts';
+import oauthConsentRoutes from './routes/oauth-consent.ts';
+import wellKnownRoutes from './routes/well-known.ts';
+import { buildMcpRoutes } from './routes/mcp.ts';
 
 const app: Hono = new Hono();
 
@@ -117,6 +122,17 @@ api.route('/project-groups', projectGroupRoutes);
 
 // Mount API router
 app.route('/api', api);
+
+// OAuth 2.1 endpoints (no /api prefix — at the app root per spec)
+app.route('/oauth', oauthRoutes);
+app.route('/oauth', oauthConsentRoutes);
+
+// /.well-known/* metadata
+app.route('/', wellKnownRoutes);
+
+// MCP endpoint (Streamable HTTP) — receives the top-level app so its
+// tools can dispatch back through it via app.fetch.
+app.route('/mcp', buildMcpRoutes(app));
 
 // 404 handler for unknown API routes (must come before static file serving)
 app.get('/api/*', (c: Context) => {
@@ -266,9 +282,13 @@ if (import.meta.main) {
     console.error('❌ Failed to run seed script:', error);
   }
 
-  // Schedule periodic cleanup of expired refresh tokens
+  // Schedule periodic cleanup of expired refresh tokens and oauth codes
   cleanupExpiredTokens();
-  setInterval(cleanupExpiredTokens, 60 * 60 * 1000); // Every hour
+  oauthCodeRepository.deleteExpired();
+  setInterval(() => {
+    cleanupExpiredTokens();
+    oauthCodeRepository.deleteExpired();
+  }, 60 * 60 * 1000); // Every hour
   console.log('🧹 Token cleanup scheduled (hourly)');
 
   // Start server

@@ -15,6 +15,11 @@ services:
       - DATABASE_URL=./data/database.sqlite
       - UPLOAD_DIR=./uploads
       - CORS_ORIGIN=*
+      # Optional: set to your public HTTPS URL (e.g. https://snapflow.example.com)
+      # so OAuth/MCP metadata advertises the correct external URL. If unset,
+      # the backend derives it from X-Forwarded-Proto/X-Forwarded-Host headers,
+      # so any properly-configured reverse proxy will work without this var.
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "deno", "eval", "const res = await fetch('http://localhost:8000/health'); if (!res.ok) throw new Error('Health check failed');"]

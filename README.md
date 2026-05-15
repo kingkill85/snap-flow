@@ -17,6 +17,40 @@ A web application for smart home automation companies to create professional pro
 - 👥 **Customer Management** - Organize projects by customer with full CRUD operations
 - 🔐 **Role-Based Access** - Admin and user roles with appropriate permissions
 
+## MCP Connector (Claude.ai integration)
+
+SnapFlow exposes a read-only MCP server at `/mcp` so Claude.ai (and Claude Desktop / Claude Code) can read your projects and catalog via a one-time OAuth login.
+
+Available tools: `list_projects`, `get_project`, `get_project_total`, `search_items`.
+
+### Setup
+
+In Claude.ai → Settings → Connectors → "Add custom connector":
+
+1. **Server URL**: `https://your-snapflow-host/mcp`
+2. The setup UI will display a **redirect URL** specific to your Claude.ai workspace. Copy it.
+3. Provision an OAuth client on your SnapFlow instance, pasting Claude.ai's redirect URL:
+
+   ```bash
+   curl -X POST https://your-snapflow-host/oauth/register \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "redirect_uris": ["<the redirect URL Claude.ai showed you>"],
+       "client_name": "Claude.ai"
+     }'
+   ```
+
+   The response includes a `client_id` and `client_secret`. **The secret is shown only once — save it now.**
+4. Paste the `client_id` and `client_secret` into Claude.ai's connector form.
+5. Claude.ai will walk you through the OAuth login. After approval, the four tools appear in every chat.
+
+### Notes
+
+- Requires Claude.ai Pro / Max / Team. Free accounts cannot add custom connectors.
+- The MCP server runs inside the existing SnapFlow backend — no separate deploy.
+- All tool calls go through the same authentication, tenant scoping, and validation as the web UI — there is no way for the MCP layer to bypass them.
+- For production deployments behind a reverse proxy: ensure `X-Forwarded-Proto` and `X-Forwarded-Host` are forwarded, or set `PUBLIC_BASE_URL=https://yourhost`.
+
 ## Tech Stack
 
 ### Backend
