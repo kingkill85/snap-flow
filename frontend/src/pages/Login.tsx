@@ -47,15 +47,15 @@ const Login = () => {
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
             <img
-              src="/snapflow-logo.png"
+              src="/snapflow-stacked.png"
               alt="SnapFlow"
-              className="h-20 w-auto dark:hidden"
+              className="h-24 w-auto dark:hidden"
             />
             <img
-              src="/snapflow-logo-dark.png"
+              src="/snapflow-stacked-dark.png"
               alt=""
               aria-hidden="true"
-              className="hidden h-20 w-auto dark:block"
+              className="hidden h-24 w-auto dark:block"
             />
           </div>
           <CardTitle className="text-2xl text-center">Welcome back</CardTitle>
