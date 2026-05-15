@@ -10,8 +10,9 @@ import type { CreateTenantDTO, CreateUserDTO, CreateProjectDTO } from '../../src
 import type { TenantContext } from '../../src/repositories/user.ts';
 import { listProjectsTool } from '../../src/services/mcp/tools/list-projects.ts';
 import { getProjectTool } from '../../src/services/mcp/tools/get-project.ts';
-import { getProjectTotalTool } from '../../src/services/mcp/tools/get-project-total.ts';
+import { getVersionTotalTool } from '../../src/services/mcp/tools/get-version-total.ts';
 import { searchItemsTool } from '../../src/services/mcp/tools/search-items.ts';
+import { projectGroupRepository } from '../../src/repositories/project-group.ts';
 
 async function seedUserWithProjects() {
   const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
@@ -19,11 +20,12 @@ async function seedUserWithProjects() {
     email: 'listproj@example.com', password_hash: 'x', role: 'user',
     full_name: 'L', tenant_id: tenant.id,
   } as CreateUserDTO & { password_hash: string });
+  // Create two project groups (each projectRepository.create creates a group + version)
   await projectRepository.create({
-    version_name: 'Alpha', customer_name: 'A Co', tenant_id: tenant.id,
+    version_name: 'v1', customer_name: 'Alpha Customer', tenant_id: tenant.id,
   } as CreateProjectDTO);
   await projectRepository.create({
-    version_name: 'Beta', customer_name: 'B Co', tenant_id: tenant.id,
+    version_name: 'v1', customer_name: 'Beta Customer', tenant_id: tenant.id,
   } as CreateProjectDTO);
   const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
   return { token, tenant, user };
@@ -39,16 +41,17 @@ Deno.test('list_projects tool', async (t) => {
     assertEquals(result.isError, undefined);
     assertEquals(result.content.length, 1);
     const text = result.content[0].text;
-    assert(text.includes('Alpha'));
-    assert(text.includes('Beta'));
+    assert(text.includes('Alpha Customer'));
+    assert(text.includes('Beta Customer'));
   });
 
   await t.step('honors search query', async () => {
     await clearDatabase();
     const { token } = await seedUserWithProjects();
+    // Search by customer name (project-groups endpoint searches customer_name)
     const result = await listProjectsTool.handler({ query: 'Alpha' }, { app, accessToken: token });
-    assert(result.content[0].text.includes('Alpha'));
-    assert(!result.content[0].text.includes('Beta'));
+    assert(result.content[0].text.includes('Alpha Customer'));
+    assert(!result.content[0].text.includes('Beta Customer'));
   });
 
   await t.step('returns isError on bad auth', async () => {
@@ -69,17 +72,17 @@ Deno.test('get_project tool', async (t) => {
       full_name: 'L', tenant_id: tenant.id,
     } as CreateUserDTO & { password_hash: string });
     await projectRepository.create({
-      version_name: 'Alpha', customer_name: 'A Co', tenant_id: tenant.id,
+      version_name: 'v1', customer_name: 'Alpha Customer', tenant_id: tenant.id,
     } as CreateProjectDTO);
     const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
 
-    // Discover the created project's id by listing
-    const projects = await projectRepository.findAll(undefined, { tenantId: tenant.id, role: 'user' } as TenantContext);
-    const projectId = projects[0].id;
+    // Discover the created project group's id by listing
+    const groups = await projectGroupRepository.findAll(undefined, { tenantId: tenant.id, role: 'user' } as TenantContext);
+    const groupId = groups[0].id;
 
-    const result = await getProjectTool.handler({ project_id: projectId }, { app, accessToken: token });
+    const result = await getProjectTool.handler({ project_id: groupId }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
-    assert(result.content[0].text.includes('Alpha'));
+    assert(result.content[0].text.includes('Alpha Customer'));
   });
 
   await t.step('returns isError for unknown id', async () => {
@@ -95,10 +98,10 @@ Deno.test('get_project tool', async (t) => {
   });
 });
 
-Deno.test('get_project_total tool', async (t) => {
+Deno.test('get_version_total tool', async (t) => {
   await setupTestDatabase();
 
-  await t.step('returns total for valid id', async () => {
+  await t.step('returns total for valid version id', async () => {
     await clearDatabase();
     const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
     const user = await userRepository.create({
@@ -106,12 +109,13 @@ Deno.test('get_project_total tool', async (t) => {
       full_name: 'L', tenant_id: tenant.id,
     } as CreateUserDTO & { password_hash: string });
     await projectRepository.create({
-      version_name: 'Alpha', customer_name: 'A Co', tenant_id: tenant.id,
+      version_name: 'v1', customer_name: 'Alpha Customer', tenant_id: tenant.id,
     } as CreateProjectDTO);
     const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    // The version id is the project (version) row id
     const projects = await projectRepository.findAll(undefined, { tenantId: tenant.id, role: 'user' } as TenantContext);
 
-    const result = await getProjectTotalTool.handler({ project_id: projects[0].id }, { app, accessToken: token });
+    const result = await getVersionTotalTool.handler({ version_id: projects[0].id }, { app, accessToken: token });
     assertEquals(result.isError, undefined);
     assert(result.content[0].text.length > 2);
   });

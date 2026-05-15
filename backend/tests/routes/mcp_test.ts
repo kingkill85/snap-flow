@@ -50,6 +50,6 @@ Deno.test('POST /mcp', async (t) => {
     assertEquals(res.status, 200);
     const body = await res.json();
     const names = body.result.tools.map((t: { name: string }) => t.name).sort();
-    assertEquals(names, ['get_project', 'get_project_total', 'list_projects', 'search_items']);
+    assertEquals(names, ['get_project', 'get_version_total', 'list_projects', 'search_items']);
   });
 });

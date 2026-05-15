@@ -19,12 +19,12 @@ const inputSchema = z.object({
 export const listProjectsTool = {
   name: 'list_projects',
   description:
-    'List SnapFlow projects in your workspace. Returns id, name, customer name, status, and creation date. Use `query` to filter by project name.',
+    'List SnapFlow projects in your workspace. Each entry includes the customer info, status (active/completed/cancelled), and the list of versions (versions are saved revisions of the same project — use a version_id with get_version_total). Use `query` to filter by customer name or project version name.',
   inputSchema,
   handler: async (args: z.infer<typeof inputSchema>, ctx: ToolContext): Promise<ToolResult> => {
     const dispatchInput: Parameters<typeof dispatchToBackend>[1] = {
       method: 'GET',
-      path: '/api/projects',
+      path: '/api/project-groups',
       accessToken: ctx.accessToken,
     };
     if (args.query !== undefined) {
