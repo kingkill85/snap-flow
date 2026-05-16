@@ -93,7 +93,7 @@ function decorateEntry(
 export const getFloorplanBomTool = {
   name: 'get_floorplan_bom',
   description:
-    'Get the bill of materials (items placed) for a single floorplan — each entry includes the item name, variant (if any), quantity, unit price at placement time, and the human-readable area name when the placement is inside one. Pass a floorplan_id from list_floorplans.',
+    'Get the bill of materials for a single floorplan. Returns item name, variant, quantity, unit price at placement time, and area name per BOM entry. Also includes spatial enrichment: per-placement pixel coordinates (x, y, width, height, rotation, area_id, area_box) on each entry, a top-level `canvas` object with the floorplan image dimensions and coordinate system, and a top-level `areas` summary listing every area with its bounding box — enough to reconstruct the layout without fetching the background image. Pass a floorplan_id from list_floorplans.',
   inputSchema,
   handler: async (args: z.infer<typeof inputSchema>, ctx: ToolContext): Promise<ToolResult> => {
     const [bomResult, areasResult, floorplanResult, placementsResult] = await Promise.all([

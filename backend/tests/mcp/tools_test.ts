@@ -880,4 +880,20 @@ Deno.test('get_item_picture input validation', async (t) => {
     assertEquals(result.isError, true);
     assert((result.content[0]!.text ?? '').toLowerCase().includes('exactly one'));
   });
+
+  await t.step('rejects calls with variant_id + item_id', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'v3@example.com', password_hash: 'x', role: 'user',
+      full_name: 'X', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const result = await getItemPictureTool.handler(
+      { variant_id: 1, item_id: 2 } as never,
+      { app, accessToken: token },
+    );
+    assertEquals(result.isError, true);
+    assert((result.content[0]!.text ?? '').toLowerCase().includes('exactly one'));
+  });
 });
