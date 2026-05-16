@@ -710,6 +710,77 @@ Deno.test('get_floorplan_bom — placement coordinates enrichment', async (t) =>
   });
 });
 
+Deno.test('get_floorplan_bom — aggregates placements across grouped BOM rows', async (t) => {
+  await setupTestDatabase();
+
+  await t.step('mainEntry.placements covers every BOM row merged into the group', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'group-coords@example.com', password_hash: 'x', role: 'user',
+      full_name: 'G', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const project = await projectRepository.create({
+      version_name: 'v1', customer_name: 'Group Customer', tenant_id: tenant.id,
+    } as CreateProjectDTO);
+    const floorplan = await floorplanRepository.create({
+      project_id: project.id, name: 'Main', image_path: 'test.png',
+    } as CreateFloorplanDTO);
+
+    const db = getDb();
+    const cat = db.queryEntries<{ id: number }>(
+      `INSERT INTO categories (name, sort_order, is_active) VALUES ('Cat', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const typ = db.queryEntries<{ id: number }>(
+      `INSERT INTO item_types (name, abbreviation, color, sort_order, is_active) VALUES ('Type', 'T', '#000', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const item = await itemRepository.create({
+      category_id: cat, type_id: typ, name: 'Switch',
+      description: '', base_model_number: '', dimensions: '', is_active: true,
+    } as never);
+    const variant = await itemVariantRepository.create({
+      item_id: item.id, style_name: 'White', price: 50, sort_order: 0, is_active: true,
+    } as never);
+
+    // Three separate BOM rows for the same item+variant — these get merged
+    // into one group, each with its own placement.
+    const bomIds: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const row = db.queryEntries<{ id: number }>(`
+        INSERT INTO project_bom (
+          project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+          item_name, style_name, model_number, unit_price, picture_path
+        ) VALUES (?, ?, ?, ?, NULL, 'Switch', 'White', 'SW.01', 50, NULL)
+        RETURNING id
+      `, [project.id, floorplan.id, item.id, variant.id])[0]!;
+      bomIds.push(row.id);
+    }
+
+    const coords = [[10, 20], [110, 220], [310, 420]];
+    for (let i = 0; i < bomIds.length; i++) {
+      db.query(
+        `INSERT INTO placements (bom_id, floorplan_id, type, x, y, width, height, rotation)
+         VALUES (?, ?, 'item', ?, ?, 40, 40, 0)`,
+        [bomIds[i]!, floorplan.id, coords[i]![0]!, coords[i]![1]!],
+      );
+    }
+
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const result = await getFloorplanBomTool.handler({ floorplan_id: floorplan.id }, { app, accessToken: token });
+    assertEquals(result.isError, undefined);
+    const payload = JSON.parse(result.content[0]!.text!);
+    assertEquals(payload.groups.length, 1);
+    const group = payload.groups[0];
+    assertEquals(group.quantity, 3);
+    assertEquals(group.bomEntryIds.length, 3);
+    const placements = group.mainEntry.placements;
+    assert(Array.isArray(placements), 'expected aggregated placements array');
+    assertEquals(placements.length, 3);
+    const xs = placements.map((p: { x: number }) => p.x).sort((a: number, b: number) => a - b);
+    assertEquals(xs, [10, 110, 310]);
+  });
+});
+
 Deno.test('get_floorplan_bom — canvas dimensions', async (t) => {
   await setupTestDatabase();
 
