@@ -596,7 +596,8 @@ Deno.test('get_item_picture accepts item_id from catalog', async (t) => {
       assertEquals(img?.mimeType, 'image/png');
       assert((img?.data?.length ?? 0) > 0);
       const text = result.content.find(b => b.type === 'text')?.text ?? '';
-      assert(text.toLowerCase().includes('item'));
+      assert(text.includes('WithImg'),
+        `expected text block to reference the WithImg variant (proves fallback skipped the imageless NoImg variant), got: ${text}`);
     } finally {
       await fileStorageService.deleteFile(relPath).catch(() => {});
     }
