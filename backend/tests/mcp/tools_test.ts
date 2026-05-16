@@ -20,6 +20,7 @@ import { listAreasTool } from '../../src/services/mcp/tools/list-areas.ts';
 import { getInvoiceCalculationTool } from '../../src/services/mcp/tools/get-invoice-calculation.ts';
 import { getItemPictureTool } from '../../src/services/mcp/tools/get-item-picture.ts';
 import { getFloorplanImageTool } from '../../src/services/mcp/tools/get-floorplan-image.ts';
+import { itemVariantRepository } from '../../src/repositories/item-variant.ts';
 import { projectGroupRepository } from '../../src/repositories/project-group.ts';
 import { getDb } from '../../src/config/database.ts';
 import { fileStorageService } from '../../src/services/file-storage.ts';
@@ -473,5 +474,113 @@ Deno.test('image tools describe themselves honestly', async (t) => {
       `expected get_item_picture description to contain the guardrail phrase, got: ${getItemPictureTool.description}`);
     assert(d.includes('describe'),
       `expected get_item_picture description to instruct the model to describe contents`);
+  });
+});
+
+Deno.test('get_item_picture accepts variant_id from catalog', async (t) => {
+  await setupTestDatabase();
+
+  await t.step('returns image content for a variant with image_path', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'var@example.com', password_hash: 'x', role: 'user',
+      full_name: 'V', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+
+    // Seed a category + item_type to satisfy items FK, then an item + variant with image.
+    const db = getDb();
+    const cat = db.queryEntries<{ id: number }>(
+      `INSERT INTO categories (name, sort_order, is_active) VALUES ('Cat', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const typ = db.queryEntries<{ id: number }>(
+      `INSERT INTO item_types (name, abbreviation, color, sort_order, is_active) VALUES ('Type', 'T', '#000', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const item = await itemRepository.create({
+      category_id: cat, type_id: typ, name: 'CatalogLamp',
+      description: '', base_model_number: '', dimensions: '', is_active: true,
+    } as never);
+
+    const subdir = `variants`;
+    await fileStorageService.ensureDirectory(subdir);
+    const relPath = `${subdir}/var.png`;
+    const fakeBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
+    await Deno.writeFile(fileStorageService.getFilePath(relPath), fakeBytes);
+
+    const variant = await itemVariantRepository.create({
+      item_id: item.id, style_name: 'Black', price: 100, image_path: relPath, sort_order: 0, is_active: true,
+    } as never);
+
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    try {
+      const result = await getItemPictureTool.handler({ variant_id: variant.id }, { app, accessToken: token });
+      assertEquals(result.isError, undefined);
+      const img = result.content.find(b => b.type === 'image');
+      assertEquals(img?.type, 'image');
+      assertEquals(img?.mimeType, 'image/png');
+      assert((img?.data?.length ?? 0) > 0);
+    } finally {
+      await fileStorageService.deleteFile(relPath).catch(() => {});
+    }
+  });
+
+  await t.step('returns isError for variant with no image_path', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'var2@example.com', password_hash: 'x', role: 'user',
+      full_name: 'V', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const db = getDb();
+    const cat = db.queryEntries<{ id: number }>(
+      `INSERT INTO categories (name, sort_order, is_active) VALUES ('Cat', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const typ = db.queryEntries<{ id: number }>(
+      `INSERT INTO item_types (name, abbreviation, color, sort_order, is_active) VALUES ('Type', 'T', '#000', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const item = await itemRepository.create({
+      category_id: cat, type_id: typ, name: 'NoImageLamp',
+      description: '', base_model_number: '', dimensions: '', is_active: true,
+    } as never);
+    const variant = await itemVariantRepository.create({
+      item_id: item.id, style_name: 'Black', price: 100, sort_order: 0, is_active: true,
+    } as never);
+
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const result = await getItemPictureTool.handler({ variant_id: variant.id }, { app, accessToken: token });
+    assertEquals(result.isError, true);
+  });
+});
+
+Deno.test('get_item_picture input validation', async (t) => {
+  await setupTestDatabase();
+
+  await t.step('rejects calls with zero IDs', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'v0@example.com', password_hash: 'x', role: 'user',
+      full_name: 'X', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const result = await getItemPictureTool.handler({}, { app, accessToken: token });
+    assertEquals(result.isError, true);
+    assert((result.content[0]!.text ?? '').toLowerCase().includes('exactly one'));
+  });
+
+  await t.step('rejects calls with two IDs', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'v2@example.com', password_hash: 'x', role: 'user',
+      full_name: 'X', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const result = await getItemPictureTool.handler(
+      { bom_id: 1, variant_id: 2 } as never,
+      { app, accessToken: token },
+    );
+    assertEquals(result.isError, true);
+    assert((result.content[0]!.text ?? '').toLowerCase().includes('exactly one'));
   });
 });
