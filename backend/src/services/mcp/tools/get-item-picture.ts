@@ -74,24 +74,32 @@ async function resolveBom(args: { bom_id: number }, ctx: ToolContext): Promise<R
 }
 
 async function resolveVariant(variantId: number): Promise<ResolvedPicture | ToolResult> {
-  const variant = await itemVariantRepository.findById(variantId);
-  if (!variant) {
+  try {
+    const variant = await itemVariantRepository.findById(variantId);
+    if (!variant) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `Variant ${variantId} not found` }],
+      };
+    }
+    if (!variant.image_path) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `Variant ${variantId} has no image_path` }],
+      };
+    }
+    return {
+      relPath: variant.image_path,
+      label: variant.style_name,
+      subjectTag: `Variant #${variantId}`,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
     return {
       isError: true,
-      content: [{ type: 'text', text: `Variant ${variantId} not found` }],
+      content: [{ type: 'text', text: `Failed to look up variant ${variantId}: ${msg}` }],
     };
   }
-  if (!variant.image_path) {
-    return {
-      isError: true,
-      content: [{ type: 'text', text: `Variant ${variantId} has no image_path` }],
-    };
-  }
-  return {
-    relPath: variant.image_path,
-    label: variant.style_name,
-    subjectTag: `Variant #${variantId}`,
-  };
 }
 
 export const getItemPictureTool = {
@@ -121,7 +129,7 @@ export const getItemPictureTool = {
       };
     }
 
-    if ('isError' in resolved) return resolved as ToolResult;
-    return loadAndReturn(resolved as ResolvedPicture);
+    if ('relPath' in resolved) return loadAndReturn(resolved);
+    return resolved;
   },
 };
