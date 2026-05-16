@@ -46,6 +46,7 @@ interface BomEntry {
 interface BomGroup {
   mainEntry?: BomEntry;
   children?: BomEntry[];
+  bomEntryIds?: number[];
   [key: string]: unknown;
 }
 
@@ -79,15 +80,24 @@ function decorateEntry(
   entry: BomEntry,
   areasById: Map<number, string>,
   placementsByBomId: Map<number, PlacementInfo[]>,
+  bomIds?: number[],
 ): void {
   if (entry.area_id != null) {
     const name = areasById.get(entry.area_id);
     if (name) entry.area_name = name;
   }
-  if (typeof entry.id === 'number') {
-    const placements = placementsByBomId.get(entry.id);
-    if (placements && placements.length > 0) entry.placements = placements;
+  // Groups merge identical item+variant BOM rows; each merged row has its own
+  // placement. Gather placements across every BOM id in the group so quantity
+  // and placements line up.
+  const ids = bomIds && bomIds.length > 0
+    ? bomIds
+    : (typeof entry.id === 'number' ? [entry.id] : []);
+  const placements: PlacementInfo[] = [];
+  for (const id of ids) {
+    const list = placementsByBomId.get(id);
+    if (list) placements.push(...list);
   }
+  if (placements.length > 0) entry.placements = placements;
 }
 
 export const getFloorplanBomTool = {
@@ -191,8 +201,12 @@ export const getFloorplanBomTool = {
     const payload = bomResult.body.data as FloorplanBomPayload;
     if (Array.isArray(payload?.groups)) {
       for (const group of payload.groups) {
-        if (group.mainEntry) decorateEntry(group.mainEntry, areasById, placementsByBomId);
+        if (group.mainEntry) {
+          decorateEntry(group.mainEntry, areasById, placementsByBomId, group.bomEntryIds);
+        }
         if (Array.isArray(group.children)) {
+          // Children are addons attached to the main entry — they have no
+          // placements of their own, so only enrich area info.
           for (const child of group.children) decorateEntry(child, areasById, placementsByBomId);
         }
       }
