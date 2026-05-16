@@ -698,8 +698,15 @@ Deno.test('get_floorplan_bom — placement coordinates enrichment', async (t) =>
     assertEquals(first.width, 64);
     assertEquals(first.height, 64);
     assertEquals(first.rotation, 0);
+    assertEquals(first.area_id, null);
+    assertEquals(typeof first.placement_id, 'number');
     const second = main.placements.find((p: { x: number }) => p.x === 120);
     assertEquals(second.rotation, 90);
+    assertEquals(second.y, 50);
+    assertEquals(second.width, 64);
+    assertEquals(second.height, 64);
+    assertEquals(second.area_id, null);
+    assertEquals(typeof second.placement_id, 'number');
   });
 });
 

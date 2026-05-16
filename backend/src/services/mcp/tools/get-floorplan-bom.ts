@@ -111,6 +111,8 @@ export const getFloorplanBomTool = {
         id: number; bom_id: number | null; x: number; y: number;
         width: number; height: number; rotation: number; area_id: number | null;
       }>) {
+        // findByFloorplan INNER JOINs project_bom, so bom_id is non-null in practice.
+        // The guard here is defensive against future schema changes.
         if (p.bom_id == null) continue;
         const list = placementsByBomId.get(p.bom_id) ?? [];
         const areaName = p.area_id != null ? areasById.get(p.area_id) : undefined;
