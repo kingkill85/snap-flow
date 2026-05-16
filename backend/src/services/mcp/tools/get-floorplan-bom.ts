@@ -51,6 +51,18 @@ interface FloorplanBomPayload {
   [key: string]: unknown;
 }
 
+/**
+ * Returns true only when `p` is a non-empty relative path with no absolute-path
+ * prefix and no `..` segments. Keeps path resolution safely inside uploadDir.
+ */
+function isSafeRelativeStoragePath(p: string): boolean {
+  if (p.length === 0) return false;
+  if (p.startsWith('/')) return false;
+  if (p.startsWith('\\')) return false;
+  // Reject any `..` path segment — handles both POSIX and Windows separators.
+  return !p.split(/[\\/]/).some(seg => seg === '..');
+}
+
 function decorateEntry(
   entry: BomEntry,
   areasById: Map<number, string>,
@@ -160,7 +172,7 @@ export const getFloorplanBomTool = {
     }
     if (fp?.name) payload.floorplan_name = fp.name;
     if (versionName) payload.version_name = versionName;
-    if (fp?.image_path) {
+    if (fp?.image_path && isSafeRelativeStoragePath(fp.image_path)) {
       const canvas: NonNullable<FloorplanBomPayload['canvas']> = {
         image_path: fp.image_path,
         coordinate_system: 'image-pixel, origin top-left of canvas, rotation in degrees clockwise',
