@@ -14,8 +14,10 @@ export async function readImageDimensions(
     return null;
   }
   try {
-    // Read up to 4 KiB — enough for the IHDR chunk in PNG and most SOF markers in JPEG.
-    const buf = new Uint8Array(4096);
+    // 64 KiB — enough to skip past typical EXIF/APP1 payloads in phone-camera JPEGs
+    // (up to ~80 KiB), then locate the SOF marker. Floorplans uploaded as photos hit
+    // large EXIF blocks; CAD-exported PNGs/JPEGs are well under this.
+    const buf = new Uint8Array(65536);
     const n = await file.read(buf) ?? 0;
     if (n < 8) return null;
     const bytes = buf.subarray(0, n);

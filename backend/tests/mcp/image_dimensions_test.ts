@@ -37,6 +37,30 @@ function makeJpeg(width: number, height: number): Uint8Array {
   return new Uint8Array([...soi, ...sof0, ...segLength, ...precision, ...h, ...w, ...components, ...compData, ...eoi]);
 }
 
+// Build a JPEG with a synthetic APP1 (EXIF) block of `exifPayloadSize` bytes placed
+// before the SOF0 marker. Used to verify the parser handles large EXIF blocks whose
+// length exceeds smaller read buffers.
+function makeJpegWithExif(width: number, height: number, exifPayloadSize: number): Uint8Array {
+  const soi = [0xff, 0xd8];
+  // APP1 marker: 0xff 0xe1, 2-byte length, then EXIF payload.
+  // segLength includes the 2 length bytes themselves.
+  const segLen = exifPayloadSize + 2;
+  if (segLen > 0xffff) throw new Error('exif segment too large');
+  const app1 = [0xff, 0xe1, (segLen >>> 8) & 0xff, segLen & 0xff, ...new Array(exifPayloadSize).fill(0)];
+  // SOF0 as before
+  const sof0 = [0xff, 0xc0];
+  const sofLen = [0x00, 0x11];
+  const precision = [0x08];
+  const h = [(height >>> 8) & 0xff, height & 0xff];
+  const w = [(width >>> 8) & 0xff, width & 0xff];
+  const components = [0x03];
+  const compData = new Array(9).fill(0);
+  const eoi = [0xff, 0xd9];
+  return new Uint8Array([
+    ...soi, ...app1, ...sof0, ...sofLen, ...precision, ...h, ...w, ...components, ...compData, ...eoi,
+  ]);
+}
+
 async function writeTemp(bytes: Uint8Array, suffix: string): Promise<string> {
   const path = await Deno.makeTempFile({ suffix });
   await Deno.writeFile(path, bytes);
@@ -59,6 +83,17 @@ Deno.test('readImageDimensions', async (t) => {
     try {
       const dims = await readImageDimensions(path);
       assertEquals(dims, { width: 640, height: 480 });
+    } finally {
+      await Deno.remove(path).catch(() => {});
+    }
+  });
+
+  await t.step('parses JPEG width/height when SOF is past a large APP1/EXIF block', async () => {
+    // 16 KiB EXIF payload — past the old 4 KiB buffer, comfortably inside the new 64 KiB one.
+    const path = await writeTemp(makeJpegWithExif(800, 600, 16 * 1024), '.jpg');
+    try {
+      const dims = await readImageDimensions(path);
+      assertEquals(dims, { width: 800, height: 600 });
     } finally {
       await Deno.remove(path).catch(() => {});
     }
