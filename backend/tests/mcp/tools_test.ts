@@ -19,6 +19,7 @@ import { getFloorplanBomTool } from '../../src/services/mcp/tools/get-floorplan-
 import { listAreasTool } from '../../src/services/mcp/tools/list-areas.ts';
 import { getInvoiceCalculationTool } from '../../src/services/mcp/tools/get-invoice-calculation.ts';
 import { getItemPictureTool } from '../../src/services/mcp/tools/get-item-picture.ts';
+import { getFloorplanImageTool } from '../../src/services/mcp/tools/get-floorplan-image.ts';
 import { projectGroupRepository } from '../../src/repositories/project-group.ts';
 import { getDb } from '../../src/config/database.ts';
 import { fileStorageService } from '../../src/services/file-storage.ts';
@@ -454,5 +455,23 @@ Deno.test('get_item_picture tool', async (t) => {
     const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
     const result = await getItemPictureTool.handler({ bom_id: bomId }, { app, accessToken: token });
     assertEquals(result.isError, true);
+  });
+});
+
+Deno.test('image tools describe themselves honestly', async (t) => {
+  await t.step('get_floorplan_image description warns the user cannot see it', () => {
+    const d = getFloorplanImageTool.description.toLowerCase();
+    assert(d.includes('user') && d.includes('not'),
+      `expected get_floorplan_image description to warn user cannot see image, got: ${getFloorplanImageTool.description}`);
+    assert(d.includes('describe'),
+      `expected get_floorplan_image description to instruct the model to describe contents`);
+  });
+
+  await t.step('get_item_picture description warns the user cannot see it', () => {
+    const d = getItemPictureTool.description.toLowerCase();
+    assert(d.includes('user') && d.includes('not'),
+      `expected get_item_picture description to warn user cannot see image, got: ${getItemPictureTool.description}`);
+    assert(d.includes('describe'),
+      `expected get_item_picture description to instruct the model to describe contents`);
   });
 });

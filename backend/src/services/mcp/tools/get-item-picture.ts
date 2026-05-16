@@ -23,7 +23,7 @@ function mimeTypeForPath(path: string): string {
 export const getItemPictureTool = {
   name: 'get_item_picture',
   description:
-    'Fetch the picture for a single placement (BOM entry) as an inline image. Pass a bom_id from get_floorplan_bom — e.g. mainEntry.id or one of bomEntryIds. Use this only when you need to actually see the item; for normal browsing the text BOM is cheaper.',
+    "Load a product picture into your visual context for analysis. The image bytes go to Claude's vision so you can describe the item's appearance. The Claude Desktop UI does NOT render this image back to the user — describe what you see rather than claiming the picture was shown. Today accepts `bom_id` (a placed BOM entry); other input modes are added in a later change.",
   inputSchema,
   handler: async (args: z.infer<typeof inputSchema>, ctx: ToolContext): Promise<ToolResult> => {
     const meta = await dispatchToBackend(ctx.app, {
@@ -53,7 +53,7 @@ export const getItemPictureTool = {
       return {
         content: [
           { type: 'image', data: encodeBase64(bytes), mimeType: mimeTypeForPath(picturePath) },
-          { type: 'text', text: `BOM #${args.bom_id} (${entry?.item_name ?? 'unknown'}): ${picturePath}` },
+          { type: 'text', text: `Image of "${entry?.item_name ?? 'unknown'}" (BOM #${args.bom_id}) loaded for your analysis only. The user cannot see it — describe its contents in your reply.` },
         ],
       };
     } catch (error) {

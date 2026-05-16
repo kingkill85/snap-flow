@@ -23,7 +23,7 @@ function mimeTypeForPath(path: string): string {
 export const getFloorplanImageTool = {
   name: 'get_floorplan_image',
   description:
-    'Fetch the background image of a floorplan as an inline image. Pass a floorplan_id from list_floorplans. Useful when you need to see the room layout or describe placements visually.',
+    "Load a floorplan's background image into your visual context for analysis. The image bytes go to Claude's vision so you can describe the layout, identify rooms, estimate scale, and reason about placements. The Claude Desktop UI does NOT render this image back to the user — never say 'here is the floorplan' or 'as you can see'. Instead, describe what you observe.",
   inputSchema,
   handler: async (args: z.infer<typeof inputSchema>, ctx: ToolContext): Promise<ToolResult> => {
     const meta = await dispatchToBackend(ctx.app, {
@@ -53,7 +53,7 @@ export const getFloorplanImageTool = {
       return {
         content: [
           { type: 'image', data: encodeBase64(bytes), mimeType: mimeTypeForPath(imagePath) },
-          { type: 'text', text: `Floorplan #${args.floorplan_id} (${fp?.name ?? 'unnamed'}): ${imagePath}` },
+          { type: 'text', text: `Image of floorplan "${fp?.name ?? 'unnamed'}" (#${args.floorplan_id}) loaded for your analysis only. The user cannot see it — describe its contents in your reply.` },
         ],
       };
     } catch (error) {
