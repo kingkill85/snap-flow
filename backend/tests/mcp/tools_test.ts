@@ -552,6 +552,107 @@ Deno.test('get_item_picture accepts variant_id from catalog', async (t) => {
   });
 });
 
+Deno.test('get_item_picture accepts item_id from catalog', async (t) => {
+  await setupTestDatabase();
+
+  await t.step('falls back to first active variant with an image', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'item@example.com', password_hash: 'x', role: 'user',
+      full_name: 'I', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const db = getDb();
+    const cat = db.queryEntries<{ id: number }>(
+      `INSERT INTO categories (name, sort_order, is_active) VALUES ('Cat', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const typ = db.queryEntries<{ id: number }>(
+      `INSERT INTO item_types (name, abbreviation, color, sort_order, is_active) VALUES ('Type', 'T', '#000', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const item = await itemRepository.create({
+      category_id: cat, type_id: typ, name: 'MultiVariantLamp',
+      description: '', base_model_number: '', dimensions: '', is_active: true,
+    } as never);
+
+    // Variant A: sort_order 0, NO image. Variant B: sort_order 1, with image.
+    // Expected fallback: variant B (first active variant *with* an image).
+    await itemVariantRepository.create({
+      item_id: item.id, style_name: 'NoImg', price: 100, sort_order: 0, is_active: true,
+    } as never);
+    const subdir = `variants`;
+    await fileStorageService.ensureDirectory(subdir);
+    const relPath = `${subdir}/item-fallback.png`;
+    const fakeBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 9, 9]);
+    await Deno.writeFile(fileStorageService.getFilePath(relPath), fakeBytes);
+    await itemVariantRepository.create({
+      item_id: item.id, style_name: 'WithImg', price: 110, image_path: relPath, sort_order: 1, is_active: true,
+    } as never);
+
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    try {
+      const result = await getItemPictureTool.handler({ item_id: item.id }, { app, accessToken: token });
+      assertEquals(result.isError, undefined);
+      const img = result.content.find(b => b.type === 'image');
+      assertEquals(img?.mimeType, 'image/png');
+      assert((img?.data?.length ?? 0) > 0);
+      const text = result.content.find(b => b.type === 'text')?.text ?? '';
+      assert(text.toLowerCase().includes('item'));
+    } finally {
+      await fileStorageService.deleteFile(relPath).catch(() => {});
+    }
+  });
+
+  await t.step('returns isError when no active variant has an image', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'item2@example.com', password_hash: 'x', role: 'user',
+      full_name: 'I', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const db = getDb();
+    const cat = db.queryEntries<{ id: number }>(
+      `INSERT INTO categories (name, sort_order, is_active) VALUES ('Cat', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const typ = db.queryEntries<{ id: number }>(
+      `INSERT INTO item_types (name, abbreviation, color, sort_order, is_active) VALUES ('Type', 'T', '#000', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const item = await itemRepository.create({
+      category_id: cat, type_id: typ, name: 'NoImagesLamp',
+      description: '', base_model_number: '', dimensions: '', is_active: true,
+    } as never);
+    await itemVariantRepository.create({
+      item_id: item.id, style_name: 'A', price: 100, sort_order: 0, is_active: true,
+    } as never);
+
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const result = await getItemPictureTool.handler({ item_id: item.id }, { app, accessToken: token });
+    assertEquals(result.isError, true);
+  });
+
+  await t.step('returns isError when item has no variants at all', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'item3@example.com', password_hash: 'x', role: 'user',
+      full_name: 'I', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const db = getDb();
+    const cat = db.queryEntries<{ id: number }>(
+      `INSERT INTO categories (name, sort_order, is_active) VALUES ('Cat', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const typ = db.queryEntries<{ id: number }>(
+      `INSERT INTO item_types (name, abbreviation, color, sort_order, is_active) VALUES ('Type', 'T', '#000', 0, 1) RETURNING id`,
+    )[0]!.id;
+    const item = await itemRepository.create({
+      category_id: cat, type_id: typ, name: 'Empty', description: '', base_model_number: '', dimensions: '', is_active: true,
+    } as never);
+
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const result = await getItemPictureTool.handler({ item_id: item.id }, { app, accessToken: token });
+    assertEquals(result.isError, true);
+  });
+});
+
 Deno.test('get_item_picture input validation', async (t) => {
   await setupTestDatabase();
 

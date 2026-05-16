@@ -73,6 +73,31 @@ async function resolveBom(args: { bom_id: number }, ctx: ToolContext): Promise<R
   };
 }
 
+async function resolveItem(itemId: number): Promise<ResolvedPicture | ToolResult> {
+  try {
+    const variants = await itemVariantRepository.findByItemId(itemId);
+    // findByItemId returns active variants ordered by sort_order ASC, id ASC.
+    const withImage = variants.find(v => v.is_active && v.image_path);
+    if (!withImage || !withImage.image_path) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `Item ${itemId} has no active variant with an image` }],
+      };
+    }
+    return {
+      relPath: withImage.image_path,
+      label: `Item ${itemId} / ${withImage.style_name}`,
+      subjectTag: `Item #${itemId}`,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return {
+      isError: true,
+      content: [{ type: 'text', text: `Failed to look up item ${itemId}: ${msg}` }],
+    };
+  }
+}
+
 async function resolveVariant(variantId: number): Promise<ResolvedPicture | ToolResult> {
   try {
     const variant = await itemVariantRepository.findById(variantId);
@@ -122,11 +147,7 @@ export const getItemPictureTool = {
     } else if (args.variant_id !== undefined) {
       resolved = await resolveVariant(args.variant_id);
     } else {
-      // item_id branch is implemented in Task 4
-      return {
-        isError: true,
-        content: [{ type: 'text', text: 'item_id input is not yet supported' }],
-      };
+      resolved = await resolveItem(args.item_id!);
     }
 
     if ('relPath' in resolved) return loadAndReturn(resolved);
