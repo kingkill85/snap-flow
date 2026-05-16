@@ -461,16 +461,16 @@ Deno.test('get_item_picture tool', async (t) => {
 Deno.test('image tools describe themselves honestly', async (t) => {
   await t.step('get_floorplan_image description warns the user cannot see it', () => {
     const d = getFloorplanImageTool.description.toLowerCase();
-    assert(d.includes('user') && d.includes('not'),
-      `expected get_floorplan_image description to warn user cannot see image, got: ${getFloorplanImageTool.description}`);
+    assert(d.includes('does not render this image back to the user'),
+      `expected get_floorplan_image description to contain the guardrail phrase, got: ${getFloorplanImageTool.description}`);
     assert(d.includes('describe'),
       `expected get_floorplan_image description to instruct the model to describe contents`);
   });
 
   await t.step('get_item_picture description warns the user cannot see it', () => {
     const d = getItemPictureTool.description.toLowerCase();
-    assert(d.includes('user') && d.includes('not'),
-      `expected get_item_picture description to warn user cannot see image, got: ${getItemPictureTool.description}`);
+    assert(d.includes('does not render this image back to the user'),
+      `expected get_item_picture description to contain the guardrail phrase, got: ${getItemPictureTool.description}`);
     assert(d.includes('describe'),
       `expected get_item_picture description to instruct the model to describe contents`);
   });
