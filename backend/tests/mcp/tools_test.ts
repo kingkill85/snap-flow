@@ -654,6 +654,55 @@ Deno.test('get_item_picture accepts item_id from catalog', async (t) => {
   });
 });
 
+Deno.test('get_floorplan_bom — placement coordinates enrichment', async (t) => {
+  await setupTestDatabase();
+
+  await t.step('attaches per-placement coords to each BOM entry', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'coord@example.com', password_hash: 'x', role: 'user',
+      full_name: 'C', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const project = await projectRepository.create({
+      version_name: 'v1', customer_name: 'Coord Customer', tenant_id: tenant.id,
+    } as CreateProjectDTO);
+    const floorplan = await floorplanRepository.create({
+      project_id: project.id, name: 'Main', image_path: 'test.png',
+    } as CreateFloorplanDTO);
+
+    const db = getDb();
+    const bomId = db.queryEntries<{ id: number }>(`
+      INSERT INTO project_bom (
+        project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+        item_name, style_name, model_number, unit_price, picture_path
+      ) VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?, NULL)
+      RETURNING id
+    `, [project.id, floorplan.id, 'CoordLamp', 0])[0]!.id;
+
+    // Two placements pointing at the same BOM entry (quantity 2)
+    db.query(`INSERT INTO placements (bom_id, floorplan_id, type, x, y, width, height, rotation)
+              VALUES (?, ?, 'item', 340, 220, 64, 64, 0)`, [bomId, floorplan.id]);
+    db.query(`INSERT INTO placements (bom_id, floorplan_id, type, x, y, width, height, rotation)
+              VALUES (?, ?, 'item', 120, 50, 64, 64, 90)`, [bomId, floorplan.id]);
+
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const result = await getFloorplanBomTool.handler({ floorplan_id: floorplan.id }, { app, accessToken: token });
+    assertEquals(result.isError, undefined);
+    const payload = JSON.parse(result.content[0]!.text!);
+    const main = payload.groups?.[0]?.mainEntry;
+    assert(Array.isArray(main?.placements), 'expected mainEntry.placements array');
+    assertEquals(main.placements.length, 2);
+    const first = main.placements.find((p: { x: number }) => p.x === 340);
+    assertEquals(first.y, 220);
+    assertEquals(first.width, 64);
+    assertEquals(first.height, 64);
+    assertEquals(first.rotation, 0);
+    const second = main.placements.find((p: { x: number }) => p.x === 120);
+    assertEquals(second.rotation, 90);
+  });
+});
+
 Deno.test('get_item_picture input validation', async (t) => {
   await setupTestDatabase();
 
