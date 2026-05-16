@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { dispatchToBackend } from '../dispatcher.ts';
 import type { ToolContext, ToolResult } from './list-projects.ts';
+import { fileStorageService } from '../../file-storage.ts';
+import { readImageDimensions } from '../image-dimensions.ts';
 
 const inputSchema = z.object({
   floorplan_id: z.number().int().positive(),
@@ -40,6 +42,12 @@ interface FloorplanBomPayload {
   groups?: BomGroup[];
   floorplan_name?: string;
   version_name?: string;
+  canvas?: {
+    image_path?: string;
+    width?: number;
+    height?: number;
+    coordinate_system: string;
+  };
   [key: string]: unknown;
 }
 
@@ -127,7 +135,7 @@ export const getFloorplanBomTool = {
       }
     }
 
-    const fp = floorplanResult.ok ? (floorplanResult.body?.data as { name?: string; project_id?: number } | undefined) : undefined;
+    const fp = floorplanResult.ok ? (floorplanResult.body?.data as { name?: string; project_id?: number; image_path?: string } | undefined) : undefined;
     let versionName: string | undefined;
     if (fp?.project_id) {
       const projectResult = await dispatchToBackend(ctx.app, {
@@ -152,6 +160,23 @@ export const getFloorplanBomTool = {
     }
     if (fp?.name) payload.floorplan_name = fp.name;
     if (versionName) payload.version_name = versionName;
+    if (fp?.image_path) {
+      const canvas: NonNullable<FloorplanBomPayload['canvas']> = {
+        image_path: fp.image_path,
+        coordinate_system: 'image-pixel, origin top-left of canvas, rotation in degrees clockwise',
+      };
+      try {
+        const absPath = fileStorageService.getFilePath(fp.image_path);
+        const dims = await readImageDimensions(absPath);
+        if (dims) {
+          canvas.width = dims.width;
+          canvas.height = dims.height;
+        }
+      } catch {
+        // Best-effort enrichment — leave width/height undefined.
+      }
+      payload.canvas = canvas;
+    }
 
     return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
   },

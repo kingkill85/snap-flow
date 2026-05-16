@@ -710,6 +710,79 @@ Deno.test('get_floorplan_bom — placement coordinates enrichment', async (t) =>
   });
 });
 
+Deno.test('get_floorplan_bom — canvas dimensions', async (t) => {
+  await setupTestDatabase();
+
+  // Reuse the PNG builder from image_dimensions_test via copy — keep the test file self-contained.
+  function makePng(width: number, height: number): Uint8Array {
+    const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    const length = [0x00, 0x00, 0x00, 0x0d];
+    const type = [0x49, 0x48, 0x44, 0x52];
+    const w = [(width >>> 24) & 0xff, (width >>> 16) & 0xff, (width >>> 8) & 0xff, width & 0xff];
+    const h = [(height >>> 24) & 0xff, (height >>> 16) & 0xff, (height >>> 8) & 0xff, height & 0xff];
+    const rest = [0x08, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    return new Uint8Array([...signature, ...length, ...type, ...w, ...h, ...rest]);
+  }
+
+  await t.step('includes canvas.width/height when the image file is parseable', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'canvas@example.com', password_hash: 'x', role: 'user',
+      full_name: 'C', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const project = await projectRepository.create({
+      version_name: 'v1', customer_name: 'Canvas Customer', tenant_id: tenant.id,
+    } as CreateProjectDTO);
+
+    const subdir = `projects/${project.id}/floorplans`;
+    await fileStorageService.ensureDirectory(subdir);
+    const relPath = `${subdir}/canvas.png`;
+    await Deno.writeFile(fileStorageService.getFilePath(relPath), makePng(1920, 1080));
+
+    const floorplan = await floorplanRepository.create({
+      project_id: project.id, name: 'Canvas', image_path: relPath,
+    } as CreateFloorplanDTO);
+
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    try {
+      const result = await getFloorplanBomTool.handler({ floorplan_id: floorplan.id }, { app, accessToken: token });
+      assertEquals(result.isError, undefined);
+      const payload = JSON.parse(result.content[0]!.text!);
+      assertEquals(payload.canvas?.image_path, relPath);
+      assertEquals(payload.canvas?.width, 1920);
+      assertEquals(payload.canvas?.height, 1080);
+      assert(typeof payload.canvas?.coordinate_system === 'string');
+    } finally {
+      await fileStorageService.deleteFile(relPath).catch(() => {});
+    }
+  });
+
+  await t.step('omits canvas width/height gracefully when file is missing', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'canvas2@example.com', password_hash: 'x', role: 'user',
+      full_name: 'C', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const project = await projectRepository.create({
+      version_name: 'v1', customer_name: 'NoCanvas Customer', tenant_id: tenant.id,
+    } as CreateProjectDTO);
+    const floorplan = await floorplanRepository.create({
+      project_id: project.id, name: 'NoFile', image_path: 'does-not-exist.png',
+    } as CreateFloorplanDTO);
+
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const result = await getFloorplanBomTool.handler({ floorplan_id: floorplan.id }, { app, accessToken: token });
+    assertEquals(result.isError, undefined);
+    const payload = JSON.parse(result.content[0]!.text!);
+    assertEquals(payload.canvas?.image_path, 'does-not-exist.png');
+    assertEquals(payload.canvas?.width, undefined);
+    assertEquals(payload.canvas?.height, undefined);
+    assert(typeof payload.canvas?.coordinate_system === 'string');
+  });
+});
+
 Deno.test('get_item_picture input validation', async (t) => {
   await setupTestDatabase();
 
