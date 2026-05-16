@@ -8,9 +8,19 @@ const inputSchema = z.object({
   floorplan_id: z.number().int().positive(),
 });
 
+interface AreaBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 interface AreaSummary {
   id: number;
   name: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
 }
 
 interface PlacementInfo {
@@ -22,6 +32,7 @@ interface PlacementInfo {
   rotation: number;
   area_id: number | null;
   area_name?: string;
+  area_box?: AreaBox;
 }
 
 interface BomEntry {
@@ -48,6 +59,7 @@ interface FloorplanBomPayload {
     height?: number;
     coordinate_system: string;
   };
+  areas?: Array<{ id: number; name: string; x?: number; y?: number; width?: number; height?: number }>;
   [key: string]: unknown;
 }
 
@@ -117,11 +129,24 @@ export const getFloorplanBomTool = {
     }
 
     const areasById = new Map<number, string>();
+    const areaBoxesById = new Map<number, AreaBox>();
+    const areasSummary: Array<{ id: number; name: string; x?: number; y?: number; width?: number; height?: number }> = [];
     if (areasResult.ok && Array.isArray(areasResult.body?.data)) {
       for (const area of areasResult.body.data as AreaSummary[]) {
-        if (typeof area?.id === 'number' && typeof area?.name === 'string') {
-          areasById.set(area.id, area.name);
+        if (typeof area?.id !== 'number' || typeof area?.name !== 'string') continue;
+        areasById.set(area.id, area.name);
+        const summary: { id: number; name: string; x?: number; y?: number; width?: number; height?: number } = {
+          id: area.id, name: area.name,
+        };
+        if (typeof area.x === 'number' && typeof area.y === 'number'
+            && typeof area.width === 'number' && typeof area.height === 'number') {
+          summary.x = area.x;
+          summary.y = area.y;
+          summary.width = area.width;
+          summary.height = area.height;
+          areaBoxesById.set(area.id, { x: area.x, y: area.y, width: area.width, height: area.height });
         }
+        areasSummary.push(summary);
       }
     }
 
@@ -135,13 +160,17 @@ export const getFloorplanBomTool = {
         // The guard here is defensive against future schema changes.
         if (p.bom_id == null) continue;
         const list = placementsByBomId.get(p.bom_id) ?? [];
-        const areaName = p.area_id != null ? areasById.get(p.area_id) : undefined;
         const info: PlacementInfo = {
           placement_id: p.id,
           x: p.x, y: p.y, width: p.width, height: p.height,
           rotation: p.rotation, area_id: p.area_id,
         };
-        if (areaName !== undefined) info.area_name = areaName;
+        if (p.area_id != null) {
+          const areaName = areasById.get(p.area_id);
+          if (areaName !== undefined) info.area_name = areaName;
+          const areaBox = areaBoxesById.get(p.area_id);
+          if (areaBox !== undefined) info.area_box = areaBox;
+        }
         list.push(info);
         placementsByBomId.set(p.bom_id, list);
       }
@@ -188,6 +217,9 @@ export const getFloorplanBomTool = {
         // Best-effort enrichment — leave width/height undefined.
       }
       payload.canvas = canvas;
+    }
+    if (areasSummary.length > 0) {
+      payload.areas = areasSummary;
     }
 
     return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };

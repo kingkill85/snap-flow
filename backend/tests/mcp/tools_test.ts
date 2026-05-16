@@ -783,6 +783,65 @@ Deno.test('get_floorplan_bom — canvas dimensions', async (t) => {
   });
 });
 
+Deno.test('get_floorplan_bom — areas summary and area_box on placements', async (t) => {
+  await setupTestDatabase();
+
+  await t.step('exposes areas[] at top level and area_box on each placement', async () => {
+    await clearDatabase();
+    const tenant = await tenantRepository.create({ name: 'T' } as CreateTenantDTO);
+    const user = await userRepository.create({
+      email: 'area@example.com', password_hash: 'x', role: 'user',
+      full_name: 'A', tenant_id: tenant.id,
+    } as CreateUserDTO & { password_hash: string });
+    const project = await projectRepository.create({
+      version_name: 'v1', customer_name: 'Area Customer', tenant_id: tenant.id,
+    } as CreateProjectDTO);
+    const floorplan = await floorplanRepository.create({
+      project_id: project.id, name: 'WithAreas', image_path: 'na.png',
+    } as CreateFloorplanDTO);
+
+    const area = await areaRepository.create({
+      floorplan_id: floorplan.id, x: 0, y: 0, width: 500, height: 300, name: 'Wohnzimmer',
+    } as CreateAreaDTO);
+    // A second area with no placements — must still appear in the areas summary.
+    await areaRepository.create({
+      floorplan_id: floorplan.id, x: 500, y: 0, width: 400, height: 300, name: 'Küche',
+    } as CreateAreaDTO);
+
+    const db = getDb();
+    const bomId = db.queryEntries<{ id: number }>(`
+      INSERT INTO project_bom (
+        project_id, floorplan_id, item_id, variant_id, parent_bom_id,
+        item_name, style_name, model_number, unit_price, picture_path, area_id
+      ) VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?, NULL, ?)
+      RETURNING id
+    `, [project.id, floorplan.id, 'AreaLamp', 0, area.id])[0]!.id;
+    db.query(`INSERT INTO placements (bom_id, floorplan_id, type, area_id, x, y, width, height, rotation)
+              VALUES (?, ?, 'item', ?, 30, 30, 10, 10, 0)`, [bomId, floorplan.id, area.id]);
+
+    const token = await generateToken(user.id, user.email, user.role, user.tenant_id);
+    const result = await getFloorplanBomTool.handler({ floorplan_id: floorplan.id }, { app, accessToken: token });
+    assertEquals(result.isError, undefined);
+    const payload = JSON.parse(result.content[0]!.text!);
+
+    // Top-level areas summary
+    assert(Array.isArray(payload.areas), 'expected top-level areas array');
+    assertEquals(payload.areas.length, 2);
+    const wohn = payload.areas.find((a: { name: string }) => a.name === 'Wohnzimmer');
+    assertEquals(wohn.x, 0);
+    assertEquals(wohn.y, 0);
+    assertEquals(wohn.width, 500);
+    assertEquals(wohn.height, 300);
+
+    // Per-placement area_box
+    const placement = payload.groups[0].mainEntry.placements[0];
+    assertEquals(placement.area_name, 'Wohnzimmer');
+    assertEquals(placement.area_box.x, 0);
+    assertEquals(placement.area_box.width, 500);
+    assertEquals(placement.area_box.height, 300);
+  });
+});
+
 Deno.test('get_item_picture input validation', async (t) => {
   await setupTestDatabase();
 
