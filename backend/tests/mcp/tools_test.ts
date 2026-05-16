@@ -833,10 +833,17 @@ Deno.test('get_floorplan_bom — areas summary and area_box on placements', asyn
     assertEquals(wohn.width, 500);
     assertEquals(wohn.height, 300);
 
+    const küche = payload.areas.find((a: { name: string }) => a.name === 'Küche');
+    assertEquals(küche.x, 500);
+    assertEquals(küche.y, 0);
+    assertEquals(küche.width, 400);
+    assertEquals(küche.height, 300);
+
     // Per-placement area_box
     const placement = payload.groups[0].mainEntry.placements[0];
     assertEquals(placement.area_name, 'Wohnzimmer');
     assertEquals(placement.area_box.x, 0);
+    assertEquals(placement.area_box.y, 0);
     assertEquals(placement.area_box.width, 500);
     assertEquals(placement.area_box.height, 300);
   });

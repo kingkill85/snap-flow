@@ -59,7 +59,7 @@ interface FloorplanBomPayload {
     height?: number;
     coordinate_system: string;
   };
-  areas?: Array<{ id: number; name: string; x?: number; y?: number; width?: number; height?: number }>;
+  areas?: AreaSummary[];
   [key: string]: unknown;
 }
 
@@ -130,14 +130,12 @@ export const getFloorplanBomTool = {
 
     const areasById = new Map<number, string>();
     const areaBoxesById = new Map<number, AreaBox>();
-    const areasSummary: Array<{ id: number; name: string; x?: number; y?: number; width?: number; height?: number }> = [];
+    const areasSummary: AreaSummary[] = [];
     if (areasResult.ok && Array.isArray(areasResult.body?.data)) {
       for (const area of areasResult.body.data as AreaSummary[]) {
         if (typeof area?.id !== 'number' || typeof area?.name !== 'string') continue;
         areasById.set(area.id, area.name);
-        const summary: { id: number; name: string; x?: number; y?: number; width?: number; height?: number } = {
-          id: area.id, name: area.name,
-        };
+        const summary: AreaSummary = { id: area.id, name: area.name };
         if (typeof area.x === 'number' && typeof area.y === 'number'
             && typeof area.width === 'number' && typeof area.height === 'number') {
           summary.x = area.x;
