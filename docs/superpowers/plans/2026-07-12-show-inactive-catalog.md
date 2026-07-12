@@ -23,9 +23,11 @@
 - Modify: `backend/tests/routes/items_test.ts`
 - Modify: `backend/src/middleware/auth.ts`
 - Modify: `backend/src/routes/items.ts`
+- Modify: `backend/src/repositories/item.ts`
 
 **Interfaces:**
 - Produces: `optionalAuthMiddleware(c: Context, next: Next): Promise<Response | void>`.
+- Produces: inactive-aware preview selection in `ItemRepository.findAll`.
 - Preserves: public `GET /api/items` and `GET /api/items/:id/variants` behavior.
 
 - [ ] **Step 1: Add failing route regression tests**
@@ -48,6 +50,12 @@ Deno.test('GET /items - admin include_inactive returns inactive items', async ()
     base_model_number: 'INACTIVE-1',
     type_id: 1,
   });
+  await itemVariantRepository.create({
+    item_id: inactiveItem.id,
+    style_name: 'Inactive Style',
+    price: 20,
+    image_path: 'items/inactive-preview.png',
+  });
   await itemRepository.deactivate(inactiveItem.id);
 
   const publicResponse = await testRequest('/api/items?include_inactive=true');
@@ -62,6 +70,8 @@ Deno.test('GET /items - admin include_inactive returns inactive items', async ()
   assertEquals(adminResponse.status, 200);
   assertEquals(adminData.data.length, 2);
   assertEquals(adminData.data.some((item: { id: number }) => item.id === inactiveItem.id), true);
+  const returnedInactiveItem = adminData.data.find((item: { id: number }) => item.id === inactiveItem.id);
+  assertEquals(returnedInactiveItem.preview_image, 'items/inactive-preview.png');
 });
 
 Deno.test('GET /items/:id/variants - admin include_inactive returns inactive variants', async () => {
@@ -139,6 +149,14 @@ const includeInactive = c.req.query('include_inactive') === 'true' && c.get('use
 ```
 
 - [ ] **Step 5: Verify GREEN and route regressions**
+
+Before verifying GREEN, update `ItemRepository.findAll` in `backend/src/repositories/item.ts` so its preview subquery filters active styles only for active-only requests:
+
+```typescript
+    const previewVariantFilter = filter?.include_inactive ? '' : 'AND iv.is_active = true';
+```
+
+Use `${previewVariantFilter}` after `WHERE iv.item_id = i.id` in the preview-image subquery. This retains inactive preview paths only for the administrator’s inactive-inclusive request.
 
 Run:
 
