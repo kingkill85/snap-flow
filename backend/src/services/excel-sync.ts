@@ -146,6 +146,9 @@ export class ExcelSyncService {
         // Phase 4: Sync Variant Addons
         await this.syncVariantAddons(groupedItems, itemIdMap, result);
 
+        // Phase 5: Deactivate categories only when no active products remain
+        await this.deactivateEmptyCategories(groupedItems, result);
+
         // Set last sync timestamp
         await settingsRepository.setLastSyncTimestamp(Date.now());
 
@@ -428,7 +431,7 @@ export class ExcelSyncService {
    * Phase 1: Sync Categories
    * - Create new categories from Excel
    * - Activate categories that exist in Excel
-   * - Deactivate categories not in Excel
+   * - Defer deactivation until product synchronization is complete
    */
   private async syncCategories(
     groupedItems: Record<string, GroupedItem>,
@@ -467,17 +470,45 @@ export class ExcelSyncService {
       }
     }
 
-    // Deactivate categories not in Excel
-    for (const dbCat of dbCategories) {
-      if (!excelCategories.has(dbCat.name) && dbCat.is_active) {
-        await categoryRepository.deactivate(dbCat.id);
-        result.phases.categories.deactivated++;
-        this.log(result, `  ✗ Deactivated category: ${dbCat.name}`, 'categories');
+    result.phases.categories.total = excelCategories.size;
+    this.log(
+      result,
+      `✓ Categories prepared: ${result.phases.categories.added} added, ${result.phases.categories.activated} activated`,
+      'categories',
+    );
+  }
+
+  private async deactivateEmptyCategories(
+    groupedItems: Record<string, GroupedItem>,
+    result: SyncResult,
+  ): Promise<void> {
+    const excelCategoryNames = new Set(
+      Object.values(groupedItems)
+        .map((item) => item.category.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const dbCategories = await categoryRepository.findAll(true);
+
+    for (const category of dbCategories) {
+      const isPresentInExcel = excelCategoryNames.has(category.name.trim().toLowerCase());
+      if (isPresentInExcel || !category.is_active) {
+        continue;
       }
+
+      if (await categoryRepository.hasActiveItems(category.id)) {
+        continue;
+      }
+
+      await categoryRepository.deactivate(category.id);
+      result.phases.categories.deactivated++;
+      this.log(result, `  ✗ Deactivated empty category: ${category.name}`, 'categories');
     }
 
-    result.phases.categories.total = excelCategories.size;
-    this.log(result, `✓ Categories synced: ${result.phases.categories.added} added, ${result.phases.categories.activated} activated, ${result.phases.categories.deactivated} deactivated`, 'categories');
+    this.log(
+      result,
+      `✓ Category cleanup complete: ${result.phases.categories.deactivated} empty categories deactivated`,
+      'categories',
+    );
   }
 
   /**

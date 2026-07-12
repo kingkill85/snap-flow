@@ -1,9 +1,11 @@
 import { assertEquals, assertExists } from '@std/assert';
+import * as xlsx from 'xlsx';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { excelSyncService } from '../../src/services/excel-sync.ts';
 import { categoryRepository } from '../../src/repositories/category.ts';
 import { itemRepository } from '../../src/repositories/item.ts';
 import { itemVariantRepository } from '../../src/repositories/item-variant.ts';
+import { itemTypeRepository } from '../../src/repositories/item-type.ts';
 
 // Setup test database before all tests
 await setupTestDatabase();
@@ -154,6 +156,73 @@ Deno.test("ExcelSyncService - variant can have image path", async () => {
   
   const updated = await itemVariantRepository.findById(variant.id);
   assertEquals(updated?.image_path, 'items/excel-import/image2.png');
+});
+
+Deno.test('ExcelSyncService - import only deactivates missing items from the selected product type', async () => {
+  clearDatabase();
+
+  const importedType = await itemTypeRepository.create({
+    name: 'Imported Type',
+    abbreviation: 'IMP',
+  });
+  const protectedType = await itemTypeRepository.create({
+    name: 'Protected Type',
+    abbreviation: 'PRO',
+  });
+
+  const sharedCategory = await categoryRepository.create({ name: 'Shared Category' });
+  const emptyAfterImportCategory = await categoryRepository.create({ name: 'Obsolete Category' });
+
+  const missingImportedItem = await itemRepository.create({
+    category_id: emptyAfterImportCategory.id,
+    type_id: importedType.id,
+    name: 'Missing Imported Product',
+    base_model_number: 'IMP-OLD',
+  });
+  const protectedItem = await itemRepository.create({
+    category_id: sharedCategory.id,
+    type_id: protectedType.id,
+    name: 'Protected Product',
+    base_model_number: 'PRO-KEEP',
+  });
+
+  const worksheet = xlsx.utils.aoa_to_sheet([
+    [],
+    [],
+    [],
+    ['Imported Category', '', '', 'Current Imported Product', '', 'IMP-NEW', '', 'Default', 'IMP-NEW-DEFAULT', 100],
+  ]);
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
+  const workbookBytes = xlsx.write(workbook, { type: 'array', bookType: 'xlsx' });
+  const relativePath = 'imports/product-type-scope-test.xlsx';
+  const fullPath = `./uploads/${relativePath}`;
+
+  await Deno.mkdir('./uploads/imports', { recursive: true });
+  await Deno.writeFile(fullPath, new Uint8Array(workbookBytes));
+
+  try {
+    const result = await excelSyncService.syncCatalog(relativePath, importedType.id);
+
+    assertEquals(result.success, true);
+    assertEquals(result.phases.items.deactivated, 1);
+
+    const missingImportedAfter = await itemRepository.findById(missingImportedItem.id);
+    const protectedAfter = await itemRepository.findById(protectedItem.id);
+    const sharedCategoryAfter = await categoryRepository.findById(sharedCategory.id);
+    const emptyCategoryAfter = await categoryRepository.findById(emptyAfterImportCategory.id);
+
+    assertExists(missingImportedAfter);
+    assertExists(protectedAfter);
+    assertExists(sharedCategoryAfter);
+    assertExists(emptyCategoryAfter);
+    assertEquals(Boolean(missingImportedAfter.is_active), false);
+    assertEquals(Boolean(protectedAfter.is_active), true);
+    assertEquals(Boolean(sharedCategoryAfter.is_active), true);
+    assertEquals(Boolean(emptyCategoryAfter.is_active), false);
+  } finally {
+    await Deno.remove(fullPath).catch(() => {});
+  }
 });
 
 Deno.test("ExcelSyncService - variant addons can be linked", async () => {

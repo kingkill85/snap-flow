@@ -36,6 +36,25 @@ async function getAdminToken(): Promise<string> {
   return loginData.data.accessToken;
 }
 
+async function createNonAdminToken(email: string): Promise<string> {
+  const passwordHash = hashPassword('user123');
+  await userRepository.create({
+    email,
+    password_hash: passwordHash,
+    role: 'user',
+    tenant_id: 1,
+  });
+
+  const loginResponse = await testRequest('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'user123' }),
+  });
+
+  const loginData = await parseJSON(loginResponse);
+  return loginData.data.accessToken;
+}
+
 Deno.test('GET /items - should list all items (public)', async () => {
   clearDatabase();
   
@@ -114,6 +133,71 @@ Deno.test('GET /items - should search items', async () => {
   assertEquals(response.status, 200);
   assertEquals(data.data.length, 1);
   assertEquals(data.data[0].name, 'Smart Bulb Pro');
+});
+
+Deno.test('GET /items - admin include_inactive returns inactive items', async () => {
+  const token = await getAdminToken();
+  const nonAdminToken = await createNonAdminToken('user-items@example.com');
+  const category = await categoryRepository.create({ name: 'Lighting' });
+  await itemRepository.create({
+    category_id: category.id,
+    name: 'Active Product',
+    base_model_number: 'ACTIVE-1',
+    type_id: 1,
+  });
+  const inactiveItem = await itemRepository.create({
+    category_id: category.id,
+    name: 'Inactive Product',
+    base_model_number: 'INACTIVE-1',
+    type_id: 1,
+  });
+  const inactivePreviewVariant = await itemVariantRepository.create({
+    item_id: inactiveItem.id,
+    style_name: 'Inactive Style',
+    price: 20,
+    image_path: 'items/inactive-preview.png',
+  });
+  await itemRepository.deactivate(inactiveItem.id);
+
+  const inactivePreviewVariantAfterDeactivation = await itemVariantRepository.findById(inactivePreviewVariant.id);
+  assertExists(inactivePreviewVariantAfterDeactivation);
+  assertEquals(Boolean(inactivePreviewVariantAfterDeactivation.is_active), false);
+
+  const publicResponse = await testRequest('/api/items?include_inactive=true');
+  const publicData = await parseJSON(publicResponse);
+  assertEquals(publicResponse.status, 200);
+  assertEquals(publicData.data.map((item: { name: string }) => item.name), ['Active Product']);
+
+  const nonAdminResponse = await testRequest('/api/items?include_inactive=true', {
+    headers: { Authorization: `Bearer ${nonAdminToken}` },
+  });
+  const nonAdminData = await parseJSON(nonAdminResponse);
+  assertEquals(nonAdminResponse.status, 200);
+  assertEquals(nonAdminData.data.map((item: { name: string }) => item.name), ['Active Product']);
+
+  const invalidTokenResponse = await testRequest('/api/items?include_inactive=true', {
+    headers: { Authorization: 'Bearer invalid-token' },
+  });
+  const invalidTokenData = await parseJSON(invalidTokenResponse);
+  assertEquals(invalidTokenResponse.status, 200);
+  assertEquals(invalidTokenData.data.map((item: { name: string }) => item.name), ['Active Product']);
+
+  const adminResponse = await testRequest('/api/items?include_inactive=true', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const adminData = await parseJSON(adminResponse);
+  assertEquals(adminResponse.status, 200);
+  assertEquals(adminData.data.length, 2);
+  assertEquals(adminData.data.some((item: { id: number }) => item.id === inactiveItem.id), true);
+  const returnedInactiveItem = adminData.data.find((item: { id: number }) => item.id === inactiveItem.id);
+  assertEquals(returnedInactiveItem.preview_image, 'items/inactive-preview.png');
+
+  const inactiveItemAfter = await itemRepository.findById(inactiveItem.id);
+  const inactivePreviewVariantAfter = await itemVariantRepository.findById(inactivePreviewVariant.id);
+  assertExists(inactiveItemAfter);
+  assertExists(inactivePreviewVariantAfter);
+  assertEquals(Boolean(inactiveItemAfter.is_active), false);
+  assertEquals(Boolean(inactivePreviewVariantAfter.is_active), false);
 });
 
 Deno.test('GET /items/:id - should get single item with variants', async () => {
@@ -373,6 +457,56 @@ Deno.test('GET /items/:id/variants - should list variants', async () => {
   assertEquals(data.data.length, 2);
   assertEquals(data.data[0].style_name, 'White');
   assertEquals(data.data[1].style_name, 'Black');
+});
+
+Deno.test('GET /items/:id/variants - admin include_inactive returns inactive variants', async () => {
+  const token = await getAdminToken();
+  const nonAdminToken = await createNonAdminToken('user-variants@example.com');
+  const category = await categoryRepository.create({ name: 'Lighting' });
+  const item = await itemRepository.create({
+    category_id: category.id,
+    name: 'Product',
+    base_model_number: 'PRODUCT-1',
+    type_id: 1,
+  });
+  await itemVariantRepository.create({ item_id: item.id, style_name: 'Active Style', price: 10 });
+  const inactiveVariant = await itemVariantRepository.create({
+    item_id: item.id,
+    style_name: 'Inactive Style',
+    price: 20,
+  });
+  await itemVariantRepository.deactivate(inactiveVariant.id);
+
+  const publicResponse = await testRequest(`/api/items/${item.id}/variants?include_inactive=true`);
+  const publicData = await parseJSON(publicResponse);
+  assertEquals(publicResponse.status, 200);
+  assertEquals(publicData.data.map((variant: { style_name: string }) => variant.style_name), ['Active Style']);
+
+  const nonAdminResponse = await testRequest(`/api/items/${item.id}/variants?include_inactive=true`, {
+    headers: { Authorization: `Bearer ${nonAdminToken}` },
+  });
+  const nonAdminData = await parseJSON(nonAdminResponse);
+  assertEquals(nonAdminResponse.status, 200);
+  assertEquals(nonAdminData.data.map((variant: { style_name: string }) => variant.style_name), ['Active Style']);
+
+  const invalidTokenResponse = await testRequest(`/api/items/${item.id}/variants?include_inactive=true`, {
+    headers: { Authorization: 'Bearer invalid-token' },
+  });
+  const invalidTokenData = await parseJSON(invalidTokenResponse);
+  assertEquals(invalidTokenResponse.status, 200);
+  assertEquals(invalidTokenData.data.map((variant: { style_name: string }) => variant.style_name), ['Active Style']);
+
+  const adminResponse = await testRequest(`/api/items/${item.id}/variants?include_inactive=true`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const adminData = await parseJSON(adminResponse);
+  assertEquals(adminResponse.status, 200);
+  assertEquals(adminData.data.length, 2);
+  assertEquals(adminData.data.some((variant: { id: number }) => variant.id === inactiveVariant.id), true);
+
+  const inactiveVariantAfter = await itemVariantRepository.findById(inactiveVariant.id);
+  assertExists(inactiveVariantAfter);
+  assertEquals(Boolean(inactiveVariantAfter.is_active), false);
 });
 
 Deno.test('POST /items/:id/variants - should create variant (admin)', async () => {

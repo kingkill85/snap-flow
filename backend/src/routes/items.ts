@@ -6,7 +6,7 @@ import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { variantAddonRepository } from '../repositories/variant-addon.ts';
 import { categoryRepository } from '../repositories/category.ts';
 import { bomEntryRepository } from '../repositories/bom-entry.ts';
-import { authMiddleware, adminMiddleware } from '../middleware/auth.ts';
+import { authMiddleware, adminMiddleware, optionalAuthMiddleware } from '../middleware/auth.ts';
 import { uploadMiddleware } from '../middleware/upload.ts';
 import { fileStorageService } from '../services/file-storage.ts';
 import type { CreateItemDTO, UpdateItemDTO, CreateItemVariantDTO, CreateVariantAddonDTO } from '../models/index.ts';
@@ -28,15 +28,15 @@ const itemRoutes = new Hono();
 
 // GET /items - List all items
 // Query params: category_id, search, page, limit, include_inactive (admin only)
-itemRoutes.get('/', async (c) => {
+itemRoutes.get('/', optionalAuthMiddleware, async (c) => {
   try {
     const categoryId = c.req.query('category_id');
     const typeId = c.req.query('type_id');
     const search = c.req.query('search');
     const page = parseInt(c.req.query('page') || '1', 10);
     const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
-    // Only allow include_inactive for authenticated users
-    const includeInactive = c.req.query('include_inactive') === 'true' && !!c.get('userId');
+    // Only allow include_inactive for administrators
+    const includeInactive = c.req.query('include_inactive') === 'true' && c.get('userRole') === 'admin';
 
     const filter: { category_id?: number | null; type_id?: number; search?: string; include_inactive?: boolean } = {};
     
@@ -424,13 +424,13 @@ itemRoutes.delete('/:id', authMiddleware, adminMiddleware, async (c) => {
 
 // GET /items/:id/variants - Get all variants for an item
 // Query param: include_inactive=true (admin only) to include inactive variants
-itemRoutes.get('/:id/variants', async (c) => {
+itemRoutes.get('/:id/variants', optionalAuthMiddleware, async (c) => {
   try {
     const itemId = parseInt(c.req.param('id'));
     if (isNaN(itemId)) {
       return c.json({ error: 'Invalid ID' }, 400);
     }
-    const includeInactive = c.req.query('include_inactive') === 'true' && !!c.get('userId');
+    const includeInactive = c.req.query('include_inactive') === 'true' && c.get('userRole') === 'admin';
     
     const item = await itemRepository.findById(itemId);
     if (!item) {

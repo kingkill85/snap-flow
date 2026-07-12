@@ -29,6 +29,28 @@ export async function authMiddleware(c: Context, next: Next): Promise<Response |
 }
 
 /**
+ * Optional auth middleware - populates identity for valid bearer tokens
+ * while preserving access to public routes when no valid token is supplied.
+ */
+export async function optionalAuthMiddleware(c: Context, next: Next): Promise<Response | void> {
+  const authHeader = c.req.header('Authorization');
+
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      const payload = await verifyToken(authHeader.substring(7));
+      c.set('userId', parseInt(payload.sub));
+      c.set('userEmail', payload.email);
+      c.set('userRole', payload.role);
+      c.set('tenantId', payload.tenantId);
+    } catch {
+      // Optional authentication keeps public catalog reads available.
+    }
+  }
+
+  await next();
+}
+
+/**
  * Tenant admin middleware - checks if user has tenant_admin or admin role
  * Must be used after authMiddleware
  */
