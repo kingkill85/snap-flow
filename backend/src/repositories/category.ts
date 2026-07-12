@@ -41,6 +41,14 @@ export class CategoryRepository {
     return Promise.resolve(result.length > 0 ? (result[0] as unknown as Category) : null);
   }
 
+  hasActiveItems(categoryId: number): Promise<boolean> {
+    const result = getDb().queryEntries<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM items WHERE category_id = ? AND is_active = true',
+      [categoryId],
+    );
+    return Promise.resolve(result[0].count > 0);
+  }
+
   deactivate(id: number): Promise<Category | null> {
     // Deactivate the category
     const result = getDb().queryEntries(`
