@@ -67,6 +67,10 @@ export class ItemRepository {
     const countResult = getDb().query(`SELECT COUNT(*) as total FROM items i LEFT JOIN item_types it ON i.type_id = it.id ${whereClause}`, values);
     const total = countResult[0][0] as number;
 
+    // Active-only catalog requests must not expose inactive variant images.
+    // Admin inactive-inclusive requests may use an inactive variant as preview.
+    const previewVariantFilter = filter?.include_inactive ? '' : 'AND iv.is_active = true';
+
     // Build query with first variant image
     let query = `
       SELECT
@@ -83,7 +87,7 @@ export class ItemRepository {
         it.abbreviation as type_abbreviation,
         it.color as type_color,
         (SELECT iv.image_path FROM item_variants iv
-         WHERE iv.item_id = i.id AND iv.is_active = true
+         WHERE iv.item_id = i.id ${previewVariantFilter}
          ORDER BY iv.sort_order ASC, iv.id ASC
          LIMIT 1) as preview_image
       FROM items i
