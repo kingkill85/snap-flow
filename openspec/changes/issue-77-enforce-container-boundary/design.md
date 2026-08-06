@@ -78,3 +78,9 @@ The archived `2026-08-06-issue-77-governed-webhook-handoff` directory is immutab
 7. After `/accept`, sync this delta into canonical specs and archive this active change. Request `/merge` separately.
 
 Rollback before merge is a normal revert of repair implementation and removal of the non-secret adapter/policy installation while keeping active evidence. No deployment or privileged connection configuration change is part of this plan.
+
+## Emergency generic lifecycle addendum
+
+Normal issues resolve through one validated template: integer Issue `N` maps to `feature/issue-N`, `/workspace/snap-flow-issue-N`, and `snapflow-dev:issue-N`; closed Issue #77 overrides the template. Start fetches `origin/main`, creates or verifies the branch/worktree idempotently, rejects collisions, and creates one window. A host adapter exposes only the narrow controller argv over the fixed SSH alias, identity, and pinned known-hosts file with strict host checking and `shell=False`.
+
+The durable queue retains one row/idempotency key/task ID across label, approval, review, acceptance, archive, merge, closure, and cleanup wakeups. Project concurrency starts at one. Task bodies are self-contained and phase-specific. Codex starts spec-only and later commands resume the same session. Completion requires a strict structured result, repository-artifact verification, GitHub-artifact verification, and a false heartbeat-only flag; absent prerequisites become one immediate blocker. Repository deployment artifacts describe receiver/consumer restart and external profile installation but do not deploy them.

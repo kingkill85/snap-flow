@@ -30,6 +30,20 @@ TARGET = GovernedTarget(
 )
 
 
+def completion(outcome="success", resumable=False, summary="done", **overrides):
+    value = {
+        "semantic_outcome": outcome,
+        "resumable": resumable,
+        "summary": summary,
+        "workflow_phase": "merge-finalization" if outcome == "success" else "blocked",
+        "repository_artifacts_verified": outcome == "success",
+        "github_artifacts_verified": outcome == "success",
+        "heartbeat_only": False,
+    }
+    value.update(overrides)
+    return value
+
+
 class FakeExecutor:
     def __init__(self, outputs):
         self.outputs = list(outputs)
@@ -134,11 +148,8 @@ class CodexRuntimeTest(unittest.TestCase):
                 "--idempotency-key", KEY,
             ))
 
-            completion = {
-                "semantic_outcome": "success", "resumable": False,
-                "summary": "Repository-side work verified",
-            }
-            server = FakeAppServer(state_path, completion)
+            result_document = completion(summary="Repository-side work verified")
+            server = FakeAppServer(state_path, result_document)
             exit_code = run_runtime(
                 "start", KEY, None, registry_path=registry_path, state_path=state_path,
                 app_server=server, control_input=io.StringIO(""),
@@ -199,11 +210,8 @@ class CodexRuntimeTest(unittest.TestCase):
             initial = store.bind(KEY, TARGET)
             from dataclasses import replace
             store.save(KEY, initial, replace(initial, phase="starting"))
-            completion = {
-                "semantic_outcome": "correctable", "resumable": True,
-                "summary": "Finding remains correctable",
-            }
-            server = FakeAppServer(state_path, completion)
+            result_document = completion("correctable", True, "Finding remains correctable")
+            server = FakeAppServer(state_path, result_document)
             server.events.insert(0, ("control", "Continue the governed Issue work and address the latest trusted operator finding.\n"))
             self.assertEqual(run_runtime(
                 "start", KEY, None, registry_path=registry_path, state_path=state_path,
@@ -222,10 +230,7 @@ class CodexRuntimeTest(unittest.TestCase):
             initial = store.bind(KEY, TARGET)
             from dataclasses import replace
             store.save(KEY, initial, replace(initial, phase="starting"))
-            completion = {
-                "semantic_outcome": "success", "resumable": True, "summary": "done",
-            }
-            server = FakeAppServer(state_path, completion, status="failed")
+            server = FakeAppServer(state_path, completion(resumable=True), status="failed")
             self.assertEqual(run_runtime(
                 "start", KEY, None, registry_path=registry_path, state_path=state_path,
                 app_server=server, control_input=io.StringIO(""),
@@ -236,11 +241,9 @@ class CodexRuntimeTest(unittest.TestCase):
             self.assertEqual(persisted.terminal.semantic_outcome, "invalid")
 
     def test_nonzero_exit_can_never_validate_nominal_success(self):
-        completion = {
-            "semantic_outcome": "success", "resumable": True, "summary": "done",
-        }
+        result_document = completion(resumable=True)
         with self.assertRaises(ValueError):
-            validate_completion(completion, 1)
+            validate_completion(result_document, 1)
 
     def test_runtime_crash_persists_resumable_terminal_state(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -275,6 +278,18 @@ class CodexRuntimeTest(unittest.TestCase):
         for value in invalid:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_completion(value, 0)
+
+    def test_heartbeat_or_unverified_artifacts_cannot_complete(self):
+        for value in (
+            completion(heartbeat_only=True),
+            completion(repository_artifacts_verified=False),
+            completion(github_artifacts_verified=False),
+        ):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_completion(value, 0)
+
+        with self.assertRaises(ValueError):
+            validate_completion(completion(workflow_phase="specification"), 0)
 
 
 if __name__ == "__main__":

@@ -11,5 +11,16 @@
       "branch": "chore/issue-77-openspec-workflow",
       "worker": "Codex"
     }
+  ],
+  "project_templates": [
+    {
+      "repository": "kingkill85/snap-flow",
+      "project": "snap-flow",
+      "session": "snapflow-dev",
+      "repository_path": "/workspace/snap-flow",
+      "worktree_root": "/workspace/snap-flow",
+      "branch_prefix": "feature",
+      "worker": "Codex"
+    }
   ]
 }

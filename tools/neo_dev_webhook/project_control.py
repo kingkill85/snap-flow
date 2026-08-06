@@ -19,6 +19,7 @@ CODEX_RUNTIME_PATH = "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runti
 CODEX_BIN_PATH = "/usr/local/bin/codex"
 CODEX_APP_SERVER_ARGV = (CODEX_BIN_PATH, "app-server", "--stdio")
 REPOSITORY_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
+SAFE_COMPONENT_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 CONTINUE_PROMPT = "Continue the governed Issue work and address the latest trusted operator finding."
 PHASES = frozenset({
     "never_started", "starting", "active", "correctable", "resuming",
@@ -167,8 +168,9 @@ class SubprocessExecutor:
 
 
 class Registry:
-    def __init__(self, records: Iterable[GovernedTarget]):
+    def __init__(self, records: Iterable[GovernedTarget], templates: Iterable[dict] = ()):
         self.records = tuple(records)
+        self.templates = tuple(templates)
 
     @classmethod
     def load(cls, path: pathlib.Path) -> "Registry":
@@ -176,20 +178,63 @@ class Registry:
         if not isinstance(document, dict) or document.get("version") != VERSION:
             raise ValueError("unsupported controller registry version")
         records = document.get("targets")
-        if not isinstance(records, list):
+        templates = document.get("project_templates", [])
+        if not isinstance(records, list) or not isinstance(templates, list):
             raise ValueError("invalid controller registry")
         try:
-            return cls(GovernedTarget(**record) for record in records)
+            return cls((GovernedTarget(**record) for record in records), templates)
         except (TypeError, KeyError) as error:
             raise ValueError("invalid controller registry record") from error
 
     def resolve(self, repository: str, issue_number: int) -> GovernedTarget:
         matches = [record for record in self.records
                    if record.repository == repository and record.issue_number == issue_number]
-        if len(matches) != 1:
+        if len(matches) > 1:
             raise RuntimeError("governed identity must resolve to exactly one record")
-        matches[0].validate()
-        return matches[0]
+        if len(matches) == 1:
+            matches[0].validate()
+            return matches[0]
+        templates = [item for item in self.templates if item.get("repository") == repository]
+        if len(templates) != 1:
+            raise RuntimeError("governed identity must resolve to exactly one template")
+        template = templates[0]
+        allowed = {"repository", "project", "session", "repository_path", "worktree_root",
+                   "branch_prefix", "worker"}
+        if set(template) != allowed:
+            raise ValueError("invalid project template fields")
+        project = template["project"]
+        session = template["session"]
+        root = template["worktree_root"]
+        repository_path = template["repository_path"]
+        prefix = template["branch_prefix"]
+        worker = template["worker"]
+        for value in (project, session, prefix):
+            if not isinstance(value, str) or SAFE_COMPONENT_PATTERN.fullmatch(value) is None:
+                raise ValueError("unsafe project template component")
+        if (not isinstance(repository_path, str) or not repository_path.startswith("/workspace/")
+                or pathlib.PurePosixPath(repository_path).name != repository_path.removeprefix("/workspace/")
+                or not isinstance(root, str) or not root.startswith("/workspace/")
+                or pathlib.PurePosixPath(root).name != root.removeprefix("/workspace/")
+                or worker != "Codex"):
+            raise ValueError("unsafe project template")
+        if repository_path != f"/workspace/{project}" or root != repository_path:
+            raise ValueError("project template paths must match the fixed project root")
+        target = GovernedTarget(
+            repository=repository,
+            issue_number=issue_number,
+            project=project,
+            session=session,
+            window=f"issue-{issue_number}",
+            worktree=f"/workspace/{root.removeprefix('/workspace/')}-issue-{issue_number}",
+            branch=f"{prefix}/issue-{issue_number}",
+            worker=worker,
+        )
+        target.validate()
+        coordinates = ((item.window, item.worktree, item.branch) for item in self.records)
+        if any(target.window in values or target.worktree in values or target.branch in values
+               for values in coordinates):
+            raise RuntimeError("derived governed target collides with an explicit record")
+        return target
 
 
 class ResolutionStore(Protocol):
@@ -458,6 +503,38 @@ class Controller:
         if branch != target.branch:
             raise RuntimeError("worktree branch does not match governed target")
 
+    def _prepare_issue_target(self, target: GovernedTarget) -> None:
+        """Create a generic issue worktree once, from the freshly fetched main ref."""
+        if target == ISSUE_77_TARGET:
+            return
+        repository_path = f"/workspace/{target.project}"
+        self.executor.run(("git", "-C", repository_path, "fetch", "--prune",
+                           "origin", "main"), timeout=60.0)
+        worktrees = self.executor.run(
+            ("git", "-C", repository_path, "worktree", "list", "--porcelain"),
+            timeout=10.0,
+        )
+        paths = [line.removeprefix("worktree ") for line in worktrees.splitlines()
+                 if line.startswith("worktree ")]
+        if target.worktree in paths:
+            self._verify_worktree_branch(target)
+            return
+        branch_ref = self.executor.run(
+            ("git", "-C", repository_path, "for-each-ref", "--format=%(refname)",
+             f"refs/heads/{target.branch}"), timeout=10.0,
+        ).strip()
+        if branch_ref:
+            self.executor.run(
+                ("git", "-C", repository_path, "worktree", "add",
+                 target.worktree, target.branch), timeout=60.0,
+            )
+        else:
+            self.executor.run(
+                ("git", "-C", repository_path, "worktree", "add", "-b",
+                 target.branch, target.worktree, "origin/main"), timeout=60.0,
+            )
+        self._verify_worktree_branch(target)
+
     def execute(self, operation: str, repository: str, issue_number: int,
                 idempotency_key: str) -> dict:
         state = self._resolve(operation, repository, issue_number, idempotency_key)
@@ -465,6 +542,7 @@ class Controller:
         if operation == "start":
             if state.phase != "never_started":
                 raise RuntimeError("start cannot replace or duplicate persisted Codex work")
+            self._prepare_issue_target(target)
             windows = self._windows(target)
             if windows.count(target.window) > 1:
                 raise RuntimeError("governed tmux window is ambiguous")
@@ -498,7 +576,10 @@ class Controller:
                 self.store.save(idempotency_key, state, updated)
                 state = updated
             status = "steered"
-        elif state.phase == "exited_resumable":
+        elif state.phase == "exited_resumable" or (
+            state.phase == "semantic_blocked" and state.terminal is not None
+            and state.terminal.resumable
+        ):
             self._preflight_inactive_pane(target)
             updated = replace(state, phase="resuming", terminal=None)
             self.store.save(idempotency_key, state, updated)

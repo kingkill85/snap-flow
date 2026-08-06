@@ -21,23 +21,33 @@ from .project_control import (
 )
 
 RUNTIME_VERSION = 1
-INITIAL_PROMPT = "Continue the governed Issue work to a verified repository-side result."
+def initial_prompt(repository: str, issue_number: int) -> str:
+    return f"""You are the sole Codex worker for {repository} Issue #{issue_number} in the initial specification phase. Read the live GitHub Issue, repository AGENTS.md, openspec/config.yaml, and all applicable OpenSpec instructions before acting. Create ONLY the issue-scoped OpenSpec proposal, design, delta specifications, and tasks; create/update the Draft PR; commit and push those planning artifacts; and publish immutable GitHub blob links pinned to the resulting full 40-character commit SHA with the exact next command `/approve-spec <full-sha>`. Do not implement product or orchestration behavior, run deployment, merge, or bypass approval. Verify repository and GitHub artifacts directly. Heartbeats are liveness only and cannot count as progress or completion. If any prerequisite or verification is missing, fail fast with one concrete blocker. Approval/acceptance waits use `correctable` with `resumable: true`; `success` is reserved for verified merge-finalization. End with the required structured completion document."""
 COMPLETION_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["semantic_outcome", "resumable", "summary"],
+    "required": ["semantic_outcome", "resumable", "summary", "workflow_phase",
+                 "repository_artifacts_verified", "github_artifacts_verified",
+                 "heartbeat_only"],
     "properties": {
         "semantic_outcome": {
             "enum": ["success", "correctable", "blocked", "crashed", "invalid"],
         },
         "resumable": {"type": "boolean"},
         "summary": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "workflow_phase": {"enum": ["specification", "implementation", "review",
+                                      "archive", "merge-finalization", "blocked"]},
+        "repository_artifacts_verified": {"type": "boolean"},
+        "github_artifacts_verified": {"type": "boolean"},
+        "heartbeat_only": {"type": "boolean"},
     },
 }
 
 
 def validate_completion(value: object, exit_code: int) -> dict:
-    if not isinstance(value, dict) or set(value) != {"semantic_outcome", "resumable", "summary"}:
+    required = {"semantic_outcome", "resumable", "summary", "workflow_phase",
+                "repository_artifacts_verified", "github_artifacts_verified", "heartbeat_only"}
+    if not isinstance(value, dict) or set(value) != required:
         raise ValueError("completion does not match the trusted schema")
     outcome = value["semantic_outcome"]
     if outcome not in {"success", "correctable", "blocked", "crashed", "invalid"}:
@@ -47,6 +57,19 @@ def validate_completion(value: object, exit_code: int) -> dict:
     summary = value["summary"]
     if not isinstance(summary, str) or not summary or len(summary) > 4096:
         raise ValueError("completion summary is invalid")
+    if value["workflow_phase"] not in {"specification", "implementation", "review", "archive",
+                                       "merge-finalization", "blocked"}:
+        raise ValueError("completion workflow phase is invalid")
+    if any(type(value[name]) is not bool for name in (
+        "repository_artifacts_verified", "github_artifacts_verified", "heartbeat_only",
+    )):
+        raise ValueError("completion verification flags are invalid")
+    if outcome == "success" and (not value["repository_artifacts_verified"]
+                                  or not value["github_artifacts_verified"]
+                                  or value["heartbeat_only"]):
+        raise ValueError("semantic success requires repository and GitHub artifact verification")
+    if outcome == "success" and value["workflow_phase"] != "merge-finalization":
+        raise ValueError("semantic success is reserved for merge finalization")
     if outcome == "success" and exit_code != 0:
         raise ValueError("semantic success requires process exit code zero")
     return value
@@ -167,9 +190,18 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
         raise RuntimeError("resumed Codex session identity drifted")
     controller.observe_session(idempotency_key, observed_session)
 
+    target = store.load(idempotency_key).target
+    prompt = initial_prompt(target.repository, target.issue_number) if operation == "start" else (
+        f"Continue the same governed {target.repository} Issue #{target.issue_number} workflow and "
+        "same Codex session. Read the live Issue command and artifacts, enforce the current gate, "
+        "and fail fast with one concrete blocker if prerequisites are missing. /approve-spec permits "
+        "implementation only for the matching full SHA; /accept permits sync/strict validation/archive "
+        "but not merge; /merge is a separate authorization for merge, closure, and cleanup. Heartbeats "
+        "are liveness only and never progress."
+    )
     turn = server.request("turn/start", {
         "threadId": observed_session,
-        "input": [{"type": "text", "text": INITIAL_PROMPT}],
+        "input": [{"type": "text", "text": prompt}],
         "outputSchema": COMPLETION_SCHEMA,
     })
     turn_data = turn.get("turn")
@@ -208,7 +240,11 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
                     completion = validate_completion(json.loads("".join(message_parts)), exit_code)
                 except (json.JSONDecodeError, ValueError):
                     completion = {"semantic_outcome": "invalid", "resumable": True,
-                                  "summary": "Invalid structured completion"}
+                                  "summary": "Invalid structured completion",
+                                  "workflow_phase": "blocked",
+                                  "repository_artifacts_verified": False,
+                                  "github_artifacts_verified": False,
+                                  "heartbeat_only": False}
                 controller.observe_terminal(
                     idempotency_key, exit_code, completion["semantic_outcome"],
                     completion["resumable"],

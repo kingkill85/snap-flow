@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import threading
@@ -17,6 +18,7 @@ REPOSITORY = "kingkill85/snap-flow"
 ACTOR_ID = 11455872
 ACTOR_LOGIN = "kingkill85"
 MARKER = "<!-- neo-dev -->"
+APPROVE_SPEC_PATTERN = re.compile(r"^/approve-spec [0-9a-f]{40}$")
 
 
 def has_standalone_marker(body: str) -> bool:
@@ -64,12 +66,13 @@ class Store:
               claim_token TEXT, task_id TEXT, last_error TEXT,
               processed_wakeup_id INTEGER,
               created_at REAL NOT NULL, updated_at REAL NOT NULL);
+            DROP INDEX IF EXISTS one_live_work_per_issue;
             CREATE UNIQUE INDEX IF NOT EXISTS one_live_work_per_issue
-              ON active_work(repository, issue_number) WHERE status IN ('queued','processing');
+              ON active_work(repository, issue_number) WHERE status IN ('queued','processing','waiting');
             CREATE TABLE IF NOT EXISTS wakeups(
               id INTEGER PRIMARY KEY, delivery_id TEXT NOT NULL UNIQUE REFERENCES deliveries,
               work_id INTEGER NOT NULL REFERENCES active_work, event TEXT NOT NULL,
-              action TEXT NOT NULL, comment_id INTEGER, created_at REAL NOT NULL);
+              action TEXT NOT NULL, comment_id INTEGER, command TEXT, created_at REAL NOT NULL);
         """))
         columns = {row["name"] for row in retry_database_lock(
             lambda: self.db.execute("PRAGMA table_info(active_work)")
@@ -78,6 +81,11 @@ class Store:
             retry_database_lock(lambda: self.db.execute("ALTER TABLE active_work ADD COLUMN claim_token TEXT"))
         if "processed_wakeup_id" not in columns:
             retry_database_lock(lambda: self.db.execute("ALTER TABLE active_work ADD COLUMN processed_wakeup_id INTEGER"))
+        wakeup_columns = {row["name"] for row in retry_database_lock(
+            lambda: self.db.execute("PRAGMA table_info(wakeups)")
+        )}
+        if "command" not in wakeup_columns:
+            retry_database_lock(lambda: self.db.execute("ALTER TABLE wakeups ADD COLUMN command TEXT"))
 
     def close(self):
         self.db.close()
@@ -117,7 +125,7 @@ class Store:
                     return "duplicate"
                 row = self.db.execute(
                     "SELECT id FROM active_work WHERE repository=? AND issue_number=? "
-                    "AND status IN ('queued','processing')",
+                    "AND status IN ('queued','processing','waiting')",
                     (record["repository"], record["issue_number"]),
                 ).fetchone()
                 now = time.time()
@@ -130,12 +138,40 @@ class Store:
                     work_id = cursor.lastrowid
                 else:
                     work_id = row["id"]
+                    self.db.execute(
+                        "UPDATE active_work SET status='queued',updated_at=? "
+                        "WHERE id=? AND status='waiting'", (now, work_id),
+                    )
                 self.db.execute(
-                    "INSERT INTO wakeups(delivery_id,work_id,event,action,comment_id,created_at) VALUES (?,?,?,?,?,?)",
-                    (record["delivery_id"], work_id, record["event"], record["action"], record["comment_id"], now),
+                    "INSERT INTO wakeups(delivery_id,work_id,event,action,comment_id,command,created_at) VALUES (?,?,?,?,?,?,?)",
+                    (record["delivery_id"], work_id, record["event"], record["action"],
+                     record["comment_id"], record.get("command"), now),
                 )
                 self.db.execute("COMMIT")
                 return "accepted"
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+
+    def finalize(self, repository: str, issue_number: int, delivery_id: str) -> str:
+        """Release project concurrency only after the trusted Issue closure event."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                try:
+                    self.db.execute("INSERT INTO deliveries VALUES (?,?)", (delivery_id, time.time()))
+                except sqlite3.IntegrityError:
+                    self.db.execute("COMMIT")
+                    return "duplicate"
+                changed = self.db.execute(
+                    "UPDATE active_work SET status='completed',lease_until=NULL,claim_token=NULL,"
+                    "updated_at=? WHERE repository=? AND issue_number=? AND status='waiting'",
+                    (time.time(), repository, issue_number),
+                ).rowcount
+                if changed != 1:
+                    raise RuntimeError("Issue closure does not match one waiting workflow")
+                self.db.execute("COMMIT")
+                return "finalized"
             except BaseException:
                 self.db.execute("ROLLBACK")
                 raise
@@ -165,8 +201,11 @@ class Store:
                     self._promote_late_wakeups(work, now)
                 row = self.db.execute(
                     "SELECT * FROM active_work WHERE attempts<? AND (status='queued' OR "
-                    "(status='processing' AND lease_until<=?)) ORDER BY id LIMIT 1",
-                    (max_attempts, now),
+                    "(status='processing' AND lease_until<=?)) AND NOT EXISTS ("
+                    "SELECT 1 FROM active_work blocker WHERE blocker.status='waiting' OR "
+                    "(blocker.status='processing' AND blocker.lease_until>?)"
+                    ") ORDER BY id LIMIT 1",
+                    (max_attempts, now, now),
                 ).fetchone()
                 if row is None:
                     self.db.execute("COMMIT")
@@ -205,29 +244,18 @@ class Store:
                 ).fetchone()
                 if work is None:
                     raise RuntimeError("work is not processing")
-                late_wakeups = list(self.db.execute(
-                    "SELECT * FROM wakeups WHERE work_id=? AND id>? ORDER BY id",
-                    (work_id, work["processed_wakeup_id"]),
-                ))
+                late_wakeup = self.db.execute(
+                    "SELECT 1 FROM wakeups WHERE work_id=? AND id>? LIMIT 1",
+                    (work_id, work["processed_wakeup_id"] or 0),
+                ).fetchone() is not None
                 changed = self.db.execute(
-                    "UPDATE active_work SET status='completed',task_id=?,lease_until=NULL,claim_token=NULL,last_error=NULL,updated_at=? "
+                    "UPDATE active_work SET status=?,task_id=?,lease_until=NULL,claim_token=NULL,last_error=NULL,updated_at=? "
                     "WHERE id=? AND status='processing' AND claim_token=?",
-                    (task_id, completed_at, work_id, claim_token),
+                    ("queued" if late_wakeup else "waiting", task_id, completed_at,
+                     work_id, claim_token),
                 ).rowcount
                 if changed != 1:
                     raise RuntimeError("work is not processing")
-                if late_wakeups:
-                    first_delivery = late_wakeups[0]["delivery_id"]
-                    successor = self.db.execute(
-                        "INSERT INTO active_work(repository,issue_number,idempotency_key,status,created_at,updated_at) "
-                        "VALUES (?,?,?,'queued',?,?)",
-                        (work["repository"], work["issue_number"], first_delivery,
-                         completed_at, completed_at),
-                    ).lastrowid
-                    self.db.execute(
-                        "UPDATE wakeups SET work_id=? WHERE work_id=? AND id>?",
-                        (successor, work_id, work["processed_wakeup_id"]),
-                    )
                 self.db.execute("COMMIT")
             except BaseException:
                 self.db.execute("ROLLBACK")
@@ -331,9 +359,12 @@ class Receiver:
             if valid is not None:
                 return valid
             issue = data["issue"]
+            action = data["action"]
+            if event == "issues" and action == "closed":
+                status = self.store.finalize(REPOSITORY, issue["number"], delivery)
+                return (202 if status == "finalized" else 200), status
             if issue["state"] != "open" or "neo-dev" not in [x["name"] for x in issue["labels"]]:
                 return 202, "ignored"
-            action = data["action"]
             if event == "issues":
                 if action not in {"opened", "reopened", "edited", "labeled"}:
                     return 202, "ignored"
@@ -348,7 +379,18 @@ class Receiver:
                 if len(self.timestamps) >= self.rate_limit:
                     return 429, "rate_limited"
                 self.timestamps.append(now)
-            status = self.store.accept({"delivery_id": delivery, "event": event, "action": action, "repository": REPOSITORY, "issue_number": issue["number"], "comment_id": data.get("comment", {}).get("id")})
+            command = None
+            if event == "issue_comment":
+                body = data["comment"]["body"].strip()
+                if APPROVE_SPEC_PATTERN.fullmatch(body):
+                    command = body
+                elif body in {"/accept", "/merge"}:
+                    command = body
+                else:
+                    command = "finding"
+            status = self.store.accept({"delivery_id": delivery, "event": event,
+                "action": action, "repository": REPOSITORY, "issue_number": issue["number"],
+                "comment_id": data.get("comment", {}).get("id"), "command": command})
             return (202 if status == "accepted" else 200), status
         except (KeyError, TypeError, ValueError, sqlite3.Error):
             return 400, "invalid_payload"
@@ -404,18 +446,30 @@ class TaskRunner:
             raise ValueError("idempotency_key must be a non-empty string")
         idempotency_key = idempotency_key.strip()
         self._validate_contract()
-        description = (
-            f"Process SnapFlow issue #{work['issue_number']} with "
-            f"{len(work['wakeups'])} durable wakeup(s). This card is controller-only; "
-            "its workspace is not an implementation target. Before project work, "
-            "invoke neo-dev-project-control with only preflight/start/resume, "
-            f"--repository {REPOSITORY}, --issue-number {work['issue_number']}, and "
-            f"--idempotency-key {idempotency_key}. Do not run project, shell, SSH, "
-            "tmux, Git, Codex, OpenSpec, package, lint, or test commands directly. "
-            "Use the controller's authenticated "
-            "/opt/data/bin/gh for GitHub reads and writes when required. Inspect "
-            "the latest Issue comments before acting and preserve every approval gate."
-        )
+        latest = work["wakeups"][-1] if work["wakeups"] else {}
+        command = latest.get("command")
+        phase_command = "approve-spec" if isinstance(command, str) and command.startswith(
+            "/approve-spec ") else command
+        phase = {None: "specification", "approve-spec": "implementation",
+                 "/accept": "archive", "/merge": "merge-finalization",
+                 "finding": "review-correction"}.get(command, "blocked-invalid-phase")
+        if phase_command == "approve-spec":
+            phase = "implementation"
+        operation = "start" if work.get("task_id") is None else "resume"
+        adapter = (f"/usr/local/bin/neo-dev-project-control {operation} --repository {REPOSITORY} "
+                   f"--issue-number {work['issue_number']} --idempotency-key {idempotency_key}")
+        description = f"""SnapFlow governed Issue workflow (self-contained controller task)
+Repository: {REPOSITORY}
+Issue: #{work['issue_number']}
+Durable workflow identity: {idempotency_key}
+Wakeups included: {len(work['wakeups'])}; latest event/action/command: {latest.get('event')}/{latest.get('action')}/{command or 'neo-dev-label'}
+Current phase: {phase}
+Controller workspace: dir:/opt/data/profiles/dev (read /opt/data/profiles/dev/projects/snapflow.md before any action).
+Only project command permitted: `{adapter}`
+Use the controller GitHub integration to read the live Issue and verify command authorship/artifacts. Never run shell, SSH, tmux, Git, Codex, OpenSpec, package, lint, or test commands directly.
+Initial specification phase must create ONLY OpenSpec proposal/design/delta specs/tasks, an issue branch/worktree, a Draft PR, immutable full-SHA artifact links, and request exactly `/approve-spec <full-sha>`; implementation is forbidden.
+Implementation requires the matching trusted full-SHA approval. Review requires independent code/test review and UI review when applicable. Acceptance does not authorize merge. Archive phase must sync delta specs, validate and archive before requesting `/merge`. Merge-finalization requires separately verified merge authorization, then merge, close, and clean up the issue worker/worktree/branch state.
+Heartbeats are liveness only and never progress. Expected evidence is structured controller state plus repository artifacts and GitHub verification. If any prerequisite is absent or ambiguous, stop immediately and publish one concrete blocker; do not heartbeat-wait or claim completion. Reuse this task, idempotency identity, tmux window, and Codex session for every continuation; never create a duplicate worker/session."""
         result = subprocess.run(
             [self.python, self.script, f"SnapFlow issue #{work['issue_number']}",
              "--body", description, "--max-runtime", self.max_runtime,

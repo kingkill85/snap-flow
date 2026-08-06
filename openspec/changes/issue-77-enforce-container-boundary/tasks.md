@@ -1,26 +1,26 @@
-## 1. Approval gate and runner contract
+## 1. Emergency authorization and failure reproduction
 
-- [ ] 1.1 Record the authorized human approver's exact `/approve-spec <full-sha>` for this active change before editing runtime behavior
-- [x] 1.2 Before declaring this packet approval-ready, inspect the repository's concrete runner/process interface and record the result: `TaskRunner` invokes `task.py` with only title/body/max-runtime/workspace/idempotency arguments, so it cannot enforce project/tmux/worktree/branch/worker coordinates; define the separate controller adapter API, registry, persistence, injected process boundary, and enforcement point in this packet without probing SSH or deferring an assumed interface until apply
+- [x] 1.1 Record the operator's explicit circular-bootstrap repair authorization and its no-deploy/no-merge/no-secret/no-Issue-13-trigger boundaries
+- [x] 1.2 Confirm the production failure surfaces: generic task body/workspace, Issue-77-only registry/controller, missing host adapter, pre-existing worktree assumption, generic prompt, and absent live deployment artifacts
 
-## 2. Strict test-first execution boundary
+## 2. Generic secure lifecycle implementation
 
-- [ ] 2.1 RED: add focused tests proving controller card `dir:/opt/data/profiles/dev` alone does not establish the exact implementation target and that unsupported `ssh:snapflow-dev` is never selected
-- [ ] 2.2 RED: add focused tests for `neo-dev-project-control <preflight|start|resume> --repository --issue-number --idempotency-key`, injected registry/persistence/process boundaries, exact Issue 77 tmux/Codex argv, and fail-closed rejection before subprocess of unknown/missing/conflicting/mismatched records, coordinate overrides/derivation, `snapflow-dev:0`, alternate targets, and any `devsnapflow-worker`
-- [ ] 2.3 GREEN: retain `dir:/opt/data/profiles/dev` only for the controller orchestrator card; implement the controller-owned repo+issue allowlist, immutable persisted resolution keyed with the canonical idempotency key, and argv-only adapter preflight/start/resume that launches/controls the sole Codex worker in the resolved tmux window with bounded timeouts and no shell interpolation
-- [ ] 2.4 REFACTOR: remove unsupported SSH-workspace/advisory routing, prohibit in-container SSH probes, and keep task prose only as defense-in-depth guidance for the controller GitHub integration split
-- [ ] 2.5 Install the pinned non-secret adapter and Issue 77 registry/policy on the controller, make it the Neo Dev card's sole project-command capability, and verify version/ownership/mode; do not alter existing SSH registration, host key, client identity, secrets, ingress, dispatcher, or container provisioning
+- [x] 2.1 RED/GREEN: cover Issue 13 and another integer, safe deterministic coordinates, collision rejection, and explicit closed Issue 77 compatibility
+- [x] 2.2 RED/GREEN: fetch `origin/main`, idempotently create or verify the issue branch/worktree, never modify main, and create one issue tmux window without duplicate Codex work
+- [x] 2.3 RED/GREEN: add the fixed host-side SSH adapter with fixed host/user/identity/known-hosts, strict host checking, `shell=False`, strict argv, and sole remote-controller execution
+- [x] 2.4 RED/GREEN: make task bodies self-contained, fixed to `dir:/opt/data/profiles/dev`, phase-specific, fail-fast, heartbeat-independent, and persistent across command wakeups
+- [x] 2.5 RED/GREEN: make the initial Codex prompt Issue-specific and spec-only and require structured repository/GitHub verification for completion
+- [x] 2.6 Preserve one durable workflow identity/task/session with project concurrency one so later Issues remain queued and isolated
 
-## 3. Documentation and verification
+## 3. Installation, documentation, and verification
 
-- [ ] 3.1 Update `docs/github-webhook-handoff.md` with the controller-card command, adapter API, controller-owned governed registry semantics, exact non-sensitive Issue 77 record, fail-closed behavior, sole-capability policy, and controller GitHub exception without private endpoint, port, host-key, or identity-path disclosure
-- [ ] 3.2 Run strict OpenSpec validation and the focused webhook/archive suite; record exact commands and outcomes in the Issue #77 evidence document
-- [ ] 3.3 Run backend/frontend lint and tests required by repository policy, classify no new failures, and update evidence without describing a baseline failure as green
-- [ ] 3.4 Obtain independent code and test reviews, resolve every finding, and repeat affected checks; record that Playwright review is not applicable because no UI behavior changes
-- [ ] 3.5 Publish immutable full-SHA implementation/review evidence and request `/accept` separately from `/merge`
+- [x] 3.1 Supply declarative receiver/consumer systemd units, host adapter/profile installation manifest, and container registry/controller artifacts without secrets or privilege expansion
+- [x] 3.2 Update the runbook to cover the exact deployment procedure and reviewed external profile source without directly editing the live external profile
+- [x] 3.3 Run the complete focused suite, strict OpenSpec validation, required backend/frontend lint/tests, and review the diff for security/correctness; record the unchanged backend Excel-sync baseline failure accurately
+- [x] 3.4 Commit conventionally and push `fix/generic-neo-dev-orchestrator`; leave Draft PR creation to authenticated host-side Neo
 
-## 4. Post-acceptance specification lifecycle
+## 4. Separately gated live lifecycle
 
-- [ ] 4.1 After `/accept`, sync both active delta specs into canonical specs using the OpenSpec sync workflow and verify exact synchronization with the archive guard
-- [ ] 4.2 Strictly validate and archive `issue-77-enforce-container-boundary` without editing the prior archived change
-- [ ] 4.3 Publish final full-SHA sync/archive evidence and request the separately authorized `/merge` decision; do not merge, release, deploy, change secrets/access, or perform destructive operations without that authorization
+- [ ] 4.1 Deploy/restart receiver and consumer and install the adapters/profile only after separate deployment authorization
+- [ ] 4.2 Run the Issue #13 lifecycle only after separate trigger authorization
+- [ ] 4.3 Require `/accept`, sync/archive, and separate `/merge` before merge, closure, or cleanup

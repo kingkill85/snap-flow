@@ -138,6 +138,13 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(self.send(delivery=delivery), (200, "duplicate"))
         self.assertEqual(self.store.count("wakeups"), 1)
 
+    def test_approval_command_and_full_sha_are_persisted_for_phase_continuation(self):
+        command = "/approve-spec " + "a" * 40
+        data = payload(event="issue_comment", body=command)
+        self.assertEqual(self.send(data, event="issue_comment"), (202, "accepted"))
+        claimed = self.store.claim()
+        self.assertEqual(claimed["wakeups"][0]["command"], command)
+
     def test_raw_byte_hmac_and_canonical_delivery_uuid(self):
         raw, headers = request("secret", payload())
         headers["X-Hub-Signature-256"] = hmac.new(b"secret", raw + b" ", hashlib.sha256).hexdigest()
@@ -247,7 +254,7 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(work["attempts"], 1)
         self.assertTrue(consumer.run_one(now=102))
         work = self.store.get_active(REPOSITORY, 77)
-        self.assertEqual(work["status"], "completed")
+        self.assertEqual(work["status"], "waiting")
         self.assertEqual(work["task_id"], f"task-{first_headers['X-GitHub-Delivery']}")
         self.assertEqual([call[1] for call in runner.calls], [first_headers["X-GitHub-Delivery"]] * 2)
 
@@ -260,7 +267,7 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(recovered["id"], claimed["id"])
         self.assertEqual(recovered["attempts"], 2)
 
-    def test_late_wakeup_after_claim_becomes_successor_work(self):
+    def test_late_wakeup_after_claim_continues_same_persistent_work(self):
         first_delivery = str(uuid.uuid4())
         late_delivery = str(uuid.uuid4())
         self.send(delivery=first_delivery)
@@ -271,9 +278,10 @@ class AutomationTest(unittest.TestCase):
 
         successor = self.store.claim(now=12, lease_seconds=30, max_attempts=5)
         self.assertIsNotNone(successor)
-        self.assertNotEqual(successor["id"], claimed["id"])
-        self.assertEqual(successor["idempotency_key"], late_delivery)
-        self.assertEqual([item["delivery_id"] for item in successor["wakeups"]], [late_delivery])
+        self.assertEqual(successor["id"], claimed["id"])
+        self.assertEqual(successor["idempotency_key"], first_delivery)
+        self.assertEqual([item["delivery_id"] for item in successor["wakeups"]],
+                         [first_delivery, late_delivery])
         live_count = self.store.db.execute(
             "SELECT count(*) FROM active_work WHERE repository=? AND issue_number=? "
             "AND status IN ('queued','processing')", (REPOSITORY, 77),
@@ -334,6 +342,20 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(results.count((202, "accepted")), 8)
         self.assertEqual(self.store.count("active_work"), 1)
         self.assertEqual(self.store.count("wakeups"), 8)
+
+    def test_project_concurrency_one_queues_later_issue_until_trusted_closure(self):
+        first = str(uuid.uuid4())
+        second = str(uuid.uuid4())
+        for issue_number, delivery in ((13, first), (42, second)):
+            self.store.accept({"delivery_id": delivery, "event": "issues", "action": "labeled",
+                               "repository": REPOSITORY, "issue_number": issue_number,
+                               "comment_id": None, "command": None})
+        claimed = self.store.claim(now=10)
+        self.assertEqual(claimed["issue_number"], 13)
+        self.store.complete(claimed["id"], claimed["claim_token"], "task-13", now=11)
+        self.assertIsNone(self.store.claim(now=12))
+        self.assertEqual(self.store.finalize(REPOSITORY, 13, str(uuid.uuid4())), "finalized")
+        self.assertEqual(self.store.claim(now=13)["issue_number"], 42)
 
     def test_simultaneous_process_initialization_of_fresh_database(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -400,24 +422,19 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(task_id, "kanban-77")
         self.assertEqual(run.call_args_list[0].args[0], ["python3", "/test/task.py", "--help"])
         argv = run.call_args_list[1].args[0]
-        self.assertEqual(argv, [
-            "python3", "/test/task.py", "SnapFlow issue #77",
-            "--body", (
-                "Process SnapFlow issue #77 with 1 durable wakeup(s). This card is "
-                "controller-only; its workspace is not an implementation target. "
-                "Before project work, invoke neo-dev-project-control with only "
-                "preflight/start/resume, --repository kingkill85/snap-flow, "
-                "--issue-number 77, and --idempotency-key delivery-key. Do not run "
-                "project, shell, SSH, tmux, Git, Codex, OpenSpec, package, lint, or "
-                "test commands directly. "
-                "Use the controller's authenticated /opt/data/bin/gh for GitHub "
-                "reads and writes when required. Inspect the latest Issue comments "
-                "before acting and preserve every approval gate."
-            ),
-            "--max-runtime", "2h",
-            "--workspace", "dir:/opt/data/profiles/dev",
-            "--idempotency-key", "delivery-key",
-        ])
+        self.assertEqual(argv[:4], ["python3", "/test/task.py", "SnapFlow issue #77", "--body"])
+        body = argv[4]
+        self.assertIn("Repository: kingkill85/snap-flow", body)
+        self.assertIn("Issue: #77", body)
+        self.assertIn("Current phase: specification", body)
+        self.assertIn("/opt/data/profiles/dev/projects/snapflow.md", body)
+        self.assertIn("ONLY OpenSpec proposal/design/delta specs/tasks", body)
+        self.assertIn("/approve-spec <full-sha>", body)
+        self.assertIn("Heartbeats are liveness only", body)
+        self.assertIn("--issue-number 77 --idempotency-key delivery-key", body)
+        self.assertEqual(argv[-6:], ["--max-runtime", "2h", "--workspace",
+                                     "dir:/opt/data/profiles/dev", "--idempotency-key",
+                                     "delivery-key"])
         self.assertNotIn("shell", run.call_args.kwargs)
         self.assertIn("neo-dev-project-control", argv[argv.index("--body") + 1])
         self.assertNotIn("ssh:snapflow-dev", argv)

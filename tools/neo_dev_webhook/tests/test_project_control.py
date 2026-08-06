@@ -405,7 +405,8 @@ class ProjectControlTest(unittest.TestCase):
         policy = json.loads((controller_dir / "card-capability-policy.v1.json").read_text(encoding="utf-8"))
         manifest = json.loads((controller_dir / "install-manifest.v1.json").read_text(encoding="utf-8"))
         state_schema = json.loads((controller_dir / "state-schema.v1.json").read_text(encoding="utf-8"))
-        self.assertEqual(registry, {"version": 1, "targets": [TARGET.as_dict()]})
+        self.assertEqual(registry["targets"], [TARGET.as_dict()])
+        self.assertEqual(registry["project_templates"][0]["repository"], REPOSITORY)
         self.assertEqual(policy["project_command_capabilities"]["allow"],
                          ["/usr/local/bin/neo-dev-project-control"])
         self.assertEqual(manifest["version"], 1)
