@@ -1,0 +1,64 @@
+schema: spec-driven
+
+context: |
+  SnapFlow uses Deno/Hono/SQLite in the backend and React/Vite in the frontend.
+  Every change maps one-to-one to a GitHub Issue, OpenSpec change, non-main branch,
+  worktree, and Draft PR. Artifact links must be immutable GitHub blob URLs pinned
+  to a full commit SHA. OpenSpec telemetry remains disabled with OPENSPEC_TELEMETRY=0.
+  The neo-dev label means eligible development handoff; needs-approval means the
+  workflow is waiting for Michael's decision relayed through Neo. Automated issue
+  comments contain <!-- snapflow:neo-webhook --> to prevent webhook loops.
+  Never add public ingress or change Hermes/Traefik as part of normal changes.
+
+rules:
+  proposal:
+    - Identify the linked GitHub Issue and the one-to-one branch/worktree/Draft PR scope.
+    - State approval gates and explicitly list privileged operations that remain out of scope.
+  design:
+    - Include fail-closed security boundaries for externally supplied input.
+    - Record whether Playwright UI review applies.
+  tasks:
+    - Include strict RED/GREEN cycles for behavior changes.
+    - Include OpenSpec verification, relevant tests, independent code/test review, and Playwright review when UI changes.
+
+operations:
+  apply:
+    guidance:
+      - Require Michael's /approve-spec <full-commit-sha> relayed through Neo before implementation.
+      - Treat any specification artifact change as invalidating approval and require reapproval.
+      - Never commit directly to main or perform merge, release, deploy, secret/access, or destructive operations.
+  archive:
+    guidance:
+      - Sync and archive before requesting the separate /merge approval.
+      - /accept does not authorize /merge; only Michael approval relayed through Neo does.
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
