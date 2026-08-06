@@ -53,3 +53,6 @@ Dockerfile
 docker-compose.yml
 deploy.sh
 .superpowers/
+# Python
+__pycache__/
+*.py[cod]
