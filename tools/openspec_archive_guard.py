@@ -6,7 +6,7 @@ import re
 import sys
 
 OPERATIONS = {"ADDED", "MODIFIED", "REMOVED", "RENAMED"}
-OPERATION_HEADING_RE = re.compile(r"^## ([A-Z]+) Requirements\s*$", re.M)
+OPERATION_HEADING_RE = re.compile(r"^##\s+(.+?)\s+Requirements\s*$", re.M | re.I)
 REQUIREMENT_BLOCK_RE = re.compile(
     r"^### Requirement: [^\n]+(?:\n.*?)*(?=^### Requirement: |^## |\Z)",
     re.M | re.S,
@@ -33,25 +33,37 @@ def requirement_blocks(text):
 
 def operation_sections(text, operation):
     return re.findall(
-        rf"^## {operation} Requirements\s*(.*?)(?=^## |\Z)",
+        rf"^##\s+{operation}\s+Requirements\s*(.*?)(?=^## |\Z)",
         text,
-        re.M | re.S,
+        re.M | re.S | re.I,
     )
+
+
+def normalized_requirement_name(value):
+    value = value.strip()
+    if value.startswith("### Requirement:"):
+        value = value.split(":", 1)[1]
+    return " ".join(value.split()).casefold()
 
 
 def parse_delta(text, relative):
     text = text.replace("\r\n", "\n")
     errors = []
-    headings = OPERATION_HEADING_RE.findall(text)
-    unknown = sorted(set(headings) - OPERATIONS)
+    raw_headings = OPERATION_HEADING_RE.findall(text)
+    headings = [heading.strip().upper() for heading in raw_headings]
+    unknown = sorted({raw for raw, normalized in zip(raw_headings, headings) if normalized not in OPERATIONS})
     if unknown:
         errors.append(f"{relative}: unknown operation heading(s): {', '.join(unknown)}")
     if not any(operation in headings for operation in OPERATIONS):
         errors.append(f"{relative}: no recognized delta operation")
 
     parsed = {operation: [] for operation in OPERATIONS}
+    seen_names = {}
     for operation in ("ADDED", "MODIFIED", "REMOVED"):
-        for section in operation_sections(text, operation):
+        sections = operation_sections(text, operation)
+        if len(sections) > 1:
+            errors.append(f"{relative}: duplicate {operation} operation section")
+        for section in sections:
             if not section.strip():
                 errors.append(f"{relative}: empty {operation} section")
                 continue
@@ -62,13 +74,23 @@ def parse_delta(text, relative):
             if not blocks or residue or len(blocks) != len(headings_in_section):
                 errors.append(f"{relative}: malformed {operation} requirement content")
                 continue
-            names = [block.splitlines()[0] for block in blocks]
-            if len(set(names)) != len(names):
-                errors.append(f"{relative}: duplicate {operation} requirement heading")
-                continue
-            parsed[operation].extend(blocks)
+            for block in blocks:
+                heading = block.splitlines()[0]
+                key = normalized_requirement_name(heading)
+                if key in seen_names:
+                    errors.append(
+                        f"{relative}: duplicate requirement heading across "
+                        f"{seen_names[key]} and {operation}: {heading}"
+                    )
+                else:
+                    seen_names[key] = operation
+                parsed[operation].append(block)
 
-    for section in operation_sections(text, "RENAMED"):
+    renamed_sections = operation_sections(text, "RENAMED")
+    if len(renamed_sections) > 1:
+        errors.append(f"{relative}: duplicate RENAMED operation section")
+    seen_pairs = set()
+    for section in renamed_sections:
         if not section.strip():
             errors.append(f"{relative}: empty RENAMED section")
             continue
@@ -77,7 +99,21 @@ def parse_delta(text, relative):
         if not pairs or residue:
             errors.append(f"{relative}: malformed RENAMED requirement content")
             continue
-        parsed["RENAMED"].extend(pairs)
+        for old, new in pairs:
+            pair_key = (normalized_requirement_name(old), normalized_requirement_name(new))
+            if pair_key in seen_pairs:
+                errors.append(f"{relative}: duplicate RENAMED requirement pair")
+            seen_pairs.add(pair_key)
+            for name in (old, new):
+                key = normalized_requirement_name(name)
+                if key in seen_names:
+                    errors.append(
+                        f"{relative}: duplicate requirement name across "
+                        f"{seen_names[key]} and RENAMED: {name}"
+                    )
+                else:
+                    seen_names[key] = "RENAMED"
+            parsed["RENAMED"].append((old, new))
     return parsed, errors
 
 
@@ -96,7 +132,7 @@ def main():
     delta_files = sorted(spec_root.rglob("spec.md")) if spec_root.is_dir() else []
     if not delta_files:
         if args.allow_no_delta:
-            print("archive guard passed: OpenSpec reports no delta specs")
+            print("archive guard passed: caller reported a skipped specs artifact")
             return 0
         parser.error("change delta specs not found; use --allow-no-delta only for a validated skipped specs artifact")
 
@@ -122,13 +158,17 @@ def main():
             old_heading = f"### Requirement: {old}"
             new_heading = f"### Requirement: {new}"
             if old_heading in main_requirements or new_heading not in main_requirements:
-                unsynced.append(f"{relative}: rename {old_heading} -> {new_heading}")
+                unsynced.append(f"{relative}: rename {old} -> {new}")
 
     if malformed:
-        print("archive blocked: malformed delta specs\n" + "\n".join(malformed), file=sys.stderr)
+        print("archive blocked: malformed delta specs", file=sys.stderr)
+        for item in malformed:
+            print(item, file=sys.stderr)
         return 1
     if unsynced:
-        print("archive blocked: unsynced delta specs\n" + "\n".join(unsynced), file=sys.stderr)
+        print("archive blocked: unsynced delta specs", file=sys.stderr)
+        for item in unsynced:
+            print(item, file=sys.stderr)
         return 1
     print("archive guard passed: delta specs are synced")
     return 0

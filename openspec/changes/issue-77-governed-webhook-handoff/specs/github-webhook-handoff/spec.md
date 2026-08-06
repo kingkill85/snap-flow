@@ -47,7 +47,7 @@ The consumer SHALL transactionally claim queued work with an ownership token, le
 - **THEN** lease recovery retries the same idempotency key without creating competing work
 
 ### Requirement: Resource limits
-The receiver SHALL enforce authenticated-eligible request-rate limits, pre-handler connection admission, aggregate size limits, and per-connection header/body read deadlines, and SHALL fail closed when exhausted. Invalid HMAC traffic SHALL NOT consume the trusted GitHub rate bucket.
+The receiver SHALL enforce authenticated-eligible request-rate limits, pre-handler connection admission, aggregate size limits, and absolute per-request header/body deadlines, and SHALL fail closed when exhausted. Invalid HMAC traffic SHALL NOT consume the trusted GitHub rate bucket.
 
 #### Scenario: Limit exhausted
 - **WHEN** the rate or concurrency limit is exhausted

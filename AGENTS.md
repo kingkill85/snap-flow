@@ -82,7 +82,7 @@ nohup npm run dev > /tmp/frontend.log 2>&1 &
 
 **QUALITY GATE:**
 - ❌ Do not push with lint errors or any test regression introduced by the change.
-- A failing test may be classified as pre-existing only when the identical command and failure reproduce on clean `main` in the same environment, the PR does not modify that subsystem, focused changed-scope tests pass, and the comparison plus CI result are recorded. Report it as a baseline failure, never as a green suite.
+- A failing test may be classified as pre-existing only when the identical command and failure reproduce on clean `main` in the same environment, the PR does not modify that subsystem, focused changed-scope tests pass, and the comparison plus CI result are recorded. Report it as a baseline failure, never as a green suite. The verification task remains open until the authorized human explicitly accepts the documented baseline exception.
 
 ## Project Overview
 

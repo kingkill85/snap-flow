@@ -1,11 +1,54 @@
 #!/usr/bin/env python3
 import argparse
+import http.client
 import json
 import os
+import socket
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from neo_dev_webhook.automation import PublicGitHubAdapter, Receiver, Store
+
+
+class LimitedHeaderReader:
+    def __init__(self, raw, *, line_limit, total_limit):
+        self.raw = raw
+        self.line_limit = line_limit
+        self.total_limit = total_limit
+        self.total = 0
+
+    def readline(self, limit=-1):
+        effective = self.line_limit + 1
+        if limit >= 0:
+            effective = min(effective, limit)
+        line = self.raw.readline(effective)
+        self.total += len(line)
+        if len(line) > self.line_limit:
+            raise http.client.LineTooLong("individual header")
+        if self.total > self.total_limit:
+            raise http.client.LineTooLong("aggregate headers")
+        return line
+
+    def __getattr__(self, name):
+        return getattr(self.raw, name)
+
+
+class HeaderLimitHandlerMixin:
+    header_line_limit = 1024
+    header_total_limit = 16 * 1024
+
+    def parse_request(self):
+        raw = self.rfile
+        self.rfile = LimitedHeaderReader(
+            raw,
+            line_limit=self.header_line_limit,
+            total_limit=self.header_total_limit,
+        )
+        try:
+            return super().parse_request()
+        finally:
+            self.rfile = raw
 
 
 class BoundedThreadingHTTPServer(ThreadingHTTPServer):
@@ -40,11 +83,36 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
             self._admission.release()
             raise
 
+    @staticmethod
+    def _expire_request(request):
+        try:
+            request.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            request.close()
+        except OSError:
+            pass
+
     def process_request_thread(self, request, client_address):
+        deadline = threading.Timer(
+            self._read_timeout,
+            self._expire_request,
+            args=(request,),
+        )
+        deadline.daemon = True
+        deadline.start()
         try:
             super().process_request_thread(request, client_address)
         finally:
+            deadline.cancel()
             self._admission.release()
+
+    def handle_error(self, request, client_address):
+        error = sys.exc_info()[1]
+        if isinstance(error, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
 
 
 def main():
@@ -60,7 +128,9 @@ def main():
         parser.error("NEO_DEV_WEBHOOK_SECRET and NEO_DEV_WEBHOOK_DB are required")
     receiver = Receiver(secret, Store(database), PublicGitHubAdapter())
 
-    class Handler(BaseHTTPRequestHandler):
+    class Handler(HeaderLimitHandlerMixin, BaseHTTPRequestHandler):
+        header_line_limit = receiver.limits.header_bytes
+        header_total_limit = receiver.limits.total_header_bytes
         def do_POST(self):
             if self.path != "/github-webhook":
                 self.send_error(404)

@@ -8,20 +8,21 @@ Run the receiver and consumer as separate private processes (do not activate pub
 export PYTHONPATH=tools
 export NEO_DEV_WEBHOOK_SECRET='replace-outside-repository'
 export NEO_DEV_WEBHOOK_DB='/absolute/durable/path/neo-dev.sqlite'
+export NEO_DEV_TASK_RUNNER='/private/configured/task-runner.py'
 python3 -m neo_dev_webhook.server --host 127.0.0.1 --port 8787
 python3 -m neo_dev_webhook.consumer "$NEO_DEV_WEBHOOK_DB" --max-runtime 2h --max-attempts 5
 ```
 
-The receiver accepts only raw-HMAC-authenticated GitHub `issues`/`issue_comment` payloads for `kingkill85/snap-flow`, canonical UUID deliveries, open exact-`neo-dev` issues, and the authorized numeric/login actor pair. It bounds the body, individual and aggregate headers, comments, and labels; rejects PR comments; ignores the exact standalone `<!-- neo-dev -->` marker; and applies the trusted rate bucket only after successful authentication and eligibility checks. The server sets a per-connection read deadline so stalled headers or bodies cannot retain an admission slot indefinitely. It performs no live network or long-running work.
+The receiver accepts only raw-HMAC-authenticated GitHub `issues`/`issue_comment` payloads for `kingkill85/snap-flow`, canonical UUID deliveries, open exact-`neo-dev` issues, and the authorized numeric/login actor pair. It bounds the body, individual and aggregate headers, comments, and labels; rejects PR comments; ignores the exact standalone `<!-- neo-dev -->` marker; and applies the trusted rate bucket only after successful authentication and eligibility checks. The server sets an absolute per-request deadline so stalled headers or bodies cannot retain an admission slot indefinitely. It performs no live network or long-running work.
 
 SQLite durability uses full synchronous WAL transactions and bounded lock retries during simultaneous receiver/consumer initialization of a fresh database. Delivery, wakeup, and coalesced repo+issue work are committed before HTTP success. A claim records the maximum included wakeup ID; completion transactionally moves later wakeups to one successor whose first delivery UUID becomes its idempotency key. Immediately before task creation, the consumer uses GitHub's public API without credentials and fails closed unless the issue is still open, non-PR, and carries exact `neo-dev`. Claims use ownership tokens so stale workers cannot finalize recovered leases. Explicit failures and expired leases share the configured bounded attempt limit and then dead-letter.
 
-The consumer invokes controller-owned `/opt/data/scripts/neo-dev/task.py` without a shell as:
+The consumer invokes the private runner configured by `NEO_DEV_TASK_RUNNER` without a shell as:
 
 ```text
-python3 /opt/data/scripts/neo-dev/task.py "SnapFlow issue #<number>" --body "..." --max-runtime 2h --workspace scratch --idempotency-key <delivery-uuid>
+python3 "$NEO_DEV_TASK_RUNNER" "SnapFlow issue #<number>" --body "..." --max-runtime 2h --workspace scratch --idempotency-key <delivery-uuid>
 ```
 
-It validates the real top-level `--help` options first. `--max-runtime` defaults to `2h` and is configurable on the consumer. Durable Kanban creation is the handoff boundary: the controller helper emits one stable JSON document containing `task_id` and then performs a best-effort dispatcher wake-up. The gateway's embedded dispatcher provides eventual liveness on its normal tick even if that wake-up fails. The consumer persists the durable task ID and remains backward-compatible with multiple JSON documents. Tests emulate the current CLI/help and stable output, exercise simultaneous process initialization and SQLite connection races, inject GitHub/task boundaries, and never create real tasks. The HTTP server also admits at most the configured number of connections before allocating handler threads or reading bodies; the receiver's internal semaphore remains defense in depth.
+It validates the real top-level `--help` options first. `--max-runtime` defaults to `2h` and is configurable on the consumer. Durable Kanban creation is the handoff boundary: the controller helper emits one stable JSON document containing `task_id` and then performs a bounded best-effort dispatcher wake-up. The gateway's embedded dispatcher provides eventual liveness on its normal tick even if that wake-up fails. The consumer persists the durable task ID and remains backward-compatible with multiple JSON documents. Tests emulate the current CLI/help and stable output, exercise simultaneous process initialization and SQLite connection races, inject GitHub/task boundaries, and never create real tasks. The HTTP server also admits at most the configured number of connections before allocating handler threads or reading bodies; the receiver's internal semaphore remains defense in depth.
 
 Issue 77 was explicitly authorized by the repository owner as a one-time workflow bootstrap. Future material artifact changes require new immutable links and `/approve-spec <new-sha>`; checkbox-only evidence updates do not invalidate an existing approval.

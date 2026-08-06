@@ -9,6 +9,14 @@ GUARD = ROOT / "tools" / "openspec_archive_guard.py"
 
 
 class ArchiveGuardTest(unittest.TestCase):
+    @staticmethod
+    def run_guard(root):
+        return subprocess.run(
+            ["python3", str(GUARD), "demo", "--root", str(root)],
+            capture_output=True,
+            text=True,
+        )
+
     def test_unsynced_delta_blocks_archive_and_synced_delta_passes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -126,6 +134,43 @@ class ArchiveGuardTest(unittest.TestCase):
                 )
                 self.assertNotEqual(result.returncode, 0, content)
                 self.assertIn("malformed", result.stderr.lower())
+
+    def test_mixed_case_unknown_operation_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            delta = root / "openspec/changes/demo/specs/example/spec.md"
+            main = root / "openspec/specs/example/spec.md"
+            delta.parent.mkdir(parents=True)
+            main.parent.mkdir(parents=True)
+            main.write_text("### Requirement: Good\nText\n", encoding="utf-8")
+            delta.write_text(
+                "## ADDED Requirements\n\n### Requirement: Good\nText\n\n"
+                "## Changed Requirements\n\n### Requirement: Hidden\nUnsynced\n",
+                encoding="utf-8",
+            )
+            result = self.run_guard(root)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unknown operation", result.stderr.lower())
+
+    def test_duplicate_sections_and_cross_operation_names_fail_closed(self):
+        variants = (
+            "## ADDED Requirements\n\n### Requirement: Good\nText\n\n"
+            "## ADDED Requirements\n\n### Requirement: Good\nText\n",
+            "## ADDED Requirements\n\n### Requirement: Good\nText\n\n"
+            "## MODIFIED Requirements\n\n### Requirement: Good\nText\n",
+        )
+        for content in variants:
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                delta = root / "openspec/changes/demo/specs/example/spec.md"
+                main = root / "openspec/specs/example/spec.md"
+                delta.parent.mkdir(parents=True)
+                main.parent.mkdir(parents=True)
+                main.write_text("### Requirement: Good\nText\n", encoding="utf-8")
+                delta.write_text(content, encoding="utf-8")
+                result = self.run_guard(root)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("duplicate", result.stderr.lower())
 
     def test_no_delta_requires_explicit_validated_skip_flag(self):
         with tempfile.TemporaryDirectory() as directory:

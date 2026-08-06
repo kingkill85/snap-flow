@@ -158,9 +158,15 @@ class AutomationTest(unittest.TestCase):
             (payload(action="labeled", label={"name": "needs-input"}), "issues", 202),
             (payload(action="labeled", label={"name": "neo-dev"}), "issues", 202),
         ]
-        for data, event, status in cases:
+        for index, (data, event, status) in enumerate(cases):
             with self.subTest(data=data, event=event):
+                before = (self.store.count("deliveries"), self.store.count("wakeups"))
                 self.assertEqual(self.send(data, event)[0], status)
+                after = (self.store.count("deliveries"), self.store.count("wakeups"))
+                if index == len(cases) - 1:
+                    self.assertEqual(after, (before[0] + 1, before[1] + 1))
+                else:
+                    self.assertEqual(after, before)
 
     def test_rejects_pr_comments_and_actor_mismatch(self):
         comment = payload(event="issue_comment")
@@ -357,14 +363,14 @@ class AutomationTest(unittest.TestCase):
     def test_task_runner_uses_safe_argv_and_parses_task_id(self):
         help_result = mock.Mock(stdout="usage: task.py [-h] [--body BODY] [--max-runtime MAX_RUNTIME]\n               [--workspace WORKSPACE] [--idempotency-key IDEMPOTENCY_KEY]\n               title\n")
         completed = mock.Mock(stdout='{"task_id":"kanban-77","durable":true}\n')
-        runner = TaskRunner()
+        runner = TaskRunner(script_path="/test/task.py")
         with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
             task_id = runner.create({"issue_number": 77, "wakeups": [{}]}, "delivery-key")
         self.assertEqual(task_id, "kanban-77")
-        self.assertEqual(run.call_args_list[0].args[0], ["python3", "/opt/data/scripts/neo-dev/task.py", "--help"])
+        self.assertEqual(run.call_args_list[0].args[0], ["python3", "/test/task.py", "--help"])
         argv = run.call_args_list[1].args[0]
         self.assertEqual(argv, [
-            "python3", "/opt/data/scripts/neo-dev/task.py", "SnapFlow issue #77",
+            "python3", "/test/task.py", "SnapFlow issue #77",
             "--body", "Process SnapFlow issue #77 with 1 durable wakeup(s).",
             "--max-runtime", "2h",
             "--workspace", "scratch", "--idempotency-key", "delivery-key",
@@ -374,19 +380,53 @@ class AutomationTest(unittest.TestCase):
     def test_task_runner_max_runtime_is_configurable(self):
         help_result = mock.Mock(stdout="usage: task.py title --body BODY --max-runtime MAX_RUNTIME --workspace WORKSPACE --idempotency-key KEY")
         completed = mock.Mock(stdout='{"id":"kanban-77"}\n')
-        runner = TaskRunner(max_runtime="45m")
+        runner = TaskRunner(script_path="/test/task.py", max_runtime="45m")
         with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
             runner.create({"issue_number": 77, "wakeups": []}, "delivery-key")
         self.assertIn("45m", run.call_args_list[1].args[0])
 
     def test_task_runner_rejects_incompatible_real_help_shape(self):
-        runner = TaskRunner()
+        runner = TaskRunner(script_path="/test/task.py")
         with mock.patch("subprocess.run", return_value=mock.Mock(stdout="usage: task.py title --body BODY")):
             with self.assertRaisesRegex(RuntimeError, "incompatible"):
                 runner.create({"issue_number": 77, "wakeups": []}, "delivery-key")
 
 
 class ServerAdmissionTest(unittest.TestCase):
+    def test_wire_header_limits_apply_during_parsing(self):
+        class LimitedHandler(server_module.HeaderLimitHandlerMixin, BaseHTTPRequestHandler):
+            header_line_limit = 32
+            header_total_limit = 64
+
+            def do_POST(self):
+                self.send_response(204)
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                return
+
+        server = server_module.BoundedThreadingHTTPServer(
+            ("127.0.0.1", 0), LimitedHandler,
+            concurrency_limit=1, read_timeout=1,
+        )
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            for headers in (
+                b"X-Oversized: " + b"a" * 40 + b"\r\n",
+                b"X-A: 1234567890\r\nX-B: 1234567890\r\nX-C: 1234567890\r\n",
+            ):
+                with self.subTest(headers=headers):
+                    client = socket.create_connection(("127.0.0.1", server.server_port), timeout=1)
+                    client.sendall(b"POST / HTTP/1.1\r\nHost: test\r\n" + headers + b"Content-Length: 0\r\n\r\n")
+                    response = client.recv(4096)
+                    self.assertIn(b" 431 ", response)
+                    client.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_server_rejects_before_allocating_second_handler_thread(self):
         entered = threading.Event()
         release = threading.Event()
@@ -434,6 +474,52 @@ class ServerAdmissionTest(unittest.TestCase):
             server.server_close()
             server_thread.join(timeout=2)
 
+
+    def test_slow_drip_cannot_extend_absolute_request_deadline(self):
+        class ReadingHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                self.rfile.read(length)
+                self.send_response(204)
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                return
+
+        server = server_module.BoundedThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            ReadingHandler,
+            concurrency_limit=1,
+            read_timeout=0.3,
+        )
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        slow = socket.create_connection(("127.0.0.1", server.server_port), timeout=1)
+        stop = threading.Event()
+
+        def drip():
+            while not stop.wait(0.04):
+                try:
+                    slow.sendall(b"P")
+                except OSError:
+                    return
+
+        dripper = threading.Thread(target=drip)
+        dripper.start()
+        try:
+            slow.sendall(b"P")
+            stop.wait(0.45)
+            connection = HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+            connection.request("POST", "/", body=b"x")
+            self.assertEqual(connection.getresponse().status, 204)
+            connection.close()
+        finally:
+            stop.set()
+            dripper.join(timeout=1)
+            slow.close()
+            server.shutdown()
+            server.server_close()
+            thread.join()
 
     def test_stalled_header_and_body_release_admission_slot(self):
         class ReadingHandler(BaseHTTPRequestHandler):

@@ -35,7 +35,7 @@ Tasks SHALL remain incomplete until concrete implementation or command/review ev
 
 #### Scenario: Pre-existing baseline failure
 - **WHEN** a project test fails identically on clean `main` in the same environment, the PR does not touch that subsystem, focused changed-scope tests pass, and CI evidence is recorded
-- **THEN** the failure is documented as pre-existing rather than called green, and it does not count as a new regression
+- **THEN** the failure is documented as pre-existing rather than called green, and the verification task remains open until the authorized human explicitly accepts that baseline exception
 
 
 ### Requirement: Hard synchronized archive gate

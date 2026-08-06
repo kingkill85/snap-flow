@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import sqlite3
 import subprocess
 import threading
@@ -16,7 +17,6 @@ REPOSITORY = "kingkill85/snap-flow"
 ACTOR_ID = 11455872
 ACTOR_LOGIN = "kingkill85"
 MARKER = "<!-- neo-dev -->"
-TASK_SCRIPT = "/opt/data/scripts/neo-dev/task.py"
 
 
 def has_standalone_marker(body: str) -> bool:
@@ -339,11 +339,14 @@ class Receiver:
 
 
 class TaskRunner:
-    def __init__(self, script: str = TASK_SCRIPT, python: str = "python3",
+    def __init__(self, script_path: str | None = None, python: str = "python3",
                  workspace: str = "scratch", max_runtime: str = "2h"):
         if not max_runtime or max_runtime.startswith("-"):
             raise ValueError("max_runtime must be a bounded task.py duration")
-        self.script, self.python, self.workspace = script, python, workspace
+        self.script = script_path or os.environ.get("NEO_DEV_TASK_RUNNER")
+        if not self.script:
+            raise ValueError("NEO_DEV_TASK_RUNNER is required")
+        self.python, self.workspace = python, workspace
         self.max_runtime, self.validated = max_runtime, False
 
     def _validate_contract(self):
