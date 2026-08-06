@@ -2,7 +2,7 @@
 
 ## Gate status
 
-This document describes an approval-pending repair. Runtime behavior, the operator runbook, canonical specs, and archived artifacts have not been changed by this packet. Implementation must not begin until the authorized human approver relays the exact `/approve-spec <full-commit-sha>` through Neo.
+The authorized human approver relayed `/approve-spec 1843b3ddfe8433d05817c3f94bb9edbc39e96124` through Neo. Repository-side implementation is underway from that exact approved revision. Canonical specs and archived artifacts remain unchanged pending the separate acceptance, sync, and archive gates.
 
 The active repair change is `issue-77-enforce-container-boundary` on Issue #77's existing non-main branch, worktree, and Draft PR #78. The historical `openspec/changes/archive/2026-08-06-issue-77-governed-webhook-handoff` tree is read-only.
 
@@ -24,11 +24,11 @@ The live-verified Issue 77 record is project `snapflow-dev`, tmux target `snapfl
 - `openspec/changes/issue-77-enforce-container-boundary/specs/governed-development-workflow/spec.md`
 - `openspec/changes/issue-77-enforce-container-boundary/tasks.md`
 
-Immutable GitHub blob links and the exact approval command are added to Issue #77 only after this packet passes strict validation, independent review, and is committed and pushed.
+The approved artifacts are pinned to full revision `1843b3ddfe8433d05817c3f94bb9edbc39e96124`. Publishing final implementation and review links remains a later Neo Dev step after this repository commit and independent review.
 
-## Pre-approval verification
+## Approved baseline verification
 
-Exact command outcomes are recorded here before commit. Current tests are regression evidence only: they confirm the accepted baseline still behaves as implemented; they do not prove the proposed boundary until the approved RED/GREEN tasks are applied.
+These commands were recorded for the approved planning baseline. The implementation verification section below supersedes the earlier focused-test count.
 
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec status --change issue-77-enforce-container-boundary`: **4/4 planning artifacts complete**.
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict`: **passed**.
@@ -39,6 +39,23 @@ Exact command outcomes are recorded here before commit. Current tests are regres
 
 Interface discovery used `rg` and source inspection of `tools/neo_dev_webhook/automation.py`, `consumer.py`, `server.py`, and focused tests. It confirmed the current subprocess boundary is argv-based and test-injected through `subprocess.run`, while the new adapter needs explicit executor, registry, and persistence seams. This completed task 1.2 before the amended approval commit without inspecting controller secrets or private coordinates.
 
+## Repository-side implementation verification
+
+Exact post-implementation commands and outcomes:
+
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -v`: **63/63 passed**. This includes the complete webhook/archive regression suite and focused project-control tests for the narrow CLI, injected registry/store/executor, exact Issue 77 argv, persisted retries, and fail-closed invalid or mismatched state.
+- `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict --no-interactive`: **passed**.
+- `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate --all --strict --no-interactive`: **3 passed, 0 failed**.
+- `python3 tools/openspec_archive_guard.py issue-77-enforce-container-boundary --root .`: **blocked as required** because the active delta specs remain intentionally unsynchronized before acceptance.
+- `git diff --exit-code -- openspec/changes/archive`: **passed**; archived artifacts are unchanged.
+- `cd backend && deno lint`: **passed**, 141 files checked.
+- `cd frontend && npm run lint`: **passed**.
+- `cd frontend && npm run test:run`: **37 test files passed, 264 tests passed**.
+- `cd backend && deno task test`: **327 passed (146 steps), 1 failed**. The sole failure is `ExcelSyncService - import only deactivates missing items from the selected product type` at `backend/tests/services/excel-sync_test.ts:207`, with actual `false` and expected `true`. This is the identical clean-`main` baseline failure documented and explicitly accepted for Issue 77 in `docs/issue-77-review-fix-evidence.md`; this repair does not modify the Excel sync source or tests. The backend suite is not reported as green, and there are no new failures.
+- `git diff --check`: **passed**.
+
+No frontend behavior changed, so an independent Playwright UI review is not applicable. Independent code/test review and controller installation/preflight remain assigned to Neo Dev and are not claimed here.
+
 ## Scope boundary
 
-No product backend/frontend behavior or UI changes are planned, so Playwright review is not applicable. Only future non-secret controller adapter installation and narrow capability-policy work is in implementation scope. No runtime edit in this packet, push, merge, release, deployment, public ingress, secret/access change, existing SSH registration/host-key/client-identity change, dispatcher change, container provisioning, destructive operation, canonical-spec sync, or archive operation is authorized.
+No product backend/frontend behavior or UI changed, so Playwright review is not applicable. Controller installation and preflight are owned by Neo Dev through its trusted operator path. This repository-side work does not probe or change private connection facts or controller state. Push is authorized for Draft PR #78; merge, release, deployment, public ingress, secret/access changes, dispatcher changes, container provisioning, destructive operations, canonical-spec sync, and archive remain prohibited or separately gated.

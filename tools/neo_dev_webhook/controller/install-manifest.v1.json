@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "source": "neo-dev-project-control",
+      "destination": "/usr/local/bin/neo-dev-project-control",
+      "owner": "root",
+      "group": "root",
+      "mode": "0755"
+    },
+    {
+      "source": "../project_control.py",
+      "destination": "/usr/local/lib/neo-dev-project-control/project_control.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "registry.v1.json",
+      "destination": "/etc/neo-dev/project-control/registry.json",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "card-capability-policy.v1.json",
+      "destination": "/etc/neo-dev/project-control/card-capability-policy.json",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    }
+  ],
+  "state": {
+    "directory": "/var/lib/neo-dev/project-control",
+    "owner": "root",
+    "group": "root",
+    "mode": "0750"
+  }
+}

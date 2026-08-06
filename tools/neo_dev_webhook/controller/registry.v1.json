@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "repository": "kingkill85/snap-flow",
+      "issue_number": 77,
+      "project": "snapflow-dev",
+      "session": "snapflow-dev",
+      "window": "issue-77",
+      "worktree": "/workspace/snap-flow-issue-77",
+      "branch": "chore/issue-77-openspec-workflow",
+      "worker": "Codex"
+    }
+  ]
+}

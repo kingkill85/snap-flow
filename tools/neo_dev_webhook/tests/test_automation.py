@@ -403,11 +403,13 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(argv, [
             "python3", "/test/task.py", "SnapFlow issue #77",
             "--body", (
-                "Process SnapFlow issue #77 with 1 durable wakeup(s). "
-                "Before any repository action, read "
-                "/opt/data/profiles/dev/projects/snapflow.md. Use the registered "
-                "snapflow-dev container via SSH for all Git, Codex, OpenSpec, and "
-                "project commands; do not clone SnapFlow into the Kanban workspace. "
+                "Process SnapFlow issue #77 with 1 durable wakeup(s). This card is "
+                "controller-only; its workspace is not an implementation target. "
+                "Before project work, invoke neo-dev-project-control with only "
+                "preflight/start/resume, --repository kingkill85/snap-flow, "
+                "--issue-number 77, and --idempotency-key delivery-key. Do not run "
+                "project, shell, SSH, tmux, Git, Codex, OpenSpec, package, lint, or "
+                "test commands directly. "
                 "Use the controller's authenticated /opt/data/bin/gh for GitHub "
                 "reads and writes when required. Inspect the latest Issue comments "
                 "before acting and preserve every approval gate."
@@ -417,6 +419,12 @@ class AutomationTest(unittest.TestCase):
             "--idempotency-key", "delivery-key",
         ])
         self.assertNotIn("shell", run.call_args.kwargs)
+        self.assertIn("neo-dev-project-control", argv[argv.index("--body") + 1])
+        self.assertNotIn("ssh:snapflow-dev", argv)
+
+    def test_controller_card_is_fixed_and_is_not_the_implementation_target(self):
+        with self.assertRaises(TypeError):
+            TaskRunner(script_path="/test/task.py", workspace="ssh:snapflow-dev")
 
     def test_task_runner_max_runtime_is_configurable(self):
         help_result = mock.Mock(stdout="usage: task.py title --body BODY --max-runtime MAX_RUNTIME --workspace WORKSPACE --idempotency-key KEY")
