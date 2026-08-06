@@ -44,9 +44,7 @@ class ArchiveGuardTest(unittest.TestCase):
         self.assertNotIn("--allow-no-delta", text)
         self.assertIn("status JSON", text)
         self.assertNotIn("Archive without syncing", text)
-        bare_command = re.compile(
-            r"(?<!npm exec -- )\bopenspec (?=(?:store|new|status|instructions|list|show|validate|archive|doctor|context|view)\b)"
-        )
+        bare_command = re.compile(r"(?<!npm exec -- )\bopenspec[ \t]+[a-z]")
         for skill in (ROOT / ".agents/skills").glob("openspec-*/SKILL.md"):
             skill_text = skill.read_text(encoding="utf-8")
             self.assertNotRegex(skill_text, bare_command, skill)
@@ -376,6 +374,56 @@ class ArchiveGuardTest(unittest.TestCase):
             )
             result = self.run_guard(root)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_unicode_equivalent_names_are_used_for_all_operation_comparisons(self):
+        body = "The system SHALL preserve behavior.\n\n#### Scenario: Works\n- **WHEN** used\n- **THEN** it works"
+        cases = (
+            (
+                "ADDED",
+                "### Requirement: Caf\u00e9 access\n" + body,
+                "### Requirement: Cafe\u0301 access\n" + body,
+                True,
+            ),
+            (
+                "MODIFIED",
+                "### Requirement: Caf\u00e9 access\n" + body,
+                "### Requirement: Cafe\u0301 access\n" + body,
+                True,
+            ),
+            (
+                "REMOVED",
+                "### Requirement: Caf\u00e9 access\n" + body,
+                "### Requirement: Cafe\u0301 access\n" + body,
+                False,
+            ),
+            (
+                "RENAMED",
+                "- FROM: `Caf\u00e9 access`\n- TO: `Renamed access`",
+                "### Requirement: Cafe\u0301 access\nOld\n\n### Requirement: Renamed access\nNew",
+                False,
+            ),
+            (
+                "RENAMED",
+                "- FROM: `Old access`\n- TO: `R\u00e9sum\u00e9 access`",
+                "### Requirement: Re\u0301sume\u0301 access\nNew",
+                True,
+            ),
+        )
+        for operation, section, main_text, should_pass in cases:
+            with self.subTest(operation=operation, should_pass=should_pass), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                delta = root / "openspec/changes/demo/specs/example/spec.md"
+                main = root / "openspec/specs/example/spec.md"
+                delta.parent.mkdir(parents=True)
+                main.parent.mkdir(parents=True)
+                delta.write_text(f"## {operation} Requirements\n\n{section}\n", encoding="utf-8")
+                main.write_text(main_text + "\n", encoding="utf-8")
+                result = self.run_guard(root)
+                if should_pass:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("unsynced", result.stderr)
 
     def test_commonmark_indented_main_requirements_are_deduplicated(self):
         for spaces in (1, 2, 3):

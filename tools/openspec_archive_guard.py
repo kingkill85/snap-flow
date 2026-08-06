@@ -41,7 +41,7 @@ def main_requirement_blocks(text: str):
             duplicates.append((seen[key], name))
         else:
             seen[key] = name
-            blocks[name] = body
+            blocks[key] = (name, body)
     return blocks, duplicates
 
 
@@ -185,7 +185,9 @@ def check(root: pathlib.Path, change: str):
                                 )
                             else:
                                 seen_delta_names[key] = operation
-                        if old.strip() in main_blocks or new.strip() not in main_blocks:
+                        old_key = normalized_name(old)
+                        new_key = normalized_name(new)
+                        if old_key in main_blocks or new_key not in main_blocks:
                             unsynced.append(f"{rel}: rename {old.strip()} -> {new.strip()}")
                     continue
 
@@ -204,9 +206,10 @@ def check(root: pathlib.Path, change: str):
                     else:
                         seen_delta_names[key] = operation
                     if operation in {"ADDED", "MODIFIED"}:
-                        if main_blocks.get(name, "").strip() != body.strip():
+                        main_entry = main_blocks.get(key)
+                        if main_entry is None or main_entry[1].strip() != body.strip():
                             unsynced.append(f"{rel}: {operation} {name}")
-                    elif operation == "REMOVED" and name in main_blocks:
+                    elif operation == "REMOVED" and key in main_blocks:
                         unsynced.append(f"{rel}: REMOVED {name} still present")
 
         if operation_count == 0:

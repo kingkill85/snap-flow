@@ -33,7 +33,7 @@ Start a new change using the experimental artifact-driven approach.
 
    **Use a different schema only if the user mentions:**
    - A specific schema name → use `--schema <name>`
-   - "show workflows" or "what workflows" → run `openspec schemas --json` and let them choose
+   - "show workflows" or "what workflows" → run `npm exec -- openspec schemas --json` and let them choose
 
    **Otherwise**: Omit `--schema` to use the default.
 
