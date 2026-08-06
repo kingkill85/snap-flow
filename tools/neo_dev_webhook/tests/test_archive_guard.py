@@ -27,6 +27,9 @@ class ArchiveGuardTest(unittest.TestCase):
     def test_generated_archive_skill_requires_guard_without_override(self):
         text = (ROOT / ".agents/skills/openspec-archive-change/SKILL.md").read_text(encoding="utf-8")
         self.assertIn("tools/openspec_archive_guard.py", text)
+        self.assertIn("openspec validate", text)
+        self.assertIn("--strict", text)
+        self.assertIn("--allow-no-delta", text)
         self.assertNotIn("Archive without syncing", text)
 
     def test_all_delta_operations_must_be_synced(self):
@@ -104,6 +107,41 @@ class ArchiveGuardTest(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Exact", result.stderr)
+
+
+    def test_malformed_or_unknown_delta_operations_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            delta = root / "openspec/changes/demo/specs/example/spec.md"
+            delta.parent.mkdir(parents=True)
+            for content in (
+                "## RENAMED Requirements\n\n- FROM: `Old name`\n",
+                "## CHANGED Requirements\n\n### Requirement: One\nText\n",
+                "## ADDED Requirements\n\nnot a requirement block\n",
+            ):
+                delta.write_text(content, encoding="utf-8")
+                result = subprocess.run(
+                    ["python3", str(GUARD), "demo", "--root", str(root)],
+                    capture_output=True, text=True,
+                )
+                self.assertNotEqual(result.returncode, 0, content)
+                self.assertIn("malformed", result.stderr.lower())
+
+    def test_no_delta_requires_explicit_validated_skip_flag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            change = root / "openspec/changes/demo"
+            change.mkdir(parents=True)
+            denied = subprocess.run(
+                ["python3", str(GUARD), "demo", "--root", str(root)],
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(denied.returncode, 0)
+            allowed = subprocess.run(
+                ["python3", str(GUARD), "demo", "--root", str(root), "--allow-no-delta"],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
 
 if __name__ == "__main__":

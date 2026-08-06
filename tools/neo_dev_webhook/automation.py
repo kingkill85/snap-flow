@@ -33,17 +33,28 @@ class Limits:
     label_chars: int = 100
 
 
+def retry_database_lock(operation, *, attempts=60, delay=0.05):
+    for attempt in range(attempts):
+        try:
+            return operation()
+        except sqlite3.OperationalError as error:
+            if "locked" not in str(error).lower() or attempt + 1 >= attempts:
+                raise
+            time.sleep(delay)
+
+
 class Store:
     def __init__(self, path: str):
         if not path or path == ":memory:":
             raise ValueError("a durable filesystem database path is required")
-        self.db = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+        self.db = sqlite3.connect(path, isolation_level=None, check_same_thread=False, timeout=30)
         self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA busy_timeout=30000")
         self.lock = threading.Lock()
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA synchronous=FULL")
-        self.db.execute("PRAGMA foreign_keys=ON")
-        self.db.executescript("""
+        retry_database_lock(lambda: self.db.execute("PRAGMA journal_mode=WAL"))
+        retry_database_lock(lambda: self.db.execute("PRAGMA synchronous=FULL"))
+        retry_database_lock(lambda: self.db.execute("PRAGMA foreign_keys=ON"))
+        retry_database_lock(lambda: self.db.executescript("""
             CREATE TABLE IF NOT EXISTS deliveries(
               delivery_id TEXT PRIMARY KEY, received_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS active_work(
@@ -59,12 +70,14 @@ class Store:
               id INTEGER PRIMARY KEY, delivery_id TEXT NOT NULL UNIQUE REFERENCES deliveries,
               work_id INTEGER NOT NULL REFERENCES active_work, event TEXT NOT NULL,
               action TEXT NOT NULL, comment_id INTEGER, created_at REAL NOT NULL);
-        """)
-        columns = {row["name"] for row in self.db.execute("PRAGMA table_info(active_work)")}
+        """))
+        columns = {row["name"] for row in retry_database_lock(
+            lambda: self.db.execute("PRAGMA table_info(active_work)")
+        )}
         if "claim_token" not in columns:
-            self.db.execute("ALTER TABLE active_work ADD COLUMN claim_token TEXT")
+            retry_database_lock(lambda: self.db.execute("ALTER TABLE active_work ADD COLUMN claim_token TEXT"))
         if "processed_wakeup_id" not in columns:
-            self.db.execute("ALTER TABLE active_work ADD COLUMN processed_wakeup_id INTEGER")
+            retry_database_lock(lambda: self.db.execute("ALTER TABLE active_work ADD COLUMN processed_wakeup_id INTEGER"))
 
     def close(self):
         self.db.close()
@@ -241,12 +254,6 @@ class Receiver:
         if self.semaphore is None or not self.semaphore.acquire(blocking=False):
             return 503, "busy"
         try:
-            now = time.monotonic()
-            with self.rate_lock:
-                self.timestamps = [stamp for stamp in self.timestamps if stamp > now - 60]
-                if len(self.timestamps) >= self.rate_limit:
-                    return 429, "rate_limited"
-                self.timestamps.append(now)
             if len(raw) > self.limits.body_bytes:
                 return 413, "body_too_large"
             wanted = {k.lower(): v for k, v in headers.items()}
@@ -298,6 +305,12 @@ class Receiver:
             else:
                 if action != "created" or "pull_request" in issue or has_standalone_marker(data["comment"]["body"]):
                     return 202, "ignored"
+            now = time.monotonic()
+            with self.rate_lock:
+                self.timestamps = [stamp for stamp in self.timestamps if stamp > now - 60]
+                if len(self.timestamps) >= self.rate_limit:
+                    return 429, "rate_limited"
+                self.timestamps.append(now)
             status = self.store.accept({"delivery_id": delivery, "event": event, "action": action, "repository": REPOSITORY, "issue_number": issue["number"], "comment_id": data.get("comment", {}).get("id")})
             return (202 if status == "accepted" else 200), status
         except (KeyError, TypeError, ValueError, sqlite3.Error):
@@ -327,7 +340,7 @@ class Receiver:
 
 class TaskRunner:
     def __init__(self, script: str = TASK_SCRIPT, python: str = "python3",
-                 workspace: str = REPOSITORY, max_runtime: str = "2h"):
+                 workspace: str = "scratch", max_runtime: str = "2h"):
         if not max_runtime or max_runtime.startswith("-"):
             raise ValueError("max_runtime must be a bounded task.py duration")
         self.script, self.python, self.workspace = script, python, workspace

@@ -13,13 +13,17 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
 
     daemon_threads = True
 
-    def __init__(self, server_address, handler_class, *, concurrency_limit=8):
+    def __init__(self, server_address, handler_class, *, concurrency_limit=8, read_timeout=5.0):
         if concurrency_limit < 1:
             raise ValueError("concurrency_limit must be positive")
+        if read_timeout <= 0:
+            raise ValueError("read_timeout must be positive")
         self._admission = threading.BoundedSemaphore(concurrency_limit)
+        self._read_timeout = read_timeout
         super().__init__(server_address, handler_class)
 
     def process_request(self, request, client_address):
+        request.settimeout(self._read_timeout)
         if not self._admission.acquire(blocking=False):
             try:
                 request.sendall(
@@ -48,6 +52,7 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--concurrency-limit", type=int, default=8)
+    parser.add_argument("--read-timeout", type=float, default=5.0)
     args = parser.parse_args()
     secret = os.environ.get("NEO_DEV_WEBHOOK_SECRET")
     database = os.environ.get("NEO_DEV_WEBHOOK_DB")
@@ -81,6 +86,7 @@ def main():
     BoundedThreadingHTTPServer(
         (args.host, args.port), Handler,
         concurrency_limit=args.concurrency_limit,
+        read_timeout=args.read_timeout,
     ).serve_forever()
 
 

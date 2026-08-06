@@ -80,9 +80,9 @@ nohup npm run dev > /tmp/frontend.log 2>&1 &
    cd frontend && npm run test:run
    ```
 
-**NO EXCEPTIONS:**
-- ❌ Do not push with lint errors
-- ❌ Do not push with failing tests
+**QUALITY GATE:**
+- ❌ Do not push with lint errors or any test regression introduced by the change.
+- A failing test may be classified as pre-existing only when the identical command and failure reproduce on clean `main` in the same environment, the PR does not modify that subsystem, focused changed-scope tests pass, and the comparison plus CI result are recorded. Report it as a baseline failure, never as a green suite.
 
 ## Project Overview
 
@@ -544,6 +544,6 @@ Workflow states are represented as follows:
 | Accepted, merge not authorized | `neo-dev`, `needs-approval` | Sync/archive, then separate `/merge` |
 | Completed | neither workflow label | No further automated work |
 
-OpenSpec 1.8.0 is initialized for Codex with telemetry disabled. The repository uses the current `new`, `continue`, `ff`, and `verify` expanded workflows in addition to core workflows. Preserve `OPENSPEC_TELEMETRY=0` in repository/CI environments.
+OpenSpec 1.8.0 is initialized for Codex with telemetry disabled. The repository uses the current `new`, `continue`, `ff`, and `verify` expanded workflows in addition to core workflows. Preserve `OPENSPEC_TELEMETRY=0` in repository/CI environments. A fresh checkout installs the exact CLI version with `npm ci`; invoke it reproducibly with `npm exec -- openspec`. The development image may also provide the same pinned version globally as a convenience, but the repository lockfile is authoritative.
 
 The phase labels `needs-input`, `needs-approval`, `in-progress`, `ready-for-review`, and `blocked` are mutually exclusive; exactly zero or one may accompany `neo-dev`. Removing `neo-dev` removes every phase label. Issue 77 alone was explicitly authorized by the repository owner as a one-time workflow bootstrap; this does not waive any future approval or privileged-operation gate.

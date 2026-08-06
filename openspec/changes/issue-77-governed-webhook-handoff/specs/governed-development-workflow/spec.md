@@ -33,8 +33,13 @@ Tasks SHALL remain incomplete until concrete implementation or command/review ev
 - **WHEN** no UI behavior changes
 - **THEN** Playwright is recorded as not applicable with that reason
 
+#### Scenario: Pre-existing baseline failure
+- **WHEN** a project test fails identically on clean `main` in the same environment, the PR does not touch that subsystem, focused changed-scope tests pass, and CI evidence is recorded
+- **THEN** the failure is documented as pre-existing rather than called green, and it does not count as a new regression
+
+
 ### Requirement: Hard synchronized archive gate
-The change SHALL not archive until every delta spec is synced, and generic/generated archive paths SHALL have no bypass.
+The change SHALL not archive until strict OpenSpec validation succeeds and every recognized delta spec is synced. Malformed or unknown delta operations SHALL fail closed, generic/generated archive paths SHALL have no bypass, and a no-delta archive SHALL require OpenSpec to report the specs artifact as skipped.
 
 #### Scenario: Delta is unsynced
 - **WHEN** archive is attempted

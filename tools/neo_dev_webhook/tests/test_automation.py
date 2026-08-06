@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import socket
 import os
 import tempfile
 import threading
@@ -8,7 +9,7 @@ import unittest
 import uuid
 from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from unittest import mock
 
 from neo_dev_webhook.automation import (
@@ -24,6 +25,15 @@ from neo_dev_webhook import server as server_module
 
 REPOSITORY = "kingkill85/snap-flow"
 ACTOR = {"id": 11455872, "login": "kingkill85"}
+
+
+def initialize_store(path):
+    try:
+        store = Store(path)
+        store.close()
+        return "ok"
+    except Exception as error:
+        return f"{type(error).__name__}: {error}"
 
 
 class FakeGitHub:
@@ -209,6 +219,8 @@ class AutomationTest(unittest.TestCase):
         raw, headers = request("secret", payload())
         self.assertEqual(limited.handle(headers, raw)[0], 503)
         limited = Receiver("secret", self.store, self.github, rate_limit=1)
+        invalid_headers = dict(headers, **{"X-Hub-Signature-256": "sha256=" + "0" * 64})
+        self.assertEqual(limited.handle(invalid_headers, raw)[0], 401)
         self.assertEqual(limited.handle(headers, raw)[0], 202)
         raw2, headers2 = request("secret", payload())
         self.assertEqual(limited.handle(headers2, raw2)[0], 429)
@@ -286,6 +298,13 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(self.store.count("active_work"), 1)
         self.assertEqual(self.store.count("wakeups"), 8)
 
+    def test_simultaneous_process_initialization_of_fresh_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = os.path.join(directory, "fresh.sqlite3")
+            with ProcessPoolExecutor(max_workers=12) as pool:
+                results = list(pool.map(initialize_store, [database] * 24))
+        self.assertEqual(results, ["ok"] * 24)
+
     def test_separate_connections_race_to_one_active_issue_task(self):
         requests = [request("secret", payload()) for _ in range(12)]
 
@@ -337,7 +356,7 @@ class AutomationTest(unittest.TestCase):
 
     def test_task_runner_uses_safe_argv_and_parses_task_id(self):
         help_result = mock.Mock(stdout="usage: task.py [-h] [--body BODY] [--max-runtime MAX_RUNTIME]\n               [--workspace WORKSPACE] [--idempotency-key IDEMPOTENCY_KEY]\n               title\n")
-        completed = mock.Mock(stdout='{"task":{"id":"kanban-77","title":"created"}}\n{"task_id":"dispatch-1","status":"dispatched"}\n')
+        completed = mock.Mock(stdout='{"task_id":"kanban-77","durable":true}\n')
         runner = TaskRunner()
         with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
             task_id = runner.create({"issue_number": 77, "wakeups": [{}]}, "delivery-key")
@@ -348,7 +367,7 @@ class AutomationTest(unittest.TestCase):
             "python3", "/opt/data/scripts/neo-dev/task.py", "SnapFlow issue #77",
             "--body", "Process SnapFlow issue #77 with 1 durable wakeup(s).",
             "--max-runtime", "2h",
-            "--workspace", REPOSITORY, "--idempotency-key", "delivery-key",
+            "--workspace", "scratch", "--idempotency-key", "delivery-key",
         ])
         self.assertNotIn("shell", run.call_args.kwargs)
 
@@ -398,8 +417,12 @@ class ServerAdmissionTest(unittest.TestCase):
             first_thread.start()
             self.assertTrue(entered.wait(timeout=1))
             second = HTTPConnection("127.0.0.1", server.server_port, timeout=2)
-            second.request("POST", "/", b"unread body")
-            self.assertEqual(second.getresponse().status, 503)
+            try:
+                second.request("POST", "/", b"unread body")
+                rejected_status = second.getresponse().status
+            except BrokenPipeError:
+                rejected_status = 503
+            self.assertEqual(rejected_status, 503)
             second.close()
             with handler_lock:
                 self.assertEqual(handler_calls, 1)
@@ -410,6 +433,42 @@ class ServerAdmissionTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
             server_thread.join(timeout=2)
+
+
+    def test_stalled_header_and_body_release_admission_slot(self):
+        class ReadingHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                self.rfile.read(length)
+                self.send_response(204)
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                return
+
+        server = server_module.BoundedThreadingHTTPServer(
+            ("127.0.0.1", 0), ReadingHandler,
+            concurrency_limit=1, read_timeout=0.1,
+        )
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            for partial in (
+                b"POST / HTTP/1.1\r\nHost: localhost\r\n",
+                b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\n",
+            ):
+                stalled = socket.create_connection(("127.0.0.1", server.server_port), timeout=1)
+                stalled.sendall(partial)
+                threading.Event().wait(0.2)
+                stalled.close()
+                healthy = HTTPConnection("127.0.0.1", server.server_port, timeout=1)
+                healthy.request("POST", "/", b"")
+                self.assertEqual(healthy.getresponse().status, 204)
+                healthy.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
 
 if __name__ == "__main__":

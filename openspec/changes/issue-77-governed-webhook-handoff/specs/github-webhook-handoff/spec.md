@@ -33,22 +33,30 @@ Immediately before external task creation, a GitHub adapter using no repository 
 - **THEN** no task work is accepted
 
 ### Requirement: Durable asynchronous coalesced handoff
-The receiver SHALL atomically persist delivery, wakeup, and active work before responding, and SHALL never run long work. Canonical `X-GitHub-Delivery` SHALL be the downstream idempotency key. Concurrent events for one repo+issue SHALL append wakeups to one active task.
+The receiver SHALL atomically persist delivery, wakeup, and active work before responding, and SHALL never run long work. Canonical `X-GitHub-Delivery` SHALL be the downstream idempotency key. Concurrent events for one repo+issue SHALL append wakeups to one active task. Durable Kanban creation and persistence of its returned task ID SHALL be the external handoff boundary; dispatcher wake-up is best effort because the gateway provides an embedded dispatcher.
 
 #### Scenario: Replay and concurrency
 - **WHEN** deliveries repeat, race, or arrive while work is active
 - **THEN** delivery replay is deduplicated and at most one active task exists per repo+issue
 
 ### Requirement: Recoverable consumer
-The consumer SHALL transactionally claim queued work with an ownership token, lease processing, recover expired claims by compare-and-set, count attempts, and transactionally complete with a persisted task ID or retry/dead-letter failure. Retry SHALL be bounded and reuse task.py idempotency.
+The consumer SHALL transactionally claim queued work with an ownership token, lease processing, recover expired claims by compare-and-set, count attempts, and transactionally complete with a persisted task ID or retry/dead-letter failure. Receiver and consumer SHALL safely initialize the same previously nonexistent SQLite database concurrently through bounded lock handling. Retry SHALL be bounded and reuse task.py idempotency.
 
 #### Scenario: Crash around task creation
 - **WHEN** the consumer crashes before recording the external result
 - **THEN** lease recovery retries the same idempotency key without creating competing work
 
 ### Requirement: Resource limits
-The receiver SHALL enforce request-rate and handler-concurrency limits and fail closed when exhausted.
+The receiver SHALL enforce authenticated-eligible request-rate limits, pre-handler connection admission, aggregate size limits, and per-connection header/body read deadlines, and SHALL fail closed when exhausted. Invalid HMAC traffic SHALL NOT consume the trusted GitHub rate bucket.
 
 #### Scenario: Limit exhausted
 - **WHEN** the rate or concurrency limit is exhausted
 - **THEN** the request is rejected without enqueueing work
+
+#### Scenario: Simultaneous fresh startup
+- **WHEN** receiver and consumer processes initialize the same new database concurrently
+- **THEN** bounded lock retries complete schema initialization without startup failure
+
+#### Scenario: Stalled unauthenticated client
+- **WHEN** a client stalls while sending headers or a declared body
+- **THEN** its admission slot is released after the configured read deadline
