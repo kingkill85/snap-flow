@@ -130,7 +130,7 @@ Archive a completed change in the experimental workflow.
 5. **Perform the archive**
 
    **Strict validation and hard guard (mandatory, no override):** First run
-   `OPENSPEC_TELEMETRY=0 openspec validate "<name>" --strict --no-interactive`
+   `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate "<name>" --strict --no-interactive`
    with the same selected-root/store flags used above. Any validation failure blocks
    archiving. Then always run
    `python3 tools/openspec_archive_guard.py "<name>" --root "<planningHome.root>"`.

@@ -38,7 +38,7 @@ class ArchiveGuardTest(unittest.TestCase):
     def test_generated_archive_skill_requires_guard_without_override(self):
         text = (ROOT / ".agents/skills/openspec-archive-change/SKILL.md").read_text(encoding="utf-8")
         self.assertIn("tools/openspec_archive_guard.py", text)
-        self.assertIn("openspec validate", text)
+        self.assertIn("npm exec -- openspec validate", text)
         self.assertIn("--strict", text)
         self.assertNotIn("--allow-no-delta", text)
         self.assertIn("status JSON", text)
