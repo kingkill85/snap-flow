@@ -217,6 +217,43 @@ class ArchiveGuardTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("unknown or malformed", result.stderr.lower())
 
+    def test_missing_space_operation_heading_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            delta = root / "openspec/changes/demo/specs/example/spec.md"
+            main = root / "openspec/specs/example/spec.md"
+            delta.parent.mkdir(parents=True)
+            main.parent.mkdir(parents=True)
+            main.write_text("### Requirement: Good\nText\n", encoding="utf-8")
+            delta.write_text(
+                "## ADDED Requirements\n\n### Requirement: Good\nText\n\n"
+                "##CHANGED Requirements\n\n### Requirement: Hidden\nUnsynced\n",
+                encoding="utf-8",
+            )
+            result = self.run_guard(root)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unknown or malformed", result.stderr.lower())
+
+    def test_nested_capability_paths_are_all_checked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            top_delta = root / "openspec/changes/demo/specs/top/spec.md"
+            nested_delta = root / "openspec/changes/demo/specs/identity/user-auth/spec.md"
+            top_main = root / "openspec/specs/top/spec.md"
+            nested_main = root / "openspec/specs/identity/user-auth/spec.md"
+            for path in (top_delta, nested_delta, top_main, nested_main):
+                path.parent.mkdir(parents=True, exist_ok=True)
+            top_delta.write_text("## ADDED Requirements\n\n### Requirement: Top\nCurrent\n", encoding="utf-8")
+            top_main.write_text("### Requirement: Top\nCurrent\n", encoding="utf-8")
+            nested_delta.write_text("## ADDED Requirements\n\n### Requirement: Nested\nCurrent\n", encoding="utf-8")
+            nested_main.write_text("### Requirement: Nested\nStale\n", encoding="utf-8")
+            failed = self.run_guard(root)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn("identity/user-auth/spec.md", failed.stderr)
+            nested_main.write_text("### Requirement: Nested\nCurrent\n", encoding="utf-8")
+            passed = self.run_guard(root)
+            self.assertEqual(passed.returncode, 0, passed.stderr)
+
     def test_duplicate_normalized_main_requirements_fail_closed(self):
         duplicates = (("Good", "Good"), ("Good", "good"), ("Good  name", "Good name"))
         for first, second in duplicates:

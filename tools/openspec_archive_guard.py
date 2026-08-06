@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 OPERATIONS = ("ADDED", "MODIFIED", "REMOVED", "RENAMED")
-LEVEL2_HEADING_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+LEVEL2_HEADING_RE = re.compile(r"^##(?!#)[ \t]*(.*?)\s*$", re.MULTILINE)
 REQ_RE = re.compile(
     r"^### Requirement: (.+?)\s*$\n(.*?)(?=^### Requirement: |\Z)",
     re.MULTILINE | re.DOTALL,
@@ -106,7 +106,7 @@ def check(root: pathlib.Path, change: str):
     delta_root = root / "openspec" / "changes" / change / "specs"
     malformed = []
     unsynced = []
-    delta_files = sorted(delta_root.glob("*/spec.md")) if delta_root.exists() else []
+    delta_files = sorted(delta_root.rglob("spec.md")) if delta_root.exists() else []
 
     if not delta_files:
         valid, reason = no_delta_is_validated_skipped(root, change)
@@ -122,7 +122,7 @@ def check(root: pathlib.Path, change: str):
         rel = delta_file.relative_to(root)
         malformed.extend(validate_delta_headings(rel, text))
 
-        capability = delta_file.parent.name
+        capability = delta_file.parent.relative_to(delta_root)
         main_file = root / "openspec" / "specs" / capability / "spec.md"
         main_text = main_file.read_text() if main_file.exists() else ""
         main_blocks, duplicates = main_requirement_blocks(main_text)
