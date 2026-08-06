@@ -99,12 +99,12 @@ Archive a completed change in the experimental workflow.
    - Show a combined summary before prompting
 
    **Prompt options:**
-   - If changes needed: "Sync now (recommended)", "Archive without syncing"
+   - If changes needed: "Sync now (required)", "Cancel"
    - If already synced: "Archive now", "Sync anyway", "Cancel"
 
    Route on the answer:
    - "Cancel" — stop, do not archive
-   - "Archive without syncing" or "Archive now" — proceed to archive
+   - "Archive now" — proceed only when comparison shows already synced
    - "Sync now" or "Sync anyway" — sync, then verify (below)
    - Anything else — ask again rather than archiving
 
@@ -128,6 +128,11 @@ Archive a completed change in the experimental workflow.
    If the sync failed, or any capability does not match, report what differs and stop — do not archive. Nothing has moved and `changeRoot` is intact, so the user can fix the mismatch or re-run the sync and start the archive again.
 
 5. **Perform the archive**
+
+   **Hard guard (mandatory, no override):** Run
+   `python3 tools/openspec_archive_guard.py "<name>" --root "<planningHome.root>"`.
+   A missing guard, non-zero result, or unsynced delta blocks archiving. This applies
+   to the generic/generated archive workflow and cannot be bypassed by confirmation.
 
    Create an `archive` directory under `planningHome.changesDir` if it doesn't exist:
    ```bash
@@ -169,7 +174,7 @@ Archive a completed change in the experimental workflow.
 **Guardrails**
 - Announce the selected change; prompt for selection when it is ambiguous
 - Use artifact graph (openspec status --json) for completion checking
-- Don't block archive on warnings - just inform and confirm
+- Block archive whenever the hard delta-spec sync guard fails
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, run the `openspec-sync-specs` workflow inline (agent-driven)

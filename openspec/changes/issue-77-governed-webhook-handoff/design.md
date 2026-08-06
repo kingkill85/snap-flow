@@ -1,37 +1,32 @@
 ## Context
 
-See proposal.md and the two capability specs. SnapFlow uses Deno and SQLite, but the public API currently has no GitHub webhook route. The new integration must remain dormant and must not couple receipt latency to agent execution.
+The automation is operational tooling, not SnapFlow product behavior. It must be independently deployable, return only after durable enqueue, and execute Neo task creation outside HTTP request handling. Issue 77 was explicitly authorized by the repository owner as a one-time workflow bootstrap; future material artifact changes still require a new approval.
 
 ## Goals / Non-Goals
 
-**Goals:**
+**Goals:** exact raw-byte authentication and bounded schema validation; durable delivery/wakeup/work persistence; crash-safe task creation; public, credential-free GitHub revalidation; mutually exclusive governance states.
 
-- Make authentication and policy evaluation independently testable from HTTP hosting.
-- Make deduplication and queue insertion one durable transaction.
-- Provide a local-only runner and an explicit consumer-facing queue contract.
-
-**Non-Goals:**
-
-- Mounting the webhook in SnapFlow's main application.
-- Adding public ingress, Hermes/Traefik changes, automatic agent execution, or secret material.
-- Implementing GitHub API callbacks or workflow-state mutation.
+**Non-Goals:** product backend routes/imports/env, ingress, deployment, secrets, GitHub mutation, or UI changes. Playwright is not applicable because this automation-only change alters no UI behavior.
 
 ## Decisions
 
-1. A small handler consumes a standard `Request` and injected configuration plus a `WebhookHandoffStore`. This keeps raw-body signature verification intact and makes transport/store substitutions straightforward. A framework-mounted route was rejected because it would risk accidental activation.
-2. Web Crypto computes HMAC and a length-normalized byte comparison performs constant-time verification. String equality and decoded-body verification were rejected.
-3. A SQLite adapter owns delivery and queue tables and inserts both in one immediate transaction. Separate dedupe and queue calls were rejected because a crash could lose or duplicate work.
-4. Filtering happens before durable acceptance. Issues events allow `opened`, `reopened`, `edited`, and `labeled`; issue comments allow only `created`. Both require an open `neo-dev` issue. This avoids enqueueing arbitrary repository activity.
-5. Queue payloads retain only the delivery/event/action/repository/issue/comment identifiers and receipt time needed by a downstream worker; the profile is fixed to `dev`. The receiver does not invoke a worker.
-6. A standalone runner reads configuration from environment variables and binds to loopback by default. It is documented but not wired into package tasks, containers, or ingress.
+1. `tools/neo_dev_webhook` uses Python stdlib and SQLite with injected GitHub and task-runner boundaries. Tests use real files and transactions but never invoke the real task script.
+2. The receiver verifies HMAC over raw bytes before JSON parsing, checks canonical UUID delivery IDs, exact repository/event/actor/label rules, bounded input, and the exact standalone `<!-- neo-dev -->` marker.
+3. A public GitHub adapter sends no repository credential and fail-closed revalidates open/label/non-PR state in the consumer immediately before external task creation. Enqueue-time state is not treated as authoritative because queued work can become stale.
+4. One immediate transaction inserts the delivery, wakeup, and one active repo+issue work row. A claim captures the maximum included wakeup ID. Compare-and-set completion stores the task ID and atomically moves any later wakeups to one queued successor, using its first delivery UUID as the successor idempotency key, so there is never competing active work for a repo+issue.
+5. The consumer atomically claims queued or expired processing work with a unique ownership token and increments attempts. Both explicit failure and expired-lease recovery enforce the same bounded attempt limit transactionally and send exhausted work to `dead` without returning it. The canonical delivery UUID is always reused as the `task.py` idempotency key, making a crash after external creation safe to retry.
+6. The receiver and consumer are separate processes. The receiver never runs `task.py`.
+7. Material proposal/design/requirement/scenario/task scope/order/acceptance/approach changes invalidate approval. Checkbox-only evidence/status changes do not. Material change stops apply, selects `needs-approval`, publishes new full-SHA links, and requires `/approve-spec <new-sha>`.
+8. Archive always runs `tools/openspec_archive_guard.py`; unsynced delta specs have no confirmation bypass, including the generated archive workflow.
 
-## Risks / Trade-offs
+## State transitions
 
-- [SQLite is single-host durability] → The injectable interface permits a transactional external store if deployment topology changes.
-- [A downstream worker must understand the queue schema] → Version queue records and document exact columns and claim expectations.
-- [Webhook retries can race] → A unique delivery key and transactional insert make only one request enqueue work.
-- [Operators could expose the standalone runner] → Default to loopback and explicitly prohibit exposure until separately approved.
+`neo-dev` is eligibility. Exactly zero or one phase label may coexist: `needs-input`, `needs-approval`, `in-progress`, `ready-for-review`, or `blocked`. Transitions replace the old phase atomically: clarification → `needs-input`; material approval → `needs-approval`; approved apply → `in-progress`; verified work → `ready-for-review`; external impediment → `blocked`; resolution returns to exactly one appropriate phase. Removing `neo-dev` removes all phase labels.
 
-## Migration Plan
+## Task.py integration
 
-Land the dormant module, tests, schema-on-open store, and documentation. A separately approved integration may provision a secret, select a durable database path, place a private authenticated transport in front of the loopback listener, and add a queue consumer. Rollback consists of stopping the standalone listener; queued records remain inspectable.
+Production invokes controller-owned `/opt/data/scripts/neo-dev/task.py` with safe argv and no shell. Its real contract is a positional title followed by `--body`, bounded configurable `--max-runtime` (default `2h`), `--workspace`, and `--idempotency-key`; `--help` is checked for those options. The wrapper itself runs Hermes create and dispatch with JSON output, so stdout may contain multiple JSON documents. The runner selects the created task ID from the first document carrying `id` or `task_id` and persists it. Tests emulate this exact help/output shape and never invoke a real task. HTTP concurrency is admitted by a bounded server semaphore before handler-thread allocation or request-body reads, with the receiver limit retained as defense in depth.
+
+## Evidence rule
+
+A task checkbox may be completed only alongside concrete command/review evidence. Unsupported prior completion claims are reopened. The concise evidence file records exact commands and outcomes.

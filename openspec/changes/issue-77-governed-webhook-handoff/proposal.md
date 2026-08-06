@@ -4,9 +4,9 @@ SnapFlow needs a review-gated, auditable path from GitHub issues to asynchronous
 
 ## What Changes
 
-- Establish the Issue/OpenSpec change/branch/worktree/Draft PR lifecycle, approval invalidation rules, review gates, labels, and Michael-via-Neo authority boundary.
+- Establish the Issue/OpenSpec change/branch/worktree/Draft PR lifecycle, material-change approval invalidation rules, mutually exclusive states, review gates, and authorized-human-via-Neo authority boundary.
 - Install the current OpenSpec 1.8.0 Codex workflows, including new, continue, fast-forward, and verify, with telemetry disabled.
-- Add a dormant GitHub webhook handoff service that authenticates raw payloads, filters repository/events/labels, prevents comment loops, durably deduplicates deliveries, and durably queues accepted work for the `dev` profile.
+- Add independently deployable automation under `tools/` with a bounded receiver and recoverable consumer that creates durable Neo Dev Kanban tasks through `/opt/data/scripts/neo-dev/task.py`.
 - Document exact configuration, local operation, integration boundaries, and the explicit prohibition on public ingress activation.
 
 ## Capabilities
@@ -22,4 +22,4 @@ None.
 
 ## Impact
 
-This affects repository guidance, OpenSpec configuration and generated Codex workflows, and adds an isolated backend integration plus tests and operator documentation. The webhook is not mounted in the SnapFlow API and no ingress, deployment, secrets, Hermes, or Traefik configuration changes are included.
+This affects repository guidance, OpenSpec configuration and generated Codex workflows, and adds standalone `tools/` automation, tests, and operator documentation. No product backend route/import/environment coupling, ingress, deployment, secrets, Hermes, or Traefik changes are included.

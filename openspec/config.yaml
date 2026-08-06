@@ -6,8 +6,8 @@ context: |
   worktree, and Draft PR. Artifact links must be immutable GitHub blob URLs pinned
   to a full commit SHA. OpenSpec telemetry remains disabled with OPENSPEC_TELEMETRY=0.
   The neo-dev label means eligible development handoff; needs-approval means the
-  workflow is waiting for Michael's decision relayed through Neo. Automated issue
-  comments contain <!-- snapflow:neo-webhook --> to prevent webhook loops.
+  workflow is waiting for the authorized human approver's decision relayed through Neo. Automated issue
+  comments contain the exact standalone <!-- neo-dev --> marker to prevent webhook loops.
   Never add public ingress or change Hermes/Traefik as part of normal changes.
 
 rules:
@@ -24,13 +24,13 @@ rules:
 operations:
   apply:
     guidance:
-      - Require Michael's /approve-spec <full-commit-sha> relayed through Neo before implementation.
-      - Treat any specification artifact change as invalidating approval and require reapproval.
+      - Require the authorized human approver's /approve-spec <full-commit-sha> relayed through Neo before implementation.
+      - Checkbox-only status changes preserve approval; material artifact changes invalidate it and require reapproval.
       - Never commit directly to main or perform merge, release, deploy, secret/access, or destructive operations.
   archive:
     guidance:
       - Sync and archive before requesting the separate /merge approval.
-      - /accept does not authorize /merge; only Michael approval relayed through Neo does.
+      - /accept does not authorize /merge; only authorized human approval relayed through Neo does.
 
 # Project context (optional)
 # This is shown to AI when creating artifacts.

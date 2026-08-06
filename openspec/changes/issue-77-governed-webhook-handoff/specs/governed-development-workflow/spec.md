@@ -1,44 +1,55 @@
 ## Purpose
 
-Defines the approval and authority gates that keep issue-driven development auditable, reviewable, and separated from privileged operations.
+Defines auditable approval, state, evidence, and archive gates.
 
 ## ADDED Requirements
 
-### Requirement: One-to-one development identity
-Each development effort SHALL use one GitHub Issue, one OpenSpec change, one non-main branch, one worktree, and one Draft PR.
+### Requirement: One-to-one identity and immutable approval
+Each effort SHALL use one Issue, OpenSpec change, non-main branch, worktree, and Draft PR with full-40-character-SHA artifact links and `/approve-spec <sha>` from the authorized human approver through Neo.
 
-#### Scenario: Work is initialized
-- **WHEN** an issue is accepted for development
-- **THEN** its OpenSpec change, branch, worktree, and Draft PR are uniquely associated with that issue
+#### Scenario: Checkbox-only update
+- **WHEN** only task evidence/status checkboxes change
+- **THEN** approval remains valid
 
-### Requirement: Immutable specification approval
-Specification review links SHALL be GitHub blob links pinned to a full commit SHA, and implementation SHALL require Michael's `/approve-spec <sha>` approval relayed through Neo.
+#### Scenario: Material artifact update
+- **WHEN** proposal, design, requirement, scenario, task scope/order/acceptance, or approach materially changes
+- **THEN** apply stops, `needs-approval` replaces the current phase, new immutable links are published, and `/approve-spec <new-sha>` is required
 
-#### Scenario: Approved specification is unchanged
-- **WHEN** the current specification content matches the full commit SHA in the approval command
-- **THEN** implementation may enter the apply phase
+### Requirement: Mutually exclusive workflow states
+Eligibility SHALL use `neo-dev`; `needs-input`, `needs-approval`, `in-progress`, `ready-for-review`, and `blocked` SHALL be mutually exclusive phase labels.
 
-#### Scenario: Specification changes after approval
-- **WHEN** any specification artifact changes after approval
-- **THEN** the previous approval is invalid and a new `/approve-spec <sha>` is required
+#### Scenario: Phase transition
+- **WHEN** the workflow changes phase
+- **THEN** the prior phase label is removed as the new one is applied
 
-### Requirement: Staged review and completion gates
-The workflow SHALL require apply, verification, all relevant tests, independent code and test review, and Playwright UI review for UI changes before acceptance.
+#### Scenario: Eligibility removed
+- **WHEN** `neo-dev` is removed
+- **THEN** every phase label is removed
 
-#### Scenario: Work is ready for acceptance
-- **WHEN** implementation and every applicable review gate pass
-- **THEN** `/accept` may be requested separately from `/merge`
+### Requirement: Evidence-backed completion
+Tasks SHALL remain incomplete until concrete implementation or command/review evidence exists. Apply, verification, relevant suites, independent code/test review, and UI review when UI changes SHALL precede acceptance.
 
-### Requirement: Merge readiness and privileged authority
-The OpenSpec change SHALL be synced and archived before merge approval, and only Michael's approval relayed through Neo SHALL authorize merge, release, deployment, secret or access changes, or destructive operations.
+#### Scenario: Automation-only review
+- **WHEN** no UI behavior changes
+- **THEN** Playwright is recorded as not applicable with that reason
 
-#### Scenario: Merge is requested
-- **WHEN** `/merge` is issued without the required authority or before sync and archive
-- **THEN** the operation is refused
+### Requirement: Hard synchronized archive gate
+The change SHALL not archive until every delta spec is synced, and generic/generated archive paths SHALL have no bypass.
 
-### Requirement: Workflow labels and main protection
-The workflow SHALL use `neo-dev` and `needs-approval` to represent handoff and approval states, and SHALL prohibit direct commits to main.
+#### Scenario: Delta is unsynced
+- **WHEN** archive is attempted
+- **THEN** the hard guard fails before the change is moved
 
-#### Scenario: Human approval is needed
-- **WHEN** a workflow reaches a Michael approval gate
-- **THEN** `needs-approval` identifies the blocked state until Neo relays the decision
+### Requirement: Separate privileged authority
+Acceptance SHALL NOT authorize merge. Sync/archive SHALL precede a separate merge decision, and only the authorized human approver through Neo may authorize merge, release, deployment, secrets/access, or destructive production operations.
+
+#### Scenario: Acceptance occurs
+- **WHEN** `/accept` is recorded without a separate authorized `/merge`
+- **THEN** no merge or privileged operation is permitted
+
+### Requirement: One-time bootstrap
+Issue 77 SHALL record the repository owner's explicit one-time bootstrap authorization without weakening later approval gates.
+
+#### Scenario: Later material change occurs
+- **WHEN** any future issue or later material artifact change needs approval
+- **THEN** the normal immutable approval gate applies without a bootstrap exception
