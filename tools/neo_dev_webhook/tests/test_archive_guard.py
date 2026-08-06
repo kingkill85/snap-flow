@@ -329,8 +329,48 @@ class ArchiveGuardTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("malformed", result.stderr.lower())
 
+    def test_nested_commonmark_requirement_content_in_purpose_fails_closed(self):
+        invalid_bodies = (
+            "> ### Requirement: Hidden\n> Unsynced\n",
+            "- > ### Requirement: Hidden\n  > Unsynced\n",
+            "1. - FROM: `Old`\n   - TO: `New`\n",
+            "> ## ADDED Requirements\n> ### Requirement: Hidden\n",
+            "    ### Requirement: Code-like hidden requirement\n",
+        )
+        for purpose in invalid_bodies:
+            with self.subTest(purpose=purpose), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                delta = root / "openspec/changes/demo/specs/example/spec.md"
+                main = root / "openspec/specs/example/spec.md"
+                delta.parent.mkdir(parents=True)
+                main.parent.mkdir(parents=True)
+                main.write_text("### Requirement: Good\nCurrent\n", encoding="utf-8")
+                delta.write_text(
+                    "## Purpose\n" + purpose + "\n"
+                    "## ADDED Requirements\n\n### Requirement: Good\nCurrent\n",
+                    encoding="utf-8",
+                )
+                result = self.run_guard(root)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Purpose", result.stderr)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            delta = root / "openspec/changes/demo/specs/example/spec.md"
+            main = root / "openspec/specs/example/spec.md"
+            delta.parent.mkdir(parents=True)
+            main.parent.mkdir(parents=True)
+            main.write_text("### Requirement: Good\nCurrent\n", encoding="utf-8")
+            delta.write_text(
+                "## Purpose\n- Explain the workflow\n> Additional context only\n\n"
+                "## ADDED Requirements\n\n### Requirement: Good\nCurrent\n",
+                encoding="utf-8",
+            )
+            result = self.run_guard(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_duplicate_normalized_main_requirements_fail_closed(self):
-        duplicates = (("Good", "Good"), ("Good", "good"), ("Good  name", "Good name"))
+        duplicates = (("Good", "Good"), ("Good", "good"), ("Good  name", "Good name"), ("Caf\u00e9 access", "Cafe\u0301 access"))
         for first, second in duplicates:
             with self.subTest(first=first, second=second), tempfile.TemporaryDirectory() as directory:
                 root = pathlib.Path(directory)

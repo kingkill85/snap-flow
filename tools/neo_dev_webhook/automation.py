@@ -87,6 +87,25 @@ class Store:
             raise ValueError("invalid table")
         return self.db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
 
+    def _promote_late_wakeups(self, work, now: float):
+        boundary = work["processed_wakeup_id"] or 0
+        late_wakeups = list(self.db.execute(
+            "SELECT * FROM wakeups WHERE work_id=? AND id>? ORDER BY id",
+            (work["id"], boundary),
+        ))
+        if not late_wakeups:
+            return
+        first_delivery = late_wakeups[0]["delivery_id"]
+        successor = self.db.execute(
+            "INSERT INTO active_work(repository,issue_number,idempotency_key,status,created_at,updated_at) "
+            "VALUES (?,?,?,'queued',?,?)",
+            (work["repository"], work["issue_number"], first_delivery, now, now),
+        ).lastrowid
+        self.db.execute(
+            "UPDATE wakeups SET work_id=? WHERE work_id=? AND id>?",
+            (successor, work["id"], boundary),
+        )
+
     def accept(self, record: dict) -> str:
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
@@ -128,13 +147,22 @@ class Store:
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
-                self.db.execute(
-                    "UPDATE active_work SET status='dead',lease_until=NULL,claim_token=NULL,"
-                    "last_error='maximum attempts exhausted during lease recovery',updated_at=? "
-                    "WHERE attempts>=? AND (status='queued' OR "
-                    "(status='processing' AND lease_until<=?))",
-                    (now, max_attempts, now),
-                )
+                exhausted = list(self.db.execute(
+                    "SELECT * FROM active_work WHERE attempts>=? AND (status='queued' OR "
+                    "(status='processing' AND lease_until<=?)) ORDER BY id",
+                    (max_attempts, now),
+                ))
+                for work in exhausted:
+                    changed = self.db.execute(
+                        "UPDATE active_work SET status='dead',lease_until=NULL,claim_token=NULL,"
+                        "last_error='maximum attempts exhausted during lease recovery',updated_at=? "
+                        "WHERE id=? AND attempts>=? AND (status='queued' OR "
+                        "(status='processing' AND lease_until<=?))",
+                        (now, work["id"], max_attempts, now),
+                    ).rowcount
+                    if changed != 1:
+                        raise RuntimeError("exhausted work recovery race")
+                    self._promote_late_wakeups(work, now)
                 row = self.db.execute(
                     "SELECT * FROM active_work WHERE attempts<? AND (status='queued' OR "
                     "(status='processing' AND lease_until<=?)) ORDER BY id LIMIT 1",
@@ -206,17 +234,26 @@ class Store:
                 raise
 
     def fail(self, work_id: int, claim_token: str, error: str, max_attempts: int, now: float | None = None):
+        failed_at = time.time() if now is None else now
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
+                work = self.db.execute(
+                    "SELECT * FROM active_work WHERE id=? AND status='processing' AND claim_token=?",
+                    (work_id, claim_token),
+                ).fetchone()
+                if work is None:
+                    raise RuntimeError("work claim is no longer owned")
+                terminal = work["attempts"] >= max_attempts
                 changed = self.db.execute(
-                    "UPDATE active_work SET status=CASE WHEN attempts>=? THEN 'dead' ELSE 'queued' END,"
-                    "lease_until=NULL,claim_token=NULL,last_error=?,updated_at=? "
+                    "UPDATE active_work SET status=?,lease_until=NULL,claim_token=NULL,last_error=?,updated_at=? "
                     "WHERE id=? AND status='processing' AND claim_token=?",
-                    (max_attempts, error[:1000], time.time() if now is None else now, work_id, claim_token),
+                    ("dead" if terminal else "queued", error[:1000], failed_at, work_id, claim_token),
                 )
                 if changed.rowcount != 1:
                     raise RuntimeError("work claim is no longer owned")
+                if terminal:
+                    self._promote_late_wakeups(work, failed_at)
                 self.db.execute("COMMIT")
             except BaseException:
                 self.db.execute("ROLLBACK")

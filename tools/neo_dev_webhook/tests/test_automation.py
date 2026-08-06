@@ -280,6 +280,37 @@ class AutomationTest(unittest.TestCase):
         ).fetchone()[0]
         self.assertEqual(live_count, 1)
 
+    def test_late_wakeup_after_terminal_failure_becomes_successor_work(self):
+        first_delivery = str(uuid.uuid4())
+        late_delivery = str(uuid.uuid4())
+        self.send(delivery=first_delivery)
+        claimed = self.store.claim(now=10, lease_seconds=30, max_attempts=1)
+        self.assertEqual(self.send(delivery=late_delivery), (202, "accepted"))
+
+        self.store.fail(claimed["id"], claimed["claim_token"], "terminal", 1, now=11)
+        successor = self.store.claim(now=12, lease_seconds=30, max_attempts=1)
+        self.assertIsNotNone(successor)
+        self.assertNotEqual(successor["id"], claimed["id"])
+        self.assertEqual(successor["idempotency_key"], late_delivery)
+        self.assertEqual([item["delivery_id"] for item in successor["wakeups"]], [late_delivery])
+
+    def test_late_wakeup_after_exhausted_lease_becomes_successor_work(self):
+        first_delivery = str(uuid.uuid4())
+        late_delivery = str(uuid.uuid4())
+        self.send(delivery=first_delivery)
+        claimed = self.store.claim(now=10, lease_seconds=1, max_attempts=1)
+        self.assertEqual(self.send(delivery=late_delivery), (202, "accepted"))
+
+        successor = self.store.claim(now=12, lease_seconds=30, max_attempts=1)
+        self.assertIsNotNone(successor)
+        self.assertNotEqual(successor["id"], claimed["id"])
+        self.assertEqual(successor["idempotency_key"], late_delivery)
+        self.assertEqual([item["delivery_id"] for item in successor["wakeups"]], [late_delivery])
+        dead = self.store.db.execute(
+            "SELECT status FROM active_work WHERE id=?", (claimed["id"],)
+        ).fetchone()["status"]
+        self.assertEqual(dead, "dead")
+
     def test_expired_leases_dead_letter_at_attempt_limit_without_fail(self):
         self.send()
         first = self.store.claim(now=10, lease_seconds=1, max_attempts=2)

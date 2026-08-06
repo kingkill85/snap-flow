@@ -7,6 +7,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import unicodedata
 
 OPERATIONS = ("ADDED", "MODIFIED", "REMOVED", "RENAMED")
 LEVEL2_HEADING_RE = re.compile(r"^[ ]{0,3}##(?!#)[ \t]*(.*?)\s*$", re.MULTILINE)
@@ -19,7 +20,7 @@ RENAME_RE = re.compile(r"^- FROM: `(.+?)`\s*$\n^- TO: `(.+?)`\s*$", re.MULTILINE
 
 
 def normalized_name(value: str) -> str:
-    return " ".join(value.split()).casefold()
+    return " ".join(unicodedata.normalize("NFC", value).split()).casefold()
 
 
 def requirement_entries(text: str):
@@ -85,6 +86,22 @@ def no_delta_is_validated_skipped(root: pathlib.Path, change: str):
     return True, ""
 
 
+def requirement_like_in_purpose(line: str) -> bool:
+    candidate = line
+    while True:
+        candidate = candidate.lstrip(" \t")
+        if candidate.startswith("##") or re.match(r"^- (?:FROM|TO):", candidate):
+            return True
+        if candidate.startswith(">"):
+            candidate = candidate[1:]
+            continue
+        list_prefix = re.match(r"^(?:[-+*]|\d+[.)])[ \t]+", candidate)
+        if list_prefix:
+            candidate = candidate[list_prefix.end():]
+            continue
+        return False
+
+
 def validate_delta_headings(rel: pathlib.Path, text: str):
     errors = []
     matches = list(LEVEL2_HEADING_RE.finditer(text))
@@ -106,7 +123,7 @@ def validate_delta_headings(rel: pathlib.Path, text: str):
             continue
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
         purpose_body = text[match.end():end]
-        if re.search(r"^###|^- (?:FROM|TO):", purpose_body, re.MULTILINE):
+        if any(requirement_like_in_purpose(line) for line in purpose_body.splitlines()):
             errors.append(f"{rel}: requirement-like content is not allowed in Purpose")
     for operation in OPERATIONS:
         count = headings.count(f"{operation} Requirements")
