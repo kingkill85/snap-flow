@@ -56,6 +56,24 @@ Exact post-implementation commands and outcomes:
 
 No frontend behavior changed, so an independent Playwright UI review is not applicable. Independent code/test review and controller installation/preflight remain assigned to Neo Dev and are not claimed here.
 
+### Same-session continuation correction
+
+The approved OpenSpec directory is restored byte-for-byte to revision `1843b3ddfe8433d05817c3f94bb9edbc39e96124`; the erroneous planning-artifact edit is reversed by the implementation follow-up and no approved checkbox is claimed. Repository tooling now persists the controller-observed Codex session UUID and structured execution/terminal state, steers an active correctable session in place, resumes an exited usable session by exact UUID, separates process exit from trusted semantic success, and permits at most one atomically recorded fresh-session fallback. Exact verification outcomes are recorded here after the correction commands complete.
+
+- `PYTHONPATH=tools python3 -m unittest tools.neo_dev_webhook.tests.test_project_control -v`: **18/18 passed**.
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -v`: **70/70 passed**.
+- `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict --no-interactive`: **passed**.
+- `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate --all --strict --no-interactive`: **3 passed, 0 failed**.
+- `git diff --exit-code 1843b3ddfe8433d05817c3f94bb9edbc39e96124 -- openspec/changes/issue-77-enforce-container-boundary`: **passed**; every approved artifact and checkbox is byte-identical.
+- `python3 tools/openspec_archive_guard.py issue-77-enforce-container-boundary --root .`: **blocked as required** because the approved active deltas remain unsynchronized before acceptance.
+- `git diff --exit-code -- openspec/changes/archive`: **passed**.
+- `cd backend && deno lint`: **passed**, 141 files checked.
+- `cd frontend && npm run lint`: **passed**.
+- `cd frontend && npm run test:run`: **37 test files passed, 264 tests passed**.
+- `cd backend && deno task test`: **327 passed (146 steps), 1 known baseline failure** at `backend/tests/services/excel-sync_test.ts:207` (`false` actual, `true` expected); no changed file touches that subsystem and the suite is not reported as green.
+- `python3 -m py_compile tools/neo_dev_webhook/project_control.py tools/neo_dev_webhook/tests/test_project_control.py`: **passed**.
+- `git diff --check`: **passed**.
+
 ## Scope boundary
 
 No product backend/frontend behavior or UI changed, so Playwright review is not applicable. Controller installation and preflight are owned by Neo Dev through its trusted operator path. This repository-side work does not probe or change private connection facts or controller state. Push is authorized for Draft PR #78; merge, release, deployment, public ingress, secret/access changes, dispatcher changes, container provisioning, destructive operations, canonical-spec sync, and archive remain prohibited or separately gated.

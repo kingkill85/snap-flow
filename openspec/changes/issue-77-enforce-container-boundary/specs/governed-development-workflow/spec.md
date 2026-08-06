@@ -18,8 +18,6 @@ Archived OpenSpec artifacts SHALL remain immutable. As a narrow exception to the
 ### Requirement: Governed controller bindings are explicit and issue-scoped
 Canonical webhook handling SHALL treat repository+issue as a validated governed identity, not as an alias for a single historical issue. Project execution SHALL be authorized only by a controller-owned, non-caller-overridable registry record keyed by that identity and containing the exact project, session, window, worktree, branch, and sole implementation worker. Neo Dev SHALL remain the controller-only orchestrator and Codex SHALL remain the sole implementation worker.
 
-The controller-owned work record SHALL also bind the exact Codex session identity and structured semantic execution state. Correctable review findings SHALL continue the same active process/session or the exact resumable session after process exit. A replacement session SHALL be limited to one fail-closed fallback after a genuine crash or unusable/missing resumable session. Process exit status and terminal prose SHALL remain observations, not semantic completion authority.
-
 #### Scenario: Registered governed identity
 - **WHEN** an eligible webhook work item reaches controller project dispatch
 - **THEN** its validated repository+issue resolves to exactly one controller record and the resolution is persisted with the canonical idempotency key before project execution
@@ -27,11 +25,3 @@ The controller-owned work record SHALL also bind the exact Codex session identit
 #### Scenario: Unregistered or inconsistent identity
 - **WHEN** no record exists, multiple or conflicting facts exist, live state mismatches the record, or a caller attempts to supply or override a coordinate
 - **THEN** controller dispatch fails closed without deriving a worktree, branch, tmux target, or worker from payload or task prose
-
-#### Scenario: Correctable review continuation
-- **WHEN** an operator reports a correctable finding before acceptance
-- **THEN** the governed work record remains active and controller dispatch preserves the same Codex process/session when live or resumes its exact persisted session UUID when exited
-
-#### Scenario: Semantic terminal state is authoritative
-- **WHEN** a worker process exits, including with status zero
-- **THEN** the effort is complete only if trusted structured state records semantic success; blocker text, correctable findings, invalid results, crashes, and missing completion evidence remain non-success states

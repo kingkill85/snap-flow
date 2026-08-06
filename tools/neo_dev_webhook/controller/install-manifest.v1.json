@@ -28,6 +28,13 @@
       "owner": "root",
       "group": "root",
       "mode": "0644"
+    },
+    {
+      "source": "state-schema.v1.json",
+      "destination": "/etc/neo-dev/project-control/state-schema.json",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
     }
   ],
   "state": {

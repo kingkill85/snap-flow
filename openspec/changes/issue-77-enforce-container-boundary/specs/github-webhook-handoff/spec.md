@@ -5,10 +5,6 @@ The receiver SHALL atomically persist delivery, wakeup, and active work before r
 
 Neo Dev on that card SHALL invoke a controller-installed project-control adapter as its sole project-command capability. The adapter SHALL accept only operation (`preflight`, `start`, or `resume`), validated governed repository, positive issue number, and canonical idempotency key; resolve repository+issue through a controller-owned non-caller-overridable allowlist/registry; persist the exact resolved record with that idempotency key before launch; and use safe argv without shell interpolation to preflight and launch/control the sole Codex worker in the resolved tmux window. Callers and task prose SHALL NOT provide, derive, or override project/session/window/worktree/branch/worker/path values. Unknown, missing, conflicting, ambiguous, or mismatched registry, persisted, or live state SHALL fail closed before a project command. Resume and retry SHALL reuse the persisted resolved record and original idempotency key. Private endpoint, port, host-key, and client-identity details SHALL remain controller-only.
 
-The controller SHALL additionally persist the active Codex session UUID, process generation, restart count, and structured execution phase and terminal observation with the governed resolution. Execution phases SHALL distinguish at least `never_started`, `active`, `exited_resumable`, `correctable`, `semantic_success`, `semantic_blocked`, `crashed`, and `failed_closed`; terminal observation SHALL record exit code separately from trusted semantic outcome and resumability. Only a trusted controller transition MAY record semantic success. Textual output and exit code zero SHALL NOT imply semantic success.
-
-For a correctable finding while Codex is active, `resume` SHALL steer the same tmux pane, process, and session without launching or resuming another Codex process. If that exact process has exited and its persisted session UUID is usable, `resume` SHALL invoke the supported `codex resume <session-id>` interface for that UUID. A new Codex session MAY start only when trusted structured state establishes a genuine crash or the persisted session is missing or unusable, and only when the persisted restart count is zero; that fallback SHALL atomically increment the count before launch and SHALL never occur more than once. Ambiguous process/session state, absent trusted semantic state, session drift, or a second fallback request SHALL fail closed.
-
 #### Scenario: Replay and concurrency
 - **WHEN** deliveries repeat, race, or arrive while work is active
 - **THEN** delivery replay is deduplicated and at most one active task exists per repo+issue
@@ -27,23 +23,7 @@ For a correctable finding while Codex is active, `resume` SHALL steer the same t
 
 #### Scenario: Resume preserves the boundary
 - **WHEN** an existing governed task is resumed or retried
-- **THEN** the adapter reloads the persisted resolution, Codex session UUID, and structured execution state and execution remains bound to the same exact target and original idempotency key, rejecting registry drift or a conflicting persisted record
-
-#### Scenario: Correctable finding preserves the active worker
-- **WHEN** a trusted correctable finding arrives while the governed Codex process and session are active
-- **THEN** `resume` steers that same pane, process, and session and launches no second Codex process or worker
-
-#### Scenario: Exited Codex session is resumed exactly
-- **WHEN** the governed Codex process exited without semantic success and its persisted session UUID remains usable
-- **THEN** `resume` continues exactly that UUID through `codex resume <session-id>` and does not start a fresh session
-
-#### Scenario: Fresh-session fallback is bounded
-- **WHEN** trusted state proves a genuine crash or a missing or unusable resumable session
-- **THEN** the adapter may atomically consume the sole restart allowance and start one fresh Codex session, while any later fallback request fails closed before launch
-
-#### Scenario: Process success is not semantic success
-- **WHEN** Codex exits with code zero but reports a blocker, correctable finding, invalid terminal result, or no trusted structured completion decision
-- **THEN** persisted state is not `semantic_success` and controller completion remains blocked
+- **THEN** the adapter reloads the persisted resolution and execution remains bound to the same exact target and original idempotency key, rejecting registry drift or a conflicting persisted record
 
 #### Scenario: Controller connection facts are already verified
 - **WHEN** implementation starts or resumes in the registered project
