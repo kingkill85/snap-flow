@@ -385,6 +385,15 @@ class AutomationTest(unittest.TestCase):
             runner.create({"issue_number": 77, "wakeups": []}, "delivery-key")
         self.assertIn("45m", run.call_args_list[1].args[0])
 
+    def test_task_runner_rejects_empty_or_nonstring_idempotency_keys_before_execution(self):
+        for key in ("", "   ", 0, -1, None):
+            with self.subTest(key=key):
+                runner = TaskRunner(script_path="/test/task.py")
+                with mock.patch("subprocess.run") as run:
+                    with self.assertRaises(ValueError):
+                        runner.create({"issue_number": 77, "wakeups": []}, key)
+                run.assert_not_called()
+
     def test_task_runner_rejects_ambiguous_or_unrelated_json_ids(self):
         help_result = mock.Mock(stdout="usage: task.py title --body BODY --max-runtime MAX_RUNTIME --workspace WORKSPACE --idempotency-key KEY")
         invalid_outputs = (

@@ -362,6 +362,9 @@ class TaskRunner:
         self.validated = True
 
     def create(self, work: dict, idempotency_key: str) -> str:
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+            raise ValueError("idempotency_key must be a non-empty string")
+        idempotency_key = idempotency_key.strip()
         self._validate_contract()
         description = f"Process SnapFlow issue #{work['issue_number']} with {len(work['wakeups'])} durable wakeup(s)."
         result = subprocess.run(
