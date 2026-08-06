@@ -379,11 +379,26 @@ class AutomationTest(unittest.TestCase):
 
     def test_task_runner_max_runtime_is_configurable(self):
         help_result = mock.Mock(stdout="usage: task.py title --body BODY --max-runtime MAX_RUNTIME --workspace WORKSPACE --idempotency-key KEY")
-        completed = mock.Mock(stdout='{"id":"kanban-77"}\n')
+        completed = mock.Mock(stdout='{"task_id":"kanban-77","durable":true}\n')
         runner = TaskRunner(script_path="/test/task.py", max_runtime="45m")
         with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
             runner.create({"issue_number": 77, "wakeups": []}, "delivery-key")
         self.assertIn("45m", run.call_args_list[1].args[0])
+
+    def test_task_runner_rejects_ambiguous_or_unrelated_json_ids(self):
+        help_result = mock.Mock(stdout="usage: task.py title --body BODY --max-runtime MAX_RUNTIME --workspace WORKSPACE --idempotency-key KEY")
+        invalid_outputs = (
+            '{"id":"dispatcher-wakeup-1"}\n',
+            '{"data":{"id":"request-1"}}\n',
+            '{"task_id":"kanban-77","durable":true}\n{"id":"other"}\n',
+            '{"task_id":"kanban-77","durable":false}\n',
+        )
+        for output in invalid_outputs:
+            with self.subTest(output=output):
+                runner = TaskRunner(script_path="/test/task.py")
+                with mock.patch("subprocess.run", side_effect=[help_result, mock.Mock(stdout=output)]):
+                    with self.assertRaises(RuntimeError):
+                        runner.create({"issue_number": 77, "wakeups": []}, "delivery-key")
 
     def test_task_runner_rejects_incompatible_real_help_shape(self):
         runner = TaskRunner(script_path="/test/task.py")

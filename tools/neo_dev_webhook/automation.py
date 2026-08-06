@@ -369,31 +369,18 @@ class TaskRunner:
              "--body", description, "--max-runtime", self.max_runtime,
              "--workspace", self.workspace,
              "--idempotency-key", idempotency_key],
-            check=True, capture_output=True, text=True, timeout=30,
+            check=True, capture_output=True, text=True, timeout=70,
         )
-        decoder = json.JSONDecoder()
-        remaining = result.stdout
-        documents = []
-        while remaining.strip():
-            remaining = remaining.lstrip()
-            try:
-                document, offset = decoder.raw_decode(remaining)
-            except json.JSONDecodeError as error:
-                raise RuntimeError("task.py returned invalid JSON output") from error
-            documents.append(document)
-            remaining = remaining[offset:]
-        for document in documents:
-            if isinstance(document, dict):
-                candidates = [document]
-                candidates.extend(
-                    document[key] for key in ("task", "data")
-                    if isinstance(document.get(key), dict)
-                )
-                for candidate in candidates:
-                    task_id = candidate.get("id") or candidate.get("task_id")
-                    if isinstance(task_id, (str, int)) and not isinstance(task_id, bool):
-                        return str(task_id)
-        raise RuntimeError("task.py did not return a task id")
+        try:
+            document = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("task.py returned invalid JSON output") from error
+        if not isinstance(document, dict) or document.get("durable") is not True:
+            raise RuntimeError("task.py did not confirm durable task creation")
+        task_id = document.get("task_id")
+        if not isinstance(task_id, (str, int)) or isinstance(task_id, bool):
+            raise RuntimeError("task.py did not return an unambiguous durable task id")
+        return str(task_id)
 
 
 class Consumer:

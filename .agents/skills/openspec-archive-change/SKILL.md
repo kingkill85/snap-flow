@@ -132,11 +132,11 @@ Archive a completed change in the experimental workflow.
    **Strict validation and hard guard (mandatory, no override):** First run
    `OPENSPEC_TELEMETRY=0 openspec validate "<name>" --strict --no-interactive`
    with the same selected-root/store flags used above. Any validation failure blocks
-   archiving. When `artifactPaths.specs.existingOutputPaths` is non-empty, then run
+   archiving. Then always run
    `python3 tools/openspec_archive_guard.py "<name>" --root "<planningHome.root>"`.
-   When it is empty, `--allow-no-delta` may be added only if the status JSON reports
-   the specs artifact as `skipped`; a missing/empty delta in every other state blocks
-   archiving. A missing guard, non-zero result, malformed delta, or unsynced delta
+   The guard obtains and parses OpenSpec status JSON itself when no delta files exist;
+   it passes only when the specs artifact is `skipped` with no existing spec paths.
+   A missing guard, non-zero result, malformed delta, or unsynced delta
    blocks archiving. This applies to the generic/generated archive workflow and
    cannot be bypassed by confirmation.
 

@@ -1,3 +1,5 @@
+import json
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -10,11 +12,12 @@ GUARD = ROOT / "tools" / "openspec_archive_guard.py"
 
 class ArchiveGuardTest(unittest.TestCase):
     @staticmethod
-    def run_guard(root):
+    def run_guard(root, env=None):
         return subprocess.run(
             ["python3", str(GUARD), "demo", "--root", str(root)],
             capture_output=True,
             text=True,
+            env=env,
         )
 
     def test_unsynced_delta_blocks_archive_and_synced_delta_passes(self):
@@ -37,7 +40,8 @@ class ArchiveGuardTest(unittest.TestCase):
         self.assertIn("tools/openspec_archive_guard.py", text)
         self.assertIn("openspec validate", text)
         self.assertIn("--strict", text)
-        self.assertIn("--allow-no-delta", text)
+        self.assertNotIn("--allow-no-delta", text)
+        self.assertIn("status JSON", text)
         self.assertNotIn("Archive without syncing", text)
 
     def test_all_delta_operations_must_be_synced(self):
@@ -150,7 +154,7 @@ class ArchiveGuardTest(unittest.TestCase):
             )
             result = self.run_guard(root)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("unknown operation", result.stderr.lower())
+            self.assertIn("unknown", result.stderr.lower())
 
     def test_duplicate_sections_and_cross_operation_names_fail_closed(self):
         variants = (
@@ -172,21 +176,67 @@ class ArchiveGuardTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("duplicate", result.stderr.lower())
 
-    def test_no_delta_requires_explicit_validated_skip_flag(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            change = root / "openspec/changes/demo"
-            change.mkdir(parents=True)
-            denied = subprocess.run(
-                ["python3", str(GUARD), "demo", "--root", str(root)],
-                capture_output=True, text=True,
-            )
-            self.assertNotEqual(denied.returncode, 0)
-            allowed = subprocess.run(
-                ["python3", str(GUARD), "demo", "--root", str(root), "--allow-no-delta"],
-                capture_output=True, text=True,
-            )
-            self.assertEqual(allowed.returncode, 0, allowed.stderr)
+    def test_no_delta_parses_openspec_status_and_requires_specs_skipped(self):
+        for status, expected in (("done", 1), ("skipped", 0)):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                (root / "openspec/changes/demo").mkdir(parents=True)
+                binary = root / "bin"
+                binary.mkdir()
+                payload = {
+                    "artifacts": [{"id": "specs", "status": status}],
+                    "artifactPaths": {"specs": {"existingOutputPaths": []}},
+                }
+                npm = binary / "npm"
+                npm.write_text(
+                    "#!/usr/bin/env python3\nimport json\nprint(" + repr(json.dumps(payload)) + ")\n",
+                    encoding="utf-8",
+                )
+                npm.chmod(0o755)
+                env = os.environ.copy()
+                env["PATH"] = str(binary) + os.pathsep + env.get("PATH", "")
+                result = self.run_guard(root, env=env)
+                self.assertEqual(result.returncode, expected, result.stderr)
+
+    def test_unknown_level2_variants_fail_closed_even_with_valid_section(self):
+        variants = ("CHANGED", "CHANGED Requirement", "ADDED Requirement", "ADDED Requrements")
+        for heading in variants:
+            with self.subTest(heading=heading), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                delta = root / "openspec/changes/demo/specs/example/spec.md"
+                main = root / "openspec/specs/example/spec.md"
+                delta.parent.mkdir(parents=True)
+                main.parent.mkdir(parents=True)
+                main.write_text("### Requirement: Good\nText\n", encoding="utf-8")
+                delta.write_text(
+                    "## ADDED Requirements\n\n### Requirement: Good\nText\n\n"
+                    f"## {heading}\n\n### Requirement: Hidden\nUnsynced\n",
+                    encoding="utf-8",
+                )
+                result = self.run_guard(root)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("unknown or malformed", result.stderr.lower())
+
+    def test_duplicate_normalized_main_requirements_fail_closed(self):
+        duplicates = (("Good", "Good"), ("Good", "good"), ("Good  name", "Good name"))
+        for first, second in duplicates:
+            with self.subTest(first=first, second=second), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                delta = root / "openspec/changes/demo/specs/example/spec.md"
+                main = root / "openspec/specs/example/spec.md"
+                delta.parent.mkdir(parents=True)
+                main.parent.mkdir(parents=True)
+                delta.write_text(
+                    f"## ADDED Requirements\n\n### Requirement: {second}\nCurrent\n",
+                    encoding="utf-8",
+                )
+                main.write_text(
+                    f"### Requirement: {first}\nStale\n\n### Requirement: {second}\nCurrent\n",
+                    encoding="utf-8",
+                )
+                result = self.run_guard(root)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("duplicate normalized requirement", result.stderr.lower())
 
 
 if __name__ == "__main__":

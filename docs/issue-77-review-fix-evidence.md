@@ -32,14 +32,14 @@ Task 3.3 remains open until the final post-fix independent code/security and tes
 
 Commands were run in the issue worktree with `OPENSPEC_TELEMETRY=0` and Python bytecode disabled where applicable.
 
-- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -v`: **36/36 passed**. Coverage includes HMAC, exact marker and lookalikes, actor/repository/event/action/label/PR filtering, schema and resource bounds, authenticated rate accounting, absolute slow-drip/header/body deadlines and pre-parse wire header limits, durable enqueue/replay, multi-process fresh-database initialization, separate-connection races, ownership-token claims, lease recovery, bounded dead-lettering, late-wakeup serialization, task idempotency, archive operation parsing, malformed delta rejection, and the explicit no-delta guard flag and generated-workflow coupling.
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -v`: **39/39 passed**. Coverage includes HMAC, exact marker and lookalikes, actor/repository/event/action/label/PR filtering, schema and resource bounds, authenticated rate accounting, absolute slow-drip/header/body deadlines and pre-parse wire header limits, durable enqueue/replay, multi-process fresh-database initialization, separate-connection races, ownership-token claims, lease recovery, bounded dead-lettering, late-wakeup serialization, task idempotency, archive operation parsing, malformed delta rejection, and guard-owned OpenSpec no-delta status validation and generated-workflow coupling.
 - `python3 -m compileall -q tools`: passed.
 - `npm exec -- openspec validate issue-77-governed-webhook-handoff --strict --no-interactive`: passed.
 - `npm exec -- openspec --version`: `1.8.0` from the exact repository lockfile.
 - `npm audit --audit-level=low`: **0 vulnerabilities**.
 - `cd backend && deno lint`: passed, 141 files checked.
 - `cd backend && deno task test`: **327 passed, 1 failed** at `tests/services/excel-sync_test.ts:161`.
-- On clean `main`, `cd backend && deno test --allow-all tests/services/excel-sync_test.ts` reproduced the identical assertion at the same test and source line: **7 passed, 1 failed**. The PR has no diff in `backend/src/services/excel-sync.ts` or `backend/tests/services/excel-sync_test.ts`; this is recorded as a pre-existing baseline failure, not a green full suite. Task 3.2 remains open until the authorized human explicitly accepts this documented exception.
+- On clean `main`, `cd backend && deno test --allow-all tests/services/excel-sync_test.ts` reproduced the identical assertion at the same test and source line: **7 passed, 1 failed**. The PR has no diff in `backend/src/services/excel-sync.ts` or `backend/tests/services/excel-sync_test.ts`; this is recorded as a pre-existing baseline failure, not a green full suite. The repository owner explicitly accepted this documented baseline exception for Issue #77 on 2026-08-06; it does not apply to later issues.
 - `cd frontend && npm run lint`: passed.
 - `cd frontend && npm run test:run`: **37/37 files and 264/264 tests passed**. Existing React `act(...)` and canceled/network-request warnings remain.
 - `git diff --check`: passed.

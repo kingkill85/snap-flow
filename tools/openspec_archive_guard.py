@@ -1,167 +1,187 @@
 #!/usr/bin/env python3
 """Fail-closed pre-archive check for synchronized OpenSpec delta requirements."""
 import argparse
+import json
+import os
 import pathlib
 import re
+import subprocess
 import sys
 
-OPERATIONS = {"ADDED", "MODIFIED", "REMOVED", "RENAMED"}
-OPERATION_HEADING_RE = re.compile(r"^##\s+(.+?)\s+Requirements\s*$", re.M | re.I)
-REQUIREMENT_BLOCK_RE = re.compile(
-    r"^### Requirement: [^\n]+(?:\n.*?)*(?=^### Requirement: |^## |\Z)",
-    re.M | re.S,
+OPERATIONS = ("ADDED", "MODIFIED", "REMOVED", "RENAMED")
+LEVEL2_HEADING_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+REQ_RE = re.compile(
+    r"^### Requirement: (.+?)\s*$\n(.*?)(?=^### Requirement: |\Z)",
+    re.MULTILINE | re.DOTALL,
 )
-RENAME_PAIR_RE = re.compile(
-    r"^-?\s*FROM:\s*`?(?:### Requirement:\s*)?([^`\n]+?)`?\s*$\s*"
-    r"^-?\s*TO:\s*`?(?:### Requirement:\s*)?([^`\n]+?)`?\s*$",
-    re.M,
-)
+RENAME_RE = re.compile(r"^- FROM: `(.+?)`\s*$\n^- TO: `(.+?)`\s*$", re.MULTILINE)
 
 
-def normalize_block(block):
-    return "\n".join(line.rstrip() for line in block.strip().splitlines())
-
-
-def requirement_block_list(text):
-    return [normalize_block(match.group(0)) for match in REQUIREMENT_BLOCK_RE.finditer(text)]
-
-
-def requirement_blocks(text):
-    blocks = requirement_block_list(text.replace("\r\n", "\n"))
-    return {block.splitlines()[0]: block for block in blocks}
-
-
-def operation_sections(text, operation):
-    return re.findall(
-        rf"^##\s+{operation}\s+Requirements\s*(.*?)(?=^## |\Z)",
-        text,
-        re.M | re.S | re.I,
-    )
-
-
-def normalized_requirement_name(value):
-    value = value.strip()
-    if value.startswith("### Requirement:"):
-        value = value.split(":", 1)[1]
+def normalized_name(value: str) -> str:
     return " ".join(value.split()).casefold()
 
 
-def parse_delta(text, relative):
-    text = text.replace("\r\n", "\n")
-    errors = []
-    raw_headings = OPERATION_HEADING_RE.findall(text)
-    headings = [heading.strip().upper() for heading in raw_headings]
-    unknown = sorted({raw for raw, normalized in zip(raw_headings, headings) if normalized not in OPERATIONS})
-    if unknown:
-        errors.append(f"{relative}: unknown operation heading(s): {', '.join(unknown)}")
-    if not any(operation in headings for operation in OPERATIONS):
-        errors.append(f"{relative}: no recognized delta operation")
-
-    parsed = {operation: [] for operation in OPERATIONS}
-    seen_names = {}
-    for operation in ("ADDED", "MODIFIED", "REMOVED"):
-        sections = operation_sections(text, operation)
-        if len(sections) > 1:
-            errors.append(f"{relative}: duplicate {operation} operation section")
-        for section in sections:
-            if not section.strip():
-                errors.append(f"{relative}: empty {operation} section")
-                continue
-            matches = list(REQUIREMENT_BLOCK_RE.finditer(section))
-            residue = REQUIREMENT_BLOCK_RE.sub("", section).strip()
-            blocks = [normalize_block(match.group(0)) for match in matches]
-            headings_in_section = re.findall(r"^### Requirement:", section, re.M)
-            if not blocks or residue or len(blocks) != len(headings_in_section):
-                errors.append(f"{relative}: malformed {operation} requirement content")
-                continue
-            for block in blocks:
-                heading = block.splitlines()[0]
-                key = normalized_requirement_name(heading)
-                if key in seen_names:
-                    errors.append(
-                        f"{relative}: duplicate requirement heading across "
-                        f"{seen_names[key]} and {operation}: {heading}"
-                    )
-                else:
-                    seen_names[key] = operation
-                parsed[operation].append(block)
-
-    renamed_sections = operation_sections(text, "RENAMED")
-    if len(renamed_sections) > 1:
-        errors.append(f"{relative}: duplicate RENAMED operation section")
-    seen_pairs = set()
-    for section in renamed_sections:
-        if not section.strip():
-            errors.append(f"{relative}: empty RENAMED section")
-            continue
-        pairs = [(old.strip(), new.strip()) for old, new in RENAME_PAIR_RE.findall(section)]
-        residue = RENAME_PAIR_RE.sub("", section).strip()
-        if not pairs or residue:
-            errors.append(f"{relative}: malformed RENAMED requirement content")
-            continue
-        for old, new in pairs:
-            pair_key = (normalized_requirement_name(old), normalized_requirement_name(new))
-            if pair_key in seen_pairs:
-                errors.append(f"{relative}: duplicate RENAMED requirement pair")
-            seen_pairs.add(pair_key)
-            for name in (old, new):
-                key = normalized_requirement_name(name)
-                if key in seen_names:
-                    errors.append(
-                        f"{relative}: duplicate requirement name across "
-                        f"{seen_names[key]} and RENAMED: {name}"
-                    )
-                else:
-                    seen_names[key] = "RENAMED"
-            parsed["RENAMED"].append((old, new))
-    return parsed, errors
+def requirement_entries(text: str):
+    return [(m.group(1).strip(), m.group(2).rstrip()) for m in REQ_RE.finditer(text)]
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("change")
-    parser.add_argument("--root", default=".")
-    parser.add_argument(
-        "--allow-no-delta",
-        action="store_true",
-        help="allow a missing/empty specs directory only after OpenSpec reports specs skipped",
+def requirement_blocks(text: str):
+    return {name: body for name, body in requirement_entries(text)}
+
+
+def main_requirement_blocks(text: str):
+    blocks = {}
+    seen = {}
+    duplicates = []
+    for name, body in requirement_entries(text):
+        key = normalized_name(name)
+        if key in seen:
+            duplicates.append((seen[key], name))
+        else:
+            seen[key] = name
+            blocks[name] = body
+    return blocks, duplicates
+
+
+def operation_sections(text: str, operation: str):
+    return re.findall(
+        rf"^## {operation} Requirements\s*$\n(.*?)(?=^## |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
     )
-    args = parser.parse_args()
-    root = pathlib.Path(args.root).resolve()
-    spec_root = root / "openspec/changes" / args.change / "specs"
-    delta_files = sorted(spec_root.rglob("spec.md")) if spec_root.is_dir() else []
-    if not delta_files:
-        if args.allow_no_delta:
-            print("archive guard passed: caller reported a skipped specs artifact")
-            return 0
-        parser.error("change delta specs not found; use --allow-no-delta only for a validated skipped specs artifact")
 
-    unsynced = []
+
+def no_delta_is_validated_skipped(root: pathlib.Path, change: str):
+    env = os.environ.copy()
+    env["OPENSPEC_TELEMETRY"] = "0"
+    try:
+        result = subprocess.run(
+            ["npm", "exec", "--", "openspec", "status", "--change", change, "--json"],
+            cwd=root,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"cannot obtain OpenSpec status: {exc}"
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        return False, f"OpenSpec status failed: {detail or result.returncode}"
+    try:
+        status = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        return False, f"OpenSpec status returned invalid JSON: {exc}"
+    artifacts = status.get("artifacts")
+    artifact_paths = status.get("artifactPaths")
+    if not isinstance(artifacts, list) or not isinstance(artifact_paths, dict):
+        return False, "OpenSpec status JSON is missing artifacts/artifactPaths"
+    specs = [item for item in artifacts if isinstance(item, dict) and item.get("id") == "specs"]
+    path_info = artifact_paths.get("specs")
+    existing = path_info.get("existingOutputPaths") if isinstance(path_info, dict) else None
+    if len(specs) != 1 or specs[0].get("status") != "skipped" or existing != []:
+        return False, "no-delta archive requires status artifact specs=skipped and no existing spec paths"
+    return True, ""
+
+
+def validate_delta_headings(rel: pathlib.Path, text: str):
+    errors = []
+    headings = LEVEL2_HEADING_RE.findall(text)
+    if not headings:
+        return [f"{rel}: no level-2 delta headings"]
+    allowed = {"Purpose", *(f"{op} Requirements" for op in OPERATIONS)}
+    for heading in headings:
+        if heading not in allowed:
+            errors.append(f"{rel}: unknown or malformed level-2 heading '## {heading}'")
+    for operation in OPERATIONS:
+        count = headings.count(f"{operation} Requirements")
+        if count > 1:
+            errors.append(f"{rel}: duplicate {operation} Requirements sections")
+    if not any(f"{op} Requirements" in headings for op in OPERATIONS):
+        errors.append(f"{rel}: no recognized delta operation sections")
+    return errors
+
+
+def check(root: pathlib.Path, change: str):
+    delta_root = root / "openspec" / "changes" / change / "specs"
     malformed = []
-    for delta in delta_files:
-        relative = delta.relative_to(spec_root)
-        main_spec = root / "openspec/specs" / relative
-        main_text = main_spec.read_text(encoding="utf-8") if main_spec.exists() else ""
-        main_requirements = requirement_blocks(main_text)
-        parsed, errors = parse_delta(delta.read_text(encoding="utf-8"), relative)
-        malformed.extend(errors)
+    unsynced = []
+    delta_files = sorted(delta_root.glob("*/spec.md")) if delta_root.exists() else []
 
-        for block in parsed["ADDED"] + parsed["MODIFIED"]:
-            heading = block.splitlines()[0]
-            if main_requirements.get(heading) != block:
-                unsynced.append(f"{relative}: {heading}")
-        for block in parsed["REMOVED"]:
-            heading = block.splitlines()[0]
-            if heading in main_requirements:
-                unsynced.append(f"{relative}: still present {heading}")
-        for old, new in parsed["RENAMED"]:
-            old_heading = f"### Requirement: {old}"
-            new_heading = f"### Requirement: {new}"
-            if old_heading in main_requirements or new_heading not in main_requirements:
-                unsynced.append(f"{relative}: rename {old} -> {new}")
+    if not delta_files:
+        valid, reason = no_delta_is_validated_skipped(root, change)
+        if valid:
+            print("archive guard passed: OpenSpec status validates a skipped no-delta change")
+            return 0
+        print("archive blocked: change has no delta specs and is not validated as skipped", file=sys.stderr)
+        print(reason, file=sys.stderr)
+        return 1
+
+    for delta_file in delta_files:
+        text = delta_file.read_text()
+        rel = delta_file.relative_to(root)
+        malformed.extend(validate_delta_headings(rel, text))
+
+        capability = delta_file.parent.name
+        main_file = root / "openspec" / "specs" / capability / "spec.md"
+        main_text = main_file.read_text() if main_file.exists() else ""
+        main_blocks, duplicates = main_requirement_blocks(main_text)
+        for first, duplicate in duplicates:
+            malformed.append(
+                f"{main_file.relative_to(root)}: duplicate normalized requirement '{first}' / '{duplicate}'"
+            )
+
+        seen_delta_names = {}
+        operation_count = 0
+        for operation in OPERATIONS:
+            sections = operation_sections(text, operation)
+            operation_count += len(sections)
+            for section in sections:
+                if operation == "RENAMED":
+                    pairs = RENAME_RE.findall(section)
+                    if not pairs:
+                        malformed.append(f"{rel}: RENAMED section has no valid FROM/TO pair")
+                    residue = RENAME_RE.sub("", section).strip()
+                    if residue:
+                        malformed.append(f"{rel}: malformed RENAMED section content")
+                    for old, new in pairs:
+                        for name in (old.strip(), new.strip()):
+                            key = normalized_name(name)
+                            if key in seen_delta_names:
+                                malformed.append(
+                                    f"{rel}: duplicate requirement heading across operations: '{name}'"
+                                )
+                            else:
+                                seen_delta_names[key] = operation
+                        if old.strip() in main_blocks or new.strip() not in main_blocks:
+                            unsynced.append(f"{rel}: rename {old.strip()} -> {new.strip()}")
+                    continue
+
+                entries = requirement_entries(section)
+                if not entries:
+                    malformed.append(f"{rel}: {operation} section has no valid requirements")
+                residue = REQ_RE.sub("", section).strip()
+                if residue:
+                    malformed.append(f"{rel}: malformed {operation} section content")
+                for name, body in entries:
+                    key = normalized_name(name)
+                    if key in seen_delta_names:
+                        malformed.append(
+                            f"{rel}: duplicate requirement heading across operations: '{name}'"
+                        )
+                    else:
+                        seen_delta_names[key] = operation
+                    if operation in {"ADDED", "MODIFIED"}:
+                        if main_blocks.get(name, "").strip() != body.strip():
+                            unsynced.append(f"{rel}: {operation} {name}")
+                    elif operation == "REMOVED" and name in main_blocks:
+                        unsynced.append(f"{rel}: REMOVED {name} still present")
+
+        if operation_count == 0:
+            malformed.append(f"{rel}: no recognized delta operation sections")
 
     if malformed:
-        print("archive blocked: malformed delta specs", file=sys.stderr)
+        print("archive blocked: malformed delta/main specs", file=sys.stderr)
         for item in malformed:
             print(item, file=sys.stderr)
         return 1
@@ -174,5 +194,13 @@ def main():
     return 0
 
 
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("change")
+    parser.add_argument("--root", default=".")
+    args = parser.parse_args()
+    raise SystemExit(check(pathlib.Path(args.root).resolve(), args.change))
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
