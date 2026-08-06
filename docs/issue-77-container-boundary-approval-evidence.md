@@ -71,6 +71,28 @@ Independent review found that the initial production path launched plain `codex`
 - `cd backend && deno task test`: **327 passed (146 steps), 1 known baseline failure** at `backend/tests/services/excel-sync_test.ts:207` (`false` actual, `true` expected); no changed file touches that subsystem and the suite is not reported as green.
 - `git diff --check`: **passed**.
 
+### Governed-account install and process-topology correction
+
+The second runtime/install review identified that root-owned `0750` runtime/state paths could not serve the governed `dev` account and that tmux reports interpreter-backed entrypoints as `python3`. The manifest now assigns only the private helper and state directory to `dev:dev` mode `0750`; the public allow-list remains unchanged. Active preflight validates exact adapter-created `pane_start_command`, pane PID, and the sole direct Codex v0.146.1 app-server child rather than broadly allowing Python. Runtime cleanup closes stdin and reaps the app-server on both completion and exceptions.
+
+Exact correction verification:
+
+- Governed-account installed-path smoke: **passed** as `uid=1000(dev) gid=1000(dev)`. A temporary install root reproduced the manifest layout; both staged entrypoints imported, the `dev:dev 0750` runtime was executable, the `dev:dev 0750` state directory was writable/traversable, and `FileResolutionStore` atomically created its state file.
+- Codex protocol/process smoke: **passed** with `codex-cli 0.146.1`. App-server returned an initialize result containing `codexHome`, `platformFamily`, `platformOs`, and `userAgent`; `initialized` was sent; stdin was closed; and the child exited `0`. No `thread/start`, `thread/resume`, or turn request was sent. Read-only process metadata showed exact child command `node /usr/local/bin/codex app-server --stdio`.
+- Read-only live tmux inspection: **passed** and confirmed `pane_current_command` reflects the interpreter/wrapper rather than a trustworthy worker identity, motivating exact start-command/PID/tree validation.
+- `PYTHONPATH=tools python3 -m unittest tools.neo_dev_webhook.tests.test_project_control tools.neo_dev_webhook.tests.test_codex_runtime -v`: **28/28 passed**.
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -v`: **80/80 passed**.
+- Python compilation for controller/runtime and focused tests: **passed**.
+- `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict --no-interactive`: **passed**.
+- `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate --all --strict --no-interactive`: **3 passed, 0 failed**.
+- Approved packet comparison to `1843b3ddfe8433d05817c3f94bb9edbc39e96124`: **passed byte-for-byte**.
+- Archived OpenSpec tree comparison: **passed**.
+- `cd backend && deno lint`: **passed**, 141 files checked.
+- `cd frontend && npm run lint`: **passed**.
+- `cd frontend && npm run test:run`: **37 test files passed, 264 tests passed**.
+- `cd backend && deno task test`: **327 passed (146 steps), 1 known baseline failure** at `backend/tests/services/excel-sync_test.ts:207` (`false` actual, `true` expected); this correction does not touch that subsystem and the suite is not reported as green.
+- `git diff --check`: **passed**.
+
 No frontend behavior changed, so an independent Playwright UI review is not applicable. Independent code/test review and controller installation/preflight remain assigned to Neo Dev and are not claimed here.
 
 ### Same-session continuation correction

@@ -9,6 +9,7 @@ import sys
 from typing import Sequence, TextIO
 
 from .project_control import (
+    CODEX_APP_SERVER_ARGV,
     CONTINUE_PROMPT,
     CONTROLLER_REGISTRY_PATH,
     CONTROLLER_STATE_PATH,
@@ -59,7 +60,7 @@ class AppServer:
     @classmethod
     def start(cls) -> "AppServer":
         process = subprocess.Popen(
-            ["codex", "app-server", "--stdio"],
+            list(CODEX_APP_SERVER_ARGV),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, bufsize=1, shell=False,
         )
@@ -105,6 +106,23 @@ class AppServer:
         if control_input in readable:
             return "control", control_input.readline()
         return "event", self.read()
+
+    def close(self) -> None:
+        if self.process.stdin is not None and not self.process.stdin.closed:
+            try:
+                self.process.stdin.close()
+            except OSError:
+                pass
+        try:
+            self.process.wait(timeout=2.0)
+            return
+        except subprocess.TimeoutExpired:
+            self.process.terminate()
+        try:
+            self.process.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait()
 
 
 def _thread_id(result: dict) -> str:
@@ -202,10 +220,11 @@ def run_runtime(operation: str, idempotency_key: str, session_id: str | None, *,
                 registry_path: pathlib.Path = CONTROLLER_REGISTRY_PATH,
                 state_path: pathlib.Path = CONTROLLER_STATE_PATH,
                 app_server: AppServer | None = None, control_input: TextIO = sys.stdin) -> int:
+    server = app_server or AppServer.start()
     try:
         return _run_runtime(
             operation, idempotency_key, session_id, registry_path=registry_path,
-            state_path=state_path, app_server=app_server, control_input=control_input,
+            state_path=state_path, app_server=server, control_input=control_input,
         )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError,
             json.JSONDecodeError):
@@ -220,6 +239,8 @@ def run_runtime(operation: str, idempotency_key: str, session_id: str | None, *,
                 idempotency_key, 1, "crashed", state.codex_session_id is not None,
             )
         raise
+    finally:
+        server.close()
 
 
 def parser() -> argparse.ArgumentParser:

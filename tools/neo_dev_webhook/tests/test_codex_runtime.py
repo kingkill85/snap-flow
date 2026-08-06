@@ -3,8 +3,9 @@ import json
 import pathlib
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from neo_dev_webhook.codex_runtime import run_runtime, validate_completion
+from neo_dev_webhook.codex_runtime import AppServer, run_runtime, validate_completion
 from neo_dev_webhook.project_control import (
     CODEX_RUNTIME_PATH,
     Controller,
@@ -45,6 +46,7 @@ class FakeAppServer:
         self.completion = completion
         self.status = status
         self.calls = []
+        self.closed = False
         self.events = [
             ("event", {"method": "item/agentMessage/delta", "params": {
                 "delta": json.dumps(completion),
@@ -75,10 +77,36 @@ class FakeAppServer:
     def poll(self, control_input):
         return self.events.pop(0)
 
+    def close(self):
+        self.closed = True
+
 
 class CrashingAppServer(FakeAppServer):
     def poll(self, control_input):
         raise RuntimeError("Codex app-server exited unexpectedly")
+
+
+class FakeProcess:
+    def __init__(self, timeouts=1):
+        self.stdin = io.StringIO()
+        self.stdout = io.StringIO()
+        self.wait_calls = 0
+        self.terminated = False
+        self.killed = False
+        self.timeouts = timeouts
+
+    def wait(self, timeout=None):
+        self.wait_calls += 1
+        if self.wait_calls <= self.timeouts:
+            import subprocess
+            raise subprocess.TimeoutExpired("codex", timeout)
+        return 0
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        self.killed = True
 
 
 class CodexRuntimeTest(unittest.TestCase):
@@ -121,6 +149,30 @@ class CodexRuntimeTest(unittest.TestCase):
             self.assertEqual(persisted.phase, "semantic_success")
             self.assertEqual(persisted.terminal.exit_code, 0)
             self.assertEqual(persisted.terminal.semantic_outcome, "success")
+            self.assertTrue(server.closed)
+
+    def test_app_server_uses_fixed_argv_and_deterministically_reaps_child(self):
+        process = FakeProcess()
+        with patch("neo_dev_webhook.codex_runtime.subprocess.Popen",
+                   return_value=process) as popen:
+            server = AppServer.start()
+        popen.assert_called_once_with(
+            ["/usr/local/bin/codex", "app-server", "--stdio"],
+            stdin=-1, stdout=-1, stderr=-3, text=True, bufsize=1, shell=False,
+        )
+        server.close()
+        self.assertTrue(process.stdin.closed)
+        self.assertTrue(process.terminated)
+        self.assertFalse(process.killed)
+        self.assertEqual(process.wait_calls, 2)
+
+    def test_app_server_kills_and_reaps_child_that_ignores_terminate(self):
+        process = FakeProcess(timeouts=2)
+        server = AppServer(process)
+        server.close()
+        self.assertTrue(process.terminated)
+        self.assertTrue(process.killed)
+        self.assertEqual(process.wait_calls, 3)
 
     def test_runtime_captures_invalid_completion_as_non_success(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -211,6 +263,7 @@ class CodexRuntimeTest(unittest.TestCase):
             self.assertEqual(persisted.terminal.exit_code, 1)
             self.assertEqual(persisted.terminal.semantic_outcome, "crashed")
             self.assertTrue(persisted.terminal.resumable)
+            self.assertTrue(server.closed)
 
     def test_completion_schema_rejects_extra_missing_and_wrong_types(self):
         invalid = (

@@ -32,8 +32,8 @@
     {
       "source": "neo-dev-codex-runtime",
       "destination": "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runtime",
-      "owner": "root",
-      "group": "root",
+      "owner": "dev",
+      "group": "dev",
       "mode": "0750"
     },
     {
@@ -60,8 +60,8 @@
   ],
   "state": {
     "directory": "/var/lib/neo-dev/project-control",
-    "owner": "root",
-    "group": "root",
+    "owner": "dev",
+    "group": "dev",
     "mode": "0750"
   }
 }

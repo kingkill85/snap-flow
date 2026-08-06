@@ -30,6 +30,15 @@ TARGET = GovernedTarget(
     worker="Codex",
 )
 SESSION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+RUNTIME_START = f"{CODEX_RUNTIME_PATH} start --idempotency-key {KEY}"
+RUNTIME_METADATA = f"python3\t{RUNTIME_START}\t4242\n"
+APP_SERVER_CHILD = "4243 4242 node node /usr/local/bin/codex app-server --stdio\n"
+
+
+def effective_mode_allows(entry, account, groups, required):
+    mode = int(entry["mode"], 8)
+    shift = 6 if entry["owner"] == account else 3 if entry["group"] in groups else 0
+    return ((mode >> shift) & required) == required
 
 
 class FakeExecutor:
@@ -61,7 +70,8 @@ class ProjectControlTest(unittest.TestCase):
     def test_preflight_verifies_exact_issue_77_topology_with_safe_argv(self):
         controller, executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
-            "chore/issue-77-openspec-workflow\n", "codex\n",
+            "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
+            APP_SERVER_CHILD,
         ], store=self.state_store())
         result = controller.execute("preflight", REPOSITORY, 77, KEY)
         self.assertEqual(result["status"], "ready")
@@ -70,7 +80,9 @@ class ProjectControlTest(unittest.TestCase):
             (("tmux", "list-windows", "-t", "snapflow-dev", "-F", "#{window_name}"), 10.0),
             (("tmux", "display-message", "-p", "-t", "snapflow-dev:issue-77", "#{pane_current_path}"), 10.0),
             (("git", "-C", "/workspace/snap-flow-issue-77", "branch", "--show-current"), 10.0),
-            (("tmux", "list-panes", "-t", "snapflow-dev:issue-77", "-F", "#{pane_current_command}"), 10.0),
+            (("tmux", "list-panes", "-t", "snapflow-dev:issue-77", "-F",
+              "#{pane_current_command}\t#{pane_start_command}\t#{pane_pid}"), 10.0),
+            (("ps", "-o", "pid=,ppid=,comm=,args=", "--ppid", "4242"), 10.0),
         ])
 
     def test_start_persists_before_launch_and_uses_exact_codex_argv(self):
@@ -109,7 +121,8 @@ class ProjectControlTest(unittest.TestCase):
         first.observe_session(KEY, SESSION_ID)
         retry, retry_executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
-            "chore/issue-77-openspec-workflow\n", "codex\n",
+            "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
+            APP_SERVER_CHILD,
         ], store=store)
         result = retry.execute("resume", REPOSITORY, 77, KEY)
         self.assertEqual(result["idempotency_key"], KEY)
@@ -175,8 +188,9 @@ class ProjectControlTest(unittest.TestCase):
             ["0\n"],
             ["issue-77\n", "/workspace/other\n"],
             ["issue-77\n", "/workspace/snap-flow-issue-77\n", "main\n"],
-            ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", "python\n"],
-            ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", "codex\npython\n"],
+            ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", "python3\tattacker.py\t4242\n"],
+            ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA, "4243 4242 python3 attacker.py\n"],
+            ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA, APP_SERVER_CHILD + APP_SERVER_CHILD],
         ):
             with self.subTest(outputs=outputs):
                 controller, executor = self.controller(outputs, store=self.state_store())
@@ -195,7 +209,8 @@ class ProjectControlTest(unittest.TestCase):
         store = self.state_store()
         controller, executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
-            "chore/issue-77-openspec-workflow\n", "codex\n",
+            "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
+            APP_SERVER_CHILD,
         ], store=store)
         controller.observe_correctable(KEY)
         result = controller.execute("resume", REPOSITORY, 77, KEY)
@@ -214,7 +229,7 @@ class ProjectControlTest(unittest.TestCase):
         observer.observe_terminal(KEY, 0, "correctable", True)
         controller, executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
-            "chore/issue-77-openspec-workflow\n", "bash\n",
+            "chore/issue-77-openspec-workflow\n", "1\t4242\n",
         ], store=store)
         result = controller.execute("resume", REPOSITORY, 77, KEY)
         self.assertEqual(result["status"], "resuming")
@@ -223,6 +238,19 @@ class ProjectControlTest(unittest.TestCase):
             "/workspace/snap-flow-issue-77", CODEX_RUNTIME_PATH, "resume",
             "--idempotency-key", KEY, "--session-id", SESSION_ID,
         ), 20.0))
+
+    def test_exited_state_rejects_live_unrelated_python_before_respawn(self):
+        store = self.state_store()
+        observer = Controller(Registry((TARGET,)), store, FakeExecutor())
+        observer.observe_terminal(KEY, 0, "correctable", True)
+        controller, executor = self.controller([
+            "issue-77\n", "/workspace/snap-flow-issue-77\n",
+            "chore/issue-77-openspec-workflow\n", "0\t4242\n",
+        ], store=store)
+        with self.assertRaisesRegex(RuntimeError, "live process"):
+            controller.execute("resume", REPOSITORY, 77, KEY)
+        self.assertFalse(any(call[0][:2] == ("tmux", "respawn-pane")
+                             for call in executor.calls))
 
     def test_exit_zero_requires_trusted_semantic_success(self):
         for outcome, expected_phase in (
@@ -251,7 +279,7 @@ class ProjectControlTest(unittest.TestCase):
         self.assertEqual(corrected.phase, "exited_resumable")
         controller, executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
-            "chore/issue-77-openspec-workflow\n", "bash\n",
+            "chore/issue-77-openspec-workflow\n", "1\t4242\n",
         ], store=store)
         result = controller.execute("resume", REPOSITORY, 77, KEY)
         self.assertEqual(result["status"], "resuming")
@@ -265,7 +293,7 @@ class ProjectControlTest(unittest.TestCase):
         observer.observe_terminal(KEY, 1, "crashed", False)
         controller, executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
-            "chore/issue-77-openspec-workflow\n", "bash\n",
+            "chore/issue-77-openspec-workflow\n", "1\t4242\n",
         ], store=store)
         result = controller.execute("resume", REPOSITORY, 77, KEY)
         self.assertEqual(result["status"], "restarted")
@@ -331,7 +359,8 @@ class ProjectControlTest(unittest.TestCase):
             initial = file_store.bind(KEY, TARGET)
             file_store.save(KEY, initial, WorkState(TARGET, SESSION_ID, "active"))
             executor = FakeExecutor(["issue-77\n", "/workspace/snap-flow-issue-77\n",
-                                     "chore/issue-77-openspec-workflow\n", "codex\n"])
+                                     "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
+                                     APP_SERVER_CHILD])
             output = []
             exit_code = main([
                 "preflight", "--repository", REPOSITORY, "--issue-number", "77",
@@ -363,7 +392,10 @@ class ProjectControlTest(unittest.TestCase):
         self.assertIn("state-schema.v1.json", [entry["source"] for entry in manifest["files"]])
         runtime_entry = next(entry for entry in manifest["files"]
                              if entry["source"] == "neo-dev-codex-runtime")
-        self.assertEqual(runtime_entry["mode"], "0750")
+        self.assertTrue(effective_mode_allows(runtime_entry, "dev", {"dev"}, 0o1))
+        self.assertFalse(effective_mode_allows(runtime_entry, "other", {"other"}, 0o1))
+        self.assertTrue(effective_mode_allows(manifest["state"], "dev", {"dev"}, 0o3))
+        self.assertFalse(effective_mode_allows(manifest["state"], "other", {"other"}, 0o3))
         self.assertNotIn(runtime_entry["destination"],
                          policy["project_command_capabilities"]["allow"])
         combined = " ".join(path.read_text(encoding="utf-8") for path in controller_dir.iterdir())

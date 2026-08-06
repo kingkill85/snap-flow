@@ -16,6 +16,8 @@ VERSION = 1
 CONTROLLER_REGISTRY_PATH = pathlib.Path("/etc/neo-dev/project-control/registry.json")
 CONTROLLER_STATE_PATH = pathlib.Path("/var/lib/neo-dev/project-control/resolutions.json")
 CODEX_RUNTIME_PATH = "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runtime"
+CODEX_BIN_PATH = "/usr/local/bin/codex"
+CODEX_APP_SERVER_ARGV = (CODEX_BIN_PATH, "app-server", "--stdio")
 REPOSITORY_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
 CONTINUE_PROMPT = "Continue the governed Issue work and address the latest trusted operator finding."
 PHASES = frozenset({
@@ -387,27 +389,16 @@ class Controller:
         )
         return [line for line in output.splitlines() if line]
 
-    def _preflight_existing(self, target: GovernedTarget) -> None:
-        windows = self._windows(target)
-        if windows.count(target.window) != 1:
-            raise RuntimeError("exact governed tmux window is unavailable or ambiguous")
-        path = self.executor.run(
-            ("tmux", "display-message", "-p", "-t", target.tmux_target,
-             "#{pane_current_path}"), timeout=10.0,
-        ).strip()
-        if path != target.worktree:
-            raise RuntimeError("tmux pane worktree does not match governed target")
-        self._verify_worktree_branch(target)
-        workers = self.executor.run(
-            ("tmux", "list-panes", "-t", target.tmux_target, "-F",
-             "#{pane_current_command}"), timeout=10.0,
-        ).splitlines()
-        if len(workers) != 1 or workers[0].casefold() not in {
-            target.worker.casefold(), "neo-dev-codex-runtime",
-        }:
-            raise RuntimeError("sole Codex worker topology is not established")
+    @staticmethod
+    def _runtime_command(idempotency_key: str, session_id: str | None = None) -> str:
+        parts = [CODEX_RUNTIME_PATH, "resume" if session_id else "start",
+                 "--idempotency-key", idempotency_key]
+        if session_id is not None:
+            parts.extend(("--session-id", session_id))
+        return " ".join(parts)
 
-    def _preflight_pane(self, target: GovernedTarget) -> str:
+    def _preflight_existing(self, target: GovernedTarget, state: WorkState,
+                            idempotency_key: str) -> None:
         windows = self._windows(target)
         if windows.count(target.window) != 1:
             raise RuntimeError("exact governed tmux window is unavailable or ambiguous")
@@ -418,13 +409,53 @@ class Controller:
         if path != target.worktree:
             raise RuntimeError("tmux pane worktree does not match governed target")
         self._verify_worktree_branch(target)
-        commands = self.executor.run(
+        metadata = self.executor.run(
             ("tmux", "list-panes", "-t", target.tmux_target, "-F",
-             "#{pane_current_command}"), timeout=10.0,
+             "#{pane_current_command}\t#{pane_start_command}\t#{pane_pid}"),
+            timeout=10.0,
         ).splitlines()
-        if len(commands) != 1:
+        if len(metadata) != 1:
+            raise RuntimeError("sole Codex worker topology is not established")
+        fields = metadata[0].split("\t")
+        if len(fields) != 3 or fields[0] != "python3" or not fields[2].isdigit():
+            raise RuntimeError("controller runtime process metadata does not match")
+        expected_starts = {self._runtime_command(idempotency_key)}
+        if state.codex_session_id is not None:
+            expected_starts.add(self._runtime_command(idempotency_key, state.codex_session_id))
+        if fields[1] not in expected_starts:
+            raise RuntimeError("controller runtime start command does not match")
+        children = self.executor.run(
+            ("ps", "-o", "pid=,ppid=,comm=,args=", "--ppid", fields[2]),
+            timeout=10.0,
+        ).splitlines()
+        if len(children) != 1:
+            raise RuntimeError("sole Codex app-server child is not established")
+        child = children[0].strip().split(None, 3)
+        expected_child = "node " + " ".join(CODEX_APP_SERVER_ARGV)
+        if (len(child) != 4 or child[1] != fields[2] or child[2] != "node"
+                or child[3] != expected_child):
+            raise RuntimeError("Codex app-server process metadata does not match")
+
+    def _preflight_inactive_pane(self, target: GovernedTarget) -> None:
+        windows = self._windows(target)
+        if windows.count(target.window) != 1:
+            raise RuntimeError("exact governed tmux window is unavailable or ambiguous")
+        path = self.executor.run(
+            ("tmux", "display-message", "-p", "-t", target.tmux_target,
+             "#{pane_current_path}"), timeout=10.0,
+        ).strip()
+        if path != target.worktree:
+            raise RuntimeError("tmux pane worktree does not match governed target")
+        self._verify_worktree_branch(target)
+        metadata = self.executor.run(
+            ("tmux", "list-panes", "-t", target.tmux_target, "-F",
+             "#{pane_dead}\t#{pane_pid}"), timeout=10.0,
+        ).splitlines()
+        if len(metadata) != 1:
             raise RuntimeError("governed tmux pane is unavailable or ambiguous")
-        return commands[0]
+        fields = metadata[0].split("\t")
+        if len(fields) != 2 or fields[0] != "1" or not fields[1].isdigit():
+            raise RuntimeError("persisted exited state conflicts with a live process")
 
     def _verify_worktree_branch(self, target: GovernedTarget) -> None:
         branch = self.executor.run(
@@ -444,12 +475,7 @@ class Controller:
             if windows.count(target.window) > 1:
                 raise RuntimeError("governed tmux window is ambiguous")
             if target.window in windows:
-                self._preflight_existing(target)
-                updated = replace(state, phase="starting")
-                self.store.save(idempotency_key, state, updated)
-                self.executor.run(
-                    ("tmux", "select-window", "-t", target.tmux_target), timeout=10.0,
-                )
+                raise RuntimeError("start requires an unused governed tmux window")
             else:
                 self._verify_worktree_branch(target)
                 updated = replace(state, phase="starting")
@@ -463,10 +489,10 @@ class Controller:
         elif operation == "preflight":
             if state.phase not in {"active", "correctable"} or state.codex_session_id is None:
                 raise RuntimeError("preflight requires trusted active Codex session state")
-            self._preflight_existing(target)
+            self._preflight_existing(target, state, idempotency_key)
             status = "ready"
         elif state.phase in {"active", "correctable"}:
-            self._preflight_existing(target)
+            self._preflight_existing(target, state, idempotency_key)
             self.executor.run(
                 ("tmux", "send-keys", "-t", target.tmux_target, "-l", "--", CONTINUE_PROMPT),
                 timeout=10.0,
@@ -479,9 +505,7 @@ class Controller:
                 state = updated
             status = "steered"
         elif state.phase == "exited_resumable":
-            command = self._preflight_pane(target)
-            if command.casefold() in {target.worker.casefold(), "neo-dev-codex-runtime"}:
-                raise RuntimeError("persisted exited state conflicts with a live Codex process")
+            self._preflight_inactive_pane(target)
             updated = replace(state, phase="resuming", terminal=None)
             self.store.save(idempotency_key, state, updated)
             self.executor.run(
@@ -494,9 +518,7 @@ class Controller:
         elif state.phase in {"crashed", "exited_unresumable"}:
             if state.restart_count != 0:
                 raise RuntimeError("fresh Codex session fallback is exhausted")
-            command = self._preflight_pane(target)
-            if command.casefold() in {target.worker.casefold(), "neo-dev-codex-runtime"}:
-                raise RuntimeError("fresh fallback conflicts with a live Codex process")
+            self._preflight_inactive_pane(target)
             updated = replace(
                 state, codex_session_id=None, phase="starting", terminal=None,
                 process_generation=state.process_generation + 1, restart_count=1,
