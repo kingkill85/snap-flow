@@ -377,7 +377,7 @@ class Receiver:
 
 class TaskRunner:
     def __init__(self, script_path: str | None = None, python: str = "python3",
-                 workspace: str = "scratch", max_runtime: str = "2h"):
+                 workspace: str = "dir:/opt/data/profiles/dev", max_runtime: str = "2h"):
         if not max_runtime or max_runtime.startswith("-"):
             raise ValueError("max_runtime must be a bounded task.py duration")
         self.script = script_path or os.environ.get("NEO_DEV_TASK_RUNNER")
@@ -403,7 +403,16 @@ class TaskRunner:
             raise ValueError("idempotency_key must be a non-empty string")
         idempotency_key = idempotency_key.strip()
         self._validate_contract()
-        description = f"Process SnapFlow issue #{work['issue_number']} with {len(work['wakeups'])} durable wakeup(s)."
+        description = (
+            f"Process SnapFlow issue #{work['issue_number']} with "
+            f"{len(work['wakeups'])} durable wakeup(s). Before any repository "
+            "action, read /opt/data/profiles/dev/projects/snapflow.md. Use the "
+            "registered snapflow-dev container via SSH for all Git, Codex, "
+            "OpenSpec, and project commands; do not clone SnapFlow into the "
+            "Kanban workspace. Use the controller's authenticated "
+            "/opt/data/bin/gh for GitHub reads and writes when required. Inspect "
+            "the latest Issue comments before acting and preserve every approval gate."
+        )
         result = subprocess.run(
             [self.python, self.script, f"SnapFlow issue #{work['issue_number']}",
              "--body", description, "--max-runtime", self.max_runtime,

@@ -402,9 +402,19 @@ class AutomationTest(unittest.TestCase):
         argv = run.call_args_list[1].args[0]
         self.assertEqual(argv, [
             "python3", "/test/task.py", "SnapFlow issue #77",
-            "--body", "Process SnapFlow issue #77 with 1 durable wakeup(s).",
+            "--body", (
+                "Process SnapFlow issue #77 with 1 durable wakeup(s). "
+                "Before any repository action, read "
+                "/opt/data/profiles/dev/projects/snapflow.md. Use the registered "
+                "snapflow-dev container via SSH for all Git, Codex, OpenSpec, and "
+                "project commands; do not clone SnapFlow into the Kanban workspace. "
+                "Use the controller's authenticated /opt/data/bin/gh for GitHub "
+                "reads and writes when required. Inspect the latest Issue comments "
+                "before acting and preserve every approval gate."
+            ),
             "--max-runtime", "2h",
-            "--workspace", "scratch", "--idempotency-key", "delivery-key",
+            "--workspace", "dir:/opt/data/profiles/dev",
+            "--idempotency-key", "delivery-key",
         ])
         self.assertNotIn("shell", run.call_args.kwargs)
 
