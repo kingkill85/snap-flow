@@ -234,6 +234,23 @@ class ArchiveGuardTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("unknown or malformed", result.stderr.lower())
 
+    def test_no_space_valid_operation_cannot_hide_unsynced_requirement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            delta = root / "openspec/changes/demo/specs/example/spec.md"
+            main = root / "openspec/specs/example/spec.md"
+            delta.parent.mkdir(parents=True)
+            main.parent.mkdir(parents=True)
+            main.write_text("### Requirement: Good\nCurrent\n", encoding="utf-8")
+            delta.write_text(
+                "##ADDED Requirements\n\n### Requirement: Hidden\nUnsynced\n\n"
+                "## MODIFIED Requirements\n\n### Requirement: Good\nCurrent\n",
+                encoding="utf-8",
+            )
+            result = self.run_guard(root)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("whitespace after ##", result.stderr)
+
     def test_commonmark_indented_operation_headings_are_parsed(self):
         for spaces in (1, 2, 3):
             with self.subTest(spaces=spaces), tempfile.TemporaryDirectory() as directory:

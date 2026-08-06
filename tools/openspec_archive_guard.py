@@ -10,6 +10,7 @@ import sys
 
 OPERATIONS = ("ADDED", "MODIFIED", "REMOVED", "RENAMED")
 LEVEL2_HEADING_RE = re.compile(r"^[ ]{0,3}##(?!#)[ \t]*(.*?)\s*$", re.MULTILINE)
+NO_SPACE_LEVEL2_RE = re.compile(r"^[ ]{0,3}##(?=[^# \t\r\n])", re.MULTILINE)
 REQ_RE = re.compile(
     r"^### Requirement: (.+?)\s*$\n(.*?)(?=^### Requirement: |\Z)",
     re.MULTILINE | re.DOTALL,
@@ -92,6 +93,8 @@ def validate_delta_headings(rel: pathlib.Path, text: str):
         return [f"{rel}: no level-2 delta headings"]
     if text[:matches[0].start()].strip():
         errors.append(f"{rel}: content exists outside an allowed level-2 section")
+    if NO_SPACE_LEVEL2_RE.search(text):
+        errors.append(f"{rel}: level-2 headings require whitespace after ##")
     allowed = {"Purpose", *(f"{op} Requirements" for op in OPERATIONS)}
     for heading in headings:
         if heading not in allowed:
