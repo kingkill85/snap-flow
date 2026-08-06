@@ -1,8 +1,10 @@
 import json
 import pathlib
+import shutil
 import subprocess
 import tempfile
 import unittest
+import uuid
 from unittest import mock
 
 from neo_dev_webhook.automation import TaskRunner
@@ -19,6 +21,7 @@ from neo_dev_webhook.remote_adapter import (
     REMOTE_CONTROLLER,
     main as remote_main,
 )
+from neo_dev_webhook.forced_command import PRIVILEGED_CONTROLLER, validated_original_command
 
 
 REPOSITORY = "kingkill85/snap-flow"
@@ -32,6 +35,8 @@ TEMPLATE = {
     "branch_prefix": "feature",
     "worker": "Codex",
 }
+PROJECT = {"repository": REPOSITORY, "repository_path": "/workspace/snap-flow",
+           "origin_url": "git@github.com:kingkill85/snap-flow.git"}
 
 
 class FakeExecutor:
@@ -58,16 +63,20 @@ class GenericOrchestratorTest(unittest.TestCase):
         self.assertEqual(issue77.branch, "chore/issue-77-openspec-workflow")
 
     def test_generic_start_fetches_main_creates_branch_worktree_and_one_window(self):
-        registry = Registry((), (TEMPLATE,))
+        registry = Registry((), (TEMPLATE,), (PROJECT,))
         executor = FakeExecutor([
-            "", "", "", "", "feature/issue-13\n", "", "feature/issue-13\n", "",
+            "/workspace/snap-flow\n", "/workspace/snap-flow/.git\n",
+            "git@github.com:kingkill85/snap-flow.git\n", "", "", "", "",
+            "feature/issue-13\n", "", "", "feature/issue-13\n", "",
         ])
         result = Controller(registry, InMemoryResolutionStore(), executor).execute(
             "start", REPOSITORY, 13, KEY,
         )
         argv = [call[0] for call in executor.calls]
-        self.assertEqual(argv[0], ("git", "-C", "/workspace/snap-flow", "fetch", "--prune",
-                                   "origin", "main"))
+        self.assertEqual(argv[0], ("git", "-C", "/workspace/snap-flow", "rev-parse",
+                                   "--show-toplevel"))
+        self.assertIn(("git", "-C", "/workspace/snap-flow", "fetch", "--prune",
+                       "origin", "main"), argv)
         self.assertIn(("git", "-C", "/workspace/snap-flow", "worktree", "add", "-b",
                        "feature/issue-13", "/workspace/snap-flow-issue-13", "origin/main"), argv)
         self.assertEqual(argv.count(("tmux", "new-window", "-d", "-t", "snapflow-dev", "-n",
@@ -77,13 +86,32 @@ class GenericOrchestratorTest(unittest.TestCase):
 
     def test_existing_generic_worktree_is_verified_not_recreated(self):
         executor = FakeExecutor([
-            "", "worktree /workspace/snap-flow-issue-13\nbranch refs/heads/feature/issue-13\n\n",
-            "feature/issue-13\n", "", "feature/issue-13\n", "",
+            "/workspace/snap-flow\n", "/workspace/snap-flow/.git\n",
+            "git@github.com:kingkill85/snap-flow.git\n", "",
+            "worktree /workspace/snap-flow-issue-13\nbranch refs/heads/feature/issue-13\n\n",
+            "/workspace/snap-flow/.git\n", "feature/issue-13\n", "", "",
+            "feature/issue-13\n", "",
         ])
-        Controller(Registry((), (TEMPLATE,)), InMemoryResolutionStore(), executor).execute(
+        Controller(Registry((), (TEMPLATE,), (PROJECT,)), InMemoryResolutionStore(), executor).execute(
             "start", REPOSITORY, 13, KEY,
         )
         self.assertFalse(any(call[0][3:5] == ("worktree", "add") for call in executor.calls))
+
+    def test_repository_root_common_dir_and_origin_mismatch_fail_before_fetch(self):
+        for outputs in (
+            ["/attacker\n", "/workspace/snap-flow/.git\n", PROJECT["origin_url"] + "\n"],
+            ["/workspace/snap-flow\n", "/attacker/.git\n", PROJECT["origin_url"] + "\n"],
+            ["/workspace/snap-flow\n", "/workspace/snap-flow/.git\n",
+             "git@github.com:attacker/repo.git\n"],
+        ):
+            with self.subTest(outputs=outputs):
+                executor = FakeExecutor(outputs)
+                controller = Controller(
+                    Registry((), (TEMPLATE,), (PROJECT,)), InMemoryResolutionStore(), executor,
+                )
+                with self.assertRaises(RuntimeError):
+                    controller.execute("start", REPOSITORY, 13, KEY)
+                self.assertFalse(any("fetch" in call[0] for call in executor.calls))
 
     def test_remote_adapter_has_fixed_host_identity_known_hosts_and_command(self):
         run = mock.Mock(return_value=subprocess.CompletedProcess([], 0))
@@ -95,12 +123,34 @@ class GenericOrchestratorTest(unittest.TestCase):
         self.assertEqual(argv[0], "/usr/bin/ssh")
         self.assertIn(f"UserKnownHostsFile={KNOWN_HOSTS_FILE}", argv)
         self.assertIn(IDENTITY_FILE, argv)
-        self.assertEqual(argv[argv.index("dev@snapflow-dev") + 1], REMOTE_CONTROLLER)
+        self.assertEqual(argv[argv.index("dev@192.168.178.4") + 1], REMOTE_CONTROLLER)
+        self.assertIn("GlobalKnownHostsFile=/dev/null", argv)
+        self.assertIn("ProxyCommand=none", argv)
+        self.assertEqual(argv[argv.index("-p") + 1], "2222")
         self.assertFalse(run.call_args.kwargs["shell"])
         for option in ("--host", "--identity", "--known-hosts", "--command"):
             with self.subTest(option=option), self.assertRaises(SystemExit):
                 remote_main(["start", "--repository", REPOSITORY, "--issue-number", "13",
                              "--idempotency-key", KEY, option, "attacker"], run=run)
+
+    def test_server_forced_command_accepts_only_exact_controller_grammar(self):
+        original = (f"/usr/local/bin/neo-dev-project-control resume --repository {REPOSITORY} "
+                    f"--issue-number 13 --idempotency-key {KEY}")
+        argv = validated_original_command(original)
+        self.assertEqual(argv[0], PRIVILEGED_CONTROLLER)
+        self.assertEqual(argv[1:], ("resume", "--repository", REPOSITORY, "--issue-number",
+                                    "13", "--idempotency-key", KEY))
+        for command in (
+            "bash -c id", "git status", original + " --command id",
+            original.replace("resume", "rm"), original.replace("13", "13;id"),
+        ):
+            with self.subTest(command=command), self.assertRaises(ValueError):
+                validated_original_command(command)
+        options = (pathlib.Path(__file__).parents[1] / "controller" /
+                   "authorized_keys.options").read_text()
+        for required in ("restrict", "no-pty", "no-agent-forwarding", "no-port-forwarding",
+                         "command=\"/usr/local/bin/neo-dev-forced-command\""):
+            self.assertIn(required, options)
 
     def test_initial_prompt_is_issue_specific_and_spec_only(self):
         prompt = initial_prompt(REPOSITORY, 13)
@@ -118,6 +168,7 @@ class GenericOrchestratorTest(unittest.TestCase):
         completed = mock.Mock(stdout='{"task_id":"same-task","durable":true}\n')
         work = {"issue_number": 13, "task_id": "same-task", "wakeups": [{
             "event": "issue_comment", "action": "created", "command": "/accept",
+            "delivery_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         }]}
         with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
             self.assertEqual(runner.create(work, KEY), "same-task")
@@ -127,14 +178,47 @@ class GenericOrchestratorTest(unittest.TestCase):
         self.assertIn(KEY, body)
         self.assertIn("Acceptance does not authorize merge", body)
 
-    def test_deployment_manifest_keeps_concurrency_one_and_declares_both_services(self):
-        path = pathlib.Path(__file__).parents[1] / "deploy" / "install-manifest.v1.json"
-        document = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(document["concurrency"], 1)
-        destinations = {entry["destination"] for entry in document["files"]}
-        self.assertIn("/etc/systemd/system/neo-dev-webhook-receiver.service", destinations)
-        self.assertIn("/etc/systemd/system/neo-dev-webhook-consumer.service", destinations)
-        self.assertIn("/usr/local/bin/neo-dev-project-control", destinations)
+    def test_terminal_real_helper_semantics_get_unique_runnable_execution_per_wakeup(self):
+        fixture = pathlib.Path(__file__).with_name("fixtures") / "terminal_task.py"
+        with tempfile.TemporaryDirectory() as directory:
+            helper = pathlib.Path(directory) / "task.py"
+            shutil.copyfile(fixture, helper)
+            runner = TaskRunner(script_path=str(helper))
+            first_wakeup = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            second_wakeup = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+            first = runner.create({"issue_number": 13, "task_id": None, "wakeups": [{
+                "delivery_id": first_wakeup, "event": "issues", "action": "labeled",
+                "command": None,
+            }]}, KEY)
+            second_work = {"issue_number": 13, "task_id": first, "wakeups": [{
+                "delivery_id": first_wakeup, "event": "issues", "action": "labeled",
+                "command": None,
+            }, {
+                "delivery_id": second_wakeup, "event": "issue_comment", "action": "created",
+                "command": "/accept",
+            }]}
+            second = runner.create(second_work, KEY)
+            replay = runner.create(second_work, KEY)
+            cards = json.loads((pathlib.Path(directory) / ".terminal-cards.json").read_text())
+        self.assertNotEqual(first, second)
+        self.assertEqual(second, replay)
+        self.assertEqual(len(cards), 2)
+        self.assertIn("Current phase: specification", cards[
+            str(uuid.uuid5(uuid.UUID(KEY), str(uuid.UUID(first_wakeup))))]["body"])
+        self.assertIn("Current phase: archive", cards[
+            str(uuid.uuid5(uuid.UUID(KEY), str(uuid.UUID(second_wakeup))))]["body"])
+
+    def test_deployment_updates_existing_compose_stack_without_systemd_or_profile_overwrite(self):
+        deploy = pathlib.Path(__file__).parents[1] / "deploy"
+        compose = (deploy / "compose.neo-dev-repair.yaml").read_text()
+        installer = (deploy / "install.sh").read_text()
+        self.assertIn("receiver:", compose)
+        self.assertIn("consumer:", compose)
+        self.assertIn("/var/lib/neo-dev", compose)
+        self.assertIn("/opt/data/services/snapflow-neo-dev-webhook", compose)
+        self.assertIn("docker compose -p snapflow-neo-dev-webhook", installer)
+        self.assertIn("install_profile_block", installer)
+        self.assertNotIn("systemctl", installer + compose)
 
 
 if __name__ == "__main__":

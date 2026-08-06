@@ -2,10 +2,10 @@
 import pathlib
 import sys
 
-installed_library = pathlib.Path("/opt/data/lib/neo_dev_webhook")
+installed_library = pathlib.Path("/usr/local/lib/neo_dev_webhook")
 repository_library = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(installed_library.parent if installed_library.is_dir() else repository_library.parent))
 
-from neo_dev_webhook.remote_adapter import main
+from neo_dev_webhook.forced_command import main
 
 raise SystemExit(main())

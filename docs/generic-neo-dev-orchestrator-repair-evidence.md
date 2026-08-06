@@ -7,16 +7,19 @@ The operator authorized an emergency repository-only repair of the mechanism tha
 ## Implemented boundaries
 
 - Generic positive Issue numbers derive validated issue branch/worktree/tmux coordinates; Issue #77 remains an explicit closed-bootstrap override.
-- Start fetches `origin/main`, creates or verifies the issue worktree/branch, and creates one Codex window.
-- The host adapter uses fixed SSH endpoint/user/identity/known-hosts values, strict host checking, `shell=False`, strict argv validation, and only the installed remote controller.
-- Durable wakeups retain one task/idempotency/session lifecycle. Project concurrency is one until trusted Issue closure finalizes the workflow.
+- Start verifies the root-owned repository path, common Git directory and normalized origin before fetching `origin/main`, then creates or verifies the issue worktree/branch and sole Codex window.
+- Every webhook delivery gets a deterministic Kanban execution ID while retaining one controller lifecycle and Codex session. Successful handoffs reset failure retries; project concurrency remains one until independently verified finalization.
+- The host adapter is fixed to `dev@192.168.178.4:2222`, `/opt/data/credentials/snapflow-dev-client`, and `/opt/data/tailscale_known_hosts`. It ignores user/global SSH configuration, uses `shell=False`, and can invoke only the installed controller grammar.
+- The SSH authorized key uses a root-installed forced-command wrapper plus `restrict`/no-PTY/no-forwarding options. Controller code and trusted state are root-owned; Codex runs as `dev` and cannot read or alter controller state.
 - Initial Codex work is specification-only. Later approval/review/accept/merge commands resume the same session with separate gates.
-- Semantic success requires structured repository and GitHub artifact verification and rejects heartbeat-only results.
+- Semantic success and closure require controller-side repository/GitHub verification. Worker claims, heartbeats and manual closure do not establish progress or release concurrency.
+- Launch intent is recoverable once and then fails closed with an auditable state instead of wedging indefinitely.
 
 ## Verification
 
-- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests`: **91 passed**.
-- `python3 -m py_compile tools/neo_dev_webhook/*.py`: **passed**.
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -p 'test_*.py'`: **100 passed**.
+- `python3 -m py_compile tools/neo_dev_webhook/*.py tools/neo_dev_webhook/tests/*.py tools/neo_dev_webhook/tests/fixtures/*.py`: **passed**.
+- `bash -n tools/neo_dev_webhook/deploy/install.sh`: **passed**.
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict`: **passed**.
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate --specs --strict`: **2 passed, 0 failed**.
 - `backend/deno lint`: **passed**.
@@ -25,14 +28,14 @@ The operator authorized an emergency repository-only repair of the mechanism tha
 - `frontend/npm run test:run`: **37 files, 264 tests passed**.
 - `git diff --check`: **passed**.
 
-No UI behavior changed, so Playwright review is not applicable. No deployment or live Issue trigger was performed.
+No UI behavior changed, so Playwright review is not applicable. The real `/opt/data/scripts/neo-dev/task.py` and live `/opt/data/services/snapflow-neo-dev-webhook` mount are not available in this worktree container. The integration fixture reproduces the verified terminal-card idempotency semantics, but no live-helper or production E2E claim is made. No deployment, live Issue trigger, merge, or secret change was performed.
 
 ## Deployment artifacts (not applied)
 
-- `tools/neo_dev_webhook/deploy/install-manifest.v1.json`
-- `tools/neo_dev_webhook/deploy/neo-dev-webhook-receiver.service`
-- `tools/neo_dev_webhook/deploy/neo-dev-webhook-consumer.service`
-- `tools/neo_dev_webhook/deploy/snapflow.profile.md`
+- `tools/neo_dev_webhook/deploy/compose.neo-dev-repair.yaml`
+- `tools/neo_dev_webhook/deploy/install.sh`
+- `tools/neo_dev_webhook/deploy/profile.managed-block.md`
+- `tools/neo_dev_webhook/deploy/README.md`
 - `tools/neo_dev_webhook/controller/install-manifest.v1.json`
 - `tools/neo_dev_webhook/controller/registry.v1.json`
 - `tools/neo_dev_webhook/controller/card-capability-policy.v1.json`
@@ -40,3 +43,10 @@ No UI behavior changed, so Playwright review is not applicable. No deployment or
 - `tools/neo_dev_webhook/controller/neo-dev-remote-project-control`
 - `tools/neo_dev_webhook/controller/neo-dev-project-control`
 - `tools/neo_dev_webhook/controller/neo-dev-codex-runtime`
+- `tools/neo_dev_webhook/controller/neo-dev-forced-command`
+- `tools/neo_dev_webhook/controller/neo-dev-project-control-privileged`
+- `tools/neo_dev_webhook/controller/neo-dev-codex-runtime-privileged`
+- `tools/neo_dev_webhook/controller/authorized_keys.options`
+- `tools/neo_dev_webhook/controller/neo-dev-control.sudoers`
+
+The installer requires the existing non-empty `/opt/data/profiles/dev/projects/snapflow.md`, appends only a delimited managed block, stages a Compose override for the existing receiver/consumer services, and keeps activation as a separate explicit operator step. Its README contains verification and rollback steps.

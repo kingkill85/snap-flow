@@ -1,0 +1,21 @@
+services:
+  receiver:
+    working_dir: /app
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: /app
+    volumes:
+      - /opt/data/services/snapflow-neo-dev-webhook:/app:ro
+      - /var/lib/neo-dev:/var/lib/neo-dev
+      - /opt/data:/opt/data:ro
+    command: ["python3", "-m", "neo_dev_webhook.server", "--host", "0.0.0.0", "--port", "8787", "--concurrency-limit", "8", "--read-timeout", "5"]
+  consumer:
+    working_dir: /app
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: /app
+    volumes:
+      - /opt/data/services/snapflow-neo-dev-webhook:/app:ro
+      - /var/lib/neo-dev:/var/lib/neo-dev
+      - /opt/data:/opt/data:ro
+    command: ["python3", "-m", "neo_dev_webhook.consumer", "/var/lib/neo-dev/webhook/work.sqlite3", "--max-runtime", "2h", "--max-attempts", "5"]

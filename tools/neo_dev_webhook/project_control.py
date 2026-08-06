@@ -18,6 +18,8 @@ CONTROLLER_STATE_PATH = pathlib.Path("/var/lib/neo-dev/project-control/resolutio
 CODEX_RUNTIME_PATH = "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runtime"
 CODEX_BIN_PATH = "/usr/local/bin/codex"
 CODEX_APP_SERVER_ARGV = (CODEX_BIN_PATH, "app-server", "--stdio")
+CODEX_WORKER_ARGV = ("/usr/bin/setpriv", "--reuid=dev", "--regid=dev", "--init-groups",
+                     "--no-new-privs", *CODEX_APP_SERVER_ARGV)
 REPOSITORY_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
 SAFE_COMPONENT_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 CONTINUE_PROMPT = "Continue the governed Issue work and address the latest trusted operator finding."
@@ -168,9 +170,11 @@ class SubprocessExecutor:
 
 
 class Registry:
-    def __init__(self, records: Iterable[GovernedTarget], templates: Iterable[dict] = ()):
+    def __init__(self, records: Iterable[GovernedTarget], templates: Iterable[dict] = (),
+                 projects: Iterable[dict] = ()):
         self.records = tuple(records)
         self.templates = tuple(templates)
+        self.projects = tuple(projects)
 
     @classmethod
     def load(cls, path: pathlib.Path) -> "Registry":
@@ -179,10 +183,12 @@ class Registry:
             raise ValueError("unsupported controller registry version")
         records = document.get("targets")
         templates = document.get("project_templates", [])
-        if not isinstance(records, list) or not isinstance(templates, list):
+        projects = document.get("projects", [])
+        if (not isinstance(records, list) or not isinstance(templates, list)
+                or not isinstance(projects, list)):
             raise ValueError("invalid controller registry")
         try:
-            return cls((GovernedTarget(**record) for record in records), templates)
+            return cls((GovernedTarget(**record) for record in records), templates, projects)
         except (TypeError, KeyError) as error:
             raise ValueError("invalid controller registry record") from error
 
@@ -235,6 +241,17 @@ class Registry:
                for values in coordinates):
             raise RuntimeError("derived governed target collides with an explicit record")
         return target
+
+    def project_config(self, repository: str) -> dict:
+        matches = [item for item in self.projects if item.get("repository") == repository]
+        if len(matches) != 1 or set(matches[0]) != {"repository", "repository_path", "origin_url"}:
+            raise RuntimeError("repository root must resolve to exactly one root-owned project record")
+        path = matches[0]["repository_path"]
+        origin = matches[0]["origin_url"]
+        if (not isinstance(path, str) or not path.startswith("/workspace/")
+                or not isinstance(origin, str) or not origin):
+            raise ValueError("invalid root-owned project record")
+        return matches[0]
 
 
 class ResolutionStore(Protocol):
@@ -367,7 +384,7 @@ class Controller:
 
     def _resolve(self, operation: str, repository: str, issue_number: int,
                  idempotency_key: str) -> WorkState:
-        if operation not in {"preflight", "start", "resume"}:
+        if operation not in {"preflight", "start", "resume", "finalize"}:
             raise ValueError("unsupported operation")
         validate_repository(repository)
         validate_issue_number(issue_number)
@@ -376,8 +393,8 @@ class Controller:
         persisted = self.store.load(idempotency_key)
         if persisted is not None and persisted.target != target:
             raise RuntimeError("registry drift conflicts with persisted resolution")
-        if operation == "resume" and persisted is None:
-            raise RuntimeError("resume requires a persisted resolution")
+        if operation in {"resume", "finalize"} and persisted is None:
+            raise RuntimeError(f"{operation} requires a persisted resolution")
         return self.store.bind(idempotency_key, target)
 
     def observe_session(self, idempotency_key: str, session_id: str) -> WorkState:
@@ -507,7 +524,26 @@ class Controller:
         """Create a generic issue worktree once, from the freshly fetched main ref."""
         if target == ISSUE_77_TARGET:
             return
-        repository_path = f"/workspace/{target.project}"
+        config = self.registry.project_config(target.repository)
+        repository_path = config["repository_path"]
+        observed_root = self.executor.run(
+            ("git", "-C", repository_path, "rev-parse", "--show-toplevel"), timeout=10.0,
+        ).strip()
+        common = self.executor.run(
+            ("git", "-C", repository_path, "rev-parse", "--path-format=absolute",
+             "--git-common-dir"), timeout=10.0,
+        ).strip()
+        origin = self.executor.run(
+            ("git", "-C", repository_path, "remote", "get-url", "origin"), timeout=10.0,
+        ).strip()
+        if observed_root != repository_path or common != f"{repository_path}/.git":
+            raise RuntimeError("repository root/common directory does not match registry")
+        normalized = origin.removesuffix(".git").replace("git@github.com:", "https://github.com/")
+        expected = config["origin_url"].removesuffix(".git").replace(
+            "git@github.com:", "https://github.com/",
+        )
+        if normalized != expected:
+            raise RuntimeError("repository origin does not match registry")
         self.executor.run(("git", "-C", repository_path, "fetch", "--prune",
                            "origin", "main"), timeout=60.0)
         worktrees = self.executor.run(
@@ -517,7 +553,17 @@ class Controller:
         paths = [line.removeprefix("worktree ") for line in worktrees.splitlines()
                  if line.startswith("worktree ")]
         if target.worktree in paths:
+            worktree_common = self.executor.run(
+                ("git", "-C", target.worktree, "rev-parse", "--path-format=absolute",
+                 "--git-common-dir"), timeout=10.0,
+            ).strip()
+            if worktree_common != common:
+                raise RuntimeError("existing worktree belongs to another common directory")
             self._verify_worktree_branch(target)
+            self.executor.run(
+                ("git", "-C", target.worktree, "merge-base", "--is-ancestor", "origin/main",
+                 target.branch), timeout=10.0,
+            )
             return
         branch_ref = self.executor.run(
             ("git", "-C", repository_path, "for-each-ref", "--format=%(refname)",
@@ -534,29 +580,57 @@ class Controller:
                  target.branch, target.worktree, "origin/main"), timeout=60.0,
             )
         self._verify_worktree_branch(target)
+        self.executor.run(
+            ("git", "-C", target.worktree, "merge-base", "--is-ancestor", "origin/main",
+             target.branch), timeout=10.0,
+        )
 
     def execute(self, operation: str, repository: str, issue_number: int,
                 idempotency_key: str) -> dict:
         state = self._resolve(operation, repository, issue_number, idempotency_key)
         target = state.target
-        if operation == "start":
-            if state.phase != "never_started":
+        if operation == "finalize":
+            if state.phase != "semantic_success":
+                raise RuntimeError("finalization requires trusted semantic success state")
+            from .verification import RepositoryGitHubVerifier
+            verification = RepositoryGitHubVerifier(self.executor).verify(
+                target, "merge-finalization",
+            )
+            if not verification.verified:
+                raise RuntimeError(verification.blocker or "merge finalization verification failed")
+            status = "finalized"
+        elif operation == "start":
+            recovering_launch = (state.phase == "crashed" and state.codex_session_id is None
+                                 and state.restart_count == 1)
+            if state.phase != "never_started" and not recovering_launch:
                 raise RuntimeError("start cannot replace or duplicate persisted Codex work")
             self._prepare_issue_target(target)
             windows = self._windows(target)
             if windows.count(target.window) > 1:
                 raise RuntimeError("governed tmux window is ambiguous")
             if target.window in windows:
-                raise RuntimeError("start requires an unused governed tmux window")
+                if recovering_launch:
+                    failed = replace(state, phase="failed_closed")
+                    self.store.save(idempotency_key, state, failed)
+                raise RuntimeError("start launch intent conflicts with an existing window")
             else:
                 self._verify_worktree_branch(target)
-                updated = replace(state, phase="starting")
+                updated = replace(state, phase="starting", terminal=None)
                 self.store.save(idempotency_key, state, updated)
-                self.executor.run(
-                    ("tmux", "new-window", "-d", "-t", target.session, "-n", target.window,
-                     "-c", target.worktree, CODEX_RUNTIME_PATH, "start",
-                     "--idempotency-key", idempotency_key), timeout=20.0,
-                )
+                try:
+                    self.executor.run(
+                        ("tmux", "new-window", "-d", "-t", target.session, "-n", target.window,
+                         "-c", target.worktree, CODEX_RUNTIME_PATH, "start",
+                         "--idempotency-key", idempotency_key), timeout=20.0,
+                    )
+                except BaseException:
+                    failed = replace(
+                        updated, phase="failed_closed" if recovering_launch else "crashed",
+                        restart_count=1,
+                        terminal=TerminalObservation(1, "crashed", not recovering_launch),
+                    )
+                    self.store.save(idempotency_key, updated, failed)
+                    raise
             state, status = updated, "starting"
         elif operation == "preflight":
             if state.phase not in {"active", "correctable"} or state.codex_session_id is None:
@@ -583,12 +657,21 @@ class Controller:
             self._preflight_inactive_pane(target)
             updated = replace(state, phase="resuming", terminal=None)
             self.store.save(idempotency_key, state, updated)
-            self.executor.run(
-                ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
-                 target.worktree, CODEX_RUNTIME_PATH, "resume", "--idempotency-key",
-                 idempotency_key, "--session-id", state.codex_session_id),
-                timeout=20.0,
-            )
+            try:
+                self.executor.run(
+                    ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
+                     target.worktree, CODEX_RUNTIME_PATH, "resume", "--idempotency-key",
+                     idempotency_key, "--session-id", state.codex_session_id),
+                    timeout=20.0,
+                )
+            except BaseException:
+                failed = replace(
+                    updated, phase="failed_closed" if state.restart_count == 1
+                    else "exited_resumable", restart_count=1,
+                    terminal=TerminalObservation(1, "crashed", state.restart_count == 0),
+                )
+                self.store.save(idempotency_key, updated, failed)
+                raise
             state, status = updated, "resuming"
         elif state.phase in {"crashed", "exited_unresumable"}:
             if state.restart_count != 0:
@@ -625,7 +708,7 @@ class Controller:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="neo-dev-project-control", allow_abbrev=False)
-    result.add_argument("operation", choices=("preflight", "start", "resume"))
+    result.add_argument("operation", choices=("preflight", "start", "resume", "finalize"))
     result.add_argument("--repository", required=True)
     result.add_argument("--issue-number", required=True, type=int)
     result.add_argument("--idempotency-key", required=True)

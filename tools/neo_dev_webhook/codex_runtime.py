@@ -10,6 +10,7 @@ from typing import Sequence, TextIO
 
 from .project_control import (
     CODEX_APP_SERVER_ARGV,
+    CODEX_WORKER_ARGV,
     CONTINUE_PROMPT,
     CONTROLLER_REGISTRY_PATH,
     CONTROLLER_STATE_PATH,
@@ -19,6 +20,7 @@ from .project_control import (
     SubprocessExecutor,
     validate_idempotency_key,
 )
+from .verification import PhaseVerifier, RepositoryGitHubVerifier
 
 RUNTIME_VERSION = 1
 def initial_prompt(repository: str, issue_number: int) -> str:
@@ -26,9 +28,7 @@ def initial_prompt(repository: str, issue_number: int) -> str:
 COMPLETION_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["semantic_outcome", "resumable", "summary", "workflow_phase",
-                 "repository_artifacts_verified", "github_artifacts_verified",
-                 "heartbeat_only"],
+    "required": ["semantic_outcome", "resumable", "summary", "workflow_phase"],
     "properties": {
         "semantic_outcome": {
             "enum": ["success", "correctable", "blocked", "crashed", "invalid"],
@@ -37,16 +37,12 @@ COMPLETION_SCHEMA = {
         "summary": {"type": "string", "minLength": 1, "maxLength": 4096},
         "workflow_phase": {"enum": ["specification", "implementation", "review",
                                       "archive", "merge-finalization", "blocked"]},
-        "repository_artifacts_verified": {"type": "boolean"},
-        "github_artifacts_verified": {"type": "boolean"},
-        "heartbeat_only": {"type": "boolean"},
     },
 }
 
 
 def validate_completion(value: object, exit_code: int) -> dict:
-    required = {"semantic_outcome", "resumable", "summary", "workflow_phase",
-                "repository_artifacts_verified", "github_artifacts_verified", "heartbeat_only"}
+    required = {"semantic_outcome", "resumable", "summary", "workflow_phase"}
     if not isinstance(value, dict) or set(value) != required:
         raise ValueError("completion does not match the trusted schema")
     outcome = value["semantic_outcome"]
@@ -60,14 +56,6 @@ def validate_completion(value: object, exit_code: int) -> dict:
     if value["workflow_phase"] not in {"specification", "implementation", "review", "archive",
                                        "merge-finalization", "blocked"}:
         raise ValueError("completion workflow phase is invalid")
-    if any(type(value[name]) is not bool for name in (
-        "repository_artifacts_verified", "github_artifacts_verified", "heartbeat_only",
-    )):
-        raise ValueError("completion verification flags are invalid")
-    if outcome == "success" and (not value["repository_artifacts_verified"]
-                                  or not value["github_artifacts_verified"]
-                                  or value["heartbeat_only"]):
-        raise ValueError("semantic success requires repository and GitHub artifact verification")
     if outcome == "success" and value["workflow_phase"] != "merge-finalization":
         raise ValueError("semantic success is reserved for merge finalization")
     if outcome == "success" and exit_code != 0:
@@ -83,7 +71,7 @@ class AppServer:
     @classmethod
     def start(cls) -> "AppServer":
         process = subprocess.Popen(
-            list(CODEX_APP_SERVER_ARGV),
+            list(CODEX_WORKER_ARGV),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, bufsize=1, shell=False,
         )
@@ -158,7 +146,8 @@ def _thread_id(result: dict) -> str:
 
 def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *,
                  registry_path: pathlib.Path, state_path: pathlib.Path,
-                 app_server: AppServer | None, control_input: TextIO) -> int:
+                 app_server: AppServer | None, control_input: TextIO,
+                 verifier: PhaseVerifier | None) -> int:
     validate_idempotency_key(idempotency_key)
     if operation not in {"start", "resume"}:
         raise ValueError("unsupported internal runtime operation")
@@ -241,10 +230,15 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
                 except (json.JSONDecodeError, ValueError):
                     completion = {"semantic_outcome": "invalid", "resumable": True,
                                   "summary": "Invalid structured completion",
-                                  "workflow_phase": "blocked",
-                                  "repository_artifacts_verified": False,
-                                  "github_artifacts_verified": False,
-                                  "heartbeat_only": False}
+                                  "workflow_phase": "blocked"}
+                verification = (verifier or RepositoryGitHubVerifier(SubprocessExecutor())).verify(
+                    target, completion["workflow_phase"],
+                )
+                if not verification.verified:
+                    completion = {"semantic_outcome": "blocked", "resumable": True,
+                                  "summary": verification.blocker or "controller verification failed",
+                                  "workflow_phase": "blocked"}
+                    exit_code = 1
                 controller.observe_terminal(
                     idempotency_key, exit_code, completion["semantic_outcome"],
                     completion["resumable"],
@@ -255,12 +249,14 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
 def run_runtime(operation: str, idempotency_key: str, session_id: str | None, *,
                 registry_path: pathlib.Path = CONTROLLER_REGISTRY_PATH,
                 state_path: pathlib.Path = CONTROLLER_STATE_PATH,
-                app_server: AppServer | None = None, control_input: TextIO = sys.stdin) -> int:
+                app_server: AppServer | None = None, control_input: TextIO = sys.stdin,
+                verifier: PhaseVerifier | None = None) -> int:
     server = app_server or AppServer.start()
     try:
         return _run_runtime(
             operation, idempotency_key, session_id, registry_path=registry_path,
             state_path=state_path, app_server=server, control_input=control_input,
+            verifier=verifier,
         )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError,
             json.JSONDecodeError):

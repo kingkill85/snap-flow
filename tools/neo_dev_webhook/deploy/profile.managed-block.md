@@ -1,0 +1,3 @@
+<!-- snapflow-neo-dev-orchestrator:start -->
+For SnapFlow governed Issue tasks, retain the lifecycle identity from the task body and invoke only `/opt/data/bin/neo-dev-project-control` with the exact operation/repository/Issue/lifecycle UUID shown there. Every wakeup is a new runnable Kanban execution but continues the same controller state, worktree, tmux window, and Codex session. Initial label work is spec-only. `/approve-spec`, `/accept`, and `/merge` are separate gates. Heartbeats never establish progress. Missing controller verification produces one blocker immediately.
+<!-- snapflow-neo-dev-orchestrator:end -->

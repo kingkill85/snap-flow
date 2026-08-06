@@ -48,7 +48,10 @@ class FakeExecutor:
 
     def run(self, argv, *, timeout):
         self.calls.append((tuple(argv), timeout))
-        return self.outputs.pop(0) if self.outputs else ""
+        result = self.outputs.pop(0) if self.outputs else ""
+        if isinstance(result, BaseException):
+            raise result
+        return result
 
 
 class ProjectControlTest(unittest.TestCase):
@@ -111,6 +114,22 @@ class ProjectControlTest(unittest.TestCase):
              "--idempotency-key", KEY),
         ])
         self.assertEqual(executor.calls[-1][1], 20.0)
+
+    def test_failed_tmux_launch_records_bounded_recoverable_intent(self):
+        store = InMemoryResolutionStore()
+        controller, _ = self.controller([
+            "", "chore/issue-77-openspec-workflow\n", RuntimeError("tmux failed"),
+        ], store=store)
+        with self.assertRaisesRegex(RuntimeError, "tmux failed"):
+            controller.execute("start", REPOSITORY, 77, KEY)
+        failed = store.load(KEY)
+        self.assertEqual(failed.phase, "crashed")
+        self.assertEqual(failed.restart_count, 1)
+        retry, executor = self.controller([
+            "", "chore/issue-77-openspec-workflow\n", "",
+        ], store=store)
+        self.assertEqual(retry.execute("start", REPOSITORY, 77, KEY)["status"], "starting")
+        self.assertEqual(sum(call[0][:2] == ("tmux", "new-window") for call in executor.calls), 1)
 
     def test_retry_and_resume_preserve_original_resolution_and_identity(self):
         store = InMemoryResolutionStore()
@@ -408,7 +427,7 @@ class ProjectControlTest(unittest.TestCase):
         self.assertEqual(registry["targets"], [TARGET.as_dict()])
         self.assertEqual(registry["project_templates"][0]["repository"], REPOSITORY)
         self.assertEqual(policy["project_command_capabilities"]["allow"],
-                         ["/usr/local/bin/neo-dev-project-control"])
+                         ["/opt/data/bin/neo-dev-project-control"])
         self.assertEqual(manifest["version"], 1)
         self.assertEqual(state_schema["properties"]["restart_count"]["maximum"], 1)
         self.assertIn("semantic_success", state_schema["properties"]["phase"]["enum"])
@@ -416,9 +435,15 @@ class ProjectControlTest(unittest.TestCase):
         runtime_entry = next(entry for entry in manifest["files"]
                              if entry["source"] == "neo-dev-codex-runtime")
         self.assertTrue(effective_mode_allows(runtime_entry, "dev", {"dev"}, 0o1))
-        self.assertFalse(effective_mode_allows(runtime_entry, "other", {"other"}, 0o1))
-        self.assertTrue(effective_mode_allows(manifest["state"], "dev", {"dev"}, 0o3))
+        self.assertTrue(effective_mode_allows(runtime_entry, "other", {"other"}, 0o1))
+        self.assertFalse(effective_mode_allows(runtime_entry, "dev", {"dev"}, 0o2))
+        self.assertFalse(effective_mode_allows(manifest["state"], "dev", {"dev"}, 0o1))
+        self.assertFalse(effective_mode_allows(manifest["state"], "dev", {"dev"}, 0o2))
         self.assertFalse(effective_mode_allows(manifest["state"], "other", {"other"}, 0o3))
+        for entry in manifest["files"]:
+            self.assertEqual(entry["owner"], "root")
+            self.assertEqual(entry["group"], "root")
+            self.assertFalse(effective_mode_allows(entry, "dev", {"dev"}, 0o2))
         self.assertNotIn(runtime_entry["destination"],
                          policy["project_command_capabilities"]["allow"])
         combined = " ".join(path.read_text(encoding="utf-8") for path in controller_dir.iterdir())

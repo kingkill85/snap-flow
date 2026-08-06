@@ -1,5 +1,12 @@
 {
   "version": 1,
+  "projects": [
+    {
+      "repository": "kingkill85/snap-flow",
+      "repository_path": "/workspace/snap-flow",
+      "origin_url": "git@github.com:kingkill85/snap-flow.git"
+    }
+  ],
   "targets": [
     {
       "repository": "kingkill85/snap-flow",

@@ -24,7 +24,3 @@ None.
 ## Impact
 
 This active Issue #77 repair remains on branch `chore/issue-77-openspec-workflow`, in the existing Issue #77 worktree and Draft PR #78. After approval, implementation is expected to affect the standalone task-runner/control-adapter boundary under `tools/neo_dev_webhook`, its focused tests, `docs/github-webhook-handoff.md`, and non-secret controller adapter installation/capability policy. It does not alter SnapFlow product backend/frontend behavior. Existing SSH registration, endpoint/port, host key, client identity, secrets, ingress, dispatcher, container provisioning, merge, release, deployment, destructive operations, canonical specs, and archived artifacts remain out of scope or separately gated.
-
-## Emergency post-merge repair authorization
-
-The first real post-bootstrap test on Issue #13 proved the merged mechanism could not govern a normal issue. The operator explicitly authorized an emergency repair on `fix/generic-neo-dev-orchestrator` without a new Issue/approval cycle because that cycle is the broken capability. Authorization covers repository code, artifacts, tests, commit, and push only; it excludes deployment, secrets, release, merge, and triggering Issue #13. The repair generalizes the registry, supplies a declarative host adapter/profile/service bundle, persists one lifecycle identity, and retains closed Issue #77 solely as compatibility.

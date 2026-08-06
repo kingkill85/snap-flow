@@ -1,0 +1,1 @@
+restrict,no-pty,no-agent-forwarding,no-port-forwarding,no-X11-forwarding,command="/usr/local/bin/neo-dev-forced-command"
