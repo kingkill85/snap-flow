@@ -15,4 +15,4 @@
 
 - [x] 3.1 Update environment examples and operator documentation; remove all product-backend coupling
 - [x] 3.2 Run focused tests, formatters, linters, type checks, strict OpenSpec validation, and relevant project suites; obtain explicit authorized acceptance of the documented clean-main baseline failure
-- [ ] 3.3 Complete a fresh independent code/security and test/governance review, resolve every finding, and record the disposition; Playwright is not applicable because no UI behavior changes
+- [x] 3.3 Complete a fresh independent code/security and test/governance review, resolve every finding, and record the disposition; Playwright is not applicable because no UI behavior changes
