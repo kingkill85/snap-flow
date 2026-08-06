@@ -86,13 +86,25 @@ def no_delta_is_validated_skipped(root: pathlib.Path, change: str):
 
 def validate_delta_headings(rel: pathlib.Path, text: str):
     errors = []
-    headings = LEVEL2_HEADING_RE.findall(text)
-    if not headings:
+    matches = list(LEVEL2_HEADING_RE.finditer(text))
+    headings = [match.group(1) for match in matches]
+    if not matches:
         return [f"{rel}: no level-2 delta headings"]
+    if text[:matches[0].start()].strip():
+        errors.append(f"{rel}: content exists outside an allowed level-2 section")
     allowed = {"Purpose", *(f"{op} Requirements" for op in OPERATIONS)}
     for heading in headings:
         if heading not in allowed:
             errors.append(f"{rel}: unknown or malformed level-2 heading '## {heading}'")
+    if headings.count("Purpose") > 1:
+        errors.append(f"{rel}: duplicate Purpose sections")
+    for index, match in enumerate(matches):
+        if match.group(1) != "Purpose":
+            continue
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        purpose_body = text[match.end():end]
+        if re.search(r"^###|^- (?:FROM|TO):", purpose_body, re.MULTILINE):
+            errors.append(f"{rel}: requirement-like content is not allowed in Purpose")
     for operation in OPERATIONS:
         count = headings.count(f"{operation} Requirements")
         if count > 1:

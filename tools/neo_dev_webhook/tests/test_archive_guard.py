@@ -254,6 +254,28 @@ class ArchiveGuardTest(unittest.TestCase):
             passed = self.run_guard(root)
             self.assertEqual(passed.returncode, 0, passed.stderr)
 
+    def test_content_outside_operations_and_duplicate_purpose_fail_closed(self):
+        variants = (
+            "### Requirement: Orphan hidden delta\nUnsynced\n\n"
+            "## ADDED Requirements\n\n### Requirement: Good\nText\n",
+            "## Purpose\n\n### Requirement: Hidden in purpose\nUnsynced\n\n"
+            "## ADDED Requirements\n\n### Requirement: Good\nText\n",
+            "## Purpose\nOne\n\n## Purpose\nTwo\n\n"
+            "## ADDED Requirements\n\n### Requirement: Good\nText\n",
+        )
+        for content in variants:
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                delta = root / "openspec/changes/demo/specs/example/spec.md"
+                main = root / "openspec/specs/example/spec.md"
+                delta.parent.mkdir(parents=True)
+                main.parent.mkdir(parents=True)
+                delta.write_text(content, encoding="utf-8")
+                main.write_text("### Requirement: Good\nText\n", encoding="utf-8")
+                result = self.run_guard(root)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("malformed", result.stderr.lower())
+
     def test_duplicate_normalized_main_requirements_fail_closed(self):
         duplicates = (("Good", "Good"), ("Good", "good"), ("Good  name", "Good name"))
         for first, second in duplicates:
