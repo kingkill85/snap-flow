@@ -228,11 +228,22 @@ class ProjectControlTest(unittest.TestCase):
         observer = Controller(Registry((TARGET,)), store, FakeExecutor())
         observer.observe_terminal(KEY, 0, "correctable", True)
         controller, executor = self.controller([
-            "issue-77\n", "/workspace/snap-flow-issue-77\n",
-            "chore/issue-77-openspec-workflow\n", "1\t4242\n",
+            "issue-77\n", "1\t4242\t\n",
+            "chore/issue-77-openspec-workflow\n",
         ], store=store)
         result = controller.execute("resume", REPOSITORY, 77, KEY)
         self.assertEqual(result["status"], "resuming")
+        self.assertEqual(executor.calls[:3], [
+            (("tmux", "list-windows", "-t", "snapflow-dev", "-F",
+              "#{window_name}"), 10.0),
+            (("tmux", "list-panes", "-t", "snapflow-dev:issue-77", "-F",
+              "#{pane_dead}\t#{pane_pid}\t#{pane_current_path}"), 10.0),
+            (("git", "-C", "/workspace/snap-flow-issue-77", "branch",
+              "--show-current"), 10.0),
+        ])
+        self.assertFalse(any("#{pane_current_path}" in call[0]
+                             and call[0][:2] == ("tmux", "display-message")
+                             for call in executor.calls))
         self.assertEqual(executor.calls[-1], ((
             "tmux", "respawn-pane", "-k", "-t", "snapflow-dev:issue-77", "-c",
             "/workspace/snap-flow-issue-77", CODEX_RUNTIME_PATH, "resume",
@@ -244,10 +255,21 @@ class ProjectControlTest(unittest.TestCase):
         observer = Controller(Registry((TARGET,)), store, FakeExecutor())
         observer.observe_terminal(KEY, 0, "correctable", True)
         controller, executor = self.controller([
-            "issue-77\n", "/workspace/snap-flow-issue-77\n",
-            "chore/issue-77-openspec-workflow\n", "0\t4242\n",
+            "issue-77\n", "0\t4242\t/workspace/snap-flow-issue-77\n",
         ], store=store)
         with self.assertRaisesRegex(RuntimeError, "live process"):
+            controller.execute("resume", REPOSITORY, 77, KEY)
+        self.assertFalse(any(call[0][:2] == ("tmux", "respawn-pane")
+                             for call in executor.calls))
+
+    def test_exited_state_rejects_ambiguous_dead_panes_before_respawn(self):
+        store = self.state_store()
+        observer = Controller(Registry((TARGET,)), store, FakeExecutor())
+        observer.observe_terminal(KEY, 0, "correctable", True)
+        controller, executor = self.controller([
+            "issue-77\n", "1\t4242\t\n1\t4243\t\n",
+        ], store=store)
+        with self.assertRaisesRegex(RuntimeError, "ambiguous"):
             controller.execute("resume", REPOSITORY, 77, KEY)
         self.assertFalse(any(call[0][:2] == ("tmux", "respawn-pane")
                              for call in executor.calls))
@@ -278,8 +300,8 @@ class ProjectControlTest(unittest.TestCase):
         corrected = observer.observe_correctable(KEY)
         self.assertEqual(corrected.phase, "exited_resumable")
         controller, executor = self.controller([
-            "issue-77\n", "/workspace/snap-flow-issue-77\n",
-            "chore/issue-77-openspec-workflow\n", "1\t4242\n",
+            "issue-77\n", "1\t4242\t\n",
+            "chore/issue-77-openspec-workflow\n",
         ], store=store)
         result = controller.execute("resume", REPOSITORY, 77, KEY)
         self.assertEqual(result["status"], "resuming")
@@ -292,8 +314,8 @@ class ProjectControlTest(unittest.TestCase):
         observer = Controller(Registry((TARGET,)), store, FakeExecutor())
         observer.observe_terminal(KEY, 1, "crashed", False)
         controller, executor = self.controller([
-            "issue-77\n", "/workspace/snap-flow-issue-77\n",
-            "chore/issue-77-openspec-workflow\n", "1\t4242\n",
+            "issue-77\n", "1\t4242\t\n",
+            "chore/issue-77-openspec-workflow\n",
         ], store=store)
         result = controller.execute("resume", REPOSITORY, 77, KEY)
         self.assertEqual(result["status"], "restarted")

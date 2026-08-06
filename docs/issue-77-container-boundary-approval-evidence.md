@@ -93,6 +93,23 @@ Exact correction verification:
 - `cd backend && deno task test`: **327 passed (146 steps), 1 known baseline failure** at `backend/tests/services/excel-sync_test.ts:207` (`false` actual, `true` expected); this correction does not touch that subsystem and the suite is not reported as green.
 - `git diff --check`: **passed**.
 
+### Dead-pane resume compatibility correction
+
+Live installed-path testing against tmux 3.4 showed that a dead remain-on-exit pane has `pane_dead=1` while `pane_current_path` is empty. Inactive preflight now validates a sole dead pane and numeric PID first, ignores the non-authoritative dead-pane path field, and independently verifies the fixed registered worktree/branch before fixed-`-c` respawn. Focused coverage reproduces the empty-path output and rejects live or ambiguous panes before any respawn. Active-pane path/start-command/process-tree checks are unchanged.
+
+Exact verification:
+
+- `PYTHONPATH=tools python3 -m unittest tools.neo_dev_webhook.tests.test_project_control tools.neo_dev_webhook.tests.test_codex_runtime -v`: **29/29 passed**.
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -v`: **81/81 passed**.
+- Controller and focused-test Python compilation: **passed**.
+- Strict active-change OpenSpec validation: **passed**; strict all validation: **3 passed, 0 failed**.
+- Approved packet comparison to `1843b3ddfe8433d05817c3f94bb9edbc39e96124`: **passed byte-for-byte**; archived OpenSpec tree comparison: **passed**.
+- `cd backend && deno lint`: **passed**, 141 files checked.
+- `cd frontend && npm run lint`: **passed**.
+- `cd frontend && npm run test:run`: **37 test files passed, 264 tests passed**.
+- `cd backend && deno task test`: **327 passed (146 steps), 1 known baseline failure** at `backend/tests/services/excel-sync_test.ts:207` (`false` actual, `true` expected); no changed file touches that subsystem and the suite is not reported as green.
+- `git diff --check`: **passed**.
+
 No frontend behavior changed, so an independent Playwright UI review is not applicable. Independent code/test review and controller installation/preflight remain assigned to Neo Dev and are not claimed here.
 
 ### Same-session continuation correction

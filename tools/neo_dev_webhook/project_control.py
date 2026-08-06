@@ -440,22 +440,16 @@ class Controller:
         windows = self._windows(target)
         if windows.count(target.window) != 1:
             raise RuntimeError("exact governed tmux window is unavailable or ambiguous")
-        path = self.executor.run(
-            ("tmux", "display-message", "-p", "-t", target.tmux_target,
-             "#{pane_current_path}"), timeout=10.0,
-        ).strip()
-        if path != target.worktree:
-            raise RuntimeError("tmux pane worktree does not match governed target")
-        self._verify_worktree_branch(target)
         metadata = self.executor.run(
             ("tmux", "list-panes", "-t", target.tmux_target, "-F",
-             "#{pane_dead}\t#{pane_pid}"), timeout=10.0,
+             "#{pane_dead}\t#{pane_pid}\t#{pane_current_path}"), timeout=10.0,
         ).splitlines()
         if len(metadata) != 1:
             raise RuntimeError("governed tmux pane is unavailable or ambiguous")
         fields = metadata[0].split("\t")
-        if len(fields) != 2 or fields[0] != "1" or not fields[1].isdigit():
+        if len(fields) != 3 or fields[0] != "1" or not fields[1].isdigit():
             raise RuntimeError("persisted exited state conflicts with a live process")
+        self._verify_worktree_branch(target)
 
     def _verify_worktree_branch(self, target: GovernedTarget) -> None:
         branch = self.executor.run(
