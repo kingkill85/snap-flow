@@ -13,7 +13,7 @@ OPERATIONS = ("ADDED", "MODIFIED", "REMOVED", "RENAMED")
 LEVEL2_HEADING_RE = re.compile(r"^[ ]{0,3}##(?!#)[ \t]*(.*?)\s*$", re.MULTILINE)
 NO_SPACE_LEVEL2_RE = re.compile(r"^[ ]{0,3}##(?=[^# \t\r\n])", re.MULTILINE)
 REQ_RE = re.compile(
-    r"^### Requirement: (.+?)\s*$\n(.*?)(?=^### Requirement: |\Z)",
+    r"^[ ]{0,3}### Requirement: (.+?)\s*$\n(.*?)(?=^[ ]{0,3}### Requirement: |\Z)",
     re.MULTILINE | re.DOTALL,
 )
 RENAME_RE = re.compile(r"^- FROM: `(.+?)`\s*$\n^- TO: `(.+?)`\s*$", re.MULTILINE)

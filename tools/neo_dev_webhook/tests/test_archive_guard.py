@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 import unittest
@@ -43,6 +44,13 @@ class ArchiveGuardTest(unittest.TestCase):
         self.assertNotIn("--allow-no-delta", text)
         self.assertIn("status JSON", text)
         self.assertNotIn("Archive without syncing", text)
+        bare_command = re.compile(
+            r"(?<!npm exec -- )\bopenspec (?=(?:store|new|status|instructions|list|show|validate|archive|doctor|context|view)\b)"
+        )
+        for skill in (ROOT / ".agents/skills").glob("openspec-*/SKILL.md"):
+            skill_text = skill.read_text(encoding="utf-8")
+            self.assertNotRegex(skill_text, bare_command, skill)
+            self.assertNotIn("Bash(openspec:*)", skill_text, skill)
 
     def test_all_delta_operations_must_be_synced(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -368,6 +376,36 @@ class ArchiveGuardTest(unittest.TestCase):
             )
             result = self.run_guard(root)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_commonmark_indented_main_requirements_are_deduplicated(self):
+        for spaces in (1, 2, 3):
+            with self.subTest(spaces=spaces), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                delta = root / "openspec/changes/demo/specs/example/spec.md"
+                main = root / "openspec/specs/example/spec.md"
+                delta.parent.mkdir(parents=True)
+                main.parent.mkdir(parents=True)
+                indent = " " * spaces
+                main.write_text(
+                    "## Purpose\nTest.\n\n## Requirements\n\n"
+                    f"{indent}### Requirement: Cafe\u0301 access\n"
+                    "The system SHALL preserve stale behavior.\n\n"
+                    "#### Scenario: Stale\n- **WHEN** stale\n- **THEN** stale\n\n"
+                    "### Requirement: Caf\u00e9 access\n"
+                    "The system SHALL preserve current behavior.\n\n"
+                    "#### Scenario: Current\n- **WHEN** current\n- **THEN** current\n",
+                    encoding="utf-8",
+                )
+                delta.write_text(
+                    "## MODIFIED Requirements\n\n"
+                    "### Requirement: Caf\u00e9 access\n"
+                    "The system SHALL preserve current behavior.\n\n"
+                    "#### Scenario: Current\n- **WHEN** current\n- **THEN** current\n",
+                    encoding="utf-8",
+                )
+                result = self.run_guard(root)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("duplicate normalized requirement", result.stderr)
 
     def test_duplicate_normalized_main_requirements_fail_closed(self):
         duplicates = (("Good", "Good"), ("Good", "good"), ("Good  name", "Good name"), ("Caf\u00e9 access", "Cafe\u0301 access"))

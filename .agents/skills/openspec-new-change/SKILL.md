@@ -1,7 +1,7 @@
 ---
 name: openspec-new-change
 description: Start a new OpenSpec change using the experimental artifact workflow. Use when the user wants to create a new feature, fix, or modification with a structured step-by-step approach.
-allowed-tools: Bash(openspec:*)
+allowed-tools: Bash(npm:*)
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
@@ -12,7 +12,7 @@ metadata:
 
 Start a new change using the experimental artifact-driven approach.
 
-**Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
+**Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `npm exec -- openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `npm exec -- openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
 
 **Input**: The user's request should include a change name (kebab-case) OR a description of what they want to build.
 
@@ -39,14 +39,14 @@ Start a new change using the experimental artifact-driven approach.
 
 3. **Create the change directory**
    ```bash
-   openspec new change "<name>"
+   npm exec -- openspec new change "<name>"
    ```
    Add `--schema <name>` only if the user requested a specific workflow.
    This creates a scaffolded change in the planning home resolved by the CLI.
 
 4. **Show the artifact status**
    ```bash
-   openspec status --change "<name>" --json
+   npm exec -- openspec status --change "<name>" --json
    ```
    Use the returned `planningHome`, `changeRoot`, `artifactPaths`, and `nextSteps` instead of assuming repo-local paths.
 
@@ -54,7 +54,7 @@ Start a new change using the experimental artifact-driven approach.
    The first artifact depends on the schema (e.g., `proposal` for spec-driven).
    Check the status output to find the first artifact with status "ready".
    ```bash
-   openspec instructions <first-artifact-id> --change "<name>"
+   npm exec -- openspec instructions <first-artifact-id> --change "<name>"
    ```
    This outputs the template and context for creating the first artifact.
 
