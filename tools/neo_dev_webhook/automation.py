@@ -381,9 +381,9 @@ class TaskRunner:
         if not isinstance(document, dict) or document.get("durable") is not True:
             raise RuntimeError("task.py did not confirm durable task creation")
         task_id = document.get("task_id")
-        if not isinstance(task_id, (str, int)) or isinstance(task_id, bool):
+        if not isinstance(task_id, str) or not task_id.strip():
             raise RuntimeError("task.py did not return an unambiguous durable task id")
-        return str(task_id)
+        return task_id.strip()
 
 
 class Consumer:

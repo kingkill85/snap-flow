@@ -401,6 +401,11 @@ class AutomationTest(unittest.TestCase):
             '{"data":{"id":"request-1"}}\n',
             '{"task_id":"kanban-77","durable":true}\n{"id":"other"}\n',
             '{"task_id":"kanban-77","durable":false}\n',
+            '{"task_id":"","durable":true}\n',
+            '{"task_id":"   ","durable":true}\n',
+            '{"task_id":0,"durable":true}\n',
+            '{"task_id":-1,"durable":true}\n',
+            '{"task_id":1,"durable":true}\n',
         )
         for output in invalid_outputs:
             with self.subTest(output=output):

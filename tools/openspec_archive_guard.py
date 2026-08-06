@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 OPERATIONS = ("ADDED", "MODIFIED", "REMOVED", "RENAMED")
-LEVEL2_HEADING_RE = re.compile(r"^##(?!#)[ \t]*(.*?)\s*$", re.MULTILINE)
+LEVEL2_HEADING_RE = re.compile(r"^[ ]{0,3}##(?!#)[ \t]*(.*?)\s*$", re.MULTILINE)
 REQ_RE = re.compile(
     r"^### Requirement: (.+?)\s*$\n(.*?)(?=^### Requirement: |\Z)",
     re.MULTILINE | re.DOTALL,
@@ -45,7 +45,7 @@ def main_requirement_blocks(text: str):
 
 def operation_sections(text: str, operation: str):
     return re.findall(
-        rf"^## {operation} Requirements\s*$\n(.*?)(?=^## |\Z)",
+        rf"^[ ]{{0,3}}##[ \t]+{operation} Requirements\s*$\n(.*?)(?=^[ ]{{0,3}}##(?!#)|\Z)",
         text,
         re.MULTILINE | re.DOTALL,
     )

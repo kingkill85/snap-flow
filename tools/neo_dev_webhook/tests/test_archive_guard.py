@@ -234,6 +234,42 @@ class ArchiveGuardTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("unknown or malformed", result.stderr.lower())
 
+    def test_commonmark_indented_operation_headings_are_parsed(self):
+        for spaces in (1, 2, 3):
+            with self.subTest(spaces=spaces), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                delta = root / "openspec/changes/demo/specs/example/spec.md"
+                main = root / "openspec/specs/example/spec.md"
+                delta.parent.mkdir(parents=True)
+                main.parent.mkdir(parents=True)
+                main.write_text("### Requirement: Good\nText\n", encoding="utf-8")
+                indent = " " * spaces
+                delta.write_text(
+                    f"{indent}## ADDED Requirements\n\n### Requirement: Good\nText\n",
+                    encoding="utf-8",
+                )
+                result = self.run_guard(root)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_commonmark_indented_hidden_operations_fail_closed(self):
+        for spaces in (1, 2, 3):
+            with self.subTest(spaces=spaces), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                delta = root / "openspec/changes/demo/specs/example/spec.md"
+                main = root / "openspec/specs/example/spec.md"
+                delta.parent.mkdir(parents=True)
+                main.parent.mkdir(parents=True)
+                main.write_text("### Requirement: Good\nCurrent\n", encoding="utf-8")
+                indent = " " * spaces
+                delta.write_text(
+                    f"{indent}## MODIFIED Requirements\n\n### Requirement: Hidden\nUnsynced\n\n"
+                    "## ADDED Requirements\n\n### Requirement: Good\nCurrent\n",
+                    encoding="utf-8",
+                )
+                result = self.run_guard(root)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Hidden", result.stderr)
+
     def test_nested_capability_paths_are_all_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
