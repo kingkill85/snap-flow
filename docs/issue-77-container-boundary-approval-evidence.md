@@ -54,6 +54,23 @@ Exact post-implementation commands and outcomes:
 - `cd backend && deno task test`: **327 passed (146 steps), 1 failed**. The sole failure is `ExcelSyncService - import only deactivates missing items from the selected product type` at `backend/tests/services/excel-sync_test.ts:207`, with actual `false` and expected `true`. This is the identical clean-`main` baseline failure documented and explicitly accepted for Issue 77 in `docs/issue-77-review-fix-evidence.md`; this repair does not modify the Excel sync source or tests. The backend suite is not reported as green, and there are no new failures.
 - `git diff --check`: **passed**.
 
+### Installed runtime wiring correction
+
+Independent review found that the initial production path launched plain `codex` and therefore could not invoke its internal observation methods. The adapter now launches the installed private `neo-dev-codex-runtime` supervisor by fixed argv. The supervisor owns Codex app-server over stdio, persists the UUID returned by `thread/start` or exact `thread/resume`, supplies the strict output schema, and persists terminal status directly. Active continuation reaches the same process/thread through `turn/steer`. The helper is mode `0750`, is absent from the card allowlist, accepts no governed coordinates or semantic-outcome arguments, and does not weaken the sole-capability policy.
+
+- `PYTHONPATH=tools python3 -m unittest tools.neo_dev_webhook.tests.test_project_control tools.neo_dev_webhook.tests.test_codex_runtime -v`: **25/25 passed**. The runtime cases exercise the public `start` launch argv through session persistence and terminal capture, same-turn steering, strict completion validation, nonzero-exit rejection of nominal success, and resumable crash persistence.
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -v`: **77/77 passed**.
+- Controller and runtime Python compilation plus both installed entrypoint `--help` checks: **passed**.
+- `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict --no-interactive`: **passed**.
+- `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate --all --strict --no-interactive`: **3 passed, 0 failed**.
+- `git diff --exit-code 1843b3ddfe8433d05817c3f94bb9edbc39e96124 -- openspec/changes/issue-77-enforce-container-boundary`: **passed**; every approved artifact and checkbox remains byte-identical.
+- `git diff --exit-code -- openspec/changes/archive`: **passed**.
+- `cd backend && deno lint`: **passed**, 141 files checked.
+- `cd frontend && npm run lint`: **passed**.
+- `cd frontend && npm run test:run`: **37 test files passed, 264 tests passed**.
+- `cd backend && deno task test`: **327 passed (146 steps), 1 known baseline failure** at `backend/tests/services/excel-sync_test.ts:207` (`false` actual, `true` expected); no changed file touches that subsystem and the suite is not reported as green.
+- `git diff --check`: **passed**.
+
 No frontend behavior changed, so an independent Playwright UI review is not applicable. Independent code/test review and controller installation/preflight remain assigned to Neo Dev and are not claimed here.
 
 ### Same-session continuation correction

@@ -15,6 +15,7 @@ from typing import Callable, Iterable, Protocol, Sequence
 VERSION = 1
 CONTROLLER_REGISTRY_PATH = pathlib.Path("/etc/neo-dev/project-control/registry.json")
 CONTROLLER_STATE_PATH = pathlib.Path("/var/lib/neo-dev/project-control/resolutions.json")
+CODEX_RUNTIME_PATH = "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runtime"
 REPOSITORY_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
 CONTINUE_PROMPT = "Continue the governed Issue work and address the latest trusted operator finding."
 PHASES = frozenset({
@@ -90,6 +91,8 @@ class TerminalObservation:
             raise ValueError("invalid trusted semantic outcome")
         if type(self.resumable) is not bool:
             raise ValueError("terminal resumability must be boolean")
+        if self.semantic_outcome == "success" and self.exit_code != 0:
+            raise ValueError("semantic success requires exit code zero")
 
 
 @dataclass(frozen=True)
@@ -399,7 +402,9 @@ class Controller:
             ("tmux", "list-panes", "-t", target.tmux_target, "-F",
              "#{pane_current_command}"), timeout=10.0,
         ).splitlines()
-        if len(workers) != 1 or workers[0].casefold() != target.worker.casefold():
+        if len(workers) != 1 or workers[0].casefold() not in {
+            target.worker.casefold(), "neo-dev-codex-runtime",
+        }:
             raise RuntimeError("sole Codex worker topology is not established")
 
     def _preflight_pane(self, target: GovernedTarget) -> str:
@@ -451,7 +456,8 @@ class Controller:
                 self.store.save(idempotency_key, state, updated)
                 self.executor.run(
                     ("tmux", "new-window", "-d", "-t", target.session, "-n", target.window,
-                     "-c", target.worktree, "codex"), timeout=20.0,
+                     "-c", target.worktree, CODEX_RUNTIME_PATH, "start",
+                     "--idempotency-key", idempotency_key), timeout=20.0,
                 )
             state, status = updated, "starting"
         elif operation == "preflight":
@@ -474,13 +480,14 @@ class Controller:
             status = "steered"
         elif state.phase == "exited_resumable":
             command = self._preflight_pane(target)
-            if command.casefold() == target.worker.casefold():
+            if command.casefold() in {target.worker.casefold(), "neo-dev-codex-runtime"}:
                 raise RuntimeError("persisted exited state conflicts with a live Codex process")
             updated = replace(state, phase="resuming", terminal=None)
             self.store.save(idempotency_key, state, updated)
             self.executor.run(
                 ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
-                 target.worktree, "codex", "resume", state.codex_session_id, CONTINUE_PROMPT),
+                 target.worktree, CODEX_RUNTIME_PATH, "resume", "--idempotency-key",
+                 idempotency_key, "--session-id", state.codex_session_id),
                 timeout=20.0,
             )
             state, status = updated, "resuming"
@@ -488,7 +495,7 @@ class Controller:
             if state.restart_count != 0:
                 raise RuntimeError("fresh Codex session fallback is exhausted")
             command = self._preflight_pane(target)
-            if command.casefold() == target.worker.casefold():
+            if command.casefold() in {target.worker.casefold(), "neo-dev-codex-runtime"}:
                 raise RuntimeError("fresh fallback conflicts with a live Codex process")
             updated = replace(
                 state, codex_session_id=None, phase="starting", terminal=None,
@@ -497,7 +504,8 @@ class Controller:
             self.store.save(idempotency_key, state, updated)
             self.executor.run(
                 ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
-                 target.worktree, "codex"), timeout=20.0,
+                 target.worktree, CODEX_RUNTIME_PATH, "start", "--idempotency-key",
+                 idempotency_key), timeout=20.0,
             )
             state, status = updated, "restarted"
         else:

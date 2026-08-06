@@ -5,6 +5,7 @@ import unittest
 import uuid
 
 from neo_dev_webhook.project_control import (
+    CODEX_RUNTIME_PATH,
     CONTINUE_PROMPT,
     Controller,
     FileResolutionStore,
@@ -94,7 +95,8 @@ class ProjectControlTest(unittest.TestCase):
             ("tmux", "list-windows", "-t", "snapflow-dev", "-F", "#{window_name}"),
             ("git", "-C", "/workspace/snap-flow-issue-77", "branch", "--show-current"),
             ("tmux", "new-window", "-d", "-t", "snapflow-dev", "-n", "issue-77", "-c",
-             "/workspace/snap-flow-issue-77", "codex"),
+             "/workspace/snap-flow-issue-77", CODEX_RUNTIME_PATH, "start",
+             "--idempotency-key", KEY),
         ])
         self.assertEqual(executor.calls[-1][1], 20.0)
 
@@ -218,8 +220,8 @@ class ProjectControlTest(unittest.TestCase):
         self.assertEqual(result["status"], "resuming")
         self.assertEqual(executor.calls[-1], ((
             "tmux", "respawn-pane", "-k", "-t", "snapflow-dev:issue-77", "-c",
-            "/workspace/snap-flow-issue-77", "codex", "resume", SESSION_ID,
-            CONTINUE_PROMPT,
+            "/workspace/snap-flow-issue-77", CODEX_RUNTIME_PATH, "resume",
+            "--idempotency-key", KEY, "--session-id", SESSION_ID,
         ), 20.0))
 
     def test_exit_zero_requires_trusted_semantic_success(self):
@@ -253,7 +255,9 @@ class ProjectControlTest(unittest.TestCase):
         ], store=store)
         result = controller.execute("resume", REPOSITORY, 77, KEY)
         self.assertEqual(result["status"], "resuming")
-        self.assertEqual(executor.calls[-1][0][-3:], ("resume", SESSION_ID, CONTINUE_PROMPT))
+        self.assertEqual(executor.calls[-1][0][-4:], (
+            "--idempotency-key", KEY, "--session-id", SESSION_ID,
+        ))
 
     def test_fresh_session_fallback_is_consumed_at_most_once(self):
         store = self.state_store()
@@ -268,7 +272,8 @@ class ProjectControlTest(unittest.TestCase):
         self.assertEqual(result["execution"]["restart_count"], 1)
         self.assertEqual(executor.calls[-1][0], (
             "tmux", "respawn-pane", "-k", "-t", "snapflow-dev:issue-77", "-c",
-            "/workspace/snap-flow-issue-77", "codex",
+            "/workspace/snap-flow-issue-77", CODEX_RUNTIME_PATH, "start",
+            "--idempotency-key", KEY,
         ))
 
         restarted = store.load(KEY)
@@ -336,7 +341,8 @@ class ProjectControlTest(unittest.TestCase):
             self.assertEqual(json.loads(output[0])["version"], 1)
 
             for option in ("--host", "--port", "--identity", "--project", "--session", "--window",
-                           "--worktree", "--branch", "--worker", "--command", "--cwd", "--path"):
+                           "--worktree", "--branch", "--worker", "--command", "--cwd", "--path",
+                           "--outcome", "--exit-code", "--session-id"):
                 with self.subTest(option=option):
                     with self.assertRaises(SystemExit):
                         main(["preflight", "--repository", REPOSITORY, "--issue-number", "77",
@@ -355,6 +361,11 @@ class ProjectControlTest(unittest.TestCase):
         self.assertEqual(state_schema["properties"]["restart_count"]["maximum"], 1)
         self.assertIn("semantic_success", state_schema["properties"]["phase"]["enum"])
         self.assertIn("state-schema.v1.json", [entry["source"] for entry in manifest["files"]])
+        runtime_entry = next(entry for entry in manifest["files"]
+                             if entry["source"] == "neo-dev-codex-runtime")
+        self.assertEqual(runtime_entry["mode"], "0750")
+        self.assertNotIn(runtime_entry["destination"],
+                         policy["project_command_capabilities"]["allow"])
         combined = " ".join(path.read_text(encoding="utf-8") for path in controller_dir.iterdir())
         for forbidden in ("HostName", "IdentityFile", "known_hosts", "ssh-rsa", "ssh-ed25519",
                           "private endpoint", "pinned host key"):
