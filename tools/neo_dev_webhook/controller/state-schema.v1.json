@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Neo Dev governed Codex execution state",
+  "type": "object",
+  "required": [
+    "target",
+    "codex_session_id",
+    "phase",
+    "process_generation",
+    "restart_count",
+    "terminal"
+  ],
+  "properties": {
+    "target": { "type": "object" },
+    "codex_session_id": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "phase": {
+      "enum": [
+        "never_started",
+        "starting",
+        "active",
+        "correctable",
+        "resuming",
+        "exited_resumable",
+        "exited_unresumable",
+        "semantic_success",
+        "semantic_blocked",
+        "crashed",
+        "failed_closed"
+      ]
+    },
+    "process_generation": { "type": "integer", "minimum": 0 },
+    "restart_count": { "type": "integer", "minimum": 0, "maximum": 1 },
+    "terminal": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exit_code", "semantic_outcome", "resumable"],
+          "properties": {
+            "exit_code": { "type": "integer" },
+            "semantic_outcome": {
+              "enum": ["success", "correctable", "blocked", "crashed", "invalid"]
+            },
+            "resumable": { "type": "boolean" }
+          }
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

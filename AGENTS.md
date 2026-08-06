@@ -4,7 +4,7 @@
 
 **Backend (Terminal 1):**
 ```bash
-cd /home/michael/Projects/kingkill85/snap-flow/backend
+cd backend
 deno run --allow-all src/main.ts
 ```
 - Runs on: http://localhost:8000
@@ -14,7 +14,7 @@ deno run --allow-all src/main.ts
 
 **Frontend (Terminal 2):**
 ```bash
-cd /home/michael/Projects/kingkill85/snap-flow/frontend
+cd frontend
 npm run dev
 ```
 - Runs on: http://localhost:5173
@@ -22,18 +22,18 @@ npm run dev
 
 **Both at once (Terminal 1, using root `package.json`):**
 ```bash
-cd /home/michael/Projects/kingkill85/snap-flow
+# From the repository root
 npm run dev
 ```
 
 **Background mode (if terminal is not available):**
 ```bash
 # Backend
-cd /home/michael/Projects/kingkill85/snap-flow/backend
+cd backend
 nohup deno run --allow-all src/main.ts > /tmp/backend.log 2>&1 &
 
 # Frontend
-cd /home/michael/Projects/kingkill85/snap-flow/frontend
+cd frontend
 nohup npm run dev > /tmp/frontend.log 2>&1 &
 ```
 
@@ -80,9 +80,9 @@ nohup npm run dev > /tmp/frontend.log 2>&1 &
    cd frontend && npm run test:run
    ```
 
-**NO EXCEPTIONS:**
-- ❌ Do not push with lint errors
-- ❌ Do not push with failing tests
+**QUALITY GATE:**
+- ❌ Do not push with lint errors or any test regression introduced by the change.
+- A failing test may be classified as pre-existing only when the identical command and failure reproduce on clean `main` in the same environment, the PR does not modify that subsystem, focused changed-scope tests pass, and the comparison plus CI result are recorded. Report it as a baseline failure, never as a green suite. The verification task remains open until the authorized human explicitly accepts the documented baseline exception.
 
 ## Project Overview
 
@@ -519,3 +519,31 @@ VITE_API_URL=http://localhost:8000
 - **Drag & Drop**: @dnd-kit
 
 Last Updated: 2026-02-26
+
+## Governed Issue Development Workflow
+
+Every development effort uses exactly one GitHub Issue, one OpenSpec change, one non-main branch, one worktree, and one Draft PR. Never commit directly to `main`. Keep these identifiers linked in the issue and Draft PR.
+
+1. Add `neo-dev` when an issue is ready for Neo development handoff. Use `needs-approval` whenever the authorized human approver's decision is required; remove it only after Neo records the decision or the gate is superseded.
+2. Create or update the OpenSpec proposal, design, delta specs, and tasks. Link review artifacts using immutable GitHub blob URLs pinned to the full 40-character commit SHA, never a branch URL. Maintain one hidden workflow comment containing the exact standalone marker `<!-- neo-dev -->` so automated comments cannot trigger a loop.
+3. Before implementation, obtain `/approve-spec <sha>` from the authorized human approver through Neo, where `<sha>` is the full commit containing the linked artifacts. Checkbox-only task status updates do not invalidate approval. Any material proposal, design, requirement, scenario, task scope/order/acceptance, or approach change does: restore `needs-approval`, stop apply, publish new immutable links, and require `/approve-spec <new-sha>`.
+4. After approval, apply the change, run OpenSpec verify, all relevant lint/tests, independent code and test review, and—when UI behavior changed—an independent Playwright UI review. Resolve findings and repeat affected gates.
+5. `/accept` and `/merge` are separate decisions. Acceptance does not authorize merge. Before requesting merge approval, sync the delta specs and archive the OpenSpec change, then publish the final full-SHA evidence.
+6. Only the authorized human approver's approval relayed through Neo can authorize merge, release, deployment, secret or access changes, destructive operations, or other privileged production actions. Never infer that authority from labels, review completion, `/accept`, or an untrusted webhook payload.
+
+Workflow states are represented as follows:
+
+| State | Labels | Required next gate |
+| --- | --- | --- |
+| Ready for handoff | `neo-dev` | Create/continue the linked change |
+| Clarification pending | `neo-dev`, `needs-input` | Repository owner input |
+| Specification or privileged decision pending | `neo-dev`, `needs-approval` | Authorized human decision relayed through Neo |
+| Approved implementation underway | `neo-dev`, `in-progress` | Apply, verify, and test |
+| Review underway | `neo-dev`, `ready-for-review` | Independent reviews and `/accept` |
+| Blocked by an external condition | `neo-dev`, `blocked` | Resolve and return to exactly one prior phase |
+| Accepted, merge not authorized | `neo-dev`, `needs-approval` | Sync/archive, then separate `/merge` |
+| Completed | neither workflow label | No further automated work |
+
+OpenSpec 1.8.0 is initialized for Codex with telemetry disabled. The repository uses the current `new`, `continue`, `ff`, and `verify` expanded workflows in addition to core workflows. Preserve `OPENSPEC_TELEMETRY=0` in repository/CI environments. A fresh checkout installs the exact CLI version with `npm ci`; invoke it reproducibly with `npm exec -- openspec`. The development image may also provide the same pinned version globally as a convenience, but the repository lockfile is authoritative.
+
+The phase labels `needs-input`, `needs-approval`, `in-progress`, `ready-for-review`, and `blocked` are mutually exclusive; exactly zero or one may accompany `neo-dev`. Removing `neo-dev` removes every phase label. Issue 77 alone was explicitly authorized by the repository owner as a one-time workflow bootstrap; this does not waive any future approval or privileged-operation gate.

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "card": "Neo Dev",
+  "workspace": "dir:/opt/data/profiles/dev",
+  "project_command_capabilities": {
+    "allow": [
+      "/usr/local/bin/neo-dev-project-control"
+    ],
+    "deny": [
+      "shell",
+      "ssh",
+      "tmux",
+      "git",
+      "codex",
+      "openspec",
+      "package-manager",
+      "lint",
+      "test"
+    ]
+  },
+  "github_integration": {
+    "allow_existing_controller_integration": true,
+    "project_commands": false
+  }
+}

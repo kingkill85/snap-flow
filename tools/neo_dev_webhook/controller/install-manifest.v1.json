@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "source": "neo-dev-project-control",
+      "destination": "/usr/local/bin/neo-dev-project-control",
+      "owner": "root",
+      "group": "root",
+      "mode": "0755"
+    },
+    {
+      "source": "../project_control.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/project_control.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "../codex_runtime.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/codex_runtime.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "../__init__.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/__init__.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "neo-dev-codex-runtime",
+      "destination": "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runtime",
+      "owner": "dev",
+      "group": "dev",
+      "mode": "0750"
+    },
+    {
+      "source": "registry.v1.json",
+      "destination": "/etc/neo-dev/project-control/registry.json",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "card-capability-policy.v1.json",
+      "destination": "/etc/neo-dev/project-control/card-capability-policy.json",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "state-schema.v1.json",
+      "destination": "/etc/neo-dev/project-control/state-schema.json",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    }
+  ],
+  "state": {
+    "directory": "/var/lib/neo-dev/project-control",
+    "owner": "dev",
+    "group": "dev",
+    "mode": "0750"
+  }
+}
