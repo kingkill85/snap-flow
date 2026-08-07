@@ -32,7 +32,11 @@ TARGET = GovernedTarget(
 SESSION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 RUNTIME_START = f"{CODEX_RUNTIME_PATH} start --idempotency-key {KEY}"
 RUNTIME_METADATA = f"python3\t{RUNTIME_START}\t4242\n"
-APP_SERVER_CHILD = "4243 4242 node node /usr/local/bin/codex app-server --stdio\n"
+EXEC_WORKER_CHILD = (
+    "4243 4242 timeout /usr/bin/timeout --signal=TERM --kill-after=10 1800 "
+    "/usr/local/bin/codex exec --json --dangerously-bypass-approvals-and-sandbox "
+    "-C /workspace/snap-flow-issue-77 --output-schema /tmp/neo-dev-completion-test.json PROMPT\n"
+)
 
 
 def effective_mode_allows(entry, account, groups, required):
@@ -74,7 +78,7 @@ class ProjectControlTest(unittest.TestCase):
         controller, executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
             "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
-            APP_SERVER_CHILD,
+            EXEC_WORKER_CHILD,
         ], store=self.state_store())
         result = controller.execute("preflight", REPOSITORY, 77, KEY)
         self.assertEqual(result["status"], "ready")
@@ -141,7 +145,7 @@ class ProjectControlTest(unittest.TestCase):
         retry, retry_executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
             "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
-            APP_SERVER_CHILD,
+            EXEC_WORKER_CHILD,
         ], store=store)
         result = retry.execute("resume", REPOSITORY, 77, KEY)
         self.assertEqual(result["idempotency_key"], KEY)
@@ -209,7 +213,7 @@ class ProjectControlTest(unittest.TestCase):
             ["issue-77\n", "/workspace/snap-flow-issue-77\n", "main\n"],
             ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", "python3\tattacker.py\t4242\n"],
             ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA, "4243 4242 python3 attacker.py\n"],
-            ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA, APP_SERVER_CHILD + APP_SERVER_CHILD],
+            ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA, EXEC_WORKER_CHILD + EXEC_WORKER_CHILD],
         ):
             with self.subTest(outputs=outputs):
                 controller, executor = self.controller(outputs, store=self.state_store())
@@ -229,7 +233,7 @@ class ProjectControlTest(unittest.TestCase):
         controller, executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
             "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
-            APP_SERVER_CHILD,
+            EXEC_WORKER_CHILD,
         ], store=store)
         controller.observe_correctable(KEY)
         result = controller.execute("resume", REPOSITORY, 77, KEY)
@@ -401,7 +405,7 @@ class ProjectControlTest(unittest.TestCase):
             file_store.save(KEY, initial, WorkState(TARGET, SESSION_ID, "active"))
             executor = FakeExecutor(["issue-77\n", "/workspace/snap-flow-issue-77\n",
                                      "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
-                                     APP_SERVER_CHILD])
+                                     EXEC_WORKER_CHILD])
             output = []
             exit_code = main([
                 "preflight", "--repository", REPOSITORY, "--issue-number", "77",

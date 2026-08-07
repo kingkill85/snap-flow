@@ -617,12 +617,29 @@ class Controller:
             timeout=10.0,
         ).splitlines()
         if len(children) != 1:
-            raise RuntimeError("sole Codex app-server child is not established")
+            raise RuntimeError("sole Codex exec child is not established")
         child = children[0].strip().split(None, 3)
-        expected_child = "node " + " ".join(CODEX_APP_SERVER_ARGV)
-        if (len(child) != 4 or child[1] != fields[2] or child[2] != "node"
-                or child[3] != expected_child):
-            raise RuntimeError("Codex app-server process metadata does not match")
+        common = (
+            "/usr/bin/timeout --signal=TERM --kill-after=10 1800 "
+            "/usr/local/bin/codex exec "
+        )
+        start_prefix = (
+            common + "--json --dangerously-bypass-approvals-and-sandbox "
+            f"-C {target.worktree} --output-schema /tmp/neo-dev-completion-"
+        )
+        resume_prefix = (
+            common + "resume --json --dangerously-bypass-approvals-and-sandbox "
+            "--output-schema /tmp/neo-dev-completion-"
+        )
+        valid_start = len(child) == 4 and child[3].startswith(start_prefix)
+        valid_resume = (
+            len(child) == 4 and state.codex_session_id is not None
+            and child[3].startswith(resume_prefix)
+            and f" {state.codex_session_id} " in child[3]
+        )
+        if (len(child) != 4 or child[1] != fields[2] or child[2] != "timeout"
+                or not (valid_start or valid_resume)):
+            raise RuntimeError("Codex exec process metadata does not match")
 
     def _preflight_inactive_pane(self, target: GovernedTarget) -> None:
         windows = self._windows(target)

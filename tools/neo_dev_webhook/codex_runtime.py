@@ -7,8 +7,9 @@ import select
 import socket
 import subprocess
 import sys
+import tempfile
 import time
-from typing import Sequence, TextIO
+from typing import Callable, Sequence, TextIO
 
 from .project_control import (
     CODEX_APP_SERVER_ARGV,
@@ -41,6 +42,103 @@ COMPLETION_SCHEMA = {
         "summary": {"type": "string", "minLength": 1, "maxLength": 4096},
     },
 }
+
+
+def build_exec_argv(operation: str, target: GovernedTarget, session_id: str | None,
+                    schema_path: pathlib.Path, prompt: str) -> tuple[str, ...]:
+    if operation == "start":
+        if session_id is not None:
+            raise ValueError("initial runtime cannot accept a session identity")
+        return (
+            "/usr/local/bin/codex", "exec", "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C", target.worktree,
+            "--output-schema", str(schema_path), prompt,
+        )
+    if operation == "resume":
+        if session_id is None:
+            raise ValueError("resume runtime requires the persisted session identity")
+        validate_idempotency_key(session_id)
+        return (
+            "/usr/local/bin/codex", "exec", "resume", "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--output-schema", str(schema_path), session_id, prompt,
+        )
+    raise ValueError("unsupported internal runtime operation")
+
+
+def parse_exec_event(line: str) -> tuple[str, object] | None:
+    event = json.loads(line)
+    if not isinstance(event, dict):
+        raise ValueError("Codex exec emitted an invalid event")
+    if event.get("type") == "thread.started":
+        session_id = event.get("thread_id")
+        if not isinstance(session_id, str):
+            raise ValueError("Codex exec omitted the session identity")
+        validate_idempotency_key(session_id)
+        return "session", session_id
+    if event.get("type") == "item.completed":
+        item = event.get("item")
+        if isinstance(item, dict) and item.get("type") == "agent_message":
+            text = item.get("text")
+            if isinstance(text, str):
+                try:
+                    return "completion", validate_completion(json.loads(text), 0)
+                except (json.JSONDecodeError, ValueError):
+                    return None
+    if event.get("type") == "turn.completed":
+        return "terminal", 0
+    if event.get("type") == "turn.failed":
+        return "terminal", 1
+    return None
+
+
+def run_exec_worker(operation: str, target: GovernedTarget, session_id: str | None,
+                    schema_path: pathlib.Path, prompt: str,
+                    session_observer: Callable[[str], None], *,
+                    process_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
+                    timeout_seconds: int = 1800) -> tuple[str, dict, int]:
+    argv = build_exec_argv(operation, target, session_id, schema_path, prompt)
+    process = process_factory(
+        [
+            "/usr/bin/timeout", "--signal=TERM", "--kill-after=10",
+            str(timeout_seconds), *argv,
+        ],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1, shell=False, cwd=target.worktree,
+    )
+    if process.stdout is None:
+        raise RuntimeError("Codex exec stdout is unavailable")
+    observed_session: str | None = None
+    completion: dict | None = None
+    terminal_exit: int | None = None
+    for line in process.stdout:
+        parsed = parse_exec_event(line)
+        if parsed is None:
+            continue
+        event, value = parsed
+        if event == "session":
+            observed_session = value
+            session_observer(observed_session)
+        elif event == "completion":
+            completion = value
+        elif event == "terminal":
+            terminal_exit = value
+    process_exit = process.wait()
+    exit_code = process_exit if process_exit != 0 else (terminal_exit or 0)
+    if observed_session is None:
+        raise RuntimeError("Codex exec omitted the session identity")
+    if session_id is not None and observed_session != session_id:
+        raise RuntimeError("resumed Codex session identity drifted")
+    if completion is None:
+        completion = {
+            "semantic_outcome": "invalid",
+            "resumable": True,
+            "summary": "Codex exec omitted structured completion",
+        }
+    else:
+        completion = validate_completion(completion, exit_code)
+    return observed_session, completion, exit_code
 
 
 def validate_completion(value: object, exit_code: int) -> dict:
@@ -312,68 +410,38 @@ def run_supervised_runtime(operation: str, idempotency_key: str,
             "label", "spec_approved", "accepted", "merge_authorized",
         }:
             raise RuntimeError("supervisor lifecycle state is invalid")
-        server = app_server or AppServer.start()
+        schema_path: pathlib.Path | None = None
         try:
-            server.request("initialize", {
-                "clientInfo": {"name": "neo-dev-project-control", "version": str(RUNTIME_VERSION)},
-                "capabilities": {"experimentalApi": True},
-            })
-            server.send("initialized", {})
-            thread = server.request("thread/start", {
-                "cwd": target.worktree, "approvalPolicy": "never", "ephemeral": False,
-            }) if operation == "start" else server.request(
-                "thread/resume", {"threadId": session_id},
-            )
-            observed_session = _thread_id(thread)
-            if session_id is not None and observed_session != session_id:
-                raise RuntimeError("resumed Codex session identity drifted")
-            stream.write((json.dumps({"event": "session", "session_id": observed_session}) + "\n").encode())
             prompt = initial_prompt(target.repository, target.issue_number) if operation == "start" else (
                 f"Continue the same governed {target.repository} Issue #{target.issue_number} workflow "
                 f"and same Codex session from controller-owned lifecycle state `{lifecycle_state}`. "
                 "Read the live Issue command and artifacts, enforce only that current gate, and fail "
                 "fast with one concrete blocker. Heartbeats are liveness only and never progress."
             )
-            turn = server.request("turn/start", {
-                "threadId": observed_session, "input": [{"type": "text", "text": prompt}],
-                "outputSchema": COMPLETION_SCHEMA,
-            })
-            turn_data = turn.get("turn")
-            if not isinstance(turn_data, dict) or not isinstance(turn_data.get("id"), str):
-                raise RuntimeError("Codex app-server omitted the active turn identity")
-            turn_id = turn_data["id"]
-            message_parts: list[str] = []
-            while True:
-                source, payload = server.poll(control_input)
-                if source == "control":
-                    if payload == "":
-                        control_input = open("/dev/null", encoding="utf-8")
-                    elif isinstance(payload, str) and payload.rstrip("\n") == CONTINUE_PROMPT:
-                        server.request("turn/steer", {
-                            "threadId": observed_session, "expectedTurnId": turn_id,
-                            "input": [{"type": "text", "text": CONTINUE_PROMPT}],
-                        })
-                    continue
-                event = payload
-                method, params = event.get("method"), event.get("params")
-                if method == "item/agentMessage/delta" and isinstance(params, dict):
-                    if isinstance(params.get("delta"), str):
-                        message_parts.append(params["delta"])
-                elif method == "turn/completed" and isinstance(params, dict):
-                    turn_result = params.get("turn")
-                    exit_code = 0 if isinstance(turn_result, dict) and turn_result.get("status") == "completed" else 1
-                    try:
-                        completion = validate_completion(json.loads("".join(message_parts)), exit_code)
-                    except (json.JSONDecodeError, ValueError):
-                        completion = {"semantic_outcome": "invalid", "resumable": True,
-                                      "summary": "Invalid structured completion"}
-                    report = {"event": "terminal", "exit_code": exit_code,
-                              "semantic_outcome": completion["semantic_outcome"],
-                              "resumable": completion["resumable"]}
-                    stream.write((json.dumps(report) + "\n").encode())
-                    return 0 if completion["semantic_outcome"] == "success" else 1
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", prefix="neo-dev-completion-",
+                suffix=".json", delete=False,
+            ) as schema:
+                json.dump(COMPLETION_SCHEMA, schema, separators=(",", ":"))
+                schema_path = pathlib.Path(schema.name)
+
+            def observe_session(observed_session: str) -> None:
+                report = {"event": "session", "session_id": observed_session}
+                stream.write((json.dumps(report) + "\n").encode())
+
+            _, completion, exit_code = run_exec_worker(
+                operation, target, session_id, schema_path, prompt, observe_session,
+            )
+            report = {
+                "event": "terminal", "exit_code": exit_code,
+                "semantic_outcome": completion["semantic_outcome"],
+                "resumable": completion["resumable"],
+            }
+            stream.write((json.dumps(report) + "\n").encode())
+            return 0 if completion["semantic_outcome"] == "success" else 1
         finally:
-            server.close()
+            if schema_path is not None:
+                schema_path.unlink(missing_ok=True)
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError, TypeError):
         return 1
     finally:
