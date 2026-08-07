@@ -198,6 +198,7 @@ esac
         self.assertNotIn("config set agent.disabled_toolsets '[", stage)
         self.assertIn("resolve_hermes_python", stage)
         self.assertNotIn('head -n 1 "$hermes_bin"', stage)
+        self.assertIn("import json,sys; from hermes_cli.config import load_config", stage)
         verifier = (pathlib.Path(__file__).parents[1] / "deploy/verify_hermes_runtime.py").read_text()
         self.assertIn("get_plugin_manager", verifier)
         self.assertNotIn("get_plugin_tool_names", verifier)

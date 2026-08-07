@@ -52,7 +52,7 @@ install_scope() {
   (cd "$backup/tree" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum >"$backup/SHA256SUMS")
   hermes_python=$(resolve_hermes_python)
   HERMES_HOME="$data_root/profiles/dev" "$hermes_python" -c 'import json,sys; from hermes_cli.kanban_db import _resolve_worker_cli_toolsets; json.dump(_resolve_worker_cli_toolsets(sys.argv[1]) or [],sys.stdout)' "$data_root/profiles/dev" >"$backup/resolved_toolsets.before.json"
-  HERMES_HOME="$data_root/profiles/dev" "$hermes_python" -c 'import json; from hermes_cli.config import load_config; json.dump(load_config().get("plugins",{}).get("enabled",[]),sys.stdout)' >"$backup/plugins.enabled.before.json"
+  HERMES_HOME="$data_root/profiles/dev" "$hermes_python" -c 'import json,sys; from hermes_cli.config import load_config; json.dump(load_config().get("plugins",{}).get("enabled",[]),sys.stdout)' >"$backup/plugins.enabled.before.json"
   (cd "$backup" && sha256sum resolved_toolsets.before.json plugins.enabled.before.json >config.before.sha256)
   install -d -m 0755 "$live_src/neo_dev_webhook" "$host_lib" "$host_bin"
   install -m 0644 "$repo_root/tools/neo_dev_webhook/"{__init__,automation,consumer,server,remote_adapter,project_control,deployment,hermes_transition,verification}.py "$live_src/neo_dev_webhook/"
