@@ -212,6 +212,33 @@ class GenericOrchestratorTest(unittest.TestCase):
         ])
         self.assertFalse(run.call_args.kwargs["shell"])
 
+    def test_start_retry_recovers_matching_active_controller_before_card_creation(self):
+        dispatcher = ProjectDispatcher("/fixed/controller")
+        existing = {
+            "idempotency_key": KEY,
+            "governed_identity": {"repository": REPOSITORY, "issue_number": 13},
+            "execution": {"phase": "active", "codex_session_id": "session"},
+        }
+        with mock.patch("subprocess.run", return_value=subprocess.CompletedProcess(
+                [], 0, json.dumps(existing))) as run:
+            context = dispatcher.dispatch("start", REPOSITORY, 13, KEY)
+        self.assertEqual(context, {"controller": existing, "github": None})
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][1], "status")
+        self.assertFalse(run.call_args.kwargs["check"])
+
+    def test_new_start_checks_status_then_dispatches_when_state_is_absent(self):
+        dispatcher = ProjectDispatcher("/fixed/controller")
+        started = {"status": "starting"}
+        with mock.patch("subprocess.run", side_effect=[
+                subprocess.CompletedProcess([], 1, '{"status":"not_found"}'),
+                subprocess.CompletedProcess([], 0, json.dumps(started)),
+        ]) as run:
+            context = dispatcher.dispatch("start", REPOSITORY, 13, KEY)
+        self.assertEqual(context, {"controller": started, "github": None})
+        self.assertEqual([call.args[0][1] for call in run.call_args_list], ["status", "start"])
+        self.assertTrue(run.call_args_list[1].kwargs["check"])
+
     def test_terminal_real_helper_semantics_get_unique_runnable_execution_per_wakeup(self):
         fixture = pathlib.Path(__file__).with_name("fixtures") / "terminal_task.py"
         with tempfile.TemporaryDirectory() as directory:

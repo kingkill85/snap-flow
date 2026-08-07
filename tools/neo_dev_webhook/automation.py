@@ -631,6 +631,27 @@ class ProjectDispatcher:
                  idempotency_key: str) -> dict:
         if operation not in {"start", "resume"}:
             raise ValueError("unsupported project dispatch operation")
+        if operation == "start":
+            status = subprocess.run(
+                [self.adapter, "status", "--repository", repository, "--issue-number",
+                 str(issue_number), "--idempotency-key", idempotency_key],
+                check=False, capture_output=True, text=True, timeout=90, shell=False,
+            )
+            if status.returncode == 0:
+                try:
+                    existing = json.loads(status.stdout)
+                except json.JSONDecodeError as error:
+                    raise RuntimeError("controller status returned invalid JSON") from error
+                if not isinstance(existing, dict):
+                    raise RuntimeError("controller status must be a JSON object")
+                identity = existing.get("governed_identity", {})
+                execution = existing.get("execution", {})
+                if (existing.get("idempotency_key") != idempotency_key
+                        or identity.get("repository") != repository
+                        or identity.get("issue_number") != issue_number
+                        or execution.get("phase") not in {"starting", "active"}):
+                    raise RuntimeError("controller status does not match recoverable start")
+                return {"controller": existing, "github": None}
         evidence_args = []
         evidence_document = None
         if operation == "resume":
