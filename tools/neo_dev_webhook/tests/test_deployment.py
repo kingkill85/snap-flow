@@ -90,15 +90,19 @@ class DeploymentTest(unittest.TestCase):
                          ("snapflow_neo_dev_transition", "snapflow_neo_dev"))
         self.assertFalse(kwargs["schema"]["additionalProperties"])
         self.assertEqual(kwargs["schema"]["properties"]["decision"]["enum"], ["proceed", "block"])
+        call = {"execution_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "capability": "x" * 32, "decision": "block", "summary": "bounded"}
         with mock.patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(PermissionError):
-                kwargs["handler"]("execution", "x" * 32, "proceed", "ok")
+                kwargs["handler"](call)
         broker = mock.Mock(); broker.submit.return_value = {"decision": "block"}
         with mock.patch.object(module, "CapabilityBroker", return_value=broker), \
              mock.patch.dict(os.environ, {"HERMES_KANBAN_TASK": "t_1"}, clear=True):
-            self.assertEqual(kwargs["handler"]("execution", "x" * 32, "block", "bounded"),
-                             {"decision": "block"})
-        broker.submit.assert_called_once_with("execution", "x" * 32, "block", "bounded")
+            self.assertEqual(json.loads(kwargs["handler"](call)), {"decision": "block"})
+        broker.submit.assert_called_once_with(call["execution_id"], "x" * 32, "block", "bounded")
+        with mock.patch.dict(os.environ, {"HERMES_KANBAN_TASK": "t_1"}, clear=True):
+            with self.assertRaisesRegex(ValueError, "exactly"):
+                kwargs["handler"]({**call, "command": "git status"})
 
     def test_live_resolver_verifier_rejects_broad_worker_toolsets(self):
         verifier_path = pathlib.Path(__file__).parents[1] / "deploy/verify_hermes_runtime.py"
@@ -107,16 +111,32 @@ class DeploymentTest(unittest.TestCase):
         package = types.ModuleType("hermes_cli"); package.__path__ = []
         kanban = types.ModuleType("hermes_cli.kanban_db")
         plugins = types.ModuleType("hermes_cli.plugins")
+        model_tools = types.ModuleType("model_tools")
+        toolsets = types.ModuleType("toolsets")
+        registry_module = types.ModuleType("tools.registry")
         plugins._ensure_plugins_discovered = lambda: None
         plugins.get_plugin_tool_names = lambda: ["snapflow_neo_dev_transition"]
+        safe = verifier.SAFE_TOOLSETS
+        model_tools.get_tool_definitions = lambda **_kwargs: [
+            {"function": {"name": name}} for name in
+            ["snapflow_neo_dev_transition", "web_search", "kanban_complete"]
+        ]
+        toolsets.resolve_toolset = lambda name: {
+            "snapflow_neo_dev": ["snapflow_neo_dev_transition"],
+            "web": ["web_search"], "kanban": ["kanban_complete"],
+        }.get(name, [])
+        registry_module.registry = types.SimpleNamespace(dispatch=lambda *_args, **_kwargs: '{"error":"unknown capability"}')
         with mock.patch.dict(sys.modules, {
             "hermes_cli": package, "hermes_cli.kanban_db": kanban,
-            "hermes_cli.plugins": plugins,
+            "hermes_cli.plugins": plugins, "model_tools": model_tools,
+            "toolsets": toolsets, "tools.registry": registry_module,
         }):
-            kanban._resolve_worker_cli_toolsets = lambda _home: ["snapflow_neo_dev"]
+            kanban._resolve_worker_cli_toolsets = lambda _home: verifier.EXPECTED_RESOLVED_TOOLSETS
             self.assertEqual(verifier.verify("/profile")["resolved_worker_toolsets"],
-                             ["snapflow_neo_dev"])
-            kanban._resolve_worker_cli_toolsets = lambda _home: ["snapflow_neo_dev", "terminal"]
+                             verifier.EXPECTED_RESOLVED_TOOLSETS)
+            kanban._resolve_worker_cli_toolsets = lambda _home: sorted([
+                *verifier.EXPECTED_RESOLVED_TOOLSETS, "terminal",
+            ])
             with self.assertRaisesRegex(RuntimeError, "unsafe"):
                 verifier.verify("/profile")
 

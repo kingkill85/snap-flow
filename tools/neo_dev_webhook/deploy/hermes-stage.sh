@@ -39,8 +39,10 @@ install_scope() {
     fi
   done
   (cd "$backup/tree" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum >"$backup/SHA256SUMS")
-  hermes -p dev config get platform_toolsets.cli >"$backup/platform_toolsets.cli.before"
-  (cd "$backup" && sha256sum platform_toolsets.cli.before >platform_toolsets.cli.before.sha256)
+  hermes -p dev config get platform_toolsets.cli >"$backup/platform_toolsets.cli.before" || printf '[]\n' >"$backup/platform_toolsets.cli.before"
+  hermes -p dev config get agent.disabled_toolsets >"$backup/agent.disabled_toolsets.before" || printf '[]\n' >"$backup/agent.disabled_toolsets.before"
+  hermes -p dev config get plugins.enabled >"$backup/plugins.enabled.before" || printf '[]\n' >"$backup/plugins.enabled.before"
+  (cd "$backup" && sha256sum platform_toolsets.cli.before agent.disabled_toolsets.before plugins.enabled.before >config.before.sha256)
   install -d -m 0755 "$live_src/neo_dev_webhook" "$host_lib" "$host_bin"
   install -m 0644 "$repo_root/tools/neo_dev_webhook/"{__init__,automation,consumer,server,remote_adapter,project_control,deployment,hermes_transition,verification}.py "$live_src/neo_dev_webhook/"
   install -m 0644 "$repo_root/tools/neo_dev_webhook/"{__init__,remote_adapter,project_control,deployment}.py "$host_lib/"
@@ -73,7 +75,7 @@ verify_scope() {
   rm -f -- "$enforced"
   runtime=$(python3 "$repo_root/tools/neo_dev_webhook/deploy/verify_hermes_runtime.py" \
     "$data_root/profiles/dev")
-  printf 'verified_at=%s\ntoolset=snapflow_neo_dev\ntool=snapflow_neo_dev_transition\n' \
+  printf 'verified_at=%s\ntoolsets=snapflow_neo_dev,web,browser,memory,session_search,skills\ntool=snapflow_neo_dev_transition\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$enforced.tmp"
   printf 'runtime=%s\n' "$runtime" >>"$enforced.tmp"
   chmod 0600 "$enforced.tmp" && mv -f "$enforced.tmp" "$enforced"
@@ -84,7 +86,10 @@ configure_tools() {
   command -v hermes >/dev/null
   rm -f -- "$enforced"
   hermes -p dev plugins enable snapflow-neo-dev-transition
-  hermes -p dev config set platform_toolsets.cli '["snapflow_neo_dev"]'
+  hermes -p dev config set platform_toolsets.cli \
+    '["snapflow_neo_dev","web","browser","memory","session_search","skills"]'
+  hermes -p dev config set agent.disabled_toolsets \
+    '["bfl","terminal","code_execution","file","delegation","cronjob"]'
   echo "restart the dev profile gateway, then run: $0 verify" >&2
 }
 
@@ -106,8 +111,10 @@ rollback_scope() {
     fi
   done <"$backup/manifest.tsv"
   if test -f "$backup/platform_toolsets.cli.before"; then
-    (cd "$backup" && sha256sum -c platform_toolsets.cli.before.sha256)
+    (cd "$backup" && sha256sum -c config.before.sha256)
     hermes -p dev config set platform_toolsets.cli "$(cat "$backup/platform_toolsets.cli.before")"
+    hermes -p dev config set agent.disabled_toolsets "$(cat "$backup/agent.disabled_toolsets.before")"
+    hermes -p dev config set plugins.enabled "$(cat "$backup/plugins.enabled.before")"
   fi
 }
 

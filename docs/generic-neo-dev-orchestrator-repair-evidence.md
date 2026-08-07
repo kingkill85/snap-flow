@@ -12,7 +12,7 @@ The operator authorized an emergency repository-only repair of the mechanism tha
 - The host adapter is fixed to dedicated `neo-controller@192.168.178.4:2222`, `/opt/data/credentials/snapflow-controller-client`, and `/opt/data/tailscale_known_hosts`. It accepts the actual non-symlink `hermes:hermes 0600` private-key boundary, ignores uncontrolled SSH configuration, and uses `shell=False`.
 - Only locked `neo-controller` has lifecycle sudo rights. Controller code is root-owned, trusted state is `neo-controller:neo-controller 0700`, and Codex remains `dev` without lifecycle sudo or state access.
 - The controller owns the legal lifecycle chain and immutable SHA/timestamp evidence. Worker-selected phases, early commands, spec commits containing runtime paths, and gate-order bypasses are rejected.
-- Cards resolve the dev profile's real Hermes CLI toolsets to one profile-local native plugin tool. Its handler requires dispatcher context and submits one-use decisions directly to the capability broker without shell; the consumer performs lifecycle dispatch.
+- Cards resolve the dev profile's real Hermes CLI toolsets to a bounded lookup/reasoning surface (`web`, `browser`, `memory`, `session_search`, `skills`), one profile-local transition tool, and dispatcher-added Kanban lifecycle tools. Execution, filesystem, delegation and cron surfaces are denied.
 - Closure synchronization uses durable backoff without consuming the failure budget and automatically finalizes after verified `merged_closed` state.
 - No Compose mutation is required. Dockge verification uses shell and Docker inspection only, preserves both exact live commands and mounts, and observes `/var/lib/neo-dev/neo-dev.sqlite` in the consumer.
 - Initial Codex work is specification-only. Later approval/review/accept/merge commands resume the same session with separate gates.
@@ -21,11 +21,12 @@ The operator authorized an emergency repository-only repair of the mechanism tha
 
 ## Verification
 
-- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -p 'test_*.py'`: **117 passed**.
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -p 'test_*.py'`: **117 passed, 1 environment-gated actual-Hermes integration skipped**.
 - `python3 -m py_compile $(find tools/neo_dev_webhook -name '*.py' -type f -print)`: **passed**, including the profile plugin and runtime verifier.
 - `bash -n tools/neo_dev_webhook/deploy/*.sh`: **passed**.
 - `python3 -m json.tool` over controller JSON and the JSON-compatible `plugin.yaml`: **passed**.
 - No-Python Dockge fixture `fixture-verify` plus `fixture-activate`: **passed** as part of the focused suite.
+- Actual Hermes checkout `0957277f2f468bac22bbfcfa7c43029858c9597e`: profile-local discovery and enablement, `_resolve_worker_cli_toolsets`, `PluginContext` registration and registry dispatch passed. The allowed transition succeeded once, replay failed, and non-Kanban dispatch failed.
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict`: **passed**.
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate --specs --strict`: **2 passed, 0 failed**.
 - `backend/deno lint`: **passed**.

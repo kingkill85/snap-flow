@@ -529,7 +529,7 @@ class TaskRunner:
             raise RuntimeError("task.py contract is incompatible")
         if self.enforcement_path:
             enforcement = pathlib.Path(self.enforcement_path).read_text(encoding="utf-8")
-            if ("toolset=snapflow_neo_dev\n" not in enforcement
+            if ("toolsets=snapflow_neo_dev,web,browser,memory,session_search,skills\n" not in enforcement
                     or "tool=snapflow_neo_dev_transition\n" not in enforcement
                     or "resolved_worker_toolsets" not in enforcement):
                 raise RuntimeError("Hermes native task-tool enforcement is not verified")
