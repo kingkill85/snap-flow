@@ -231,7 +231,7 @@ class RepositoryGitHubVerifier:
                     return VerificationResult(False, "OpenSpec delta specification is missing")
                 base = self._run("git", "-C", target.worktree, "merge-base", "HEAD", "origin/main")
                 changed = self._run("git", "-C", target.worktree, "diff", "--name-only", base, "HEAD")
-                allowed_root = f"openspec/changes/issue-{target.issue_number}"
+                allowed_root = active[0].relative_to(root).as_posix()
                 for path in changed.splitlines():
                     evidence_doc = (path.startswith(f"docs/issue-{target.issue_number}-")
                                     and path.endswith(".md") and "/" not in path[5:])

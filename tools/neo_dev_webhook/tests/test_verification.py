@@ -76,10 +76,11 @@ class VerificationTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
         subprocess.run(["git", "-C", str(root), "branch", "origin/main", "HEAD"], check=True)
         if active:
-            change = root / "openspec" / "changes" / "issue-13"
+            change = root / "openspec" / "changes" / "issue-13-mass-switch-items"
             (change / "specs" / "workflow").mkdir(parents=True)
             for name in ("proposal.md", "design.md", "tasks.md"):
                 (change / name).write_text(name + "\n")
+            (change / ".openspec.yaml").write_text("schema: spec-driven\n")
             (change / "specs" / "workflow" / "spec.md").write_text("spec\n")
         else:
             archive = root / "openspec" / "changes" / "archive" / "issue-13"
@@ -103,7 +104,7 @@ class VerificationTest(unittest.TestCase):
             )
             result = RepositoryGitHubVerifier(executor).verify(target, "specification")
             self.assertTrue(result.verified, result.blocker)
-            (pathlib.Path(directory) / "openspec" / "changes" / "issue-13" /
+            (pathlib.Path(directory) / "openspec" / "changes" / "issue-13-mass-switch-items" /
              "proposal.md").unlink()
             forged = RepositoryGitHubVerifier(executor).verify(target, "specification")
             self.assertFalse(forged.verified)
@@ -178,7 +179,7 @@ class VerificationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             target, approved = self.repository(root)
-            (root / "openspec" / "changes" / "issue-13" / "design.md").write_text(
+            (root / "openspec" / "changes" / "issue-13-mass-switch-items" / "design.md").write_text(
                 "materially changed after approval\n"
             )
             subprocess.run(["git", "-C", str(root), "add", "."], check=True)
