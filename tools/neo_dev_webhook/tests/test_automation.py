@@ -72,6 +72,8 @@ class FakeFinalizer:
 
     def verify(self, repository, issue_number, idempotency_key):
         self.calls.append((repository, issue_number, idempotency_key))
+        if isinstance(self.verified, list):
+            return self.verified.pop(0)
         return self.verified
 
 
@@ -396,6 +398,28 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(request_state["status"], "blocked")
         self.assertIn("rejected closure", request_state["last_error"])
 
+    def test_closure_before_controller_state_backs_off_then_finalizes(self):
+        lifecycle = str(uuid.uuid4())
+        self.store.accept({"delivery_id": lifecycle, "event": "issues", "action": "labeled",
+                           "repository": REPOSITORY, "issue_number": 13,
+                           "comment_id": None, "command": None})
+        work = self.store.claim(now=1)
+        self.store.complete(work["id"], work["claim_token"], "phase-task", now=2)
+        self.store.request_finalization(REPOSITORY, 13, str(uuid.uuid4()))
+        finalizer = FakeFinalizer([None, True])
+        consumer = Consumer(self.store, FakeRunner(), self.github, max_attempts=2,
+                            finalizer=finalizer)
+        self.assertFalse(consumer.run_one())
+        pending = self.store.db.execute("SELECT * FROM finalization_requests").fetchone()
+        self.assertEqual(pending["status"], "pending")
+        self.assertEqual(pending["attempts"], 0)
+        self.assertIsNone(self.store.claim_finalization(now=pending["next_attempt_at"] - 1))
+        claimed = self.store.claim_finalization(now=pending["next_attempt_at"])
+        self.store.finish_finalization(claimed["id"], finalizer.verify(
+            claimed["repository"], claimed["issue_number"], claimed["idempotency_key"]
+        ), None, now=pending["next_attempt_at"])
+        self.assertEqual(self.store.get_active(REPOSITORY, 13)["status"], "completed")
+
     def test_successful_phase_handoffs_reset_retry_budget_beyond_six_wakeups(self):
         lifecycle = str(uuid.uuid4())
         for phase in range(8):
@@ -484,12 +508,13 @@ class AutomationTest(unittest.TestCase):
         self.assertIn("ONLY OpenSpec proposal/design/delta specs/tasks", body)
         self.assertIn("/approve-spec <full-sha>", body)
         self.assertIn("Heartbeats are liveness only", body)
-        self.assertIn(f"--issue-number 77 --idempotency-key {TASK_KEY}", body)
+        self.assertIn(f"Durable workflow identity: {TASK_KEY}", body)
+        self.assertIn("no project-command capability", body)
         self.assertEqual(argv[-6:], ["--max-runtime", "2h", "--workspace",
                                      "dir:/opt/data/profiles/dev", "--idempotency-key",
                                      str(uuid.uuid5(uuid.UUID(TASK_KEY), str(uuid.UUID(WAKEUP_KEY))))])
         self.assertNotIn("shell", run.call_args.kwargs)
-        self.assertIn("neo-dev-project-control", argv[argv.index("--body") + 1])
+        self.assertNotIn("/opt/data/bin/neo-dev-project-control", argv[argv.index("--body") + 1])
         self.assertNotIn("ssh:snapflow-dev", argv)
 
     def test_controller_card_is_fixed_and_is_not_the_implementation_target(self):

@@ -2,7 +2,7 @@
 import argparse
 import time
 
-from neo_dev_webhook.automation import Consumer, ProjectFinalizer, PublicGitHubAdapter, Store, TaskRunner
+from neo_dev_webhook.automation import Consumer, ProjectDispatcher, ProjectFinalizer, PublicGitHubAdapter, Store, TaskRunner
 
 
 def main():
@@ -15,6 +15,7 @@ def main():
     consumer = Consumer(
         Store(args.database), TaskRunner(max_runtime=args.max_runtime),
         PublicGitHubAdapter(), max_attempts=args.max_attempts, finalizer=ProjectFinalizer(),
+        dispatcher=ProjectDispatcher(),
     )
     while True:
         if not consumer.run_one():

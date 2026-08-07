@@ -102,8 +102,8 @@
   ],
   "state": {
     "directory": "/var/lib/neo-dev/project-control",
-    "owner": "root",
-    "group": "root",
+    "owner": "neo-controller",
+    "group": "neo-controller",
     "mode": "0700"
   }
 }

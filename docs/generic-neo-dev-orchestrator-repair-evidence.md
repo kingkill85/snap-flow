@@ -9,15 +9,19 @@ The operator authorized an emergency repository-only repair of the mechanism tha
 - Generic positive Issue numbers derive validated issue branch/worktree/tmux coordinates; Issue #77 remains an explicit closed-bootstrap override.
 - Start verifies the root-owned repository path, common Git directory and normalized origin before fetching `origin/main`, then creates or verifies the issue worktree/branch and sole Codex window.
 - Every webhook delivery gets a deterministic Kanban execution ID while retaining one controller lifecycle and Codex session. Successful handoffs reset failure retries; project concurrency remains one until independently verified finalization.
-- The host adapter is fixed to `dev@192.168.178.4:2222`, `/opt/data/credentials/snapflow-dev-client`, and `/opt/data/tailscale_known_hosts`. It ignores user/global SSH configuration, uses `shell=False`, and can invoke only the installed controller grammar.
-- The SSH authorized key uses a root-installed forced-command wrapper plus `restrict`/no-PTY/no-forwarding options. Controller code and trusted state are root-owned; Codex runs as `dev` and cannot read or alter controller state.
+- The host adapter is fixed to dedicated `neo-controller@192.168.178.4:2222`, `/opt/data/credentials/snapflow-dev-client`, and `/opt/data/tailscale_known_hosts`. It ignores user/global SSH configuration, uses `shell=False`, and can invoke only the installed controller grammar.
+- Only locked `neo-controller` has lifecycle sudo rights. Controller code is root-owned, trusted state is `neo-controller:neo-controller 0700`, and Codex remains `dev` without lifecycle sudo or state access.
+- The controller owns the legal lifecycle chain and immutable SHA/timestamp evidence. Worker-selected phases, early commands, spec commits containing runtime paths, and gate-order bypasses are rejected.
+- Cards have no project-command capability; the consumer performs narrow lifecycle dispatch before creating each deterministic reasoning card.
+- Closure synchronization uses durable backoff without consuming the failure budget and automatically finalizes after verified `merged_closed` state.
+- Compose explicitly replaces the live shell entrypoint, retains `/var/lib/neo-dev/neo-dev.sqlite`, and targets `/opt/data/build/snapflow-neo-dev-webhook/compose.yaml`.
 - Initial Codex work is specification-only. Later approval/review/accept/merge commands resume the same session with separate gates.
 - Semantic success and closure require controller-side repository/GitHub verification. Worker claims, heartbeats and manual closure do not establish progress or release concurrency.
 - Launch intent is recoverable once and then fails closed with an auditable state instead of wedging indefinitely.
 
 ## Verification
 
-- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -p 'test_*.py'`: **100 passed**.
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -p 'test_*.py'`: **110 passed**.
 - `python3 -m py_compile tools/neo_dev_webhook/*.py tools/neo_dev_webhook/tests/*.py tools/neo_dev_webhook/tests/fixtures/*.py`: **passed**.
 - `bash -n tools/neo_dev_webhook/deploy/install.sh`: **passed**.
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict`: **passed**.
@@ -36,6 +40,7 @@ No UI behavior changed, so Playwright review is not applicable. The real `/opt/d
 - `tools/neo_dev_webhook/deploy/install.sh`
 - `tools/neo_dev_webhook/deploy/profile.managed-block.md`
 - `tools/neo_dev_webhook/deploy/README.md`
+- `tools/neo_dev_webhook/deployment.py`
 - `tools/neo_dev_webhook/controller/install-manifest.v1.json`
 - `tools/neo_dev_webhook/controller/registry.v1.json`
 - `tools/neo_dev_webhook/controller/card-capability-policy.v1.json`

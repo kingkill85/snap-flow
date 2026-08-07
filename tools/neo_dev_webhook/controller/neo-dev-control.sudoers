@@ -1,2 +1,2 @@
-dev ALL=(root) NOPASSWD: /usr/local/sbin/neo-dev-project-control-privileged *
-dev ALL=(root) NOPASSWD: /usr/local/sbin/neo-dev-codex-runtime-privileged *
+neo-controller ALL=(root) NOPASSWD: /usr/local/sbin/neo-dev-project-control-privileged *
+neo-controller ALL=(root) NOPASSWD: /usr/local/sbin/neo-dev-codex-runtime-privileged *

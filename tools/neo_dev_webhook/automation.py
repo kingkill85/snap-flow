@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import pathlib
 import re
 import sqlite3
 import subprocess
@@ -77,6 +78,7 @@ class Store:
               id INTEGER PRIMARY KEY, delivery_id TEXT NOT NULL UNIQUE REFERENCES deliveries,
               work_id INTEGER NOT NULL REFERENCES active_work, status TEXT NOT NULL,
               attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT,
+              next_attempt_at REAL NOT NULL DEFAULT 0,
               created_at REAL NOT NULL, updated_at REAL NOT NULL);
         """))
         columns = {row["name"] for row in retry_database_lock(
@@ -91,6 +93,13 @@ class Store:
         )}
         if "command" not in wakeup_columns:
             retry_database_lock(lambda: self.db.execute("ALTER TABLE wakeups ADD COLUMN command TEXT"))
+        finalization_columns = {row["name"] for row in retry_database_lock(
+            lambda: self.db.execute("PRAGMA table_info(finalization_requests)")
+        )}
+        if "next_attempt_at" not in finalization_columns:
+            retry_database_lock(lambda: self.db.execute(
+                "ALTER TABLE finalization_requests ADD COLUMN next_attempt_at REAL NOT NULL DEFAULT 0"
+            ))
 
     def close(self):
         self.db.close()
@@ -185,22 +194,24 @@ class Store:
                 self.db.execute("ROLLBACK")
                 raise
 
-    def claim_finalization(self, max_attempts: int = 5):
+    def claim_finalization(self, max_attempts: int = 5, now: float | None = None):
+        now = time.time() if now is None else now
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
                 row = self.db.execute(
                     "SELECT request.*,work.repository,work.issue_number,work.idempotency_key "
                     "FROM finalization_requests request JOIN active_work work ON work.id=request.work_id "
-                    "WHERE request.status='pending' AND request.attempts<? ORDER BY request.id LIMIT 1",
-                    (max_attempts,),
+                    "WHERE request.status='pending' AND request.attempts<? "
+                    "AND request.next_attempt_at<=? ORDER BY request.id LIMIT 1",
+                    (max_attempts, now),
                 ).fetchone()
                 if row is None:
                     self.db.execute("COMMIT")
                     return None
                 self.db.execute(
                     "UPDATE finalization_requests SET attempts=attempts+1,updated_at=? WHERE id=?",
-                    (time.time(), row["id"]),
+                    (now, row["id"]),
                 )
                 result = dict(self.db.execute(
                     "SELECT request.*,work.repository,work.issue_number,work.idempotency_key "
@@ -213,8 +224,9 @@ class Store:
                 self.db.execute("ROLLBACK")
                 raise
 
-    def finish_finalization(self, request_id: int, verified: bool, error: str | None,
-                            max_attempts: int = 5) -> None:
+    def finish_finalization(self, request_id: int, verified: bool | None, error: str | None,
+                            max_attempts: int = 5, now: float | None = None) -> None:
+        now = time.time() if now is None else now
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
@@ -231,12 +243,16 @@ class Store:
                     if changed != 1:
                         raise RuntimeError("verified finalization does not match waiting workflow")
                     status = "verified"
-                else:
+                elif verified is False:
                     status = "blocked" if request["attempts"] >= max_attempts else "pending"
+                else:
+                    status = "pending"
                 self.db.execute(
-                    "UPDATE finalization_requests SET status=?,last_error=?,updated_at=? WHERE id=?",
-                    (status, None if verified else (error or "verification rejected")[:1000],
-                     time.time(), request_id),
+                    "UPDATE finalization_requests SET status=?,attempts=?,last_error=?,"
+                    "next_attempt_at=?,updated_at=? WHERE id=?",
+                    (status, request["attempts"] - 1 if verified is None else request["attempts"],
+                     None if verified else (error or "verification pending")[:1000],
+                     now + 30 if verified is None else 0, now, request_id),
                 )
                 self.db.execute("COMMIT")
             except BaseException:
@@ -487,7 +503,7 @@ class Receiver:
 
 class TaskRunner:
     def __init__(self, script_path: str | None = None, python: str = "python3",
-                 max_runtime: str = "2h"):
+                 max_runtime: str = "2h", policy_path: str | None = None):
         if not max_runtime or max_runtime.startswith("-"):
             raise ValueError("max_runtime must be a bounded task.py duration")
         self.script = script_path or os.environ.get("NEO_DEV_TASK_RUNNER")
@@ -496,6 +512,7 @@ class TaskRunner:
         self.python = python
         self.workspace = "dir:/opt/data/profiles/dev"
         self.max_runtime, self.validated = max_runtime, False
+        self.policy_path = policy_path or os.environ.get("NEO_DEV_CARD_POLICY")
 
     def _validate_contract(self):
         if self.validated:
@@ -507,6 +524,11 @@ class TaskRunner:
         required = ("--body", "--max-runtime", "--workspace", "--idempotency-key", "title")
         if any(option not in help_result.stdout for option in required):
             raise RuntimeError("task.py contract is incompatible")
+        if self.policy_path:
+            policy = json.loads(pathlib.Path(self.policy_path).read_text(encoding="utf-8"))
+            capabilities = policy.get("project_command_capabilities", {})
+            if capabilities.get("allow") != []:
+                raise RuntimeError("card policy must deny every project command capability")
         self.validated = True
 
     def create(self, work: dict, idempotency_key: str) -> str:
@@ -529,8 +551,6 @@ class TaskRunner:
         if phase_command == "approve-spec":
             phase = "implementation"
         operation = "start" if work.get("task_id") is None else "resume"
-        adapter = (f"/opt/data/bin/neo-dev-project-control {operation} --repository {REPOSITORY} "
-                   f"--issue-number {work['issue_number']} --idempotency-key {idempotency_key}")
         description = f"""SnapFlow governed Issue workflow (self-contained controller task)
 Repository: {REPOSITORY}
 Issue: #{work['issue_number']}
@@ -539,8 +559,8 @@ Runnable wakeup execution identity: {execution_id}
 Wakeups included: {len(work['wakeups'])}; latest event/action/command: {latest.get('event')}/{latest.get('action')}/{command or 'neo-dev-label'}
 Current phase: {phase}
 Controller workspace: dir:/opt/data/profiles/dev (read /opt/data/profiles/dev/projects/snapflow.md before any action).
-Only project command permitted: `{adapter}`
-Use the controller GitHub integration to read the live Issue and verify command authorship/artifacts. Never run shell, SSH, tmux, Git, Codex, OpenSpec, package, lint, or test commands directly.
+Controller dispatch operation already performed by the consumer: {operation}. This card has no project-command capability.
+Use only the structured controller GitHub integration to read the live Issue and report reasoning. Never run shell, SSH, tmux, Git, Codex, OpenSpec, package, lint, test, or project-controller commands directly.
 Initial specification phase must create ONLY OpenSpec proposal/design/delta specs/tasks, an issue branch/worktree, a Draft PR, immutable full-SHA artifact links, and request exactly `/approve-spec <full-sha>`; implementation is forbidden.
 Implementation requires the matching trusted full-SHA approval. Review requires independent code/test review and UI review when applicable. Acceptance does not authorize merge. Archive phase must sync delta specs, validate and archive before requesting `/merge`. Merge-finalization requires separately verified merge authorization, then merge, close, and clean up the issue worker/worktree/branch state.
 Heartbeats are liveness only and never progress. Expected evidence is structured controller state plus repository artifacts and GitHub verification. If any prerequisite is absent or ambiguous, stop immediately and publish one concrete blocker; do not heartbeat-wait or claim completion. Reuse this task, idempotency identity, tmux window, and Codex session for every continuation; never create a duplicate worker/session."""
@@ -569,7 +589,7 @@ class ProjectFinalizer:
     def __init__(self, adapter="/opt/data/bin/neo-dev-project-control"):
         self.adapter = adapter
 
-    def verify(self, repository: str, issue_number: int, idempotency_key: str) -> bool:
+    def verify(self, repository: str, issue_number: int, idempotency_key: str) -> bool | None:
         result = subprocess.run(
             [self.adapter, "finalize", "--repository", repository, "--issue-number",
              str(issue_number), "--idempotency-key", idempotency_key],
@@ -581,15 +601,38 @@ class ProjectFinalizer:
             document = json.loads(result.stdout)
         except json.JSONDecodeError:
             return False
-        return isinstance(document, dict) and document.get("status") == "finalized"
+        if not isinstance(document, dict):
+            return False
+        if document.get("status") == "pending":
+            return None
+        return document.get("status") == "finalized"
+
+
+class ProjectDispatcher:
+    """Consumer-only project dispatch; Kanban cards never receive this capability."""
+
+    def __init__(self, adapter="/opt/data/bin/neo-dev-project-control"):
+        self.adapter = adapter
+
+    def dispatch(self, operation: str, repository: str, issue_number: int,
+                 idempotency_key: str) -> None:
+        if operation not in {"start", "resume"}:
+            raise ValueError("unsupported project dispatch operation")
+        subprocess.run(
+            [self.adapter, operation, "--repository", repository, "--issue-number",
+             str(issue_number), "--idempotency-key", idempotency_key],
+            check=True, capture_output=True, text=True, timeout=90, shell=False,
+        )
 
 
 class Consumer:
     def __init__(self, store: Store, runner: TaskRunner, github: PublicGitHubAdapter,
-                 lease_seconds: int = 300, max_attempts: int = 5, finalizer=None):
+                 lease_seconds: int = 300, max_attempts: int = 5, finalizer=None,
+                 dispatcher=None):
         self.store, self.runner, self.github = store, runner, github
         self.lease_seconds, self.max_attempts = lease_seconds, max_attempts
         self.finalizer = finalizer
+        self.dispatcher = dispatcher
 
     def run_one(self, now=None) -> bool:
         finalization = self.store.claim_finalization(self.max_attempts)
@@ -608,7 +651,7 @@ class Consumer:
             self.store.finish_finalization(
                 finalization["id"], verified, error, self.max_attempts,
             )
-            return verified
+            return verified is True
         work = self.store.claim(now, self.lease_seconds, self.max_attempts)
         if work is None:
             return False
@@ -616,6 +659,11 @@ class Consumer:
             live = self.github.revalidate(work["repository"], work["issue_number"])
             if not live.get("open") or live.get("is_pr") or "neo-dev" not in live.get("labels", []):
                 raise RuntimeError("GitHub issue is no longer eligible")
+            if self.dispatcher is not None:
+                self.dispatcher.dispatch(
+                    "start" if work.get("task_id") is None else "resume",
+                    work["repository"], work["issue_number"], work["idempotency_key"],
+                )
             task_id = self.runner.create(work, work["idempotency_key"])
             self.store.complete(work["id"], work["claim_token"], task_id, now)
             return True

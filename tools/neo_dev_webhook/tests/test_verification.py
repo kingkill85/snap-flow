@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import unittest
 
-from neo_dev_webhook.project_control import GovernedTarget
+from neo_dev_webhook.project_control import GovernedTarget, WorkState
 from neo_dev_webhook.verification import RepositoryGitHubVerifier
 
 
@@ -35,6 +35,9 @@ class VerificationTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
         subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"], check=True)
         (root / "README.md").write_text("test\n")
+        subprocess.run(["git", "-C", str(root), "add", "README.md"], check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+        subprocess.run(["git", "-C", str(root), "branch", "origin/main", "HEAD"], check=True)
         if active:
             change = root / "openspec" / "changes" / "issue-13"
             (change / "specs" / "workflow").mkdir(parents=True)
@@ -68,6 +71,50 @@ class VerificationTest(unittest.TestCase):
             forged = RepositoryGitHubVerifier(executor).verify(target, "specification")
             self.assertFalse(forged.verified)
             self.assertIn("not clean", forged.blocker)
+
+    def test_specification_rejects_product_code_even_with_complete_planning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            target, _head = self.repository(root)
+            (root / "product.py").write_text("print('not spec only')\n")
+            subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "smuggle runtime"], check=True)
+            head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], check=True,
+                                  capture_output=True, text=True).stdout.strip()
+            result = RepositoryGitHubVerifier(EvidenceExecutor(
+                {"state": "OPEN", "labels": [{"name": "neo-dev"}], "comments": []},
+                {"number": 10, "state": "OPEN", "isDraft": True,
+                 "headRefOid": head, "mergeCommit": None},
+            )).verify(target, "specification")
+            self.assertFalse(result.verified)
+            self.assertIn("product.py", result.blocker)
+
+    def test_accept_cannot_skip_approval_and_early_merge_never_becomes_valid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target, head = self.repository(pathlib.Path(directory))
+            comments = [
+                {"body": "/merge", "createdAt": "2026-08-07T00:00:01Z",
+                 "author": {"login": "kingkill85"}},
+                {"body": "/accept", "createdAt": "2026-08-07T00:00:02Z",
+                 "author": {"login": "kingkill85"}},
+            ]
+            verifier = RepositoryGitHubVerifier(EvidenceExecutor(
+                {"state": "OPEN", "labels": [], "comments": comments},
+                {"number": 10, "state": "OPEN", "isDraft": True,
+                 "headRefOid": head, "mergeCommit": None},
+            ))
+            specification = WorkState(target, lifecycle_state="specification_ready",
+                                      lifecycle_updated_at="2026-08-07T00:00:00Z",
+                                      base_sha=head, spec_sha=head)
+            self.assertFalse(verifier.authorize(target, specification).verified)
+            archive = WorkState(
+                target, lifecycle_state="archive_ci_verified",
+                lifecycle_updated_at="2026-08-07T00:00:03Z", spec_sha=head,
+                base_sha=head,
+                implementation_sha=head, accepted_sha=head, archive_sha=head,
+                approval_at="2026-08-07T00:00:01Z", accepted_at="2026-08-07T00:00:02Z",
+            )
+            self.assertFalse(verifier.authorize(target, archive).verified)
 
     def test_merge_finalization_requires_archive_merge_authorization_and_closure(self):
         with tempfile.TemporaryDirectory() as directory:

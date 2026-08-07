@@ -7,7 +7,7 @@ import unittest
 import uuid
 from unittest import mock
 
-from neo_dev_webhook.automation import TaskRunner
+from neo_dev_webhook.automation import ProjectDispatcher, TaskRunner
 from neo_dev_webhook.codex_runtime import initial_prompt
 from neo_dev_webhook.project_control import (
     CODEX_RUNTIME_PATH,
@@ -123,7 +123,7 @@ class GenericOrchestratorTest(unittest.TestCase):
         self.assertEqual(argv[0], "/usr/bin/ssh")
         self.assertIn(f"UserKnownHostsFile={KNOWN_HOSTS_FILE}", argv)
         self.assertIn(IDENTITY_FILE, argv)
-        self.assertEqual(argv[argv.index("dev@192.168.178.4") + 1], REMOTE_CONTROLLER)
+        self.assertEqual(argv[argv.index("neo-controller@192.168.178.4") + 1], REMOTE_CONTROLLER)
         self.assertIn("GlobalKnownHostsFile=/dev/null", argv)
         self.assertIn("ProxyCommand=none", argv)
         self.assertEqual(argv[argv.index("-p") + 1], "2222")
@@ -162,6 +162,46 @@ class GenericOrchestratorTest(unittest.TestCase):
         self.assertIn("/approve-spec <full-sha>", prompt)
         self.assertIn("Do not implement", prompt)
 
+    def test_live_compose_override_replaces_shell_entrypoint_and_preserves_database(self):
+        fixtures = pathlib.Path(__file__).with_name("fixtures")
+        base = json.loads((fixtures / "live-compose.yaml").read_text())
+        override = json.loads((pathlib.Path(__file__).parents[1] / "deploy" /
+                               "compose.neo-dev-repair.yaml").read_text())
+        effective = {name: {**base["services"][name], **override["services"][name]}
+                     for name in ("receiver", "consumer")}
+        self.assertEqual(effective["receiver"]["entrypoint"], ["python3"])
+        self.assertEqual(effective["receiver"]["entrypoint"] + effective["receiver"]["command"][:2],
+                         ["python3", "-m", "neo_dev_webhook.server"])
+        consumer_argv = effective["consumer"]["entrypoint"] + effective["consumer"]["command"]
+        self.assertEqual(consumer_argv[:3], ["python3", "-m", "neo_dev_webhook.consumer"])
+        self.assertIn("/var/lib/neo-dev/neo-dev.sqlite", consumer_argv)
+        self.assertNotIn("/var/lib/neo-dev/webhook/work.sqlite3", consumer_argv)
+
+    def test_fixture_root_install_and_rollback_are_byte_exact(self):
+        installer = pathlib.Path(__file__).parents[1] / "deploy" / "install.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory) / "root"
+            backup = pathlib.Path(directory) / "backup"
+            (root / "opt/data/build/snapflow-neo-dev-webhook").mkdir(parents=True)
+            (root / ".neo-dev-deploy-fixture").write_text("guard\n")
+            (root / "existing").write_bytes(b"unchanged\x00bytes")
+            before = {str(path.relative_to(root)): path.read_bytes()
+                      for path in root.rglob("*") if path.is_file()}
+            subprocess.run([str(installer), "fixture-install", str(root), str(backup)], check=True)
+            self.assertTrue((root / "opt/data/bin/neo-dev-project-control").is_file())
+            subprocess.run([str(installer), "fixture-rollback", str(root), str(backup)], check=True,
+                           capture_output=True, text=True)
+            after = {str(path.relative_to(root)): path.read_bytes()
+                     for path in root.rglob("*") if path.is_file()}
+            self.assertEqual(after, before)
+
+    def test_deployment_preflights_exact_host_pin_and_dedicated_identity(self):
+        installer = (pathlib.Path(__file__).parents[1] / "deploy" / "install.sh").read_text()
+        self.assertIn('validate_pinned_host(pathlib.Path("/opt/data/tailscale_known_hosts"), "192.168.178.4", 2222)', installer)
+        self.assertIn("controller_user=neo-controller", installer)
+        self.assertNotIn("dev ALL=(root)", (pathlib.Path(__file__).parents[1] /
+                                            "controller/neo-dev-control.sudoers").read_text())
+
     def test_continuation_task_reuses_identity_and_selects_accept_archive_phase(self):
         runner = TaskRunner(script_path="/test/task.py")
         help_result = mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
@@ -174,9 +214,36 @@ class GenericOrchestratorTest(unittest.TestCase):
             self.assertEqual(runner.create(work, KEY), "same-task")
         body = run.call_args_list[1].args[0][4]
         self.assertIn("Current phase: archive", body)
-        self.assertIn("neo-dev-project-control resume", body)
+        self.assertIn("dispatch operation already performed", body)
         self.assertIn(KEY, body)
         self.assertIn("Acceptance does not authorize merge", body)
+
+    def test_consumer_dispatch_boundary_rejects_non_lifecycle_operations(self):
+        dispatcher = ProjectDispatcher("/fixed/controller")
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            dispatcher.dispatch("shell", REPOSITORY, 13, KEY)
+        with mock.patch("subprocess.run") as run:
+            dispatcher.dispatch("resume", REPOSITORY, 13, KEY)
+        self.assertEqual(run.call_args.args[0], [
+            "/fixed/controller", "resume", "--repository", REPOSITORY,
+            "--issue-number", "13", "--idempotency-key", KEY,
+        ])
+        self.assertFalse(run.call_args.kwargs["shell"])
+
+    def test_card_admission_rejects_policy_with_any_project_tool(self):
+        with tempfile.TemporaryDirectory() as directory:
+            policy = pathlib.Path(directory) / "policy.json"
+            policy.write_text(json.dumps({
+                "project_command_capabilities": {"allow": ["/bin/sh"]},
+            }))
+            runner = TaskRunner(script_path="/test/task.py", policy_path=str(policy))
+            help_result = mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
+            with mock.patch("subprocess.run", return_value=help_result) as run:
+                with self.assertRaisesRegex(RuntimeError, "deny every project"):
+                    runner.create({"issue_number": 13, "task_id": None, "wakeups": [{
+                        "delivery_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    }]}, KEY)
+            self.assertEqual(run.call_count, 1)
 
     def test_terminal_real_helper_semantics_get_unique_runnable_execution_per_wakeup(self):
         fixture = pathlib.Path(__file__).with_name("fixtures") / "terminal_task.py"
@@ -212,8 +279,9 @@ class GenericOrchestratorTest(unittest.TestCase):
         deploy = pathlib.Path(__file__).parents[1] / "deploy"
         compose = (deploy / "compose.neo-dev-repair.yaml").read_text()
         installer = (deploy / "install.sh").read_text()
-        self.assertIn("receiver:", compose)
-        self.assertIn("consumer:", compose)
+        parsed = json.loads(compose)
+        self.assertIn("receiver", parsed["services"])
+        self.assertIn("consumer", parsed["services"])
         self.assertIn("/var/lib/neo-dev", compose)
         self.assertIn("/opt/data/services/snapflow-neo-dev-webhook", compose)
         self.assertIn("docker compose -p snapflow-neo-dev-webhook", installer)

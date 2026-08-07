@@ -14,7 +14,7 @@ from neo_dev_webhook.project_control import (
     GovernedTarget,
     Registry,
 )
-from neo_dev_webhook.verification import VerificationResult
+from neo_dev_webhook.verification import LifecycleTransition
 
 
 REPOSITORY = "kingkill85/snap-flow"
@@ -37,7 +37,6 @@ def completion(outcome="success", resumable=False, summary="done", **overrides):
         "semantic_outcome": outcome,
         "resumable": resumable,
         "summary": summary,
-        "workflow_phase": "merge-finalization" if outcome == "success" else "blocked",
     }
     value.update(overrides)
     return value
@@ -58,9 +57,16 @@ class FakeVerifier:
         self.verified = verified
         self.calls = []
 
-    def verify(self, target, phase):
-        self.calls.append((target, phase))
-        return VerificationResult(self.verified, None if self.verified else "forged evidence")
+    def verify_next(self, target, state):
+        self.calls.append((target, state.lifecycle_state))
+        evidence = {"lifecycle_state": "specification_ready",
+                    "lifecycle_updated_at": "2026-08-07T00:00:00Z",
+                    "base_sha": "b" * 40, "spec_sha": "a" * 40}
+        return LifecycleTransition(self.verified, evidence if self.verified else None,
+                                   None if self.verified else "forged evidence")
+
+    def authorize(self, target, state):
+        return LifecycleTransition(False, blocker="unexpected authorization")
 
 
 class FakeAppServer:
@@ -163,12 +169,13 @@ class CodexRuntimeTest(unittest.TestCase):
                 "start", KEY, None, registry_path=registry_path, state_path=state_path,
                 app_server=server, control_input=io.StringIO(""), verifier=FakeVerifier(),
             )
-            self.assertEqual(exit_code, 0)
+            self.assertEqual(exit_code, 1)
             persisted = FileResolutionStore(state_path).load(KEY)
             self.assertEqual(persisted.codex_session_id, SESSION_ID)
-            self.assertEqual(persisted.phase, "semantic_success")
+            self.assertEqual(persisted.phase, "exited_unresumable")
             self.assertEqual(persisted.terminal.exit_code, 0)
-            self.assertEqual(persisted.terminal.semantic_outcome, "success")
+            self.assertEqual(persisted.terminal.semantic_outcome, "correctable")
+            self.assertEqual(persisted.lifecycle_state, "specification_ready")
             self.assertTrue(server.closed)
 
     def test_app_server_uses_fixed_argv_and_deterministically_reaps_child(self):
@@ -290,7 +297,7 @@ class CodexRuntimeTest(unittest.TestCase):
 
     def test_worker_success_claim_cannot_complete_when_controller_verifier_rejects(self):
         with self.assertRaises(ValueError):
-            validate_completion(completion(workflow_phase="specification"), 0)
+            validate_completion(completion(worker_selected_phase="merge-finalization"), 0)
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             registry_path, state_path = self.files(root)

@@ -1,0 +1,16 @@
+{
+  "services": {
+    "receiver": {
+      "image": "neo-dev-webhook:live",
+      "entrypoint": ["/bin/sh", "-c"],
+      "command": ["python3 -m old_receiver"],
+      "volumes": ["/var/lib/neo-dev:/var/lib/neo-dev"]
+    },
+    "consumer": {
+      "image": "neo-dev-webhook:live",
+      "entrypoint": ["/bin/sh", "-c"],
+      "command": ["python3 -m old_consumer /var/lib/neo-dev/neo-dev.sqlite"],
+      "volumes": ["/var/lib/neo-dev:/var/lib/neo-dev"]
+    }
+  }
+}

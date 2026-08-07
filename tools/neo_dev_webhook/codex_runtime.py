@@ -28,21 +28,19 @@ def initial_prompt(repository: str, issue_number: int) -> str:
 COMPLETION_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["semantic_outcome", "resumable", "summary", "workflow_phase"],
+    "required": ["semantic_outcome", "resumable", "summary"],
     "properties": {
         "semantic_outcome": {
             "enum": ["success", "correctable", "blocked", "crashed", "invalid"],
         },
         "resumable": {"type": "boolean"},
         "summary": {"type": "string", "minLength": 1, "maxLength": 4096},
-        "workflow_phase": {"enum": ["specification", "implementation", "review",
-                                      "archive", "merge-finalization", "blocked"]},
     },
 }
 
 
 def validate_completion(value: object, exit_code: int) -> dict:
-    required = {"semantic_outcome", "resumable", "summary", "workflow_phase"}
+    required = {"semantic_outcome", "resumable", "summary"}
     if not isinstance(value, dict) or set(value) != required:
         raise ValueError("completion does not match the trusted schema")
     outcome = value["semantic_outcome"]
@@ -53,11 +51,6 @@ def validate_completion(value: object, exit_code: int) -> dict:
     summary = value["summary"]
     if not isinstance(summary, str) or not summary or len(summary) > 4096:
         raise ValueError("completion summary is invalid")
-    if value["workflow_phase"] not in {"specification", "implementation", "review", "archive",
-                                       "merge-finalization", "blocked"}:
-        raise ValueError("completion workflow phase is invalid")
-    if outcome == "success" and value["workflow_phase"] != "merge-finalization":
-        raise ValueError("semantic success is reserved for merge finalization")
     if outcome == "success" and exit_code != 0:
         raise ValueError("semantic success requires process exit code zero")
     return value
@@ -180,9 +173,19 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
     controller.observe_session(idempotency_key, observed_session)
 
     target = store.load(idempotency_key).target
+    lifecycle = store.load(idempotency_key)
+    trusted_verifier = verifier or RepositoryGitHubVerifier(SubprocessExecutor())
+    if operation == "resume" and lifecycle.lifecycle_state in {
+        "specification_ready", "implementation_verified", "archive_ci_verified",
+    }:
+        authorization = trusted_verifier.authorize(target, lifecycle)
+        if not authorization.verified or authorization.evidence is None:
+            raise RuntimeError(authorization.blocker or "trusted lifecycle command is unavailable")
+        lifecycle = controller.advance_lifecycle(idempotency_key, **authorization.evidence)
     prompt = initial_prompt(target.repository, target.issue_number) if operation == "start" else (
         f"Continue the same governed {target.repository} Issue #{target.issue_number} workflow and "
-        "same Codex session. Read the live Issue command and artifacts, enforce the current gate, "
+        f"same Codex session from controller-owned lifecycle state `{lifecycle.lifecycle_state}`. "
+        "Read the live Issue command and artifacts, enforce only that current gate, "
         "and fail fast with one concrete blocker if prerequisites are missing. /approve-spec permits "
         "implementation only for the matching full SHA; /accept permits sync/strict validation/archive "
         "but not merge; /merge is a separate authorization for merge, closure, and cleanup. Heartbeats "
@@ -229,16 +232,19 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
                     completion = validate_completion(json.loads("".join(message_parts)), exit_code)
                 except (json.JSONDecodeError, ValueError):
                     completion = {"semantic_outcome": "invalid", "resumable": True,
-                                  "summary": "Invalid structured completion",
-                                  "workflow_phase": "blocked"}
-                verification = (verifier or RepositoryGitHubVerifier(SubprocessExecutor())).verify(
-                    target, completion["workflow_phase"],
-                )
+                                  "summary": "Invalid structured completion"}
+                lifecycle = store.load(idempotency_key)
+                verification = trusted_verifier.verify_next(target, lifecycle)
                 if not verification.verified:
                     completion = {"semantic_outcome": "blocked", "resumable": True,
-                                  "summary": verification.blocker or "controller verification failed",
-                                  "workflow_phase": "blocked"}
+                                  "summary": verification.blocker or "controller verification failed"}
                     exit_code = 1
+                else:
+                    controller.advance_lifecycle(idempotency_key, **verification.evidence)
+                    if verification.evidence["lifecycle_state"] == "merged_closed":
+                        completion["semantic_outcome"] = "success"
+                    elif completion["semantic_outcome"] == "success":
+                        completion["semantic_outcome"] = "correctable"
                 controller.observe_terminal(
                     idempotency_key, exit_code, completion["semantic_outcome"],
                     completion["resumable"],

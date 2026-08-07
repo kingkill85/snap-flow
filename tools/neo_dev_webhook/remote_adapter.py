@@ -6,7 +6,7 @@ from typing import Callable, Sequence
 
 REMOTE_HOST = "192.168.178.4"
 REMOTE_PORT = "2222"
-REMOTE_USER = "dev"
+REMOTE_USER = "neo-controller"
 IDENTITY_FILE = "/opt/data/credentials/snapflow-dev-client"
 KNOWN_HOSTS_FILE = "/opt/data/tailscale_known_hosts"
 REMOTE_CONTROLLER = "/usr/local/bin/neo-dev-project-control"

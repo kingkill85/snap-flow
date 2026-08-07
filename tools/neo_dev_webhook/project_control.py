@@ -29,6 +29,10 @@ PHASES = frozenset({
     "semantic_blocked", "crashed", "failed_closed",
 })
 SEMANTIC_OUTCOMES = frozenset({"success", "correctable", "blocked", "crashed", "invalid"})
+LIFECYCLE_STATES = (
+    "label", "specification_ready", "spec_approved", "implementation_verified",
+    "accepted", "archive_ci_verified", "merge_authorized", "merged_closed",
+)
 
 
 @dataclass(frozen=True)
@@ -108,6 +112,16 @@ class WorkState:
     process_generation: int = 0
     restart_count: int = 0
     terminal: TerminalObservation | None = None
+    lifecycle_state: str = "label"
+    lifecycle_updated_at: str | None = None
+    spec_sha: str | None = None
+    base_sha: str | None = None
+    implementation_sha: str | None = None
+    accepted_sha: str | None = None
+    archive_sha: str | None = None
+    approval_at: str | None = None
+    accepted_at: str | None = None
+    merge_authorized_at: str | None = None
 
     def validate(self) -> None:
         self.target.validate()
@@ -131,6 +145,28 @@ class WorkState:
         if (self.terminal is not None and self.terminal.semantic_outcome == "success"
                 and self.phase != "semantic_success"):
             raise ValueError("trusted success terminal conflicts with execution phase")
+        if self.lifecycle_state not in LIFECYCLE_STATES:
+            raise ValueError("invalid governed lifecycle state")
+        sha = re.compile(r"[0-9a-f]{40}")
+        for value in (self.base_sha, self.spec_sha, self.implementation_sha, self.accepted_sha,
+                      self.archive_sha):
+            if value is not None and sha.fullmatch(value) is None:
+                raise ValueError("invalid persisted lifecycle SHA")
+        requirements = {
+            "specification_ready": (self.base_sha, self.spec_sha,),
+            "spec_approved": (self.base_sha, self.spec_sha, self.approval_at),
+            "implementation_verified": (self.base_sha, self.spec_sha, self.implementation_sha),
+            "accepted": (self.base_sha, self.spec_sha, self.implementation_sha, self.accepted_sha,
+                         self.accepted_at),
+            "archive_ci_verified": (self.base_sha, self.spec_sha, self.implementation_sha,
+                                    self.accepted_sha, self.archive_sha),
+            "merge_authorized": (self.base_sha, self.archive_sha, self.merge_authorized_at),
+            "merged_closed": (self.base_sha, self.archive_sha, self.merge_authorized_at),
+        }
+        if self.lifecycle_state != "label" and self.lifecycle_updated_at is None:
+            raise ValueError("governed lifecycle transition timestamp is missing")
+        if any(value is None for value in requirements.get(self.lifecycle_state, ())):
+            raise ValueError("governed lifecycle evidence is incomplete")
 
     def as_dict(self) -> dict:
         result = asdict(self)
@@ -340,6 +376,16 @@ class FileResolutionStore:
                 process_generation=record.get("process_generation", 0),
                 restart_count=record.get("restart_count", 0),
                 terminal=terminal,
+                lifecycle_state=record.get("lifecycle_state", "label"),
+                lifecycle_updated_at=record.get("lifecycle_updated_at"),
+                spec_sha=record.get("spec_sha"),
+                base_sha=record.get("base_sha"),
+                implementation_sha=record.get("implementation_sha"),
+                accepted_sha=record.get("accepted_sha"),
+                archive_sha=record.get("archive_sha"),
+                approval_at=record.get("approval_at"),
+                accepted_at=record.get("accepted_at"),
+                merge_authorized_at=record.get("merge_authorized_at"),
             )
         except TypeError as error:
             raise RuntimeError("invalid persisted resolution record") from error
@@ -382,6 +428,21 @@ class Controller:
     def __init__(self, registry: Registry, store: ResolutionStore, executor: ProcessExecutor):
         self.registry, self.store, self.executor = registry, store, executor
 
+    @staticmethod
+    def _result(operation: str, key: str, state: WorkState, status: str) -> dict:
+        return {
+            "version": VERSION, "operation": operation, "idempotency_key": key,
+            "resolution_id": state.target.resolution_id, "status": status,
+            "execution": {
+                "phase": state.phase, "codex_session_id": state.codex_session_id,
+                "process_generation": state.process_generation,
+                "restart_count": state.restart_count,
+                "lifecycle_state": state.lifecycle_state,
+            },
+            "governed_identity": {"repository": state.target.repository,
+                                  "issue_number": state.target.issue_number},
+        }
+
     def _resolve(self, operation: str, repository: str, issue_number: int,
                  idempotency_key: str) -> WorkState:
         if operation not in {"preflight", "start", "resume", "finalize"}:
@@ -421,6 +482,29 @@ class Controller:
         else:
             raise RuntimeError("correctable finding conflicts with persisted execution state")
         updated = replace(state, phase=phase)
+        self.store.save(idempotency_key, state, updated)
+        return updated
+
+    def advance_lifecycle(self, idempotency_key: str, **evidence) -> WorkState:
+        """Persist a verifier-produced legal lifecycle transition."""
+        state = self.store.load(idempotency_key)
+        if state is None:
+            raise RuntimeError("lifecycle transition requires persisted controller state")
+        next_state = evidence.pop("lifecycle_state", None)
+        try:
+            current_index = LIFECYCLE_STATES.index(state.lifecycle_state)
+            next_index = LIFECYCLE_STATES.index(next_state)
+        except ValueError as error:
+            raise RuntimeError("invalid lifecycle transition") from error
+        if next_index != current_index + 1:
+            raise RuntimeError("lifecycle transition skipped or repeated a governed gate")
+        allowed = {
+            "lifecycle_updated_at", "base_sha", "spec_sha", "implementation_sha", "accepted_sha",
+            "archive_sha", "approval_at", "accepted_at", "merge_authorized_at",
+        }
+        if set(evidence) - allowed:
+            raise RuntimeError("verifier returned unsupported lifecycle evidence")
+        updated = replace(state, lifecycle_state=next_state, **evidence)
         self.store.save(idempotency_key, state, updated)
         return updated
 
@@ -590,8 +674,9 @@ class Controller:
         state = self._resolve(operation, repository, issue_number, idempotency_key)
         target = state.target
         if operation == "finalize":
-            if state.phase != "semantic_success":
-                raise RuntimeError("finalization requires trusted semantic success state")
+            if state.lifecycle_state != "merged_closed":
+                return self._result(operation, idempotency_key, state,
+                                    "pending")
             from .verification import RepositoryGitHubVerifier
             verification = RepositoryGitHubVerifier(self.executor).verify(
                 target, "merge-finalization",
@@ -690,20 +775,7 @@ class Controller:
             state, status = updated, "restarted"
         else:
             raise RuntimeError("persisted semantic/session state forbids continuation")
-        return {
-            "version": VERSION,
-            "operation": operation,
-            "idempotency_key": idempotency_key,
-            "resolution_id": target.resolution_id,
-            "status": status,
-            "execution": {
-                "phase": state.phase,
-                "codex_session_id": state.codex_session_id,
-                "process_generation": state.process_generation,
-                "restart_count": state.restart_count,
-            },
-            "governed_identity": {"repository": repository, "issue_number": issue_number},
-        }
+        return self._result(operation, idempotency_key, state, status)
 
 
 def parser() -> argparse.ArgumentParser:

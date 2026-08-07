@@ -426,8 +426,7 @@ class ProjectControlTest(unittest.TestCase):
         state_schema = json.loads((controller_dir / "state-schema.v1.json").read_text(encoding="utf-8"))
         self.assertEqual(registry["targets"], [TARGET.as_dict()])
         self.assertEqual(registry["project_templates"][0]["repository"], REPOSITORY)
-        self.assertEqual(policy["project_command_capabilities"]["allow"],
-                         ["/opt/data/bin/neo-dev-project-control"])
+        self.assertEqual(policy["project_command_capabilities"]["allow"], [])
         self.assertEqual(manifest["version"], 1)
         self.assertEqual(state_schema["properties"]["restart_count"]["maximum"], 1)
         self.assertIn("semantic_success", state_schema["properties"]["phase"]["enum"])
@@ -446,10 +445,36 @@ class ProjectControlTest(unittest.TestCase):
             self.assertFalse(effective_mode_allows(entry, "dev", {"dev"}, 0o2))
         self.assertNotIn(runtime_entry["destination"],
                          policy["project_command_capabilities"]["allow"])
+        sudoers = (controller_dir / "neo-dev-control.sudoers").read_text()
+        self.assertIn("neo-controller ALL=(root)", sudoers)
+        self.assertNotIn("dev ALL=(root)", sudoers)
         combined = " ".join(path.read_text(encoding="utf-8") for path in controller_dir.iterdir())
         for forbidden in ("HostName", "IdentityFile", "known_hosts", "ssh-rsa", "ssh-ed25519",
                           "private endpoint", "pinned host key"):
             self.assertNotIn(forbidden, combined)
+
+    def test_controller_lifecycle_rejects_skipped_and_repeated_transitions(self):
+        store = InMemoryResolutionStore()
+        state = store.bind(KEY, TARGET)
+        controller = Controller(Registry((TARGET,)), store, FakeExecutor([]))
+        with self.assertRaisesRegex(RuntimeError, "skipped"):
+            controller.advance_lifecycle(
+                KEY, lifecycle_state="spec_approved",
+                lifecycle_updated_at="2026-08-07T00:00:00Z", spec_sha="a" * 40,
+                approval_at="2026-08-07T00:00:00Z",
+            )
+        advanced = controller.advance_lifecycle(
+            KEY, lifecycle_state="specification_ready",
+            lifecycle_updated_at="2026-08-07T00:00:00Z", base_sha="b" * 40,
+            spec_sha="a" * 40,
+        )
+        self.assertEqual(advanced.lifecycle_state, "specification_ready")
+        with self.assertRaisesRegex(RuntimeError, "skipped"):
+            controller.advance_lifecycle(
+                KEY, lifecycle_state="specification_ready",
+                lifecycle_updated_at="2026-08-07T00:00:01Z", base_sha="b" * 40,
+                spec_sha="a" * 40,
+            )
 
 
 if __name__ == "__main__":
