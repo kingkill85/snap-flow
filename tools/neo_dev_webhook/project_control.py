@@ -8,6 +8,7 @@ import pathlib
 import re
 import subprocess
 import tempfile
+import time
 import uuid
 from dataclasses import asdict, dataclass, replace
 from typing import Callable, Iterable, Protocol, Sequence
@@ -16,10 +17,11 @@ VERSION = 1
 CONTROLLER_REGISTRY_PATH = pathlib.Path("/etc/neo-dev/project-control/registry.json")
 CONTROLLER_STATE_PATH = pathlib.Path("/var/lib/neo-dev/project-control/resolutions.json")
 CODEX_RUNTIME_PATH = "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runtime"
+PROJECT_WORKER_PATH = "/usr/local/sbin/neo-dev-project-worker"
+RUNTIME_SUPERVISOR_PATH = "/usr/local/sbin/neo-dev-runtime-supervisor"
 CODEX_BIN_PATH = "/usr/local/bin/codex"
 CODEX_APP_SERVER_ARGV = (CODEX_BIN_PATH, "app-server", "--stdio")
-CODEX_WORKER_ARGV = ("/usr/bin/setpriv", "--reuid=dev", "--regid=dev", "--init-groups",
-                     "--no-new-privs", *CODEX_APP_SERVER_ARGV)
+CODEX_WORKER_ARGV = CODEX_APP_SERVER_ARGV
 REPOSITORY_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
 SAFE_COMPONENT_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 CONTINUE_PROMPT = "Continue the governed Issue work and address the latest trusted operator finding."
@@ -206,6 +208,40 @@ class SubprocessExecutor:
             shell=False,
         )
         return result.stdout
+
+
+class ProjectWorkerExecutor:
+    """Root-only fixed adapter: every repository/tmux/process command runs as dev."""
+    def run(self, argv: Sequence[str], *, timeout: float) -> str:
+        result = subprocess.run(
+            [PROJECT_WORKER_PATH, *argv], check=True, capture_output=True, text=True,
+            timeout=timeout, shell=False,
+        )
+        return result.stdout
+
+
+class RuntimeSupervisorLauncher:
+    def start(self, operation: str, idempotency_key: str,
+              session_id: str | None = None) -> None:
+        if os.geteuid() != 0:
+            raise PermissionError("runtime supervisor launcher must run as root")
+        argv = [RUNTIME_SUPERVISOR_PATH, operation, "--idempotency-key", idempotency_key]
+        if session_id is not None:
+            argv.extend(("--session-id", session_id))
+        path = pathlib.Path("/run/neo-dev-runtime") / f"{idempotency_key}.sock"
+        path.unlink(missing_ok=True)
+        process = subprocess.Popen(
+            argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
+        )
+        deadline = time.monotonic() + 5
+        while not path.exists():
+            if process.poll() is not None:
+                raise RuntimeError("runtime supervisor failed before socket readiness")
+            if time.monotonic() >= deadline:
+                process.terminate()
+                raise RuntimeError("runtime supervisor socket readiness timed out")
+            time.sleep(0.02)
 
 
 class Registry:
@@ -429,8 +465,10 @@ class FileResolutionStore:
 
 
 class Controller:
-    def __init__(self, registry: Registry, store: ResolutionStore, executor: ProcessExecutor):
+    def __init__(self, registry: Registry, store: ResolutionStore, executor: ProcessExecutor,
+                 supervisor: RuntimeSupervisorLauncher | None = None):
         self.registry, self.store, self.executor = registry, store, executor
+        self.supervisor = supervisor
 
     @staticmethod
     def _result(operation: str, key: str, state: WorkState, status: str) -> dict:
@@ -673,6 +711,11 @@ class Controller:
              target.branch), timeout=10.0,
         )
 
+    def _start_supervisor(self, operation: str, key: str,
+                          session_id: str | None = None) -> None:
+        if self.supervisor is not None:
+            self.supervisor.start(operation, key, session_id)
+
     def execute(self, operation: str, repository: str, issue_number: int,
                 idempotency_key: str, evidence: dict | None = None) -> dict:
         state = self._resolve(operation, repository, issue_number, idempotency_key)
@@ -735,6 +778,7 @@ class Controller:
                 updated = replace(state, phase="starting", terminal=None)
                 self.store.save(idempotency_key, state, updated)
                 try:
+                    self._start_supervisor("start", idempotency_key)
                     self.executor.run(
                         ("tmux", "new-window", "-d", "-t", target.session, "-n", target.window,
                          "-c", target.worktree, CODEX_RUNTIME_PATH, "start",
@@ -775,6 +819,7 @@ class Controller:
             updated = replace(state, phase="resuming", terminal=None)
             self.store.save(idempotency_key, state, updated)
             try:
+                self._start_supervisor("resume", idempotency_key, state.codex_session_id)
                 self.executor.run(
                     ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
                      target.worktree, CODEX_RUNTIME_PATH, "resume", "--idempotency-key",
@@ -799,11 +844,20 @@ class Controller:
                 process_generation=state.process_generation + 1, restart_count=1,
             )
             self.store.save(idempotency_key, state, updated)
-            self.executor.run(
-                ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
-                 target.worktree, CODEX_RUNTIME_PATH, "start", "--idempotency-key",
-                 idempotency_key), timeout=20.0,
-            )
+            try:
+                self._start_supervisor("start", idempotency_key)
+                self.executor.run(
+                    ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
+                     target.worktree, CODEX_RUNTIME_PATH, "start", "--idempotency-key",
+                     idempotency_key), timeout=20.0,
+                )
+            except BaseException:
+                failed = replace(
+                    updated, phase="failed_closed",
+                    terminal=TerminalObservation(1, "crashed", False),
+                )
+                self.store.save(idempotency_key, updated, failed)
+                raise
             state, status = updated, "restarted"
         else:
             raise RuntimeError("persisted semantic/session state forbids continuation")
@@ -829,7 +883,8 @@ def main(argv: Sequence[str] | None = None, *,
     try:
         controller = Controller(
             Registry.load(registry_path), FileResolutionStore(state_path),
-            executor or SubprocessExecutor(),
+            executor or ProjectWorkerExecutor(),
+            RuntimeSupervisorLauncher() if executor is None else None,
         )
         evidence = None
         if arguments.evidence:

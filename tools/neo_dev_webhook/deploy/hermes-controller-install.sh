@@ -18,8 +18,8 @@ case "$action" in
     stage=$(mktemp -d); trap 'rm -rf -- "$stage"' EXIT
     install -d "$stage/snapflow-neo-controller/controller" "$stage/snapflow-neo-controller/neo_dev_webhook" "$stage/snapflow-neo-controller/deploy"
     cp -a "$repo_root/tools/neo_dev_webhook/controller/." "$stage/snapflow-neo-controller/controller/"
-    cp -a "$repo_root/tools/neo_dev_webhook/"{__init__,project_control,codex_runtime,verification,forced_command}.py "$stage/snapflow-neo-controller/neo_dev_webhook/"
-    cp -a "$repo_root/tools/neo_dev_webhook/"{__init__,project_control,codex_runtime,verification,forced_command}.py "$stage/snapflow-neo-controller/"
+    cp -a "$repo_root/tools/neo_dev_webhook/"{__init__,project_control,project_worker,codex_runtime,runtime_supervisor,verification,forced_command}.py "$stage/snapflow-neo-controller/neo_dev_webhook/"
+    cp -a "$repo_root/tools/neo_dev_webhook/"{__init__,project_control,project_worker,codex_runtime,runtime_supervisor,verification,forced_command}.py "$stage/snapflow-neo-controller/"
     cp -a "$repo_root/tools/neo_dev_webhook/deploy/controller-install.sh" "$stage/snapflow-neo-controller/deploy/"
     printf '%s %s\n' "$(cat "$repo_root/tools/neo_dev_webhook/controller/authorized_keys.options")" "$(cat "$controller_public")" >"$stage/snapflow-neo-controller/authorized_keys"
     tar -C "$stage" -cf - snapflow-neo-controller | "${remote[@]}" 'sudo rm -rf /tmp/snapflow-neo-controller && sudo tar -C /tmp -xf - && sudo NEO_CONTROLLER_BUNDLE=/tmp/snapflow-neo-controller /tmp/snapflow-neo-controller/deploy/controller-install.sh install'

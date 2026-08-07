@@ -44,6 +44,20 @@
       "mode": "0644"
     },
     {
+      "source": "../project_worker.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/project_worker.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "../runtime_supervisor.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/runtime_supervisor.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
       "source": "neo-dev-codex-runtime",
       "destination": "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runtime",
       "owner": "root",
@@ -58,8 +72,15 @@
       "mode": "0755"
     },
     {
-      "source": "neo-dev-codex-runtime-privileged",
-      "destination": "/usr/local/sbin/neo-dev-codex-runtime-privileged",
+      "source": "neo-dev-project-worker",
+      "destination": "/usr/local/sbin/neo-dev-project-worker",
+      "owner": "root",
+      "group": "root",
+      "mode": "0700"
+    },
+    {
+      "source": "neo-dev-runtime-supervisor",
+      "destination": "/usr/local/sbin/neo-dev-runtime-supervisor",
       "owner": "root",
       "group": "root",
       "mode": "0755"

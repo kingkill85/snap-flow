@@ -3,6 +3,6 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path("/usr/local/lib")))
-from neo_dev_webhook.codex_runtime import main
+from neo_dev_webhook.runtime_supervisor import main
 
 raise SystemExit(main())

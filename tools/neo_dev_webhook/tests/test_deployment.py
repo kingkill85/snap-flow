@@ -114,8 +114,10 @@ class DeploymentTest(unittest.TestCase):
         model_tools = types.ModuleType("model_tools")
         toolsets = types.ModuleType("toolsets")
         registry_module = types.ModuleType("tools.registry")
-        plugins._ensure_plugins_discovered = lambda: None
-        plugins.get_plugin_tool_names = lambda: ["snapflow_neo_dev_transition"]
+        plugins.discover_plugins = lambda: None
+        plugins.get_plugin_manager = lambda: types.SimpleNamespace(list_plugins=lambda: [{
+            "key": "snapflow-neo-dev-transition", "enabled": True, "tools": 1,
+        }])
         safe = verifier.SAFE_TOOLSETS
         model_tools.get_tool_definitions = lambda **_kwargs: [
             {"function": {"name": name}} for name in
@@ -187,6 +189,16 @@ esac
             env = {"PATH": str(bin_dir)}
             subprocess.run([str(script), "fixture-verify", str(stack)], check=True, env=env)
             subprocess.run([str(script), "fixture-activate", str(stack)], check=True, env=env)
+
+    def test_hermes_configuration_uses_tools_api_not_string_config_values(self):
+        stage = (pathlib.Path(__file__).parents[1] / "deploy/hermes-stage.sh").read_text()
+        self.assertIn('tools disable "$toolset" --platform cli', stage)
+        self.assertIn('tools enable "$toolset" --platform cli', stage)
+        self.assertNotIn("config set platform_toolsets.cli", stage)
+        self.assertNotIn("config set agent.disabled_toolsets '[", stage)
+        verifier = (pathlib.Path(__file__).parents[1] / "deploy/verify_hermes_runtime.py").read_text()
+        self.assertIn("get_plugin_manager", verifier)
+        self.assertNotIn("get_plugin_tool_names", verifier)
 
 
 if __name__ == "__main__":

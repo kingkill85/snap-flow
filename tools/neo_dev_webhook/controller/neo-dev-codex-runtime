@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-import os
+import pathlib
 import sys
 
 if __name__ == "__main__":
-    os.execv("/usr/bin/sudo", ["sudo", "-n", "/usr/local/sbin/neo-dev-codex-runtime-privileged", *sys.argv[1:]])
+    sys.path.insert(0, str(pathlib.Path("/usr/local/lib")))
+    from neo_dev_webhook.codex_runtime import main
+    raise SystemExit(main())

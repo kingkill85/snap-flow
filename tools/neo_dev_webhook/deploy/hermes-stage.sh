@@ -39,10 +39,10 @@ install_scope() {
     fi
   done
   (cd "$backup/tree" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum >"$backup/SHA256SUMS")
-  hermes -p dev config get platform_toolsets.cli >"$backup/platform_toolsets.cli.before" || printf '[]\n' >"$backup/platform_toolsets.cli.before"
-  hermes -p dev config get agent.disabled_toolsets >"$backup/agent.disabled_toolsets.before" || printf '[]\n' >"$backup/agent.disabled_toolsets.before"
-  hermes -p dev config get plugins.enabled >"$backup/plugins.enabled.before" || printf '[]\n' >"$backup/plugins.enabled.before"
-  (cd "$backup" && sha256sum platform_toolsets.cli.before agent.disabled_toolsets.before plugins.enabled.before >config.before.sha256)
+  hermes_bin=$(command -v hermes); hermes_python=$(head -n 1 "$hermes_bin"); hermes_python=${hermes_python#\#!}; test -x "$hermes_python"
+  HERMES_HOME="$data_root/profiles/dev" "$hermes_python" -c 'import json,sys; from hermes_cli.kanban_db import _resolve_worker_cli_toolsets; json.dump(_resolve_worker_cli_toolsets(sys.argv[1]) or [],sys.stdout)' "$data_root/profiles/dev" >"$backup/resolved_toolsets.before.json"
+  HERMES_HOME="$data_root/profiles/dev" "$hermes_python" -c 'import json; from hermes_cli.config import load_config; json.dump(load_config().get("plugins",{}).get("enabled",[]),sys.stdout)' >"$backup/plugins.enabled.before.json"
+  (cd "$backup" && sha256sum resolved_toolsets.before.json plugins.enabled.before.json >config.before.sha256)
   install -d -m 0755 "$live_src/neo_dev_webhook" "$host_lib" "$host_bin"
   install -m 0644 "$repo_root/tools/neo_dev_webhook/"{__init__,automation,consumer,server,remote_adapter,project_control,deployment,hermes_transition,verification}.py "$live_src/neo_dev_webhook/"
   install -m 0644 "$repo_root/tools/neo_dev_webhook/"{__init__,remote_adapter,project_control,deployment}.py "$host_lib/"
@@ -73,7 +73,11 @@ verify_scope() {
   cmp "$installed_block" "$expected_block"
   "$host_bin/neo-dev-project-control" --help >/dev/null
   rm -f -- "$enforced"
-  runtime=$(python3 "$repo_root/tools/neo_dev_webhook/deploy/verify_hermes_runtime.py" \
+  hermes_bin=$(command -v hermes)
+  hermes_python=$(head -n 1 "$hermes_bin"); hermes_python=${hermes_python#\#!}
+  test -x "$hermes_python"
+  runtime=$(HERMES_HOME="$data_root/profiles/dev" "$hermes_python" \
+    "$repo_root/tools/neo_dev_webhook/deploy/verify_hermes_runtime.py" \
     "$data_root/profiles/dev")
   printf 'verified_at=%s\ntoolsets=snapflow_neo_dev,web,browser,memory,session_search,skills\ntool=snapflow_neo_dev_transition\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$enforced.tmp"
@@ -86,10 +90,12 @@ configure_tools() {
   command -v hermes >/dev/null
   rm -f -- "$enforced"
   hermes -p dev plugins enable snapflow-neo-dev-transition
-  hermes -p dev config set platform_toolsets.cli \
-    '["snapflow_neo_dev","web","browser","memory","session_search","skills"]'
-  hermes -p dev config set agent.disabled_toolsets \
-    '["bfl","terminal","code_execution","file","delegation","cronjob"]'
+  for toolset in bfl terminal code_execution file delegation cronjob; do
+    hermes -p dev tools disable "$toolset" --platform cli
+  done
+  for toolset in snapflow_neo_dev web browser memory session_search skills; do
+    hermes -p dev tools enable "$toolset" --platform cli
+  done
   echo "restart the dev profile gateway, then run: $0 verify" >&2
 }
 
@@ -110,11 +116,17 @@ rollback_scope() {
       rm -rf -- "$target"
     fi
   done <"$backup/manifest.tsv"
-  if test -f "$backup/platform_toolsets.cli.before"; then
+  if test -f "$backup/resolved_toolsets.before.json"; then
     (cd "$backup" && sha256sum -c config.before.sha256)
-    hermes -p dev config set platform_toolsets.cli "$(cat "$backup/platform_toolsets.cli.before")"
-    hermes -p dev config set agent.disabled_toolsets "$(cat "$backup/agent.disabled_toolsets.before")"
-    hermes -p dev config set plugins.enabled "$(cat "$backup/plugins.enabled.before")"
+    for toolset in bfl terminal code_execution file delegation cronjob snapflow_neo_dev web browser memory session_search skills; do
+      hermes -p dev tools disable "$toolset" --platform cli
+    done
+    while IFS= read -r toolset; do
+      test "$toolset" = kanban || hermes -p dev tools enable "$toolset" --platform cli
+    done < <(python3 -c 'import json,sys; [print(x) for x in json.load(open(sys.argv[1]))]' "$backup/resolved_toolsets.before.json")
+    if ! python3 -c 'import json,sys; raise SystemExit(0 if "snapflow-neo-dev-transition" in json.load(open(sys.argv[1])) else 1)' "$backup/plugins.enabled.before.json"; then
+      hermes -p dev plugins disable snapflow-neo-dev-transition
+    fi
   fi
 }
 

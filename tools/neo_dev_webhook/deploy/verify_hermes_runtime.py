@@ -22,19 +22,21 @@ FORBIDDEN_TOOLS = {
 
 def verify(profile_home: str) -> dict:
     from hermes_cli.kanban_db import _resolve_worker_cli_toolsets
-    from hermes_cli.plugins import _ensure_plugins_discovered, get_plugin_tool_names
+    from hermes_cli.plugins import discover_plugins, get_plugin_manager
     from model_tools import get_tool_definitions
     from toolsets import resolve_toolset
     from tools.registry import registry
 
-    _ensure_plugins_discovered()
+    discover_plugins()
+    manager = get_plugin_manager()
     resolved = _resolve_worker_cli_toolsets(profile_home) or []
-    names = set(get_plugin_tool_names())
+    loaded = next((item for item in manager.list_plugins()
+                   if item["key"] == "snapflow-neo-dev-transition"), None)
     if resolved != EXPECTED_RESOLVED_TOOLSETS:
         raise RuntimeError(f"unsafe dev worker toolsets: {resolved!r}")
     if FORBIDDEN_TOOLSETS.intersection(resolved):
         raise RuntimeError("execution-capable toolset resolved for dev worker")
-    if "snapflow_neo_dev_transition" not in names:
+    if loaded is None or not loaded["enabled"] or loaded["tools"] != 1:
         raise RuntimeError("native transition plugin tool is not loaded")
     previous = {key: os.environ.get(key) for key in (
         "HERMES_KANBAN_TASK", "HERMES_KANBAN_BOARD", "HERMES_SESSION_SOURCE",

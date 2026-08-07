@@ -4,8 +4,10 @@ import argparse
 import json
 import pathlib
 import select
+import socket
 import subprocess
 import sys
+import time
 from typing import Sequence, TextIO
 
 from .project_control import (
@@ -18,8 +20,10 @@ from .project_control import (
     FileResolutionStore,
     Registry,
     SubprocessExecutor,
+    GovernedTarget,
     validate_idempotency_key,
 )
+from .runtime_supervisor import socket_path
 from .verification import PhaseVerifier, RepositoryGitHubVerifier
 
 RUNTIME_VERSION = 1
@@ -277,6 +281,106 @@ def run_runtime(operation: str, idempotency_key: str, session_id: str | None, *,
         server.close()
 
 
+def run_supervised_runtime(operation: str, idempotency_key: str,
+                           session_id: str | None, *,
+                           app_server: AppServer | None = None,
+                           control_input: TextIO = sys.stdin) -> int:
+    validate_idempotency_key(idempotency_key)
+    channel = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            channel.connect(str(socket_path(idempotency_key)))
+            break
+        except (FileNotFoundError, ConnectionRefusedError):
+            if time.monotonic() >= deadline:
+                channel.close()
+                return 1
+            time.sleep(0.05)
+    stream = channel.makefile("rwb", buffering=0)
+    try:
+        launch = json.loads(stream.readline())
+        if (not isinstance(launch, dict) or launch.get("version") != 1
+                or launch.get("operation") != operation
+                or launch.get("idempotency_key") != idempotency_key
+                or launch.get("session_id") != session_id):
+            raise RuntimeError("supervisor launch envelope does not match runtime")
+        target = GovernedTarget(**launch["target"])
+        target.validate()
+        lifecycle_state = launch.get("lifecycle_state")
+        if lifecycle_state not in {
+            "label", "spec_approved", "accepted", "merge_authorized",
+        }:
+            raise RuntimeError("supervisor lifecycle state is invalid")
+        server = app_server or AppServer.start()
+        try:
+            server.request("initialize", {
+                "clientInfo": {"name": "neo-dev-project-control", "version": str(RUNTIME_VERSION)},
+                "capabilities": {"experimentalApi": True},
+            })
+            server.send("initialized", {})
+            thread = server.request("thread/start", {
+                "cwd": target.worktree, "approvalPolicy": "never", "ephemeral": False,
+            }) if operation == "start" else server.request(
+                "thread/resume", {"threadId": session_id},
+            )
+            observed_session = _thread_id(thread)
+            if session_id is not None and observed_session != session_id:
+                raise RuntimeError("resumed Codex session identity drifted")
+            stream.write((json.dumps({"event": "session", "session_id": observed_session}) + "\n").encode())
+            prompt = initial_prompt(target.repository, target.issue_number) if operation == "start" else (
+                f"Continue the same governed {target.repository} Issue #{target.issue_number} workflow "
+                f"and same Codex session from controller-owned lifecycle state `{lifecycle_state}`. "
+                "Read the live Issue command and artifacts, enforce only that current gate, and fail "
+                "fast with one concrete blocker. Heartbeats are liveness only and never progress."
+            )
+            turn = server.request("turn/start", {
+                "threadId": observed_session, "input": [{"type": "text", "text": prompt}],
+                "outputSchema": COMPLETION_SCHEMA,
+            })
+            turn_data = turn.get("turn")
+            if not isinstance(turn_data, dict) or not isinstance(turn_data.get("id"), str):
+                raise RuntimeError("Codex app-server omitted the active turn identity")
+            turn_id = turn_data["id"]
+            message_parts: list[str] = []
+            while True:
+                source, payload = server.poll(control_input)
+                if source == "control":
+                    if payload == "":
+                        control_input = open("/dev/null", encoding="utf-8")
+                    elif isinstance(payload, str) and payload.rstrip("\n") == CONTINUE_PROMPT:
+                        server.request("turn/steer", {
+                            "threadId": observed_session, "expectedTurnId": turn_id,
+                            "input": [{"type": "text", "text": CONTINUE_PROMPT}],
+                        })
+                    continue
+                event = payload
+                method, params = event.get("method"), event.get("params")
+                if method == "item/agentMessage/delta" and isinstance(params, dict):
+                    if isinstance(params.get("delta"), str):
+                        message_parts.append(params["delta"])
+                elif method == "turn/completed" and isinstance(params, dict):
+                    turn_result = params.get("turn")
+                    exit_code = 0 if isinstance(turn_result, dict) and turn_result.get("status") == "completed" else 1
+                    try:
+                        completion = validate_completion(json.loads("".join(message_parts)), exit_code)
+                    except (json.JSONDecodeError, ValueError):
+                        completion = {"semantic_outcome": "invalid", "resumable": True,
+                                      "summary": "Invalid structured completion"}
+                    report = {"event": "terminal", "exit_code": exit_code,
+                              "semantic_outcome": completion["semantic_outcome"],
+                              "resumable": completion["resumable"]}
+                    stream.write((json.dumps(report) + "\n").encode())
+                    return 0 if completion["semantic_outcome"] == "success" else 1
+        finally:
+            server.close()
+    except (OSError, ValueError, RuntimeError, json.JSONDecodeError, TypeError):
+        return 1
+    finally:
+        stream.close()
+        channel.close()
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="neo-dev-codex-runtime", allow_abbrev=False)
     result.add_argument("operation", choices=("start", "resume"))
@@ -288,7 +392,7 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = parser().parse_args(argv)
     try:
-        return run_runtime(
+        return run_supervised_runtime(
             arguments.operation, arguments.idempotency_key, arguments.session_id,
         )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError):
