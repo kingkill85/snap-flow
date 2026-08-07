@@ -130,6 +130,7 @@ class LivePrivilegeTopologyTest(unittest.TestCase):
         sudoers = (controller / "neo-dev-control.sudoers").read_text()
         self.assertIn("/usr/sbin/sshd -T -C user=neo-controller", script)
         self.assertIn("test -x /usr/sbin/sshd", script)
+        self.assertIn("/usr/sbin/visudo -cf", script)
         self.assertIn("sudo -u dev tmux has-session -t snapflow-dev", script)
         self.assertIn("sudo -u dev git -C /workspace/snap-flow", script)
         self.assertIn("passwd -d neo-controller", script)

@@ -50,7 +50,7 @@ verify_scope() {
   test "$(stat -c '%U:%G:%a' /usr/local/sbin/neo-dev-project-worker)" = root:root:700
   if sudo -u dev sudo -n /usr/local/sbin/neo-dev-project-control-privileged --help >/dev/null 2>&1; then exit 1; fi
   sudo -u neo-controller sudo -n /usr/local/sbin/neo-dev-project-control-privileged --help >/dev/null
-  visudo -cf /etc/sudoers.d/neo-dev-control
+  /usr/sbin/visudo -cf /etc/sudoers.d/neo-dev-control
   test "$(sudo -u dev git -C /workspace/snap-flow rev-parse --show-toplevel)" = /workspace/snap-flow
   origin=$(sudo -u dev git -C /workspace/snap-flow remote get-url origin); test "$origin" = git@github.com:kingkill85/snap-flow.git || test "$origin" = https://github.com/kingkill85/snap-flow.git
   sudo -u dev tmux has-session -t snapflow-dev
