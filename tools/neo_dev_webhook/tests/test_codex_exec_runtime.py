@@ -2,7 +2,9 @@ import json
 import pathlib
 import unittest
 
-from neo_dev_webhook.codex_runtime import build_exec_argv, parse_exec_event, run_exec_worker
+from neo_dev_webhook.codex_runtime import (
+    build_exec_argv, continuation_prompt, parse_exec_event, run_exec_worker,
+)
 from neo_dev_webhook.project_control import GovernedTarget
 
 
@@ -20,6 +22,12 @@ TARGET = GovernedTarget(
 
 
 class CodexExecRuntimeTest(unittest.TestCase):
+    def test_label_resume_continues_full_spec_work_instead_of_only_rechecking_gate(self):
+        prompt = continuation_prompt("kingkill85/snap-flow", 13, "label")
+        self.assertIn("Create ONLY the issue-scoped OpenSpec proposal", prompt)
+        self.assertIn("create/update the Draft PR", prompt)
+        self.assertNotIn("enforce only that current gate", prompt)
+
     def test_start_is_bound_to_governed_worktree_without_interactive_approval(self):
         argv = build_exec_argv("start", TARGET, None, pathlib.Path("/tmp/schema.json"), "PROMPT")
         self.assertEqual(argv, (

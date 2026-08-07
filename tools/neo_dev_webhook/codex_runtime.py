@@ -30,6 +30,39 @@ from .verification import PhaseVerifier, RepositoryGitHubVerifier
 RUNTIME_VERSION = 1
 def initial_prompt(repository: str, issue_number: int) -> str:
     return f"""You are the sole Codex worker for {repository} Issue #{issue_number} in the initial specification phase. Read the live GitHub Issue, repository AGENTS.md, openspec/config.yaml, and all applicable OpenSpec instructions before acting. Create ONLY the issue-scoped OpenSpec proposal, design, delta specifications, and tasks; create/update the Draft PR; commit and push those planning artifacts; and publish immutable GitHub blob links pinned to the resulting full 40-character commit SHA with the exact next command `/approve-spec <full-sha>`. Do not implement product or orchestration behavior, run deployment, merge, or bypass approval. Verify repository and GitHub artifacts directly. Heartbeats are liveness only and cannot count as progress or completion. If any prerequisite or verification is missing, fail fast with one concrete blocker. Approval/acceptance waits use `correctable` with `resumable: true`; `success` is reserved for verified merge-finalization. End with the required structured completion document."""
+
+
+def continuation_prompt(repository: str, issue_number: int, lifecycle_state: str) -> str:
+    if lifecycle_state == "label":
+        return initial_prompt(repository, issue_number)
+    phase_work = {
+        "spec_approved": (
+            "Implement only the approved Issue-scoped OpenSpec plan, run and verify the required "
+            "tests, commit and push the implementation, and update the existing Draft PR. Do not "
+            "accept, archive, merge, close, deploy, or clean up the worktree."
+        ),
+        "accepted": (
+            "Perform the accepted post-implementation phase: synchronize with main as required, "
+            "run the strict validation suite, archive the OpenSpec change, commit and push those "
+            "artifacts, and verify CI. Do not merge, close, deploy, or clean up the worktree."
+        ),
+        "merge_authorized": (
+            "Perform only the separately authorized merge-finalization: verify the exact authorized "
+            "head and CI, merge the governed PR, close the Issue, and perform governed cleanup."
+        ),
+    }.get(lifecycle_state)
+    if phase_work is None:
+        raise RuntimeError("supervisor lifecycle state is invalid")
+    return (
+        f"Continue the same governed {repository} Issue #{issue_number} workflow and same Codex "
+        f"session from controller-owned lifecycle state `{lifecycle_state}`. {phase_work} Read and "
+        "verify the live Issue, repository instructions, persisted artifacts, and GitHub state before "
+        "acting. Work autonomously through this phase and fail fast only on one concrete external "
+        "blocker. Heartbeats are liveness only and never progress. End with the required structured "
+        "completion document."
+    )
+
+
 COMPLETION_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -413,10 +446,7 @@ def run_supervised_runtime(operation: str, idempotency_key: str,
         schema_path: pathlib.Path | None = None
         try:
             prompt = initial_prompt(target.repository, target.issue_number) if operation == "start" else (
-                f"Continue the same governed {target.repository} Issue #{target.issue_number} workflow "
-                f"and same Codex session from controller-owned lifecycle state `{lifecycle_state}`. "
-                "Read the live Issue command and artifacts, enforce only that current gate, and fail "
-                "fast with one concrete blocker. Heartbeats are liveness only and never progress."
+                continuation_prompt(target.repository, target.issue_number, lifecycle_state)
             )
             with tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", prefix="neo-dev-completion-",
