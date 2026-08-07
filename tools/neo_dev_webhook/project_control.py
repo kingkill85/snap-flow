@@ -122,6 +122,7 @@ class WorkState:
     approval_at: str | None = None
     accepted_at: str | None = None
     merge_authorized_at: str | None = None
+    github_evidence: dict | None = None
 
     def validate(self) -> None:
         self.target.validate()
@@ -167,6 +168,8 @@ class WorkState:
             raise ValueError("governed lifecycle transition timestamp is missing")
         if any(value is None for value in requirements.get(self.lifecycle_state, ())):
             raise ValueError("governed lifecycle evidence is incomplete")
+        if self.github_evidence is not None and not isinstance(self.github_evidence, dict):
+            raise ValueError("invalid host GitHub evidence")
 
     def as_dict(self) -> dict:
         result = asdict(self)
@@ -386,6 +389,7 @@ class FileResolutionStore:
                 approval_at=record.get("approval_at"),
                 accepted_at=record.get("accepted_at"),
                 merge_authorized_at=record.get("merge_authorized_at"),
+                github_evidence=record.get("github_evidence"),
             )
         except TypeError as error:
             raise RuntimeError("invalid persisted resolution record") from error
@@ -445,7 +449,7 @@ class Controller:
 
     def _resolve(self, operation: str, repository: str, issue_number: int,
                  idempotency_key: str) -> WorkState:
-        if operation not in {"preflight", "start", "resume", "finalize"}:
+        if operation not in {"status", "attest", "preflight", "start", "resume", "finalize"}:
             raise ValueError("unsupported operation")
         validate_repository(repository)
         validate_issue_number(issue_number)
@@ -454,7 +458,7 @@ class Controller:
         persisted = self.store.load(idempotency_key)
         if persisted is not None and persisted.target != target:
             raise RuntimeError("registry drift conflicts with persisted resolution")
-        if operation in {"resume", "finalize"} and persisted is None:
+        if operation in {"status", "attest", "resume", "finalize"} and persisted is None:
             raise RuntimeError(f"{operation} requires a persisted resolution")
         return self.store.bind(idempotency_key, target)
 
@@ -670,15 +674,43 @@ class Controller:
         )
 
     def execute(self, operation: str, repository: str, issue_number: int,
-                idempotency_key: str) -> dict:
+                idempotency_key: str, evidence: dict | None = None) -> dict:
         state = self._resolve(operation, repository, issue_number, idempotency_key)
+        if evidence is not None:
+            from .verification import validate_host_evidence
+            validate_host_evidence(evidence, state, idempotency_key)
+            updated = replace(state, github_evidence=evidence)
+            self.store.save(idempotency_key, state, updated)
+            state = updated
         target = state.target
+        if operation == "status":
+            return self._result(operation, idempotency_key, state, "observed")
+        if operation == "attest":
+            if state.github_evidence is None or state.lifecycle_state not in {
+                "label", "spec_approved", "accepted", "merge_authorized",
+            }:
+                raise RuntimeError("attestation does not match a verifiable lifecycle state")
+            from .verification import RepositoryGitHubVerifier
+            transition = RepositoryGitHubVerifier(
+                self.executor, state.github_evidence,
+            ).verify_next(target, state)
+            if not transition.verified or transition.evidence is None:
+                raise RuntimeError(transition.blocker or "attestation verification failed")
+            state = self.advance_lifecycle(idempotency_key, **transition.evidence)
+            return self._result(operation, idempotency_key, state, "attested")
         if operation == "finalize":
+            if state.lifecycle_state == "merge_authorized" and state.github_evidence is not None:
+                from .verification import RepositoryGitHubVerifier
+                verifier = RepositoryGitHubVerifier(self.executor, state.github_evidence)
+                transition = verifier.verify_next(target, state)
+                if not transition.verified or transition.evidence is None:
+                    raise RuntimeError(transition.blocker or "merge finalization evidence failed")
+                state = self.advance_lifecycle(idempotency_key, **transition.evidence)
             if state.lifecycle_state != "merged_closed":
                 return self._result(operation, idempotency_key, state,
                                     "pending")
             from .verification import RepositoryGitHubVerifier
-            verification = RepositoryGitHubVerifier(self.executor).verify(
+            verification = RepositoryGitHubVerifier(self.executor, state.github_evidence).verify(
                 target, "merge-finalization",
             )
             if not verification.verified:
@@ -780,10 +812,11 @@ class Controller:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="neo-dev-project-control", allow_abbrev=False)
-    result.add_argument("operation", choices=("preflight", "start", "resume", "finalize"))
+    result.add_argument("operation", choices=("status", "attest", "preflight", "start", "resume", "finalize"))
     result.add_argument("--repository", required=True)
     result.add_argument("--issue-number", required=True, type=int)
     result.add_argument("--idempotency-key", required=True)
+    result.add_argument("--evidence")
     return result
 
 
@@ -798,9 +831,13 @@ def main(argv: Sequence[str] | None = None, *,
             Registry.load(registry_path), FileResolutionStore(state_path),
             executor or SubprocessExecutor(),
         )
+        evidence = None
+        if arguments.evidence:
+            import base64
+            evidence = json.loads(base64.b64decode(arguments.evidence, validate=True))
         result = controller.execute(
             arguments.operation, arguments.repository, arguments.issue_number,
-            arguments.idempotency_key,
+            arguments.idempotency_key, evidence,
         )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         write(json.dumps({"version": VERSION, "status": "rejected", "error": str(error)},

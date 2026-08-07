@@ -62,7 +62,8 @@
     "archive_sha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" },
     "approval_at": { "type": ["string", "null"] },
     "accepted_at": { "type": ["string", "null"] },
-    "merge_authorized_at": { "type": ["string", "null"] }
+    "merge_authorized_at": { "type": ["string", "null"] },
+    "github_evidence": { "type": ["object", "null"] }
   },
   "additionalProperties": false
 }

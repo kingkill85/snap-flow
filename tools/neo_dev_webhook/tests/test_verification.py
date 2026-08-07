@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from neo_dev_webhook.project_control import GovernedTarget, WorkState
-from neo_dev_webhook.verification import RepositoryGitHubVerifier
+from neo_dev_webhook.verification import HostGitHubEvidenceCollector, RepositoryGitHubVerifier, validate_host_evidence
 
 
 class EvidenceExecutor:
@@ -30,6 +30,43 @@ class EvidenceExecutor:
 
 
 class VerificationTest(unittest.TestCase):
+    def test_host_collector_uses_fixed_gh_and_config_directory(self):
+        class HostExecutor:
+            def __init__(self): self.calls = []
+            def run(self, argv, *, timeout):
+                self.calls.append(tuple(argv))
+                if "issue" in argv: return json.dumps({"state": "OPEN", "comments": []})
+                if "list" in argv: return json.dumps([{"number": 9, "headRefOid": "a" * 40}])
+                return json.dumps([{"state": "SUCCESS"}])
+        executor = HostExecutor()
+        evidence = HostGitHubEvidenceCollector(executor).collect_bound(
+            "kingkill85/snap-flow", 13, "feature/issue-13", "b" * 64, "label",
+            "12345678-1234-4abc-8def-123456789abc",
+        )
+        self.assertEqual(evidence["expected_state"], "label")
+        for call in executor.calls:
+            self.assertEqual(call[:3], ("/usr/bin/env",
+                                        "GH_CONFIG_DIR=/opt/data/home/.config/gh",
+                                        "/opt/data/bin/gh"))
+
+    def test_host_evidence_is_fresh_and_bound_to_controller_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target, _ = self.repository(pathlib.Path(directory))
+            state = WorkState(target)
+            evidence = {
+                "version": 1, "workflow_id": "12345678-1234-4abc-8def-123456789abc",
+                "repository": target.repository,
+                "issue_number": target.issue_number, "resolution_id": target.resolution_id,
+                "expected_state": "label", "observed_at": "2099-01-01T00:00:00Z",
+                "issue": {}, "pr": {}, "checks": [],
+            }
+            with self.assertRaisesRegex(ValueError, "stale"):
+                validate_host_evidence(evidence, state)
+            from datetime import datetime, timezone
+            evidence["observed_at"] = datetime.now(timezone.utc).isoformat()
+            evidence["resolution_id"] = "forged"
+            with self.assertRaisesRegex(ValueError, "not bound"):
+                validate_host_evidence(evidence, state)
     def repository(self, root, *, active=True):
         subprocess.run(["git", "init", "-q", "-b", "feature/issue-13", str(root)], check=True)
         subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)

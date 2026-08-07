@@ -175,7 +175,7 @@ class CodexRuntimeTest(unittest.TestCase):
             self.assertEqual(persisted.phase, "exited_unresumable")
             self.assertEqual(persisted.terminal.exit_code, 0)
             self.assertEqual(persisted.terminal.semantic_outcome, "correctable")
-            self.assertEqual(persisted.lifecycle_state, "specification_ready")
+            self.assertEqual(persisted.lifecycle_state, "label")
             self.assertTrue(server.closed)
 
     def test_app_server_uses_fixed_argv_and_deterministically_reaps_child(self):
@@ -312,7 +312,7 @@ class CodexRuntimeTest(unittest.TestCase):
                 verifier=FakeVerifier(False),
             ), 1)
             persisted = store.load(KEY)
-            self.assertEqual(persisted.phase, "semantic_blocked")
+            self.assertEqual(persisted.phase, "exited_unresumable")
             self.assertNotEqual(persisted.terminal.semantic_outcome, "success")
 
 

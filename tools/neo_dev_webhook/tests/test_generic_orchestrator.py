@@ -1,4 +1,5 @@
 import json
+import base64
 import pathlib
 import shutil
 import subprocess
@@ -146,6 +147,13 @@ class GenericOrchestratorTest(unittest.TestCase):
         ):
             with self.subTest(command=command), self.assertRaises(ValueError):
                 validated_original_command(command)
+        evidence = base64.b64encode(b'{"version":1}').decode()
+        evidence_command = original.replace("resume", "attest") + f" --evidence {evidence}"
+        self.assertEqual(validated_original_command(evidence_command)[-2:],
+                         ("--evidence", evidence))
+        with self.assertRaises(ValueError):
+            validated_original_command(original.replace("resume", "status") +
+                                       f" --evidence {evidence}")
         options = (pathlib.Path(__file__).parents[1] / "controller" /
                    "authorized_keys.options").read_text()
         for required in ("restrict", "no-pty", "no-agent-forwarding", "no-port-forwarding",
@@ -162,43 +170,12 @@ class GenericOrchestratorTest(unittest.TestCase):
         self.assertIn("/approve-spec <full-sha>", prompt)
         self.assertIn("Do not implement", prompt)
 
-    def test_live_compose_override_replaces_shell_entrypoint_and_preserves_database(self):
-        fixtures = pathlib.Path(__file__).with_name("fixtures")
-        base = json.loads((fixtures / "live-compose.yaml").read_text())
-        override = json.loads((pathlib.Path(__file__).parents[1] / "deploy" /
-                               "compose.neo-dev-repair.yaml").read_text())
-        effective = {name: {**base["services"][name], **override["services"][name]}
-                     for name in ("receiver", "consumer")}
-        self.assertEqual(effective["receiver"]["entrypoint"], ["python3"])
-        self.assertEqual(effective["receiver"]["entrypoint"] + effective["receiver"]["command"][:2],
-                         ["python3", "-m", "neo_dev_webhook.server"])
-        consumer_argv = effective["consumer"]["entrypoint"] + effective["consumer"]["command"]
-        self.assertEqual(consumer_argv[:3], ["python3", "-m", "neo_dev_webhook.consumer"])
-        self.assertIn("/var/lib/neo-dev/neo-dev.sqlite", consumer_argv)
-        self.assertNotIn("/var/lib/neo-dev/webhook/work.sqlite3", consumer_argv)
-
-    def test_fixture_root_install_and_rollback_are_byte_exact(self):
-        installer = pathlib.Path(__file__).parents[1] / "deploy" / "install.sh"
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory) / "root"
-            backup = pathlib.Path(directory) / "backup"
-            (root / "opt/data/build/snapflow-neo-dev-webhook").mkdir(parents=True)
-            (root / ".neo-dev-deploy-fixture").write_text("guard\n")
-            (root / "existing").write_bytes(b"unchanged\x00bytes")
-            before = {str(path.relative_to(root)): path.read_bytes()
-                      for path in root.rglob("*") if path.is_file()}
-            subprocess.run([str(installer), "fixture-install", str(root), str(backup)], check=True)
-            self.assertTrue((root / "opt/data/bin/neo-dev-project-control").is_file())
-            subprocess.run([str(installer), "fixture-rollback", str(root), str(backup)], check=True,
-                           capture_output=True, text=True)
-            after = {str(path.relative_to(root)): path.read_bytes()
-                     for path in root.rglob("*") if path.is_file()}
-            self.assertEqual(after, before)
-
     def test_deployment_preflights_exact_host_pin_and_dedicated_identity(self):
-        installer = (pathlib.Path(__file__).parents[1] / "deploy" / "install.sh").read_text()
+        deploy = pathlib.Path(__file__).parents[1] / "deploy"
+        installer = (deploy / "hermes-stage.sh").read_text() + (deploy / "hermes-controller-install.sh").read_text()
         self.assertIn('validate_pinned_host(pathlib.Path("/opt/data/tailscale_known_hosts"), "192.168.178.4", 2222)', installer)
-        self.assertIn("controller_user=neo-controller", installer)
+        self.assertIn("hermes:hermes:600", installer)
+        self.assertIn("snapflow-controller-client", installer)
         self.assertNotIn("dev ALL=(root)", (pathlib.Path(__file__).parents[1] /
                                             "controller/neo-dev-control.sudoers").read_text())
 
@@ -222,11 +199,16 @@ class GenericOrchestratorTest(unittest.TestCase):
         dispatcher = ProjectDispatcher("/fixed/controller")
         with self.assertRaisesRegex(ValueError, "unsupported"):
             dispatcher.dispatch("shell", REPOSITORY, 13, KEY)
-        with mock.patch("subprocess.run") as run:
+        controller_output = json.dumps({"status": "resuming"})
+        with mock.patch("neo_dev_webhook.automation.collect_host_evidence",
+                        return_value=base64.b64encode(b'{}').decode()), mock.patch(
+                            "subprocess.run", return_value=subprocess.CompletedProcess([], 0, controller_output)
+                        ) as run:
             dispatcher.dispatch("resume", REPOSITORY, 13, KEY)
         self.assertEqual(run.call_args.args[0], [
             "/fixed/controller", "resume", "--repository", REPOSITORY,
-            "--issue-number", "13", "--idempotency-key", KEY,
+            "--issue-number", "13", "--idempotency-key", KEY, "--evidence",
+            base64.b64encode(b'{}').decode(),
         ])
         self.assertFalse(run.call_args.kwargs["shell"])
 
@@ -239,7 +221,7 @@ class GenericOrchestratorTest(unittest.TestCase):
             runner = TaskRunner(script_path="/test/task.py", policy_path=str(policy))
             help_result = mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
             with mock.patch("subprocess.run", return_value=help_result) as run:
-                with self.assertRaisesRegex(RuntimeError, "deny every project"):
+                with self.assertRaisesRegex(RuntimeError, "unsafe task capability"):
                     runner.create({"issue_number": 13, "task_id": None, "wakeups": [{
                         "delivery_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                     }]}, KEY)
@@ -277,16 +259,16 @@ class GenericOrchestratorTest(unittest.TestCase):
 
     def test_deployment_updates_existing_compose_stack_without_systemd_or_profile_overwrite(self):
         deploy = pathlib.Path(__file__).parents[1] / "deploy"
-        compose = (deploy / "compose.neo-dev-repair.yaml").read_text()
-        installer = (deploy / "install.sh").read_text()
-        parsed = json.loads(compose)
-        self.assertIn("receiver", parsed["services"])
-        self.assertIn("consumer", parsed["services"])
-        self.assertIn("/var/lib/neo-dev", compose)
-        self.assertIn("/opt/data/services/snapflow-neo-dev-webhook", compose)
-        self.assertIn("docker compose -p snapflow-neo-dev-webhook", installer)
-        self.assertIn("install_profile_block", installer)
-        self.assertNotIn("systemctl", installer + compose)
+        hermes = (deploy / "hermes-stage.sh").read_text()
+        controller = (deploy / "controller-install.sh").read_text()
+        dockge = (deploy / "dockge-activate.sh").read_text()
+        self.assertIn("services/snapflow-neo-dev-webhook/src", hermes)
+        self.assertNotIn("docker ", hermes)
+        self.assertNotIn("/opt/data", dockge)
+        self.assertIn("/mnt/marder/docker/dockge/stacks/snapflow-neo-dev-webhook", dockge)
+        self.assertNotIn("docker", controller)
+        self.assertFalse((deploy / "compose.neo-dev-repair.yaml").exists())
+        self.assertFalse((deploy / "install.sh").exists())
 
 
 if __name__ == "__main__":

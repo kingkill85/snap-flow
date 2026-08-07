@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import hmac
 import json
 import os
@@ -503,7 +504,8 @@ class Receiver:
 
 class TaskRunner:
     def __init__(self, script_path: str | None = None, python: str = "python3",
-                 max_runtime: str = "2h", policy_path: str | None = None):
+                 max_runtime: str = "2h", policy_path: str | None = None,
+                 capability_broker=None):
         if not max_runtime or max_runtime.startswith("-"):
             raise ValueError("max_runtime must be a bounded task.py duration")
         self.script = script_path or os.environ.get("NEO_DEV_TASK_RUNNER")
@@ -513,6 +515,7 @@ class TaskRunner:
         self.workspace = "dir:/opt/data/profiles/dev"
         self.max_runtime, self.validated = max_runtime, False
         self.policy_path = policy_path or os.environ.get("NEO_DEV_CARD_POLICY")
+        self.capability_broker = capability_broker
 
     def _validate_contract(self):
         if self.validated:
@@ -526,9 +529,23 @@ class TaskRunner:
             raise RuntimeError("task.py contract is incompatible")
         if self.policy_path:
             policy = json.loads(pathlib.Path(self.policy_path).read_text(encoding="utf-8"))
-            capabilities = policy.get("project_command_capabilities", {})
-            if capabilities.get("allow") != []:
-                raise RuntimeError("card policy must deny every project command capability")
+            capabilities = policy.get("dispatcher_tasks") or policy.get(
+                "project_command_capabilities", {})
+            allowed = capabilities.get("allow")
+            if allowed not in ([], ["/opt/data/bin/snapflow-neo-dev-transition"]):
+                raise RuntimeError("card policy permits an unsafe task capability")
+            denied = set(capabilities.get("deny", []))
+            if allowed and not {"terminal", "code_execution", "shell", "ssh", "git"} <= denied:
+                raise RuntimeError("card policy does not disable general execution tools")
+            if allowed:
+                enforcement = pathlib.Path(self.policy_path + ".enforced")
+                attestation = json.loads(enforcement.read_text(encoding="utf-8"))
+                expected_hash = hashlib.sha256(pathlib.Path(self.policy_path).read_bytes()).hexdigest()
+                if (attestation.get("policy_sha256") != expected_hash
+                        or set(attestation.get("disabled", [])) != denied):
+                    raise RuntimeError("Hermes effective task-tool policy is not attested")
+            from .hermes_transition import CapabilityBroker
+            self.capability_broker = self.capability_broker or CapabilityBroker()
         self.validated = True
 
     def create(self, work: dict, idempotency_key: str) -> str:
@@ -551,6 +568,9 @@ class TaskRunner:
         if phase_command == "approve-spec":
             phase = "implementation"
         operation = "start" if work.get("task_id") is None else "resume"
+        capability = (self.capability_broker.issue(
+            idempotency_key, execution_id, work["issue_number"], phase,
+        ) if self.capability_broker else "unavailable-outside-installed-Hermes-profile")
         description = f"""SnapFlow governed Issue workflow (self-contained controller task)
 Repository: {REPOSITORY}
 Issue: #{work['issue_number']}
@@ -558,9 +578,11 @@ Durable workflow identity: {idempotency_key}
 Runnable wakeup execution identity: {execution_id}
 Wakeups included: {len(work['wakeups'])}; latest event/action/command: {latest.get('event')}/{latest.get('action')}/{command or 'neo-dev-label'}
 Current phase: {phase}
+Structured controller context: {json.dumps(work.get('controller_context', {}), sort_keys=True, separators=(',', ':'))}
 Controller workspace: dir:/opt/data/profiles/dev (read /opt/data/profiles/dev/projects/snapflow.md before any action).
 Controller dispatch operation already performed by the consumer: {operation}. This card has no project-command capability.
-Use only the structured controller GitHub integration to read the live Issue and report reasoning. Never run shell, SSH, tmux, Git, Codex, OpenSpec, package, lint, test, or project-controller commands directly.
+Allowed decision tool: `/opt/data/bin/snapflow-neo-dev-transition --execution-id {execution_id} --capability {capability} --decision <proceed|block> --summary <bounded-summary>`.
+Use only structured lifecycle context and that one-use decision tool. Terminal, code execution, shell, SSH, Git, filesystem writes, and project-controller commands are unavailable to this task.
 Initial specification phase must create ONLY OpenSpec proposal/design/delta specs/tasks, an issue branch/worktree, a Draft PR, immutable full-SHA artifact links, and request exactly `/approve-spec <full-sha>`; implementation is forbidden.
 Implementation requires the matching trusted full-SHA approval. Review requires independent code/test review and UI review when applicable. Acceptance does not authorize merge. Archive phase must sync delta specs, validate and archive before requesting `/merge`. Merge-finalization requires separately verified merge authorization, then merge, close, and clean up the issue worker/worktree/branch state.
 Heartbeats are liveness only and never progress. Expected evidence is structured controller state plus repository artifacts and GitHub verification. If any prerequisite is absent or ambiguous, stop immediately and publish one concrete blocker; do not heartbeat-wait or claim completion. Reuse this task, idempotency identity, tmux window, and Codex session for every continuation; never create a duplicate worker/session."""
@@ -590,9 +612,13 @@ class ProjectFinalizer:
         self.adapter = adapter
 
     def verify(self, repository: str, issue_number: int, idempotency_key: str) -> bool | None:
+        evidence = collect_host_evidence(
+            self.adapter, repository, issue_number, idempotency_key,
+        )
         result = subprocess.run(
             [self.adapter, "finalize", "--repository", repository, "--issue-number",
-             str(issue_number), "--idempotency-key", idempotency_key],
+             str(issue_number), "--idempotency-key", idempotency_key,
+             "--evidence", evidence],
             check=False, capture_output=True, text=True, timeout=90, shell=False,
         )
         if result.returncode != 0:
@@ -615,26 +641,82 @@ class ProjectDispatcher:
         self.adapter = adapter
 
     def dispatch(self, operation: str, repository: str, issue_number: int,
-                 idempotency_key: str) -> None:
+                 idempotency_key: str) -> dict:
         if operation not in {"start", "resume"}:
             raise ValueError("unsupported project dispatch operation")
-        subprocess.run(
+        evidence_args = []
+        evidence_document = None
+        if operation == "resume":
+            encoded = collect_host_evidence(
+                self.adapter, repository, issue_number, idempotency_key,
+            )
+            evidence_args = ["--evidence", encoded]
+            evidence_document = json.loads(base64.b64decode(encoded))
+        result = subprocess.run(
             [self.adapter, operation, "--repository", repository, "--issue-number",
-             str(issue_number), "--idempotency-key", idempotency_key],
+             str(issue_number), "--idempotency-key", idempotency_key, *evidence_args],
             check=True, capture_output=True, text=True, timeout=90, shell=False,
         )
+        controller = json.loads(result.stdout)
+        return {"controller": controller, "github": evidence_document}
+
+    def attest(self, repository: str, issue_number: int, idempotency_key: str) -> None:
+        evidence = collect_host_evidence(self.adapter, repository, issue_number, idempotency_key)
+        subprocess.run(
+            [self.adapter, "attest", "--repository", repository, "--issue-number",
+             str(issue_number), "--idempotency-key", idempotency_key,
+             "--evidence", evidence],
+            check=True, capture_output=True, text=True, timeout=90, shell=False,
+        )
+
+
+def collect_host_evidence(adapter: str, repository: str, issue_number: int,
+                          idempotency_key: str) -> str:
+    status = subprocess.run(
+        [adapter, "status", "--repository", repository, "--issue-number",
+         str(issue_number), "--idempotency-key", idempotency_key],
+        check=True, capture_output=True, text=True, timeout=90, shell=False,
+    )
+    document = json.loads(status.stdout)
+    execution = document.get("execution", {})
+    lifecycle_state = execution.get("lifecycle_state")
+    resolution_id = document.get("resolution_id")
+    branch = ("chore/issue-77-openspec-workflow" if issue_number == 77
+              else f"feature/issue-{issue_number}")
+    from .project_control import SubprocessExecutor
+    from .verification import HostGitHubEvidenceCollector
+    evidence = HostGitHubEvidenceCollector(SubprocessExecutor()).collect_bound(
+        repository, issue_number, branch, resolution_id, lifecycle_state, idempotency_key,
+    )
+    encoded = base64.b64encode(json.dumps(
+        evidence, sort_keys=True, separators=(",", ":"),
+    ).encode()).decode()
+    return encoded
 
 
 class Consumer:
     def __init__(self, store: Store, runner: TaskRunner, github: PublicGitHubAdapter,
                  lease_seconds: int = 300, max_attempts: int = 5, finalizer=None,
-                 dispatcher=None):
+                 dispatcher=None, capability_broker=None):
         self.store, self.runner, self.github = store, runner, github
         self.lease_seconds, self.max_attempts = lease_seconds, max_attempts
         self.finalizer = finalizer
         self.dispatcher = dispatcher
+        self.capability_broker = capability_broker
 
     def run_one(self, now=None) -> bool:
+        if self.capability_broker is not None and self.dispatcher is not None:
+            decision = self.capability_broker.claim_decision()
+            if decision is not None:
+                path, record = decision
+                if record.get("decision") != "proceed":
+                    self.capability_broker.finish_decision(path, record)
+                    return False
+                self.dispatcher.attest(
+                    REPOSITORY, record["issue_number"], record["workflow_id"],
+                )
+                self.capability_broker.finish_decision(path, record)
+                return True
         finalization = self.store.claim_finalization(self.max_attempts)
         if finalization is not None:
             verified = False
@@ -660,7 +742,7 @@ class Consumer:
             if not live.get("open") or live.get("is_pr") or "neo-dev" not in live.get("labels", []):
                 raise RuntimeError("GitHub issue is no longer eligible")
             if self.dispatcher is not None:
-                self.dispatcher.dispatch(
+                work["controller_context"] = self.dispatcher.dispatch(
                     "start" if work.get("task_id") is None else "resume",
                     work["repository"], work["issue_number"], work["idempotency_key"],
                 )

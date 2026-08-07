@@ -174,10 +174,16 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
 
     target = store.load(idempotency_key).target
     lifecycle = store.load(idempotency_key)
-    trusted_verifier = verifier or RepositoryGitHubVerifier(SubprocessExecutor())
-    if operation == "resume" and lifecycle.lifecycle_state in {
-        "specification_ready", "implementation_verified", "archive_ci_verified",
-    }:
+    trusted_verifier = verifier or RepositoryGitHubVerifier(
+        SubprocessExecutor(), lifecycle.github_evidence,
+    )
+    if operation == "resume":
+        if lifecycle.github_evidence is None:
+            raise RuntimeError("resume requires fresh host-side GitHub evidence")
+        if lifecycle.lifecycle_state not in {
+            "specification_ready", "implementation_verified", "archive_ci_verified",
+        }:
+            raise RuntimeError("continuation is not at a command-authorizable lifecycle gate")
         authorization = trusted_verifier.authorize(target, lifecycle)
         if not authorization.verified or authorization.evidence is None:
             raise RuntimeError(authorization.blocker or "trusted lifecycle command is unavailable")
@@ -233,18 +239,8 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
                 except (json.JSONDecodeError, ValueError):
                     completion = {"semantic_outcome": "invalid", "resumable": True,
                                   "summary": "Invalid structured completion"}
-                lifecycle = store.load(idempotency_key)
-                verification = trusted_verifier.verify_next(target, lifecycle)
-                if not verification.verified:
-                    completion = {"semantic_outcome": "blocked", "resumable": True,
-                                  "summary": verification.blocker or "controller verification failed"}
-                    exit_code = 1
-                else:
-                    controller.advance_lifecycle(idempotency_key, **verification.evidence)
-                    if verification.evidence["lifecycle_state"] == "merged_closed":
-                        completion["semantic_outcome"] = "success"
-                    elif completion["semantic_outcome"] == "success":
-                        completion["semantic_outcome"] = "correctable"
+                if completion["semantic_outcome"] == "success":
+                    completion["semantic_outcome"] = "correctable"
                 controller.observe_terminal(
                     idempotency_key, exit_code, completion["semantic_outcome"],
                     completion["resumable"],

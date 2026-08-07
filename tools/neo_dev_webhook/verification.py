@@ -30,11 +30,81 @@ class LifecycleTransition:
     blocker: str | None = None
 
 
-class RepositoryGitHubVerifier:
-    """Controller-owned verification; worker JSON is never evidence."""
+def validate_host_evidence(evidence: dict, state: WorkState, workflow_id: str | None = None) -> None:
+    required = {"version", "workflow_id", "repository", "issue_number", "resolution_id",
+                "expected_state", "observed_at", "issue", "pr", "checks"}
+    if not isinstance(evidence, dict) or set(evidence) != required:
+        raise ValueError("host GitHub evidence schema is invalid")
+    if (evidence["version"] != 1 or evidence["repository"] != state.target.repository
+            or evidence["issue_number"] != state.target.issue_number
+            or evidence["resolution_id"] != state.target.resolution_id
+            or (workflow_id is not None and evidence["workflow_id"] != workflow_id)
+            or evidence["expected_state"] != state.lifecycle_state):
+        raise ValueError("host GitHub evidence is not bound to current controller state")
+    observed = datetime.fromisoformat(evidence["observed_at"].replace("Z", "+00:00"))
+    age = abs((datetime.now(timezone.utc) - observed).total_seconds())
+    if age > 300:
+        raise ValueError("host GitHub evidence is stale")
+    if not isinstance(evidence["issue"], dict) or not isinstance(evidence["pr"], dict):
+        raise ValueError("host GitHub evidence payload is invalid")
+
+
+class HostGitHubEvidenceCollector:
+    """Hermes-side fixed-gh collector; controller containers never need GitHub credentials."""
 
     def __init__(self, executor: ProcessExecutor):
         self.executor = executor
+
+    def collect(self, state: WorkState) -> dict:
+        target = state.target
+        raise RuntimeError("collect_bound requires the explicit workflow identity")
+
+    def collect_bound(self, repository: str, issue_number: int, branch: str,
+                      resolution_id: str, expected_state: str, workflow_id: str) -> dict:
+        gh = ("/usr/bin/env", "GH_CONFIG_DIR=/opt/data/home/.config/gh", "/opt/data/bin/gh")
+        issue = json.loads(self.executor.run((
+            *gh, "issue", "view", str(issue_number), "--repo",
+            repository, "--json", "state,labels,comments",
+        ), timeout=20.0))
+        issue = {
+            "state": issue.get("state"), "labels": issue.get("labels", []),
+            "comments": [comment for comment in issue.get("comments", [])
+                         if isinstance(comment, dict)
+                         and comment.get("author", {}).get("login") == "kingkill85"
+                         and (APPROVAL.fullmatch(comment.get("body", "").strip())
+                              or comment.get("body", "").strip() in {"/accept", "/merge"})],
+        }
+        prs = json.loads(self.executor.run((
+            *gh, "pr", "list", "--repo", repository, "--head",
+            branch, "--state", "all", "--json",
+            "number,state,isDraft,headRefOid,mergeCommit,reviewDecision",
+        ), timeout=20.0))
+        if not isinstance(prs, list) or len(prs) != 1:
+            raise RuntimeError("expected exactly one governed PR")
+        checks = []
+        if expected_state != "label":
+            checks = json.loads(self.executor.run((
+                *gh, "pr", "checks", str(prs[0]["number"]), "--repo",
+                repository, "--json", "state",
+            ), timeout=20.0))
+        return {
+            "version": 1, "workflow_id": workflow_id, "repository": repository,
+            "issue_number": issue_number, "resolution_id": resolution_id,
+            "expected_state": expected_state,
+            "observed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "issue": issue, "pr": prs[0], "checks": checks,
+        }
+
+
+class RepositoryGitHubVerifier:
+    """Controller-owned verification; worker JSON is never evidence."""
+
+    def __init__(self, executor: ProcessExecutor, github_evidence: dict | None = None):
+        self.executor = executor
+        if github_evidence is None and all(hasattr(executor, name) for name in ("issue", "pr", "checks")):
+            github_evidence = {"issue": executor.issue, "pr": executor.pr,
+                               "checks": executor.checks}
+        self.github_evidence = github_evidence
 
     def _run(self, *argv: str, timeout: float = 20.0) -> str:
         return self.executor.run(argv, timeout=timeout).strip()
@@ -57,18 +127,11 @@ class RepositoryGitHubVerifier:
             raise RuntimeError("repository HEAD is not a full commit SHA")
         if self._run("git", "-C", target.worktree, "status", "--porcelain"):
             raise RuntimeError("repository worktree is not clean")
-        issue = json.loads(self._run(
-            "/usr/local/bin/gh", "issue", "view", str(target.issue_number), "--repo",
-            target.repository, "--json", "state,labels,comments",
-        ))
-        prs = json.loads(self._run(
-            "/usr/local/bin/gh", "pr", "list", "--repo", target.repository, "--head",
-            target.branch, "--state", "all", "--json",
-            "number,state,isDraft,headRefOid,mergeCommit,reviewDecision",
-        ))
-        if not isinstance(prs, list) or len(prs) != 1:
-            raise RuntimeError("expected exactly one Issue Draft PR")
-        return head, issue, prs[0], self._comments(issue)
+        if self.github_evidence is None:
+            raise RuntimeError("fresh host-side GitHub evidence is required")
+        issue = self.github_evidence["issue"]
+        pr = self.github_evidence["pr"]
+        return head, issue, pr, self._comments(issue)
 
     @staticmethod
     def _command_after(comments: list[dict], pattern: re.Pattern | str,
@@ -193,10 +256,7 @@ class RepositoryGitHubVerifier:
                 if phase == "review":
                     if not any((root / "docs").glob("*evidence*.md")):
                         return VerificationResult(False, "review evidence is missing")
-                    checks = json.loads(self._run(
-                        "/usr/local/bin/gh", "pr", "checks", str(pr["number"]), "--repo",
-                        target.repository, "--json", "state",
-                    ))
+                    checks = self.github_evidence["checks"]
                     if not checks or any(item.get("state") != "SUCCESS" for item in checks):
                         return VerificationResult(False, "review CI evidence is not successful")
             elif phase == "archive":
@@ -204,10 +264,7 @@ class RepositoryGitHubVerifier:
                     return VerificationResult(False, "archive requires trusted /accept")
                 if active:
                     return VerificationResult(False, "OpenSpec change is not archived")
-                checks = json.loads(self._run(
-                    "/usr/local/bin/gh", "pr", "checks", str(pr["number"]), "--repo",
-                    target.repository, "--json", "state",
-                ))
+                checks = self.github_evidence["checks"]
                 if not checks or any(item.get("state") != "SUCCESS" for item in checks):
                     return VerificationResult(False, "exact-SHA CI checks are not successful")
             elif phase == "merge-finalization":

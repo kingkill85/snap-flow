@@ -9,7 +9,7 @@ The operator authorized an emergency repository-only repair of the mechanism tha
 - Generic positive Issue numbers derive validated issue branch/worktree/tmux coordinates; Issue #77 remains an explicit closed-bootstrap override.
 - Start verifies the root-owned repository path, common Git directory and normalized origin before fetching `origin/main`, then creates or verifies the issue worktree/branch and sole Codex window.
 - Every webhook delivery gets a deterministic Kanban execution ID while retaining one controller lifecycle and Codex session. Successful handoffs reset failure retries; project concurrency remains one until independently verified finalization.
-- The host adapter is fixed to dedicated `neo-controller@192.168.178.4:2222`, `/opt/data/credentials/snapflow-dev-client`, and `/opt/data/tailscale_known_hosts`. It ignores user/global SSH configuration, uses `shell=False`, and can invoke only the installed controller grammar.
+- The host adapter is fixed to dedicated `neo-controller@192.168.178.4:2222`, `/opt/data/credentials/snapflow-controller-client`, and `/opt/data/tailscale_known_hosts`. It accepts the actual non-symlink `hermes:hermes 0600` private-key boundary, ignores uncontrolled SSH configuration, and uses `shell=False`.
 - Only locked `neo-controller` has lifecycle sudo rights. Controller code is root-owned, trusted state is `neo-controller:neo-controller 0700`, and Codex remains `dev` without lifecycle sudo or state access.
 - The controller owns the legal lifecycle chain and immutable SHA/timestamp evidence. Worker-selected phases, early commands, spec commits containing runtime paths, and gate-order bypasses are rejected.
 - Cards have no project-command capability; the consumer performs narrow lifecycle dispatch before creating each deterministic reasoning card.
@@ -21,9 +21,9 @@ The operator authorized an emergency repository-only repair of the mechanism tha
 
 ## Verification
 
-- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -p 'test_*.py'`: **110 passed**.
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -p 'test_*.py'`: **115 passed**.
 - `python3 -m py_compile tools/neo_dev_webhook/*.py tools/neo_dev_webhook/tests/*.py tools/neo_dev_webhook/tests/fixtures/*.py`: **passed**.
-- `bash -n tools/neo_dev_webhook/deploy/install.sh`: **passed**.
+- `bash -n tools/neo_dev_webhook/deploy/*.sh`: **passed**.
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict`: **passed**.
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate --specs --strict`: **2 passed, 0 failed**.
 - `backend/deno lint`: **passed**.
@@ -34,10 +34,22 @@ The operator authorized an emergency repository-only repair of the mechanism tha
 
 No UI behavior changed, so Playwright review is not applicable. The real `/opt/data/scripts/neo-dev/task.py` and live `/opt/data/services/snapflow-neo-dev-webhook` mount are not available in this worktree container. The integration fixture reproduces the verified terminal-card idempotency semantics, but no live-helper or production E2E claim is made. No deployment, live Issue trigger, merge, or secret change was performed.
 
+## Operational prerequisites not performed
+
+- Provision the dedicated `/opt/data/credentials/snapflow-controller-client` identity and forced `neo-controller` public-key authorization through the separately authorized split installer. The existing maintenance `dev` identity is not a workflow fallback.
+- Configure Hermes' effective dispatcher task toolset to the staged policy and create the matching `.enforced` attestation only after verifying that terminal, code execution, shell, SSH, Git and filesystem writes are absent. Task creation fails closed without that attestation.
+- From Dockge control, compare the source Compose copy with the active stack and run its scope-local verification before any authorized recreation. No Compose override is needed.
+
 ## Deployment artifacts (not applied)
 
-- `tools/neo_dev_webhook/deploy/compose.neo-dev-repair.yaml`
-- `tools/neo_dev_webhook/deploy/install.sh`
+- `tools/neo_dev_webhook/deploy/hermes-stage.sh`
+- `tools/neo_dev_webhook/deploy/hermes-controller-install.sh`
+- `tools/neo_dev_webhook/deploy/controller-install.sh`
+- `tools/neo_dev_webhook/deploy/dockge-activate.sh`
+- `tools/neo_dev_webhook/deploy/verify_live_compose.py`
+- `tools/neo_dev_webhook/deploy/hermes-task-tools.json`
+- `tools/neo_dev_webhook/hermes_transition.py`
+- `tools/neo_dev_webhook/controller/snapflow-neo-dev-transition`
 - `tools/neo_dev_webhook/deploy/profile.managed-block.md`
 - `tools/neo_dev_webhook/deploy/README.md`
 - `tools/neo_dev_webhook/deployment.py`

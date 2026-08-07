@@ -7,17 +7,18 @@ from typing import Callable, Sequence
 REMOTE_HOST = "192.168.178.4"
 REMOTE_PORT = "2222"
 REMOTE_USER = "neo-controller"
-IDENTITY_FILE = "/opt/data/credentials/snapflow-dev-client"
+IDENTITY_FILE = "/opt/data/credentials/snapflow-controller-client"
 KNOWN_HOSTS_FILE = "/opt/data/tailscale_known_hosts"
 REMOTE_CONTROLLER = "/usr/local/bin/neo-dev-project-control"
 
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="neo-dev-project-control", allow_abbrev=False)
-    result.add_argument("operation", choices=("preflight", "start", "resume", "finalize"))
+    result.add_argument("operation", choices=("status", "attest", "preflight", "start", "resume", "finalize"))
     result.add_argument("--repository", required=True, choices=("kingkill85/snap-flow",))
     result.add_argument("--issue-number", required=True, type=int)
     result.add_argument("--idempotency-key", required=True)
+    result.add_argument("--evidence")
     return result
 
 
@@ -26,7 +27,7 @@ def remote_argv(arguments: argparse.Namespace) -> tuple[str, ...]:
 
     validate_issue_number(arguments.issue_number)
     validate_idempotency_key(arguments.idempotency_key)
-    return (
+    argv = (
         "/usr/bin/ssh", "-F", "/dev/null", "-T", "-p", REMOTE_PORT,
         "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
         "-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={KNOWN_HOSTS_FILE}",
@@ -35,6 +36,7 @@ def remote_argv(arguments: argparse.Namespace) -> tuple[str, ...]:
         arguments.operation, "--repository", arguments.repository, "--issue-number",
         str(arguments.issue_number), "--idempotency-key", arguments.idempotency_key,
     )
+    return argv + (("--evidence", arguments.evidence) if arguments.evidence else ())
 
 
 def main(argv: Sequence[str] | None = None,
