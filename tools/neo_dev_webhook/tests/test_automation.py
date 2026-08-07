@@ -25,6 +25,8 @@ from neo_dev_webhook import server as server_module
 
 REPOSITORY = "kingkill85/snap-flow"
 ACTOR = {"id": 11455872, "login": "kingkill85"}
+TASK_KEY = "12345678-1234-4abc-8def-123456789abc"
+WAKEUP_KEY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 
 def initialize_store(path):
@@ -61,6 +63,18 @@ class FakeRunner:
         if len(self.calls) <= self.failures:
             raise RuntimeError("simulated crash boundary")
         return f"task-{idempotency_key}"
+
+
+class FakeFinalizer:
+    def __init__(self, verified):
+        self.verified = verified
+        self.calls = []
+
+    def verify(self, repository, issue_number, idempotency_key):
+        self.calls.append((repository, issue_number, idempotency_key))
+        if isinstance(self.verified, list):
+            return self.verified.pop(0)
+        return self.verified
 
 
 def payload(event="issues", action=None, body="human update", **changes):
@@ -137,6 +151,13 @@ class AutomationTest(unittest.TestCase):
         self.receiver = Receiver("secret", self.store, self.github)
         self.assertEqual(self.send(delivery=delivery), (200, "duplicate"))
         self.assertEqual(self.store.count("wakeups"), 1)
+
+    def test_approval_command_and_full_sha_are_persisted_for_phase_continuation(self):
+        command = "/approve-spec " + "a" * 40
+        data = payload(event="issue_comment", body=command)
+        self.assertEqual(self.send(data, event="issue_comment"), (202, "accepted"))
+        claimed = self.store.claim()
+        self.assertEqual(claimed["wakeups"][0]["command"], command)
 
     def test_raw_byte_hmac_and_canonical_delivery_uuid(self):
         raw, headers = request("secret", payload())
@@ -247,7 +268,7 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(work["attempts"], 1)
         self.assertTrue(consumer.run_one(now=102))
         work = self.store.get_active(REPOSITORY, 77)
-        self.assertEqual(work["status"], "completed")
+        self.assertEqual(work["status"], "waiting")
         self.assertEqual(work["task_id"], f"task-{first_headers['X-GitHub-Delivery']}")
         self.assertEqual([call[1] for call in runner.calls], [first_headers["X-GitHub-Delivery"]] * 2)
 
@@ -260,7 +281,7 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(recovered["id"], claimed["id"])
         self.assertEqual(recovered["attempts"], 2)
 
-    def test_late_wakeup_after_claim_becomes_successor_work(self):
+    def test_late_wakeup_after_claim_continues_same_persistent_work(self):
         first_delivery = str(uuid.uuid4())
         late_delivery = str(uuid.uuid4())
         self.send(delivery=first_delivery)
@@ -271,9 +292,10 @@ class AutomationTest(unittest.TestCase):
 
         successor = self.store.claim(now=12, lease_seconds=30, max_attempts=5)
         self.assertIsNotNone(successor)
-        self.assertNotEqual(successor["id"], claimed["id"])
-        self.assertEqual(successor["idempotency_key"], late_delivery)
-        self.assertEqual([item["delivery_id"] for item in successor["wakeups"]], [late_delivery])
+        self.assertEqual(successor["id"], claimed["id"])
+        self.assertEqual(successor["idempotency_key"], first_delivery)
+        self.assertEqual([item["delivery_id"] for item in successor["wakeups"]],
+                         [first_delivery, late_delivery])
         live_count = self.store.db.execute(
             "SELECT count(*) FROM active_work WHERE repository=? AND issue_number=? "
             "AND status IN ('queued','processing')", (REPOSITORY, 77),
@@ -335,6 +357,83 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(self.store.count("active_work"), 1)
         self.assertEqual(self.store.count("wakeups"), 8)
 
+    def test_project_concurrency_one_queues_later_issue_until_trusted_closure(self):
+        first = str(uuid.uuid4())
+        second = str(uuid.uuid4())
+        for issue_number, delivery in ((13, first), (42, second)):
+            self.store.accept({"delivery_id": delivery, "event": "issues", "action": "labeled",
+                               "repository": REPOSITORY, "issue_number": issue_number,
+                               "comment_id": None, "command": None})
+        claimed = self.store.claim(now=10)
+        self.assertEqual(claimed["issue_number"], 13)
+        self.store.complete(claimed["id"], claimed["claim_token"], "task-13", now=11)
+        self.assertIsNone(self.store.claim(now=12))
+        self.assertEqual(self.store.request_finalization(
+            REPOSITORY, 13, str(uuid.uuid4())), "finalization_pending")
+        finalization = self.store.claim_finalization()
+        self.store.finish_finalization(finalization["id"], True, None)
+        self.assertEqual(self.store.claim(now=13)["issue_number"], 42)
+
+    def test_manual_closure_cannot_finalize_without_controller_merge_verification(self):
+        lifecycle = str(uuid.uuid4())
+        self.store.accept({"delivery_id": lifecycle, "event": "issues", "action": "labeled",
+                           "repository": REPOSITORY, "issue_number": 13,
+                           "comment_id": None, "command": None})
+        work = self.store.claim(now=1)
+        self.store.complete(work["id"], work["claim_token"], "phase-task", now=2)
+        closed = payload(action="closed", issue={
+            "number": 13, "state": "closed", "labels": [{"name": "neo-dev"}],
+        })
+        receiver = Receiver("secret", self.store, self.github)
+        raw, headers = request("secret", closed)
+        self.assertEqual(receiver.handle(headers, raw), (202, "finalization_pending"))
+        consumer = Consumer(self.store, FakeRunner(), self.github, max_attempts=2,
+                            finalizer=FakeFinalizer(False))
+        self.assertFalse(consumer.run_one())
+        self.assertFalse(consumer.run_one())
+        self.assertEqual(self.store.get_active(REPOSITORY, 13)["status"], "waiting")
+        request_state = self.store.db.execute(
+            "SELECT status,last_error FROM finalization_requests"
+        ).fetchone()
+        self.assertEqual(request_state["status"], "blocked")
+        self.assertIn("rejected closure", request_state["last_error"])
+
+    def test_closure_before_controller_state_backs_off_then_finalizes(self):
+        lifecycle = str(uuid.uuid4())
+        self.store.accept({"delivery_id": lifecycle, "event": "issues", "action": "labeled",
+                           "repository": REPOSITORY, "issue_number": 13,
+                           "comment_id": None, "command": None})
+        work = self.store.claim(now=1)
+        self.store.complete(work["id"], work["claim_token"], "phase-task", now=2)
+        self.store.request_finalization(REPOSITORY, 13, str(uuid.uuid4()))
+        finalizer = FakeFinalizer([None, True])
+        consumer = Consumer(self.store, FakeRunner(), self.github, max_attempts=2,
+                            finalizer=finalizer)
+        self.assertFalse(consumer.run_one())
+        pending = self.store.db.execute("SELECT * FROM finalization_requests").fetchone()
+        self.assertEqual(pending["status"], "pending")
+        self.assertEqual(pending["attempts"], 0)
+        self.assertIsNone(self.store.claim_finalization(now=pending["next_attempt_at"] - 1))
+        claimed = self.store.claim_finalization(now=pending["next_attempt_at"])
+        self.store.finish_finalization(claimed["id"], finalizer.verify(
+            claimed["repository"], claimed["issue_number"], claimed["idempotency_key"]
+        ), None, now=pending["next_attempt_at"])
+        self.assertEqual(self.store.get_active(REPOSITORY, 13)["status"], "completed")
+
+    def test_successful_phase_handoffs_reset_retry_budget_beyond_six_wakeups(self):
+        lifecycle = str(uuid.uuid4())
+        for phase in range(8):
+            delivery = lifecycle if phase == 0 else str(uuid.uuid4())
+            self.store.accept({"delivery_id": delivery, "event": "issue_comment",
+                               "action": "created", "repository": REPOSITORY,
+                               "issue_number": 13, "comment_id": phase, "command": "finding"})
+            work = self.store.claim(now=100 + phase, max_attempts=5)
+            self.assertIsNotNone(work)
+            self.store.complete(work["id"], work["claim_token"], "same-controller", now=100 + phase)
+            persisted = self.store.get_active(REPOSITORY, 13)
+            self.assertEqual(persisted["attempts"], 0)
+            self.assertEqual(persisted["idempotency_key"], lifecycle)
+
     def test_simultaneous_process_initialization_of_fresh_database(self):
         with tempfile.TemporaryDirectory() as directory:
             database = os.path.join(directory, "fresh.sqlite3")
@@ -381,6 +480,25 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(runner.calls, [])
         self.assertEqual(self.github.calls[-1], (REPOSITORY, 77))
 
+    def test_pending_attestation_does_not_crash_or_consume_decision(self):
+        broker = mock.Mock()
+        path = mock.sentinel.path
+        record = {
+            "decision": "proceed", "issue_number": 13,
+            "workflow_id": TASK_KEY,
+        }
+        broker.claim_decision.return_value = (path, record)
+        dispatcher = mock.Mock()
+        dispatcher.attest.side_effect = RuntimeError("governed PR not available yet")
+        consumer = Consumer(
+            self.store, FakeRunner(), self.github,
+            dispatcher=dispatcher, capability_broker=broker,
+        )
+
+        self.assertFalse(consumer.run_one())
+        dispatcher.attest.assert_called_once_with(REPOSITORY, 13, TASK_KEY)
+        broker.finish_decision.assert_not_called()
+
     def test_failures_are_bounded_and_dead_lettered(self):
         self.send()
         runner = FakeRunner(failures=10)
@@ -396,30 +514,26 @@ class AutomationTest(unittest.TestCase):
         completed = mock.Mock(stdout='{"task_id":"kanban-77","durable":true}\n')
         runner = TaskRunner(script_path="/test/task.py")
         with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
-            task_id = runner.create({"issue_number": 77, "wakeups": [{}]}, "delivery-key")
+            task_id = runner.create({"issue_number": 77, "wakeups": [{"delivery_id": WAKEUP_KEY}]}, TASK_KEY)
         self.assertEqual(task_id, "kanban-77")
         self.assertEqual(run.call_args_list[0].args[0], ["python3", "/test/task.py", "--help"])
         argv = run.call_args_list[1].args[0]
-        self.assertEqual(argv, [
-            "python3", "/test/task.py", "SnapFlow issue #77",
-            "--body", (
-                "Process SnapFlow issue #77 with 1 durable wakeup(s). This card is "
-                "controller-only; its workspace is not an implementation target. "
-                "Before project work, invoke neo-dev-project-control with only "
-                "preflight/start/resume, --repository kingkill85/snap-flow, "
-                "--issue-number 77, and --idempotency-key delivery-key. Do not run "
-                "project, shell, SSH, tmux, Git, Codex, OpenSpec, package, lint, or "
-                "test commands directly. "
-                "Use the controller's authenticated /opt/data/bin/gh for GitHub "
-                "reads and writes when required. Inspect the latest Issue comments "
-                "before acting and preserve every approval gate."
-            ),
-            "--max-runtime", "2h",
-            "--workspace", "dir:/opt/data/profiles/dev",
-            "--idempotency-key", "delivery-key",
-        ])
+        self.assertEqual(argv[:4], ["python3", "/test/task.py", "SnapFlow issue #77", "--body"])
+        body = argv[4]
+        self.assertIn("Repository: kingkill85/snap-flow", body)
+        self.assertIn("Issue: #77", body)
+        self.assertIn("Current phase: specification", body)
+        self.assertIn("/opt/data/profiles/dev/projects/snapflow.md", body)
+        self.assertIn("ONLY OpenSpec proposal/design/delta specs/tasks", body)
+        self.assertIn("/approve-spec <full-sha>", body)
+        self.assertIn("Heartbeats are liveness only", body)
+        self.assertIn(f"Durable workflow identity: {TASK_KEY}", body)
+        self.assertIn("no project-command capability", body)
+        self.assertEqual(argv[-6:], ["--max-runtime", "2h", "--workspace",
+                                     "dir:/opt/data/profiles/dev", "--idempotency-key",
+                                     str(uuid.uuid5(uuid.UUID(TASK_KEY), str(uuid.UUID(WAKEUP_KEY))))])
         self.assertNotIn("shell", run.call_args.kwargs)
-        self.assertIn("neo-dev-project-control", argv[argv.index("--body") + 1])
+        self.assertNotIn("/opt/data/bin/neo-dev-project-control", argv[argv.index("--body") + 1])
         self.assertNotIn("ssh:snapflow-dev", argv)
 
     def test_controller_card_is_fixed_and_is_not_the_implementation_target(self):
@@ -431,7 +545,7 @@ class AutomationTest(unittest.TestCase):
         completed = mock.Mock(stdout='{"task_id":"kanban-77","durable":true}\n')
         runner = TaskRunner(script_path="/test/task.py", max_runtime="45m")
         with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
-            runner.create({"issue_number": 77, "wakeups": []}, "delivery-key")
+            runner.create({"issue_number": 77, "wakeups": [{"delivery_id": WAKEUP_KEY}]}, TASK_KEY)
         self.assertIn("45m", run.call_args_list[1].args[0])
 
     def test_task_runner_rejects_empty_or_nonstring_idempotency_keys_before_execution(self):
@@ -440,7 +554,7 @@ class AutomationTest(unittest.TestCase):
                 runner = TaskRunner(script_path="/test/task.py")
                 with mock.patch("subprocess.run") as run:
                     with self.assertRaises(ValueError):
-                        runner.create({"issue_number": 77, "wakeups": []}, key)
+                        runner.create({"issue_number": 77, "wakeups": [{"delivery_id": WAKEUP_KEY}]}, key)
                 run.assert_not_called()
 
     def test_task_runner_rejects_ambiguous_or_unrelated_json_ids(self):
@@ -461,13 +575,13 @@ class AutomationTest(unittest.TestCase):
                 runner = TaskRunner(script_path="/test/task.py")
                 with mock.patch("subprocess.run", side_effect=[help_result, mock.Mock(stdout=output)]):
                     with self.assertRaises(RuntimeError):
-                        runner.create({"issue_number": 77, "wakeups": []}, "delivery-key")
+                        runner.create({"issue_number": 77, "wakeups": [{"delivery_id": WAKEUP_KEY}]}, TASK_KEY)
 
     def test_task_runner_rejects_incompatible_real_help_shape(self):
         runner = TaskRunner(script_path="/test/task.py")
         with mock.patch("subprocess.run", return_value=mock.Mock(stdout="usage: task.py title --body BODY")):
             with self.assertRaisesRegex(RuntimeError, "incompatible"):
-                runner.create({"issue_number": 77, "wakeups": []}, "delivery-key")
+                runner.create({"issue_number": 77, "wakeups": [{"delivery_id": WAKEUP_KEY}]}, TASK_KEY)
 
 
 class ServerAdmissionTest(unittest.TestCase):

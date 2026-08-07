@@ -3,9 +3,7 @@
   "card": "Neo Dev",
   "workspace": "dir:/opt/data/profiles/dev",
   "project_command_capabilities": {
-    "allow": [
-      "/usr/local/bin/neo-dev-project-control"
-    ],
+    "allow": [],
     "deny": [
       "shell",
       "ssh",

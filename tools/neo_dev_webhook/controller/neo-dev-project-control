@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
-import pathlib
+import os
 import sys
 
-installed_library = pathlib.Path("/usr/local/lib/neo_dev_webhook")
-repository_library = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(installed_library.parent if installed_library.is_dir() else repository_library.parent))
-
-from neo_dev_webhook.project_control import main
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    os.execv("/usr/bin/sudo", ["sudo", "-n", "/usr/local/sbin/neo-dev-project-control-privileged", *sys.argv[1:]])

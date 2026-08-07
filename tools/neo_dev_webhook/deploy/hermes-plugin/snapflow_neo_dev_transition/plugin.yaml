@@ -1,0 +1,6 @@
+{
+  "name": "snapflow-neo-dev-transition",
+  "version": "1.0.0",
+  "description": "One-use governed SnapFlow lifecycle decision tool",
+  "provides_tools": ["snapflow_neo_dev_transition"]
+}

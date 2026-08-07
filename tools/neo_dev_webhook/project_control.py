@@ -8,6 +8,7 @@ import pathlib
 import re
 import subprocess
 import tempfile
+import time
 import uuid
 from dataclasses import asdict, dataclass, replace
 from typing import Callable, Iterable, Protocol, Sequence
@@ -16,9 +17,13 @@ VERSION = 1
 CONTROLLER_REGISTRY_PATH = pathlib.Path("/etc/neo-dev/project-control/registry.json")
 CONTROLLER_STATE_PATH = pathlib.Path("/var/lib/neo-dev/project-control/resolutions.json")
 CODEX_RUNTIME_PATH = "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runtime"
+PROJECT_WORKER_PATH = "/usr/local/sbin/neo-dev-project-worker"
+RUNTIME_SUPERVISOR_PATH = "/usr/local/sbin/neo-dev-runtime-supervisor"
 CODEX_BIN_PATH = "/usr/local/bin/codex"
 CODEX_APP_SERVER_ARGV = (CODEX_BIN_PATH, "app-server", "--stdio")
+CODEX_WORKER_ARGV = CODEX_APP_SERVER_ARGV
 REPOSITORY_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")
+SAFE_COMPONENT_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 CONTINUE_PROMPT = "Continue the governed Issue work and address the latest trusted operator finding."
 PHASES = frozenset({
     "never_started", "starting", "active", "correctable", "resuming",
@@ -26,6 +31,10 @@ PHASES = frozenset({
     "semantic_blocked", "crashed", "failed_closed",
 })
 SEMANTIC_OUTCOMES = frozenset({"success", "correctable", "blocked", "crashed", "invalid"})
+LIFECYCLE_STATES = (
+    "label", "specification_ready", "spec_approved", "implementation_verified",
+    "accepted", "archive_ci_verified", "merge_authorized", "merged_closed",
+)
 
 
 @dataclass(frozen=True)
@@ -105,6 +114,17 @@ class WorkState:
     process_generation: int = 0
     restart_count: int = 0
     terminal: TerminalObservation | None = None
+    lifecycle_state: str = "label"
+    lifecycle_updated_at: str | None = None
+    spec_sha: str | None = None
+    base_sha: str | None = None
+    implementation_sha: str | None = None
+    accepted_sha: str | None = None
+    archive_sha: str | None = None
+    approval_at: str | None = None
+    accepted_at: str | None = None
+    merge_authorized_at: str | None = None
+    github_evidence: dict | None = None
 
     def validate(self) -> None:
         self.target.validate()
@@ -128,6 +148,30 @@ class WorkState:
         if (self.terminal is not None and self.terminal.semantic_outcome == "success"
                 and self.phase != "semantic_success"):
             raise ValueError("trusted success terminal conflicts with execution phase")
+        if self.lifecycle_state not in LIFECYCLE_STATES:
+            raise ValueError("invalid governed lifecycle state")
+        sha = re.compile(r"[0-9a-f]{40}")
+        for value in (self.base_sha, self.spec_sha, self.implementation_sha, self.accepted_sha,
+                      self.archive_sha):
+            if value is not None and sha.fullmatch(value) is None:
+                raise ValueError("invalid persisted lifecycle SHA")
+        requirements = {
+            "specification_ready": (self.base_sha, self.spec_sha,),
+            "spec_approved": (self.base_sha, self.spec_sha, self.approval_at),
+            "implementation_verified": (self.base_sha, self.spec_sha, self.implementation_sha),
+            "accepted": (self.base_sha, self.spec_sha, self.implementation_sha, self.accepted_sha,
+                         self.accepted_at),
+            "archive_ci_verified": (self.base_sha, self.spec_sha, self.implementation_sha,
+                                    self.accepted_sha, self.archive_sha),
+            "merge_authorized": (self.base_sha, self.archive_sha, self.merge_authorized_at),
+            "merged_closed": (self.base_sha, self.archive_sha, self.merge_authorized_at),
+        }
+        if self.lifecycle_state != "label" and self.lifecycle_updated_at is None:
+            raise ValueError("governed lifecycle transition timestamp is missing")
+        if any(value is None for value in requirements.get(self.lifecycle_state, ())):
+            raise ValueError("governed lifecycle evidence is incomplete")
+        if self.github_evidence is not None and not isinstance(self.github_evidence, dict):
+            raise ValueError("invalid host GitHub evidence")
 
     def as_dict(self) -> dict:
         result = asdict(self)
@@ -166,9 +210,46 @@ class SubprocessExecutor:
         return result.stdout
 
 
+class ProjectWorkerExecutor:
+    """Root-only fixed adapter: every repository/tmux/process command runs as dev."""
+    def run(self, argv: Sequence[str], *, timeout: float) -> str:
+        result = subprocess.run(
+            [PROJECT_WORKER_PATH, *argv], check=True, capture_output=True, text=True,
+            timeout=timeout, shell=False,
+        )
+        return result.stdout
+
+
+class RuntimeSupervisorLauncher:
+    def start(self, operation: str, idempotency_key: str,
+              session_id: str | None = None) -> None:
+        if os.geteuid() != 0:
+            raise PermissionError("runtime supervisor launcher must run as root")
+        argv = [RUNTIME_SUPERVISOR_PATH, operation, "--idempotency-key", idempotency_key]
+        if session_id is not None:
+            argv.extend(("--session-id", session_id))
+        path = pathlib.Path("/run/neo-dev-runtime") / f"{idempotency_key}.sock"
+        path.unlink(missing_ok=True)
+        process = subprocess.Popen(
+            argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
+        )
+        deadline = time.monotonic() + 5
+        while not path.exists():
+            if process.poll() is not None:
+                raise RuntimeError("runtime supervisor failed before socket readiness")
+            if time.monotonic() >= deadline:
+                process.terminate()
+                raise RuntimeError("runtime supervisor socket readiness timed out")
+            time.sleep(0.02)
+
+
 class Registry:
-    def __init__(self, records: Iterable[GovernedTarget]):
+    def __init__(self, records: Iterable[GovernedTarget], templates: Iterable[dict] = (),
+                 projects: Iterable[dict] = ()):
         self.records = tuple(records)
+        self.templates = tuple(templates)
+        self.projects = tuple(projects)
 
     @classmethod
     def load(cls, path: pathlib.Path) -> "Registry":
@@ -176,19 +257,75 @@ class Registry:
         if not isinstance(document, dict) or document.get("version") != VERSION:
             raise ValueError("unsupported controller registry version")
         records = document.get("targets")
-        if not isinstance(records, list):
+        templates = document.get("project_templates", [])
+        projects = document.get("projects", [])
+        if (not isinstance(records, list) or not isinstance(templates, list)
+                or not isinstance(projects, list)):
             raise ValueError("invalid controller registry")
         try:
-            return cls(GovernedTarget(**record) for record in records)
+            return cls((GovernedTarget(**record) for record in records), templates, projects)
         except (TypeError, KeyError) as error:
             raise ValueError("invalid controller registry record") from error
 
     def resolve(self, repository: str, issue_number: int) -> GovernedTarget:
         matches = [record for record in self.records
                    if record.repository == repository and record.issue_number == issue_number]
-        if len(matches) != 1:
+        if len(matches) > 1:
             raise RuntimeError("governed identity must resolve to exactly one record")
-        matches[0].validate()
+        if len(matches) == 1:
+            matches[0].validate()
+            return matches[0]
+        templates = [item for item in self.templates if item.get("repository") == repository]
+        if len(templates) != 1:
+            raise RuntimeError("governed identity must resolve to exactly one template")
+        template = templates[0]
+        allowed = {"repository", "project", "session", "repository_path", "worktree_root",
+                   "branch_prefix", "worker"}
+        if set(template) != allowed:
+            raise ValueError("invalid project template fields")
+        project = template["project"]
+        session = template["session"]
+        root = template["worktree_root"]
+        repository_path = template["repository_path"]
+        prefix = template["branch_prefix"]
+        worker = template["worker"]
+        for value in (project, session, prefix):
+            if not isinstance(value, str) or SAFE_COMPONENT_PATTERN.fullmatch(value) is None:
+                raise ValueError("unsafe project template component")
+        if (not isinstance(repository_path, str) or not repository_path.startswith("/workspace/")
+                or pathlib.PurePosixPath(repository_path).name != repository_path.removeprefix("/workspace/")
+                or not isinstance(root, str) or not root.startswith("/workspace/")
+                or pathlib.PurePosixPath(root).name != root.removeprefix("/workspace/")
+                or worker != "Codex"):
+            raise ValueError("unsafe project template")
+        if repository_path != f"/workspace/{project}" or root != repository_path:
+            raise ValueError("project template paths must match the fixed project root")
+        target = GovernedTarget(
+            repository=repository,
+            issue_number=issue_number,
+            project=project,
+            session=session,
+            window=f"issue-{issue_number}",
+            worktree=f"/workspace/{root.removeprefix('/workspace/')}-issue-{issue_number}",
+            branch=f"{prefix}/issue-{issue_number}",
+            worker=worker,
+        )
+        target.validate()
+        coordinates = ((item.window, item.worktree, item.branch) for item in self.records)
+        if any(target.window in values or target.worktree in values or target.branch in values
+               for values in coordinates):
+            raise RuntimeError("derived governed target collides with an explicit record")
+        return target
+
+    def project_config(self, repository: str) -> dict:
+        matches = [item for item in self.projects if item.get("repository") == repository]
+        if len(matches) != 1 or set(matches[0]) != {"repository", "repository_path", "origin_url"}:
+            raise RuntimeError("repository root must resolve to exactly one root-owned project record")
+        path = matches[0]["repository_path"]
+        origin = matches[0]["origin_url"]
+        if (not isinstance(path, str) or not path.startswith("/workspace/")
+                or not isinstance(origin, str) or not origin):
+            raise ValueError("invalid root-owned project record")
         return matches[0]
 
 
@@ -278,6 +415,17 @@ class FileResolutionStore:
                 process_generation=record.get("process_generation", 0),
                 restart_count=record.get("restart_count", 0),
                 terminal=terminal,
+                lifecycle_state=record.get("lifecycle_state", "label"),
+                lifecycle_updated_at=record.get("lifecycle_updated_at"),
+                spec_sha=record.get("spec_sha"),
+                base_sha=record.get("base_sha"),
+                implementation_sha=record.get("implementation_sha"),
+                accepted_sha=record.get("accepted_sha"),
+                archive_sha=record.get("archive_sha"),
+                approval_at=record.get("approval_at"),
+                accepted_at=record.get("accepted_at"),
+                merge_authorized_at=record.get("merge_authorized_at"),
+                github_evidence=record.get("github_evidence"),
             )
         except TypeError as error:
             raise RuntimeError("invalid persisted resolution record") from error
@@ -317,12 +465,29 @@ class FileResolutionStore:
 
 
 class Controller:
-    def __init__(self, registry: Registry, store: ResolutionStore, executor: ProcessExecutor):
+    def __init__(self, registry: Registry, store: ResolutionStore, executor: ProcessExecutor,
+                 supervisor: RuntimeSupervisorLauncher | None = None):
         self.registry, self.store, self.executor = registry, store, executor
+        self.supervisor = supervisor
+
+    @staticmethod
+    def _result(operation: str, key: str, state: WorkState, status: str) -> dict:
+        return {
+            "version": VERSION, "operation": operation, "idempotency_key": key,
+            "resolution_id": state.target.resolution_id, "status": status,
+            "execution": {
+                "phase": state.phase, "codex_session_id": state.codex_session_id,
+                "process_generation": state.process_generation,
+                "restart_count": state.restart_count,
+                "lifecycle_state": state.lifecycle_state,
+            },
+            "governed_identity": {"repository": state.target.repository,
+                                  "issue_number": state.target.issue_number},
+        }
 
     def _resolve(self, operation: str, repository: str, issue_number: int,
                  idempotency_key: str) -> WorkState:
-        if operation not in {"preflight", "start", "resume"}:
+        if operation not in {"status", "attest", "preflight", "start", "resume", "finalize"}:
             raise ValueError("unsupported operation")
         validate_repository(repository)
         validate_issue_number(issue_number)
@@ -331,8 +496,8 @@ class Controller:
         persisted = self.store.load(idempotency_key)
         if persisted is not None and persisted.target != target:
             raise RuntimeError("registry drift conflicts with persisted resolution")
-        if operation == "resume" and persisted is None:
-            raise RuntimeError("resume requires a persisted resolution")
+        if operation in {"status", "attest", "resume", "finalize"} and persisted is None:
+            raise RuntimeError(f"{operation} requires a persisted resolution")
         return self.store.bind(idempotency_key, target)
 
     def observe_session(self, idempotency_key: str, session_id: str) -> WorkState:
@@ -359,6 +524,29 @@ class Controller:
         else:
             raise RuntimeError("correctable finding conflicts with persisted execution state")
         updated = replace(state, phase=phase)
+        self.store.save(idempotency_key, state, updated)
+        return updated
+
+    def advance_lifecycle(self, idempotency_key: str, **evidence) -> WorkState:
+        """Persist a verifier-produced legal lifecycle transition."""
+        state = self.store.load(idempotency_key)
+        if state is None:
+            raise RuntimeError("lifecycle transition requires persisted controller state")
+        next_state = evidence.pop("lifecycle_state", None)
+        try:
+            current_index = LIFECYCLE_STATES.index(state.lifecycle_state)
+            next_index = LIFECYCLE_STATES.index(next_state)
+        except ValueError as error:
+            raise RuntimeError("invalid lifecycle transition") from error
+        if next_index != current_index + 1:
+            raise RuntimeError("lifecycle transition skipped or repeated a governed gate")
+        allowed = {
+            "lifecycle_updated_at", "base_sha", "spec_sha", "implementation_sha", "accepted_sha",
+            "archive_sha", "approval_at", "accepted_at", "merge_authorized_at",
+        }
+        if set(evidence) - allowed:
+            raise RuntimeError("verifier returned unsupported lifecycle evidence")
+        updated = replace(state, lifecycle_state=next_state, **evidence)
         self.store.save(idempotency_key, state, updated)
         return updated
 
@@ -429,12 +617,29 @@ class Controller:
             timeout=10.0,
         ).splitlines()
         if len(children) != 1:
-            raise RuntimeError("sole Codex app-server child is not established")
+            raise RuntimeError("sole Codex exec child is not established")
         child = children[0].strip().split(None, 3)
-        expected_child = "node " + " ".join(CODEX_APP_SERVER_ARGV)
-        if (len(child) != 4 or child[1] != fields[2] or child[2] != "node"
-                or child[3] != expected_child):
-            raise RuntimeError("Codex app-server process metadata does not match")
+        common = (
+            "/usr/bin/timeout --signal=TERM --kill-after=10 1800 "
+            "/usr/local/bin/codex exec "
+        )
+        start_prefix = (
+            common + "--json --dangerously-bypass-approvals-and-sandbox "
+            f"-C {target.worktree} --output-schema /tmp/neo-dev-completion-"
+        )
+        resume_prefix = (
+            common + "resume --json --dangerously-bypass-approvals-and-sandbox "
+            "--output-schema /tmp/neo-dev-completion-"
+        )
+        valid_start = len(child) == 4 and child[3].startswith(start_prefix)
+        valid_resume = (
+            len(child) == 4 and state.codex_session_id is not None
+            and child[3].startswith(resume_prefix)
+            and f" {state.codex_session_id} " in child[3]
+        )
+        if (len(child) != 4 or child[1] != fields[2] or child[2] != "timeout"
+                or not (valid_start or valid_resume)):
+            raise RuntimeError("Codex exec process metadata does not match")
 
     def _preflight_inactive_pane(self, target: GovernedTarget) -> None:
         windows = self._windows(target)
@@ -458,27 +663,152 @@ class Controller:
         if branch != target.branch:
             raise RuntimeError("worktree branch does not match governed target")
 
+    def _prepare_issue_target(self, target: GovernedTarget) -> None:
+        """Create a generic issue worktree once, from the freshly fetched main ref."""
+        if target == ISSUE_77_TARGET:
+            return
+        config = self.registry.project_config(target.repository)
+        repository_path = config["repository_path"]
+        observed_root = self.executor.run(
+            ("git", "-C", repository_path, "rev-parse", "--show-toplevel"), timeout=10.0,
+        ).strip()
+        common = self.executor.run(
+            ("git", "-C", repository_path, "rev-parse", "--path-format=absolute",
+             "--git-common-dir"), timeout=10.0,
+        ).strip()
+        origin = self.executor.run(
+            ("git", "-C", repository_path, "remote", "get-url", "origin"), timeout=10.0,
+        ).strip()
+        if observed_root != repository_path or common != f"{repository_path}/.git":
+            raise RuntimeError("repository root/common directory does not match registry")
+        normalized = origin.removesuffix(".git").replace("git@github.com:", "https://github.com/")
+        expected = config["origin_url"].removesuffix(".git").replace(
+            "git@github.com:", "https://github.com/",
+        )
+        if normalized != expected:
+            raise RuntimeError("repository origin does not match registry")
+        self.executor.run(("git", "-C", repository_path, "fetch", "--prune",
+                           "origin", "main"), timeout=60.0)
+        worktrees = self.executor.run(
+            ("git", "-C", repository_path, "worktree", "list", "--porcelain"),
+            timeout=10.0,
+        )
+        paths = [line.removeprefix("worktree ") for line in worktrees.splitlines()
+                 if line.startswith("worktree ")]
+        if target.worktree in paths:
+            worktree_common = self.executor.run(
+                ("git", "-C", target.worktree, "rev-parse", "--path-format=absolute",
+                 "--git-common-dir"), timeout=10.0,
+            ).strip()
+            if worktree_common != common:
+                raise RuntimeError("existing worktree belongs to another common directory")
+            self._verify_worktree_branch(target)
+            self.executor.run(
+                ("git", "-C", target.worktree, "merge-base", "--is-ancestor", "origin/main",
+                 target.branch), timeout=10.0,
+            )
+            return
+        branch_ref = self.executor.run(
+            ("git", "-C", repository_path, "for-each-ref", "--format=%(refname)",
+             f"refs/heads/{target.branch}"), timeout=10.0,
+        ).strip()
+        if branch_ref:
+            self.executor.run(
+                ("git", "-C", repository_path, "worktree", "add",
+                 target.worktree, target.branch), timeout=60.0,
+            )
+        else:
+            self.executor.run(
+                ("git", "-C", repository_path, "worktree", "add", "-b",
+                 target.branch, target.worktree, "origin/main"), timeout=60.0,
+            )
+        self._verify_worktree_branch(target)
+        self.executor.run(
+            ("git", "-C", target.worktree, "merge-base", "--is-ancestor", "origin/main",
+             target.branch), timeout=10.0,
+        )
+
+    def _start_supervisor(self, operation: str, key: str,
+                          session_id: str | None = None) -> None:
+        if self.supervisor is not None:
+            self.supervisor.start(operation, key, session_id)
+
     def execute(self, operation: str, repository: str, issue_number: int,
-                idempotency_key: str) -> dict:
+                idempotency_key: str, evidence: dict | None = None) -> dict:
         state = self._resolve(operation, repository, issue_number, idempotency_key)
+        if evidence is not None:
+            from .verification import validate_host_evidence
+            validate_host_evidence(evidence, state, idempotency_key)
+            updated = replace(state, github_evidence=evidence)
+            self.store.save(idempotency_key, state, updated)
+            state = updated
         target = state.target
-        if operation == "start":
-            if state.phase != "never_started":
+        if operation == "status":
+            return self._result(operation, idempotency_key, state, "observed")
+        if operation == "attest":
+            if state.github_evidence is None or state.lifecycle_state not in {
+                "label", "spec_approved", "accepted", "merge_authorized",
+            }:
+                raise RuntimeError("attestation does not match a verifiable lifecycle state")
+            from .verification import RepositoryGitHubVerifier
+            transition = RepositoryGitHubVerifier(
+                self.executor, state.github_evidence,
+            ).verify_next(target, state)
+            if not transition.verified or transition.evidence is None:
+                raise RuntimeError(transition.blocker or "attestation verification failed")
+            state = self.advance_lifecycle(idempotency_key, **transition.evidence)
+            return self._result(operation, idempotency_key, state, "attested")
+        if operation == "finalize":
+            if state.lifecycle_state == "merge_authorized" and state.github_evidence is not None:
+                from .verification import RepositoryGitHubVerifier
+                verifier = RepositoryGitHubVerifier(self.executor, state.github_evidence)
+                transition = verifier.verify_next(target, state)
+                if not transition.verified or transition.evidence is None:
+                    raise RuntimeError(transition.blocker or "merge finalization evidence failed")
+                state = self.advance_lifecycle(idempotency_key, **transition.evidence)
+            if state.lifecycle_state != "merged_closed":
+                return self._result(operation, idempotency_key, state,
+                                    "pending")
+            from .verification import RepositoryGitHubVerifier
+            verification = RepositoryGitHubVerifier(self.executor, state.github_evidence).verify(
+                target, "merge-finalization",
+            )
+            if not verification.verified:
+                raise RuntimeError(verification.blocker or "merge finalization verification failed")
+            status = "finalized"
+        elif operation == "start":
+            recovering_launch = (state.phase == "crashed" and state.codex_session_id is None
+                                 and state.restart_count == 1)
+            if state.phase != "never_started" and not recovering_launch:
                 raise RuntimeError("start cannot replace or duplicate persisted Codex work")
+            self._prepare_issue_target(target)
             windows = self._windows(target)
             if windows.count(target.window) > 1:
                 raise RuntimeError("governed tmux window is ambiguous")
             if target.window in windows:
-                raise RuntimeError("start requires an unused governed tmux window")
+                if recovering_launch:
+                    failed = replace(state, phase="failed_closed")
+                    self.store.save(idempotency_key, state, failed)
+                raise RuntimeError("start launch intent conflicts with an existing window")
             else:
                 self._verify_worktree_branch(target)
-                updated = replace(state, phase="starting")
+                updated = replace(state, phase="starting", terminal=None)
                 self.store.save(idempotency_key, state, updated)
-                self.executor.run(
-                    ("tmux", "new-window", "-d", "-t", target.session, "-n", target.window,
-                     "-c", target.worktree, CODEX_RUNTIME_PATH, "start",
-                     "--idempotency-key", idempotency_key), timeout=20.0,
-                )
+                try:
+                    self._start_supervisor("start", idempotency_key)
+                    self.executor.run(
+                        ("tmux", "new-window", "-d", "-t", target.session, "-n", target.window,
+                         "-c", target.worktree, CODEX_RUNTIME_PATH, "start",
+                         "--idempotency-key", idempotency_key), timeout=20.0,
+                    )
+                except BaseException:
+                    failed = replace(
+                        updated, phase="failed_closed" if recovering_launch else "crashed",
+                        restart_count=1,
+                        terminal=TerminalObservation(1, "crashed", not recovering_launch),
+                    )
+                    self.store.save(idempotency_key, updated, failed)
+                    raise
             state, status = updated, "starting"
         elif operation == "preflight":
             if state.phase not in {"active", "correctable"} or state.codex_session_id is None:
@@ -498,16 +828,29 @@ class Controller:
                 self.store.save(idempotency_key, state, updated)
                 state = updated
             status = "steered"
-        elif state.phase == "exited_resumable":
+        elif state.phase == "exited_resumable" or (
+            state.phase == "semantic_blocked" and state.terminal is not None
+            and state.terminal.resumable
+        ):
             self._preflight_inactive_pane(target)
             updated = replace(state, phase="resuming", terminal=None)
             self.store.save(idempotency_key, state, updated)
-            self.executor.run(
-                ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
-                 target.worktree, CODEX_RUNTIME_PATH, "resume", "--idempotency-key",
-                 idempotency_key, "--session-id", state.codex_session_id),
-                timeout=20.0,
-            )
+            try:
+                self._start_supervisor("resume", idempotency_key, state.codex_session_id)
+                self.executor.run(
+                    ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
+                     target.worktree, CODEX_RUNTIME_PATH, "resume", "--idempotency-key",
+                     idempotency_key, "--session-id", state.codex_session_id),
+                    timeout=20.0,
+                )
+            except BaseException:
+                failed = replace(
+                    updated, phase="failed_closed" if state.restart_count == 1
+                    else "exited_resumable", restart_count=1,
+                    terminal=TerminalObservation(1, "crashed", state.restart_count == 0),
+                )
+                self.store.save(idempotency_key, updated, failed)
+                raise
             state, status = updated, "resuming"
         elif state.phase in {"crashed", "exited_unresumable"}:
             if state.restart_count != 0:
@@ -518,36 +861,33 @@ class Controller:
                 process_generation=state.process_generation + 1, restart_count=1,
             )
             self.store.save(idempotency_key, state, updated)
-            self.executor.run(
-                ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
-                 target.worktree, CODEX_RUNTIME_PATH, "start", "--idempotency-key",
-                 idempotency_key), timeout=20.0,
-            )
+            try:
+                self._start_supervisor("start", idempotency_key)
+                self.executor.run(
+                    ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
+                     target.worktree, CODEX_RUNTIME_PATH, "start", "--idempotency-key",
+                     idempotency_key), timeout=20.0,
+                )
+            except BaseException:
+                failed = replace(
+                    updated, phase="failed_closed",
+                    terminal=TerminalObservation(1, "crashed", False),
+                )
+                self.store.save(idempotency_key, updated, failed)
+                raise
             state, status = updated, "restarted"
         else:
             raise RuntimeError("persisted semantic/session state forbids continuation")
-        return {
-            "version": VERSION,
-            "operation": operation,
-            "idempotency_key": idempotency_key,
-            "resolution_id": target.resolution_id,
-            "status": status,
-            "execution": {
-                "phase": state.phase,
-                "codex_session_id": state.codex_session_id,
-                "process_generation": state.process_generation,
-                "restart_count": state.restart_count,
-            },
-            "governed_identity": {"repository": repository, "issue_number": issue_number},
-        }
+        return self._result(operation, idempotency_key, state, status)
 
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="neo-dev-project-control", allow_abbrev=False)
-    result.add_argument("operation", choices=("preflight", "start", "resume"))
+    result.add_argument("operation", choices=("status", "attest", "preflight", "start", "resume", "finalize"))
     result.add_argument("--repository", required=True)
     result.add_argument("--issue-number", required=True, type=int)
     result.add_argument("--idempotency-key", required=True)
+    result.add_argument("--evidence")
     return result
 
 
@@ -560,11 +900,16 @@ def main(argv: Sequence[str] | None = None, *,
     try:
         controller = Controller(
             Registry.load(registry_path), FileResolutionStore(state_path),
-            executor or SubprocessExecutor(),
+            executor or ProjectWorkerExecutor(),
+            RuntimeSupervisorLauncher() if executor is None else None,
         )
+        evidence = None
+        if arguments.evidence:
+            import base64
+            evidence = json.loads(base64.b64decode(arguments.evidence, validate=True))
         result = controller.execute(
             arguments.operation, arguments.repository, arguments.issue_number,
-            arguments.idempotency_key,
+            arguments.idempotency_key, evidence,
         )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         write(json.dumps({"version": VERSION, "status": "rejected", "error": str(error)},

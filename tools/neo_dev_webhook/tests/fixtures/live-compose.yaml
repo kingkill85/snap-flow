@@ -1,0 +1,17 @@
+services:
+  receiver:
+    command: "exec python3 -m neo_dev_webhook.server --host 0.0.0.0 --port 8787"
+    volumes:
+      - /opt/data/services/snapflow-neo-dev-webhook/src:/srv/webhook:ro
+      - /mnt/marder/docker/snapflow-neo-dev-webhook/data:/var/lib/neo-dev
+      - ./passwd:/etc/passwd:ro
+      - ./group:/etc/group:ro
+      - /opt/data:/opt/data:ro
+  consumer:
+    command: "exec python3 -m neo_dev_webhook.consumer /var/lib/neo-dev/neo-dev.sqlite --max-runtime 2h --max-attempts 5"
+    volumes:
+      - /opt/data/services/snapflow-neo-dev-webhook/src:/srv/webhook:ro
+      - /mnt/marder/docker/snapflow-neo-dev-webhook/data:/var/lib/neo-dev
+      - ./passwd:/etc/passwd:ro
+      - ./group:/etc/group:ro
+      - /opt/data:/opt/data:ro

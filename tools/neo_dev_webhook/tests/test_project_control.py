@@ -32,7 +32,11 @@ TARGET = GovernedTarget(
 SESSION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 RUNTIME_START = f"{CODEX_RUNTIME_PATH} start --idempotency-key {KEY}"
 RUNTIME_METADATA = f"python3\t{RUNTIME_START}\t4242\n"
-APP_SERVER_CHILD = "4243 4242 node node /usr/local/bin/codex app-server --stdio\n"
+EXEC_WORKER_CHILD = (
+    "4243 4242 timeout /usr/bin/timeout --signal=TERM --kill-after=10 1800 "
+    "/usr/local/bin/codex exec --json --dangerously-bypass-approvals-and-sandbox "
+    "-C /workspace/snap-flow-issue-77 --output-schema /tmp/neo-dev-completion-test.json PROMPT\n"
+)
 
 
 def effective_mode_allows(entry, account, groups, required):
@@ -48,7 +52,10 @@ class FakeExecutor:
 
     def run(self, argv, *, timeout):
         self.calls.append((tuple(argv), timeout))
-        return self.outputs.pop(0) if self.outputs else ""
+        result = self.outputs.pop(0) if self.outputs else ""
+        if isinstance(result, BaseException):
+            raise result
+        return result
 
 
 class ProjectControlTest(unittest.TestCase):
@@ -71,7 +78,7 @@ class ProjectControlTest(unittest.TestCase):
         controller, executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
             "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
-            APP_SERVER_CHILD,
+            EXEC_WORKER_CHILD,
         ], store=self.state_store())
         result = controller.execute("preflight", REPOSITORY, 77, KEY)
         self.assertEqual(result["status"], "ready")
@@ -112,6 +119,22 @@ class ProjectControlTest(unittest.TestCase):
         ])
         self.assertEqual(executor.calls[-1][1], 20.0)
 
+    def test_failed_tmux_launch_records_bounded_recoverable_intent(self):
+        store = InMemoryResolutionStore()
+        controller, _ = self.controller([
+            "", "chore/issue-77-openspec-workflow\n", RuntimeError("tmux failed"),
+        ], store=store)
+        with self.assertRaisesRegex(RuntimeError, "tmux failed"):
+            controller.execute("start", REPOSITORY, 77, KEY)
+        failed = store.load(KEY)
+        self.assertEqual(failed.phase, "crashed")
+        self.assertEqual(failed.restart_count, 1)
+        retry, executor = self.controller([
+            "", "chore/issue-77-openspec-workflow\n", "",
+        ], store=store)
+        self.assertEqual(retry.execute("start", REPOSITORY, 77, KEY)["status"], "starting")
+        self.assertEqual(sum(call[0][:2] == ("tmux", "new-window") for call in executor.calls), 1)
+
     def test_retry_and_resume_preserve_original_resolution_and_identity(self):
         store = InMemoryResolutionStore()
         first, _ = self.controller([
@@ -122,7 +145,7 @@ class ProjectControlTest(unittest.TestCase):
         retry, retry_executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
             "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
-            APP_SERVER_CHILD,
+            EXEC_WORKER_CHILD,
         ], store=store)
         result = retry.execute("resume", REPOSITORY, 77, KEY)
         self.assertEqual(result["idempotency_key"], KEY)
@@ -190,7 +213,7 @@ class ProjectControlTest(unittest.TestCase):
             ["issue-77\n", "/workspace/snap-flow-issue-77\n", "main\n"],
             ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", "python3\tattacker.py\t4242\n"],
             ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA, "4243 4242 python3 attacker.py\n"],
-            ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA, APP_SERVER_CHILD + APP_SERVER_CHILD],
+            ["issue-77\n", "/workspace/snap-flow-issue-77\n", "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA, EXEC_WORKER_CHILD + EXEC_WORKER_CHILD],
         ):
             with self.subTest(outputs=outputs):
                 controller, executor = self.controller(outputs, store=self.state_store())
@@ -210,7 +233,7 @@ class ProjectControlTest(unittest.TestCase):
         controller, executor = self.controller([
             "issue-77\n", "/workspace/snap-flow-issue-77\n",
             "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
-            APP_SERVER_CHILD,
+            EXEC_WORKER_CHILD,
         ], store=store)
         controller.observe_correctable(KEY)
         result = controller.execute("resume", REPOSITORY, 77, KEY)
@@ -382,7 +405,7 @@ class ProjectControlTest(unittest.TestCase):
             file_store.save(KEY, initial, WorkState(TARGET, SESSION_ID, "active"))
             executor = FakeExecutor(["issue-77\n", "/workspace/snap-flow-issue-77\n",
                                      "chore/issue-77-openspec-workflow\n", RUNTIME_METADATA,
-                                     APP_SERVER_CHILD])
+                                     EXEC_WORKER_CHILD])
             output = []
             exit_code = main([
                 "preflight", "--repository", REPOSITORY, "--issue-number", "77",
@@ -405,9 +428,9 @@ class ProjectControlTest(unittest.TestCase):
         policy = json.loads((controller_dir / "card-capability-policy.v1.json").read_text(encoding="utf-8"))
         manifest = json.loads((controller_dir / "install-manifest.v1.json").read_text(encoding="utf-8"))
         state_schema = json.loads((controller_dir / "state-schema.v1.json").read_text(encoding="utf-8"))
-        self.assertEqual(registry, {"version": 1, "targets": [TARGET.as_dict()]})
-        self.assertEqual(policy["project_command_capabilities"]["allow"],
-                         ["/usr/local/bin/neo-dev-project-control"])
+        self.assertEqual(registry["targets"], [TARGET.as_dict()])
+        self.assertEqual(registry["project_templates"][0]["repository"], REPOSITORY)
+        self.assertEqual(policy["project_command_capabilities"]["allow"], [])
         self.assertEqual(manifest["version"], 1)
         self.assertEqual(state_schema["properties"]["restart_count"]["maximum"], 1)
         self.assertIn("semantic_success", state_schema["properties"]["phase"]["enum"])
@@ -415,15 +438,47 @@ class ProjectControlTest(unittest.TestCase):
         runtime_entry = next(entry for entry in manifest["files"]
                              if entry["source"] == "neo-dev-codex-runtime")
         self.assertTrue(effective_mode_allows(runtime_entry, "dev", {"dev"}, 0o1))
-        self.assertFalse(effective_mode_allows(runtime_entry, "other", {"other"}, 0o1))
-        self.assertTrue(effective_mode_allows(manifest["state"], "dev", {"dev"}, 0o3))
+        self.assertTrue(effective_mode_allows(runtime_entry, "other", {"other"}, 0o1))
+        self.assertFalse(effective_mode_allows(runtime_entry, "dev", {"dev"}, 0o2))
+        self.assertFalse(effective_mode_allows(manifest["state"], "dev", {"dev"}, 0o1))
+        self.assertFalse(effective_mode_allows(manifest["state"], "dev", {"dev"}, 0o2))
         self.assertFalse(effective_mode_allows(manifest["state"], "other", {"other"}, 0o3))
+        for entry in manifest["files"]:
+            self.assertEqual(entry["owner"], "root")
+            self.assertEqual(entry["group"], "root")
+            self.assertFalse(effective_mode_allows(entry, "dev", {"dev"}, 0o2))
         self.assertNotIn(runtime_entry["destination"],
                          policy["project_command_capabilities"]["allow"])
+        sudoers = (controller_dir / "neo-dev-control.sudoers").read_text()
+        self.assertIn("neo-controller ALL=(root)", sudoers)
+        self.assertNotIn("dev ALL=(root)", sudoers)
         combined = " ".join(path.read_text(encoding="utf-8") for path in controller_dir.iterdir())
         for forbidden in ("HostName", "IdentityFile", "known_hosts", "ssh-rsa", "ssh-ed25519",
                           "private endpoint", "pinned host key"):
             self.assertNotIn(forbidden, combined)
+
+    def test_controller_lifecycle_rejects_skipped_and_repeated_transitions(self):
+        store = InMemoryResolutionStore()
+        state = store.bind(KEY, TARGET)
+        controller = Controller(Registry((TARGET,)), store, FakeExecutor([]))
+        with self.assertRaisesRegex(RuntimeError, "skipped"):
+            controller.advance_lifecycle(
+                KEY, lifecycle_state="spec_approved",
+                lifecycle_updated_at="2026-08-07T00:00:00Z", spec_sha="a" * 40,
+                approval_at="2026-08-07T00:00:00Z",
+            )
+        advanced = controller.advance_lifecycle(
+            KEY, lifecycle_state="specification_ready",
+            lifecycle_updated_at="2026-08-07T00:00:00Z", base_sha="b" * 40,
+            spec_sha="a" * 40,
+        )
+        self.assertEqual(advanced.lifecycle_state, "specification_ready")
+        with self.assertRaisesRegex(RuntimeError, "skipped"):
+            controller.advance_lifecycle(
+                KEY, lifecycle_state="specification_ready",
+                lifecycle_updated_at="2026-08-07T00:00:01Z", base_sha="b" * 40,
+                spec_sha="a" * 40,
+            )
 
 
 if __name__ == "__main__":

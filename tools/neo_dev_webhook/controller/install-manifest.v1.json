@@ -30,11 +30,74 @@
       "mode": "0644"
     },
     {
+      "source": "../verification.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/verification.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "../forced_command.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/forced_command.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "../project_worker.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/project_worker.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "../runtime_supervisor.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/runtime_supervisor.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
       "source": "neo-dev-codex-runtime",
       "destination": "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runtime",
-      "owner": "dev",
-      "group": "dev",
-      "mode": "0750"
+      "owner": "root",
+      "group": "root",
+      "mode": "0755"
+    },
+    {
+      "source": "neo-dev-project-control-privileged",
+      "destination": "/usr/local/sbin/neo-dev-project-control-privileged",
+      "owner": "root",
+      "group": "root",
+      "mode": "0755"
+    },
+    {
+      "source": "neo-dev-project-worker",
+      "destination": "/usr/local/sbin/neo-dev-project-worker",
+      "owner": "root",
+      "group": "root",
+      "mode": "0700"
+    },
+    {
+      "source": "neo-dev-runtime-supervisor",
+      "destination": "/usr/local/sbin/neo-dev-runtime-supervisor",
+      "owner": "root",
+      "group": "root",
+      "mode": "0755"
+    },
+    {
+      "source": "neo-dev-forced-command",
+      "destination": "/usr/local/bin/neo-dev-forced-command",
+      "owner": "root",
+      "group": "root",
+      "mode": "0755"
+    },
+    {
+      "source": "neo-dev-control.sudoers",
+      "destination": "/etc/sudoers.d/neo-dev-control",
+      "owner": "root",
+      "group": "root",
+      "mode": "0440"
     },
     {
       "source": "registry.v1.json",
@@ -60,8 +123,8 @@
   ],
   "state": {
     "directory": "/var/lib/neo-dev/project-control",
-    "owner": "dev",
-    "group": "dev",
-    "mode": "0750"
+    "owner": "neo-controller",
+    "group": "neo-controller",
+    "mode": "0700"
   }
 }

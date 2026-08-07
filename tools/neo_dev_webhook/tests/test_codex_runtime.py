@@ -8,11 +8,13 @@ from unittest.mock import patch
 from neo_dev_webhook.codex_runtime import AppServer, run_runtime, validate_completion
 from neo_dev_webhook.project_control import (
     CODEX_RUNTIME_PATH,
+    CODEX_WORKER_ARGV,
     Controller,
     FileResolutionStore,
     GovernedTarget,
     Registry,
 )
+from neo_dev_webhook.verification import LifecycleTransition
 
 
 REPOSITORY = "kingkill85/snap-flow"
@@ -30,6 +32,16 @@ TARGET = GovernedTarget(
 )
 
 
+def completion(outcome="success", resumable=False, summary="done", **overrides):
+    value = {
+        "semantic_outcome": outcome,
+        "resumable": resumable,
+        "summary": summary,
+    }
+    value.update(overrides)
+    return value
+
+
 class FakeExecutor:
     def __init__(self, outputs):
         self.outputs = list(outputs)
@@ -38,6 +50,23 @@ class FakeExecutor:
     def run(self, argv, *, timeout):
         self.calls.append((tuple(argv), timeout))
         return self.outputs.pop(0) if self.outputs else ""
+
+
+class FakeVerifier:
+    def __init__(self, verified=True):
+        self.verified = verified
+        self.calls = []
+
+    def verify_next(self, target, state):
+        self.calls.append((target, state.lifecycle_state))
+        evidence = {"lifecycle_state": "specification_ready",
+                    "lifecycle_updated_at": "2026-08-07T00:00:00Z",
+                    "base_sha": "b" * 40, "spec_sha": "a" * 40}
+        return LifecycleTransition(self.verified, evidence if self.verified else None,
+                                   None if self.verified else "forged evidence")
+
+    def authorize(self, target, state):
+        return LifecycleTransition(False, blocker="unexpected authorization")
 
 
 class FakeAppServer:
@@ -134,21 +163,19 @@ class CodexRuntimeTest(unittest.TestCase):
                 "--idempotency-key", KEY,
             ))
 
-            completion = {
-                "semantic_outcome": "success", "resumable": False,
-                "summary": "Repository-side work verified",
-            }
-            server = FakeAppServer(state_path, completion)
+            result_document = completion(summary="Repository-side work verified")
+            server = FakeAppServer(state_path, result_document)
             exit_code = run_runtime(
                 "start", KEY, None, registry_path=registry_path, state_path=state_path,
-                app_server=server, control_input=io.StringIO(""),
+                app_server=server, control_input=io.StringIO(""), verifier=FakeVerifier(),
             )
-            self.assertEqual(exit_code, 0)
+            self.assertEqual(exit_code, 1)
             persisted = FileResolutionStore(state_path).load(KEY)
             self.assertEqual(persisted.codex_session_id, SESSION_ID)
-            self.assertEqual(persisted.phase, "semantic_success")
+            self.assertEqual(persisted.phase, "exited_unresumable")
             self.assertEqual(persisted.terminal.exit_code, 0)
-            self.assertEqual(persisted.terminal.semantic_outcome, "success")
+            self.assertEqual(persisted.terminal.semantic_outcome, "correctable")
+            self.assertEqual(persisted.lifecycle_state, "label")
             self.assertTrue(server.closed)
 
     def test_app_server_uses_fixed_argv_and_deterministically_reaps_child(self):
@@ -157,7 +184,7 @@ class CodexRuntimeTest(unittest.TestCase):
                    return_value=process) as popen:
             server = AppServer.start()
         popen.assert_called_once_with(
-            ["/usr/local/bin/codex", "app-server", "--stdio"],
+            list(CODEX_WORKER_ARGV),
             stdin=-1, stdout=-1, stderr=-3, text=True, bufsize=1, shell=False,
         )
         server.close()
@@ -185,7 +212,7 @@ class CodexRuntimeTest(unittest.TestCase):
             server = FakeAppServer(state_path, {"semantic_outcome": "success"})
             self.assertEqual(run_runtime(
                 "start", KEY, None, registry_path=registry_path, state_path=state_path,
-                app_server=server, control_input=io.StringIO(""),
+                app_server=server, control_input=io.StringIO(""), verifier=FakeVerifier(),
             ), 1)
             persisted = FileResolutionStore(state_path).load(KEY)
             self.assertEqual(persisted.phase, "semantic_blocked")
@@ -199,15 +226,12 @@ class CodexRuntimeTest(unittest.TestCase):
             initial = store.bind(KEY, TARGET)
             from dataclasses import replace
             store.save(KEY, initial, replace(initial, phase="starting"))
-            completion = {
-                "semantic_outcome": "correctable", "resumable": True,
-                "summary": "Finding remains correctable",
-            }
-            server = FakeAppServer(state_path, completion)
+            result_document = completion("correctable", True, "Finding remains correctable")
+            server = FakeAppServer(state_path, result_document)
             server.events.insert(0, ("control", "Continue the governed Issue work and address the latest trusted operator finding.\n"))
             self.assertEqual(run_runtime(
                 "start", KEY, None, registry_path=registry_path, state_path=state_path,
-                app_server=server, control_input=io.StringIO(""),
+                app_server=server, control_input=io.StringIO(""), verifier=FakeVerifier(),
             ), 1)
             steer = [call for call in server.calls if call[0] == "turn/steer"]
             self.assertEqual(len(steer), 1)
@@ -222,13 +246,10 @@ class CodexRuntimeTest(unittest.TestCase):
             initial = store.bind(KEY, TARGET)
             from dataclasses import replace
             store.save(KEY, initial, replace(initial, phase="starting"))
-            completion = {
-                "semantic_outcome": "success", "resumable": True, "summary": "done",
-            }
-            server = FakeAppServer(state_path, completion, status="failed")
+            server = FakeAppServer(state_path, completion(resumable=True), status="failed")
             self.assertEqual(run_runtime(
                 "start", KEY, None, registry_path=registry_path, state_path=state_path,
-                app_server=server, control_input=io.StringIO(""),
+                app_server=server, control_input=io.StringIO(""), verifier=FakeVerifier(),
             ), 1)
             persisted = FileResolutionStore(state_path).load(KEY)
             self.assertNotEqual(persisted.phase, "semantic_success")
@@ -236,11 +257,9 @@ class CodexRuntimeTest(unittest.TestCase):
             self.assertEqual(persisted.terminal.semantic_outcome, "invalid")
 
     def test_nonzero_exit_can_never_validate_nominal_success(self):
-        completion = {
-            "semantic_outcome": "success", "resumable": True, "summary": "done",
-        }
+        result_document = completion(resumable=True)
         with self.assertRaises(ValueError):
-            validate_completion(completion, 1)
+            validate_completion(result_document, 1)
 
     def test_runtime_crash_persists_resumable_terminal_state(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -255,7 +274,7 @@ class CodexRuntimeTest(unittest.TestCase):
                 run_runtime(
                     "start", KEY, None, registry_path=registry_path,
                     state_path=state_path, app_server=server,
-                    control_input=io.StringIO(""),
+                    control_input=io.StringIO(""), verifier=FakeVerifier(),
                 )
             persisted = store.load(KEY)
             self.assertEqual(persisted.phase, "crashed")
@@ -275,6 +294,26 @@ class CodexRuntimeTest(unittest.TestCase):
         for value in invalid:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_completion(value, 0)
+
+    def test_worker_success_claim_cannot_complete_when_controller_verifier_rejects(self):
+        with self.assertRaises(ValueError):
+            validate_completion(completion(worker_selected_phase="merge-finalization"), 0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            registry_path, state_path = self.files(root)
+            store = FileResolutionStore(state_path)
+            initial = store.bind(KEY, TARGET)
+            from dataclasses import replace
+            store.save(KEY, initial, replace(initial, phase="starting"))
+            server = FakeAppServer(state_path, completion())
+            self.assertEqual(run_runtime(
+                "start", KEY, None, registry_path=registry_path, state_path=state_path,
+                app_server=server, control_input=io.StringIO(""),
+                verifier=FakeVerifier(False),
+            ), 1)
+            persisted = store.load(KEY)
+            self.assertEqual(persisted.phase, "exited_unresumable")
+            self.assertNotEqual(persisted.terminal.semantic_outcome, "success")
 
 
 if __name__ == "__main__":

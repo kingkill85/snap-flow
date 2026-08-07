@@ -2,7 +2,8 @@
 import argparse
 import time
 
-from neo_dev_webhook.automation import Consumer, PublicGitHubAdapter, Store, TaskRunner
+from neo_dev_webhook.automation import Consumer, ProjectDispatcher, ProjectFinalizer, PublicGitHubAdapter, Store, TaskRunner
+from neo_dev_webhook.hermes_transition import CapabilityBroker
 
 
 def main():
@@ -13,8 +14,13 @@ def main():
     parser.add_argument("--max-attempts", type=int, default=5)
     args = parser.parse_args()
     consumer = Consumer(
-        Store(args.database), TaskRunner(max_runtime=args.max_runtime),
-        PublicGitHubAdapter(), max_attempts=args.max_attempts,
+        Store(args.database), TaskRunner(
+            max_runtime=args.max_runtime, capability_broker=CapabilityBroker(),
+            enforcement_path="/opt/data/profiles/dev/.snapflow-neo-dev-tools.enforced",
+        ),
+        PublicGitHubAdapter(), max_attempts=args.max_attempts, finalizer=ProjectFinalizer(),
+        dispatcher=ProjectDispatcher(),
+        capability_broker=CapabilityBroker(),
     )
     while True:
         if not consumer.run_one():

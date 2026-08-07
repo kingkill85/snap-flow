@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import hmac
 import json
 import os
+import pathlib
+import re
 import sqlite3
 import subprocess
 import threading
@@ -17,6 +20,7 @@ REPOSITORY = "kingkill85/snap-flow"
 ACTOR_ID = 11455872
 ACTOR_LOGIN = "kingkill85"
 MARKER = "<!-- neo-dev -->"
+APPROVE_SPEC_PATTERN = re.compile(r"^/approve-spec [0-9a-f]{40}$")
 
 
 def has_standalone_marker(body: str) -> bool:
@@ -64,12 +68,19 @@ class Store:
               claim_token TEXT, task_id TEXT, last_error TEXT,
               processed_wakeup_id INTEGER,
               created_at REAL NOT NULL, updated_at REAL NOT NULL);
+            DROP INDEX IF EXISTS one_live_work_per_issue;
             CREATE UNIQUE INDEX IF NOT EXISTS one_live_work_per_issue
-              ON active_work(repository, issue_number) WHERE status IN ('queued','processing');
+              ON active_work(repository, issue_number) WHERE status IN ('queued','processing','waiting');
             CREATE TABLE IF NOT EXISTS wakeups(
               id INTEGER PRIMARY KEY, delivery_id TEXT NOT NULL UNIQUE REFERENCES deliveries,
               work_id INTEGER NOT NULL REFERENCES active_work, event TEXT NOT NULL,
-              action TEXT NOT NULL, comment_id INTEGER, created_at REAL NOT NULL);
+              action TEXT NOT NULL, comment_id INTEGER, command TEXT, created_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS finalization_requests(
+              id INTEGER PRIMARY KEY, delivery_id TEXT NOT NULL UNIQUE REFERENCES deliveries,
+              work_id INTEGER NOT NULL REFERENCES active_work, status TEXT NOT NULL,
+              attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT,
+              next_attempt_at REAL NOT NULL DEFAULT 0,
+              created_at REAL NOT NULL, updated_at REAL NOT NULL);
         """))
         columns = {row["name"] for row in retry_database_lock(
             lambda: self.db.execute("PRAGMA table_info(active_work)")
@@ -78,6 +89,18 @@ class Store:
             retry_database_lock(lambda: self.db.execute("ALTER TABLE active_work ADD COLUMN claim_token TEXT"))
         if "processed_wakeup_id" not in columns:
             retry_database_lock(lambda: self.db.execute("ALTER TABLE active_work ADD COLUMN processed_wakeup_id INTEGER"))
+        wakeup_columns = {row["name"] for row in retry_database_lock(
+            lambda: self.db.execute("PRAGMA table_info(wakeups)")
+        )}
+        if "command" not in wakeup_columns:
+            retry_database_lock(lambda: self.db.execute("ALTER TABLE wakeups ADD COLUMN command TEXT"))
+        finalization_columns = {row["name"] for row in retry_database_lock(
+            lambda: self.db.execute("PRAGMA table_info(finalization_requests)")
+        )}
+        if "next_attempt_at" not in finalization_columns:
+            retry_database_lock(lambda: self.db.execute(
+                "ALTER TABLE finalization_requests ADD COLUMN next_attempt_at REAL NOT NULL DEFAULT 0"
+            ))
 
     def close(self):
         self.db.close()
@@ -117,7 +140,7 @@ class Store:
                     return "duplicate"
                 row = self.db.execute(
                     "SELECT id FROM active_work WHERE repository=? AND issue_number=? "
-                    "AND status IN ('queued','processing')",
+                    "AND status IN ('queued','processing','waiting')",
                     (record["repository"], record["issue_number"]),
                 ).fetchone()
                 now = time.time()
@@ -130,12 +153,109 @@ class Store:
                     work_id = cursor.lastrowid
                 else:
                     work_id = row["id"]
+                    self.db.execute(
+                        "UPDATE active_work SET status='queued',updated_at=? "
+                        "WHERE id=? AND status='waiting'", (now, work_id),
+                    )
                 self.db.execute(
-                    "INSERT INTO wakeups(delivery_id,work_id,event,action,comment_id,created_at) VALUES (?,?,?,?,?,?)",
-                    (record["delivery_id"], work_id, record["event"], record["action"], record["comment_id"], now),
+                    "INSERT INTO wakeups(delivery_id,work_id,event,action,comment_id,command,created_at) VALUES (?,?,?,?,?,?,?)",
+                    (record["delivery_id"], work_id, record["event"], record["action"],
+                     record["comment_id"], record.get("command"), now),
                 )
                 self.db.execute("COMMIT")
                 return "accepted"
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+
+    def request_finalization(self, repository: str, issue_number: int, delivery_id: str) -> str:
+        """Persist closure as an auditable request; receiver performs no verification work."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                try:
+                    self.db.execute("INSERT INTO deliveries VALUES (?,?)", (delivery_id, time.time()))
+                except sqlite3.IntegrityError:
+                    self.db.execute("COMMIT")
+                    return "duplicate"
+                work = self.db.execute(
+                    "SELECT id FROM active_work WHERE repository=? AND issue_number=? "
+                    "AND status='waiting'", (repository, issue_number),
+                ).fetchone()
+                if work is None:
+                    raise RuntimeError("Issue closure does not match one waiting workflow")
+                now = time.time()
+                self.db.execute(
+                    "INSERT INTO finalization_requests(delivery_id,work_id,status,created_at,updated_at) "
+                    "VALUES (?,?,'pending',?,?)", (delivery_id, work["id"], now, now),
+                )
+                self.db.execute("COMMIT")
+                return "finalization_pending"
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+
+    def claim_finalization(self, max_attempts: int = 5, now: float | None = None):
+        now = time.time() if now is None else now
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                row = self.db.execute(
+                    "SELECT request.*,work.repository,work.issue_number,work.idempotency_key "
+                    "FROM finalization_requests request JOIN active_work work ON work.id=request.work_id "
+                    "WHERE request.status='pending' AND request.attempts<? "
+                    "AND request.next_attempt_at<=? ORDER BY request.id LIMIT 1",
+                    (max_attempts, now),
+                ).fetchone()
+                if row is None:
+                    self.db.execute("COMMIT")
+                    return None
+                self.db.execute(
+                    "UPDATE finalization_requests SET attempts=attempts+1,updated_at=? WHERE id=?",
+                    (now, row["id"]),
+                )
+                result = dict(self.db.execute(
+                    "SELECT request.*,work.repository,work.issue_number,work.idempotency_key "
+                    "FROM finalization_requests request JOIN active_work work ON work.id=request.work_id "
+                    "WHERE request.id=?", (row["id"],),
+                ).fetchone())
+                self.db.execute("COMMIT")
+                return result
+            except BaseException:
+                self.db.execute("ROLLBACK")
+                raise
+
+    def finish_finalization(self, request_id: int, verified: bool | None, error: str | None,
+                            max_attempts: int = 5, now: float | None = None) -> None:
+        now = time.time() if now is None else now
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                request = self.db.execute(
+                    "SELECT * FROM finalization_requests WHERE id=?", (request_id,),
+                ).fetchone()
+                if request is None or request["status"] != "pending":
+                    raise RuntimeError("finalization request is not pending")
+                if verified:
+                    changed = self.db.execute(
+                        "UPDATE active_work SET status='completed',updated_at=? "
+                        "WHERE id=? AND status='waiting'", (time.time(), request["work_id"]),
+                    ).rowcount
+                    if changed != 1:
+                        raise RuntimeError("verified finalization does not match waiting workflow")
+                    status = "verified"
+                elif verified is False:
+                    status = "blocked" if request["attempts"] >= max_attempts else "pending"
+                else:
+                    status = "pending"
+                self.db.execute(
+                    "UPDATE finalization_requests SET status=?,attempts=?,last_error=?,"
+                    "next_attempt_at=?,updated_at=? WHERE id=?",
+                    (status, request["attempts"] - 1 if verified is None else request["attempts"],
+                     None if verified else (error or "verification pending")[:1000],
+                     now + 30 if verified is None else 0, now, request_id),
+                )
+                self.db.execute("COMMIT")
             except BaseException:
                 self.db.execute("ROLLBACK")
                 raise
@@ -165,8 +285,11 @@ class Store:
                     self._promote_late_wakeups(work, now)
                 row = self.db.execute(
                     "SELECT * FROM active_work WHERE attempts<? AND (status='queued' OR "
-                    "(status='processing' AND lease_until<=?)) ORDER BY id LIMIT 1",
-                    (max_attempts, now),
+                    "(status='processing' AND lease_until<=?)) AND NOT EXISTS ("
+                    "SELECT 1 FROM active_work blocker WHERE blocker.status='waiting' OR "
+                    "(blocker.status='processing' AND blocker.lease_until>?)"
+                    ") ORDER BY id LIMIT 1",
+                    (max_attempts, now, now),
                 ).fetchone()
                 if row is None:
                     self.db.execute("COMMIT")
@@ -205,29 +328,18 @@ class Store:
                 ).fetchone()
                 if work is None:
                     raise RuntimeError("work is not processing")
-                late_wakeups = list(self.db.execute(
-                    "SELECT * FROM wakeups WHERE work_id=? AND id>? ORDER BY id",
-                    (work_id, work["processed_wakeup_id"]),
-                ))
+                late_wakeup = self.db.execute(
+                    "SELECT 1 FROM wakeups WHERE work_id=? AND id>? LIMIT 1",
+                    (work_id, work["processed_wakeup_id"] or 0),
+                ).fetchone() is not None
                 changed = self.db.execute(
-                    "UPDATE active_work SET status='completed',task_id=?,lease_until=NULL,claim_token=NULL,last_error=NULL,updated_at=? "
+                    "UPDATE active_work SET status=?,task_id=?,attempts=0,lease_until=NULL,claim_token=NULL,last_error=NULL,updated_at=? "
                     "WHERE id=? AND status='processing' AND claim_token=?",
-                    (task_id, completed_at, work_id, claim_token),
+                    ("queued" if late_wakeup else "waiting", task_id, completed_at,
+                     work_id, claim_token),
                 ).rowcount
                 if changed != 1:
                     raise RuntimeError("work is not processing")
-                if late_wakeups:
-                    first_delivery = late_wakeups[0]["delivery_id"]
-                    successor = self.db.execute(
-                        "INSERT INTO active_work(repository,issue_number,idempotency_key,status,created_at,updated_at) "
-                        "VALUES (?,?,?,'queued',?,?)",
-                        (work["repository"], work["issue_number"], first_delivery,
-                         completed_at, completed_at),
-                    ).lastrowid
-                    self.db.execute(
-                        "UPDATE wakeups SET work_id=? WHERE work_id=? AND id>?",
-                        (successor, work_id, work["processed_wakeup_id"]),
-                    )
                 self.db.execute("COMMIT")
             except BaseException:
                 self.db.execute("ROLLBACK")
@@ -279,7 +391,8 @@ class PublicGitHubAdapter:
 
 
 class Receiver:
-    def __init__(self, secret, store, github, *, limits=Limits(), rate_limit=60, concurrency_limit=8):
+    def __init__(self, secret, store, github, *, finalizer=None, limits=Limits(), rate_limit=60,
+                 concurrency_limit=8):
         if not secret:
             raise ValueError("webhook secret is required")
         self.secret, self.store, self.github, self.limits = secret.encode(), store, github, limits
@@ -331,9 +444,12 @@ class Receiver:
             if valid is not None:
                 return valid
             issue = data["issue"]
+            action = data["action"]
+            if event == "issues" and action == "closed":
+                status = self.store.request_finalization(REPOSITORY, issue["number"], delivery)
+                return (202 if status == "finalization_pending" else 200), status
             if issue["state"] != "open" or "neo-dev" not in [x["name"] for x in issue["labels"]]:
                 return 202, "ignored"
-            action = data["action"]
             if event == "issues":
                 if action not in {"opened", "reopened", "edited", "labeled"}:
                     return 202, "ignored"
@@ -348,7 +464,18 @@ class Receiver:
                 if len(self.timestamps) >= self.rate_limit:
                     return 429, "rate_limited"
                 self.timestamps.append(now)
-            status = self.store.accept({"delivery_id": delivery, "event": event, "action": action, "repository": REPOSITORY, "issue_number": issue["number"], "comment_id": data.get("comment", {}).get("id")})
+            command = None
+            if event == "issue_comment":
+                body = data["comment"]["body"].strip()
+                if APPROVE_SPEC_PATTERN.fullmatch(body):
+                    command = body
+                elif body in {"/accept", "/merge"}:
+                    command = body
+                else:
+                    command = "finding"
+            status = self.store.accept({"delivery_id": delivery, "event": event,
+                "action": action, "repository": REPOSITORY, "issue_number": issue["number"],
+                "comment_id": data.get("comment", {}).get("id"), "command": command})
             return (202 if status == "accepted" else 200), status
         except (KeyError, TypeError, ValueError, sqlite3.Error):
             return 400, "invalid_payload"
@@ -377,7 +504,8 @@ class Receiver:
 
 class TaskRunner:
     def __init__(self, script_path: str | None = None, python: str = "python3",
-                 max_runtime: str = "2h"):
+                 max_runtime: str = "2h", capability_broker=None,
+                 enforcement_path: str | None = None):
         if not max_runtime or max_runtime.startswith("-"):
             raise ValueError("max_runtime must be a bounded task.py duration")
         self.script = script_path or os.environ.get("NEO_DEV_TASK_RUNNER")
@@ -386,6 +514,8 @@ class TaskRunner:
         self.python = python
         self.workspace = "dir:/opt/data/profiles/dev"
         self.max_runtime, self.validated = max_runtime, False
+        self.capability_broker = capability_broker
+        self.enforcement_path = enforcement_path
 
     def _validate_contract(self):
         if self.validated:
@@ -397,6 +527,12 @@ class TaskRunner:
         required = ("--body", "--max-runtime", "--workspace", "--idempotency-key", "title")
         if any(option not in help_result.stdout for option in required):
             raise RuntimeError("task.py contract is incompatible")
+        if self.enforcement_path:
+            enforcement = pathlib.Path(self.enforcement_path).read_text(encoding="utf-8")
+            if ("toolsets=snapflow_neo_dev,web,browser,memory,session_search,skills\n" not in enforcement
+                    or "tool=snapflow_neo_dev_transition\n" not in enforcement
+                    or "resolved_worker_toolsets" not in enforcement):
+                raise RuntimeError("Hermes native task-tool enforcement is not verified")
         self.validated = True
 
     def create(self, work: dict, idempotency_key: str) -> str:
@@ -404,23 +540,44 @@ class TaskRunner:
             raise ValueError("idempotency_key must be a non-empty string")
         idempotency_key = idempotency_key.strip()
         self._validate_contract()
-        description = (
-            f"Process SnapFlow issue #{work['issue_number']} with "
-            f"{len(work['wakeups'])} durable wakeup(s). This card is controller-only; "
-            "its workspace is not an implementation target. Before project work, "
-            "invoke neo-dev-project-control with only preflight/start/resume, "
-            f"--repository {REPOSITORY}, --issue-number {work['issue_number']}, and "
-            f"--idempotency-key {idempotency_key}. Do not run project, shell, SSH, "
-            "tmux, Git, Codex, OpenSpec, package, lint, or test commands directly. "
-            "Use the controller's authenticated "
-            "/opt/data/bin/gh for GitHub reads and writes when required. Inspect "
-            "the latest Issue comments before acting and preserve every approval gate."
-        )
+        latest = work["wakeups"][-1] if work["wakeups"] else {}
+        delivery_id = latest.get("delivery_id")
+        try:
+            execution_id = str(uuid.uuid5(uuid.UUID(idempotency_key), str(uuid.UUID(delivery_id))))
+        except (ValueError, TypeError, AttributeError) as error:
+            raise ValueError("lifecycle and wakeup identities must be canonical UUIDs") from error
+        command = latest.get("command")
+        phase_command = "approve-spec" if isinstance(command, str) and command.startswith(
+            "/approve-spec ") else command
+        phase = {None: "specification", "approve-spec": "implementation",
+                 "/accept": "archive", "/merge": "merge-finalization",
+                 "finding": "review-correction"}.get(command, "blocked-invalid-phase")
+        if phase_command == "approve-spec":
+            phase = "implementation"
+        operation = "start" if work.get("task_id") is None else "resume"
+        capability = (self.capability_broker.issue(
+            idempotency_key, execution_id, work["issue_number"], phase,
+        ) if self.capability_broker else "unavailable-outside-installed-Hermes-profile")
+        description = f"""SnapFlow governed Issue workflow (self-contained controller task)
+Repository: {REPOSITORY}
+Issue: #{work['issue_number']}
+Durable workflow identity: {idempotency_key}
+Runnable wakeup execution identity: {execution_id}
+Wakeups included: {len(work['wakeups'])}; latest event/action/command: {latest.get('event')}/{latest.get('action')}/{command or 'neo-dev-label'}
+Current phase: {phase}
+Structured controller context: {json.dumps(work.get('controller_context', {}), sort_keys=True, separators=(',', ':'))}
+Controller workspace: dir:/opt/data/profiles/dev (read /opt/data/profiles/dev/projects/snapflow.md before any action).
+Controller dispatch operation already performed by the consumer: {operation}. This card has no project-command capability.
+Allowed decision tool: native Hermes tool `snapflow_neo_dev_transition` with execution_id=`{execution_id}`, capability=`{capability}`, decision=`proceed|block`, and a bounded summary.
+Use only structured lifecycle context and that one-use decision tool. Terminal, code execution, shell, SSH, Git, filesystem writes, and project-controller commands are unavailable to this task.
+Initial specification phase must create ONLY OpenSpec proposal/design/delta specs/tasks, an issue branch/worktree, a Draft PR, immutable full-SHA artifact links, and request exactly `/approve-spec <full-sha>`; implementation is forbidden.
+Implementation requires the matching trusted full-SHA approval. Review requires independent code/test review and UI review when applicable. Acceptance does not authorize merge. Archive phase must sync delta specs, validate and archive before requesting `/merge`. Merge-finalization requires separately verified merge authorization, then merge, close, and clean up the issue worker/worktree/branch state.
+Heartbeats are liveness only and never progress. Expected evidence is structured controller state plus repository artifacts and GitHub verification. If any prerequisite is absent or ambiguous, stop immediately and publish one concrete blocker; do not heartbeat-wait or claim completion. Reuse this task, idempotency identity, tmux window, and Codex session for every continuation; never create a duplicate worker/session."""
         result = subprocess.run(
             [self.python, self.script, f"SnapFlow issue #{work['issue_number']}",
              "--body", description, "--max-runtime", self.max_runtime,
              "--workspace", self.workspace,
-             "--idempotency-key", idempotency_key],
+             "--idempotency-key", execution_id],
             check=True, capture_output=True, text=True, timeout=70,
         )
         try:
@@ -435,13 +592,165 @@ class TaskRunner:
         return task_id.strip()
 
 
+class ProjectFinalizer:
+    """Fixed local adapter call; closure alone is never sufficient."""
+
+    def __init__(self, adapter="/opt/data/bin/neo-dev-project-control"):
+        self.adapter = adapter
+
+    def verify(self, repository: str, issue_number: int, idempotency_key: str) -> bool | None:
+        evidence = collect_host_evidence(
+            self.adapter, repository, issue_number, idempotency_key,
+        )
+        result = subprocess.run(
+            [self.adapter, "finalize", "--repository", repository, "--issue-number",
+             str(issue_number), "--idempotency-key", idempotency_key,
+             "--evidence", evidence],
+            check=False, capture_output=True, text=True, timeout=90, shell=False,
+        )
+        if result.returncode != 0:
+            return False
+        try:
+            document = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(document, dict):
+            return False
+        if document.get("status") == "pending":
+            return None
+        return document.get("status") == "finalized"
+
+
+class ProjectDispatcher:
+    """Consumer-only project dispatch; Kanban cards never receive this capability."""
+
+    def __init__(self, adapter="/opt/data/bin/neo-dev-project-control"):
+        self.adapter = adapter
+
+    def dispatch(self, operation: str, repository: str, issue_number: int,
+                 idempotency_key: str) -> dict:
+        if operation not in {"start", "resume"}:
+            raise ValueError("unsupported project dispatch operation")
+        if operation == "start":
+            status = subprocess.run(
+                [self.adapter, "status", "--repository", repository, "--issue-number",
+                 str(issue_number), "--idempotency-key", idempotency_key],
+                check=False, capture_output=True, text=True, timeout=90, shell=False,
+            )
+            if status.returncode == 0:
+                try:
+                    existing = json.loads(status.stdout)
+                except json.JSONDecodeError as error:
+                    raise RuntimeError("controller status returned invalid JSON") from error
+                if not isinstance(existing, dict):
+                    raise RuntimeError("controller status must be a JSON object")
+                identity = existing.get("governed_identity", {})
+                execution = existing.get("execution", {})
+                if (existing.get("idempotency_key") != idempotency_key
+                        or identity.get("repository") != repository
+                        or identity.get("issue_number") != issue_number):
+                    raise RuntimeError("controller status does not match recoverable start")
+                phase = execution.get("phase")
+                if phase in {"starting", "active"}:
+                    return {"controller": existing, "github": None}
+                if phase != "never_started":
+                    raise RuntimeError("controller status does not match recoverable start")
+        evidence_args = []
+        evidence_document = None
+        if operation == "resume":
+            encoded = collect_host_evidence(
+                self.adapter, repository, issue_number, idempotency_key,
+            )
+            evidence_args = ["--evidence", encoded]
+            evidence_document = json.loads(base64.b64decode(encoded))
+        result = subprocess.run(
+            [self.adapter, operation, "--repository", repository, "--issue-number",
+             str(issue_number), "--idempotency-key", idempotency_key, *evidence_args],
+            check=True, capture_output=True, text=True, timeout=90, shell=False,
+        )
+        controller = json.loads(result.stdout)
+        return {"controller": controller, "github": evidence_document}
+
+    def attest(self, repository: str, issue_number: int, idempotency_key: str) -> None:
+        evidence = collect_host_evidence(self.adapter, repository, issue_number, idempotency_key)
+        subprocess.run(
+            [self.adapter, "attest", "--repository", repository, "--issue-number",
+             str(issue_number), "--idempotency-key", idempotency_key,
+             "--evidence", evidence],
+            check=True, capture_output=True, text=True, timeout=90, shell=False,
+        )
+
+
+def collect_host_evidence(adapter: str, repository: str, issue_number: int,
+                          idempotency_key: str) -> str:
+    status = subprocess.run(
+        [adapter, "status", "--repository", repository, "--issue-number",
+         str(issue_number), "--idempotency-key", idempotency_key],
+        check=True, capture_output=True, text=True, timeout=90, shell=False,
+    )
+    document = json.loads(status.stdout)
+    execution = document.get("execution", {})
+    lifecycle_state = execution.get("lifecycle_state")
+    resolution_id = document.get("resolution_id")
+    branch = ("chore/issue-77-openspec-workflow" if issue_number == 77
+              else f"feature/issue-{issue_number}")
+    from .project_control import SubprocessExecutor
+    from .verification import HostGitHubEvidenceCollector
+    evidence = HostGitHubEvidenceCollector(SubprocessExecutor()).collect_bound(
+        repository, issue_number, branch, resolution_id, lifecycle_state, idempotency_key,
+    )
+    encoded = base64.b64encode(json.dumps(
+        evidence, sort_keys=True, separators=(",", ":"),
+    ).encode()).decode()
+    return encoded
+
+
 class Consumer:
     def __init__(self, store: Store, runner: TaskRunner, github: PublicGitHubAdapter,
-                 lease_seconds: int = 300, max_attempts: int = 5):
+                 lease_seconds: int = 300, max_attempts: int = 5, finalizer=None,
+                 dispatcher=None, capability_broker=None):
         self.store, self.runner, self.github = store, runner, github
         self.lease_seconds, self.max_attempts = lease_seconds, max_attempts
+        self.finalizer = finalizer
+        self.dispatcher = dispatcher
+        self.capability_broker = capability_broker
 
     def run_one(self, now=None) -> bool:
+        if self.capability_broker is not None and self.dispatcher is not None:
+            decision = self.capability_broker.claim_decision()
+            if decision is not None:
+                path, record = decision
+                if record.get("decision") != "proceed":
+                    self.capability_broker.finish_decision(path, record)
+                    return False
+                try:
+                    self.dispatcher.attest(
+                        REPOSITORY, record["issue_number"], record["workflow_id"],
+                    )
+                except Exception:
+                    # The trusted PR/artifact evidence can legitimately lag the
+                    # worker decision. Keep the one-use decision pending and
+                    # retry without crashing the durable consumer container.
+                    return False
+                self.capability_broker.finish_decision(path, record)
+                return True
+        finalization = self.store.claim_finalization(self.max_attempts)
+        if finalization is not None:
+            verified = False
+            error = "project finalizer is unavailable"
+            try:
+                if self.finalizer is not None:
+                    verified = self.finalizer.verify(
+                        finalization["repository"], finalization["issue_number"],
+                        finalization["idempotency_key"],
+                    )
+                    error = "controller merge-finalization verification rejected closure"
+            except Exception as finalization_error:
+                error = str(finalization_error)
+            self.store.finish_finalization(
+                finalization["id"], verified, error, self.max_attempts,
+            )
+            return verified is True
         work = self.store.claim(now, self.lease_seconds, self.max_attempts)
         if work is None:
             return False
@@ -449,6 +758,11 @@ class Consumer:
             live = self.github.revalidate(work["repository"], work["issue_number"])
             if not live.get("open") or live.get("is_pr") or "neo-dev" not in live.get("labels", []):
                 raise RuntimeError("GitHub issue is no longer eligible")
+            if self.dispatcher is not None:
+                work["controller_context"] = self.dispatcher.dispatch(
+                    "start" if work.get("task_id") is None else "resume",
+                    work["repository"], work["issue_number"], work["idempotency_key"],
+                )
             task_id = self.runner.create(work, work["idempotency_key"])
             self.store.complete(work["id"], work["claim_token"], task_id, now)
             return True
