@@ -23,6 +23,17 @@ require_hermes() {
   test -d "$live_src" && test -s "$profile"
 }
 
+resolve_hermes_python() {
+  for candidate in "${HERMES_PYTHON:-}" /opt/hermes/.venv/bin/python3 /opt/hermes/.venv/bin/python "$(command -v python3)"; do
+    test -n "$candidate" && test -x "$candidate" || continue
+    HERMES_HOME="$data_root/profiles/dev" "$candidate" -c 'import hermes_cli' >/dev/null 2>&1 || continue
+    printf '%s\n' "$candidate"
+    return 0
+  done
+  echo "unable to resolve the Hermes Python interpreter" >&2
+  return 1
+}
+
 install_scope() {
   require_hermes
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
@@ -39,7 +50,7 @@ install_scope() {
     fi
   done
   (cd "$backup/tree" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum >"$backup/SHA256SUMS")
-  hermes_bin=$(command -v hermes); hermes_python=$(head -n 1 "$hermes_bin"); hermes_python=${hermes_python#\#!}; test -x "$hermes_python"
+  hermes_python=$(resolve_hermes_python)
   HERMES_HOME="$data_root/profiles/dev" "$hermes_python" -c 'import json,sys; from hermes_cli.kanban_db import _resolve_worker_cli_toolsets; json.dump(_resolve_worker_cli_toolsets(sys.argv[1]) or [],sys.stdout)' "$data_root/profiles/dev" >"$backup/resolved_toolsets.before.json"
   HERMES_HOME="$data_root/profiles/dev" "$hermes_python" -c 'import json; from hermes_cli.config import load_config; json.dump(load_config().get("plugins",{}).get("enabled",[]),sys.stdout)' >"$backup/plugins.enabled.before.json"
   (cd "$backup" && sha256sum resolved_toolsets.before.json plugins.enabled.before.json >config.before.sha256)
@@ -73,9 +84,7 @@ verify_scope() {
   cmp "$installed_block" "$expected_block"
   "$host_bin/neo-dev-project-control" --help >/dev/null
   rm -f -- "$enforced"
-  hermes_bin=$(command -v hermes)
-  hermes_python=$(head -n 1 "$hermes_bin"); hermes_python=${hermes_python#\#!}
-  test -x "$hermes_python"
+  hermes_python=$(resolve_hermes_python)
   runtime=$(HERMES_HOME="$data_root/profiles/dev" "$hermes_python" \
     "$repo_root/tools/neo_dev_webhook/deploy/verify_hermes_runtime.py" \
     "$data_root/profiles/dev")
