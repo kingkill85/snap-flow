@@ -23,6 +23,10 @@ verify_scope() {
     mounts=$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$id")
     grep -Fxq /srv/webhook <<<"$mounts"
     grep -Fxq /var/lib/neo-dev <<<"$mounts"
+    grep -Fxq /etc/passwd <<<"$mounts"
+    grep -Fxq /etc/group <<<"$mounts"
+    test "$(docker exec "$id" getent passwd 1000)" = 'neo-runtime:x:1000:1000:Neo Dev runtime:/tmp:/usr/sbin/nologin'
+    test "$(docker exec "$id" getent group 1000)" = 'neo-runtime:x:1000:'
   done
   mounts=$(docker inspect --format '{{range .Mounts}}{{println .Destination}}{{end}}' "$consumer_id")
   grep -Fxq /opt/data <<<"$mounts"

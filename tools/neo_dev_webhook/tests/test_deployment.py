@@ -178,8 +178,10 @@ case "$args" in
   *"ps -q consumer") echo cid;;
   "inspect --format {{json .Config.Cmd}} rid") echo '["exec python3 -m neo_dev_webhook.server --host 0.0.0.0 --port 8787"]';;
   "inspect --format {{json .Config.Cmd}} cid") echo '["exec python3 -m neo_dev_webhook.consumer /var/lib/neo-dev/neo-dev.sqlite --max-runtime 2h --max-attempts 5"]';;
-  "inspect --format {{range .Mounts}}{{println .Destination}}{{end}} rid") printf '/srv/webhook\\n/var/lib/neo-dev\\n';;
-  "inspect --format {{range .Mounts}}{{println .Destination}}{{end}} cid") printf '/srv/webhook\\n/var/lib/neo-dev\\n/opt/data\\n';;
+  "inspect --format {{range .Mounts}}{{println .Destination}}{{end}} rid") printf '/srv/webhook\\n/var/lib/neo-dev\\n/etc/passwd\\n/etc/group\\n';;
+  "inspect --format {{range .Mounts}}{{println .Destination}}{{end}} cid") printf '/srv/webhook\\n/var/lib/neo-dev\\n/opt/data\\n/etc/passwd\\n/etc/group\\n';;
+  "exec rid getent passwd 1000"|"exec cid getent passwd 1000") echo 'neo-runtime:x:1000:1000:Neo Dev runtime:/tmp:/usr/sbin/nologin';;
+  "exec rid getent group 1000"|"exec cid getent group 1000") echo 'neo-runtime:x:1000:';;
   *" up -d --no-deps --force-recreate receiver consumer") exit 0;;
   "exec cid test -s /var/lib/neo-dev/neo-dev.sqlite") exit 0;;
   *) echo "unexpected docker argv: $args" >&2; exit 3;;
