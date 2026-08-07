@@ -19,7 +19,7 @@ install_scope() {
   (cd "$backup/root" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum >"$backup/SHA256SUMS")
   id neo-controller >/dev/null 2>&1 && touch "$backup/user.present" || touch "$backup/user.absent"
   id neo-controller >/dev/null 2>&1 || useradd --system --create-home --shell /bin/sh neo-controller
-  sshd_effective=$(sshd -T -C user=neo-controller,host=localhost,addr=127.0.0.1)
+  sshd_effective=$(/usr/sbin/sshd -T -C user=neo-controller,host=localhost,addr=127.0.0.1)
   grep -Fxq 'passwordauthentication no' <<<"$sshd_effective"
   grep -Fxq 'kbdinteractiveauthentication no' <<<"$sshd_effective"
   grep -Fxq 'authenticationmethods publickey' <<<"$sshd_effective"
@@ -42,7 +42,7 @@ install_scope() {
 }
 
 verify_scope() {
-  command -v git >/dev/null; command -v tmux >/dev/null; command -v codex >/dev/null; command -v python3 >/dev/null; command -v sudo >/dev/null; command -v sshd >/dev/null; command -v setpriv >/dev/null
+  command -v git >/dev/null; command -v tmux >/dev/null; command -v codex >/dev/null; command -v python3 >/dev/null; command -v sudo >/dev/null; test -x /usr/sbin/sshd; command -v setpriv >/dev/null
   test "$(stat -c '%U:%G:%a' /var/lib/neo-dev/project-control)" = neo-controller:neo-controller:700
   sudo -u dev test ! -r /var/lib/neo-dev/project-control
   test -z "$(getent shadow neo-controller | cut -d: -f2)"
