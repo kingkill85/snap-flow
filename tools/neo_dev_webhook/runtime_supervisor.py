@@ -37,7 +37,7 @@ def supervise(operation: str, key: str, session_id: str | None, *,
     state = store.load(key)
     if state is None or state.phase not in {"starting", "resuming"}:
         raise RuntimeError("supervisor launch conflicts with trusted state")
-    if operation == "resume":
+    if operation == "resume" and state.lifecycle_state != "label":
         if session_id is None or state.codex_session_id != session_id:
             raise RuntimeError("supervisor resume identity conflicts with trusted state")
         if state.github_evidence is None or state.lifecycle_state not in {
@@ -50,6 +50,10 @@ def supervise(operation: str, key: str, session_id: str | None, *,
         if not authorization.verified or authorization.evidence is None:
             raise RuntimeError(authorization.blocker or "trusted lifecycle command unavailable")
         state = controller.advance_lifecycle(key, **authorization.evidence)
+    elif operation == "resume" and (
+        session_id is None or state.codex_session_id != session_id
+    ):
+        raise RuntimeError("supervisor resume identity conflicts with trusted state")
 
     SOCKET_ROOT.mkdir(mode=0o711, parents=True, exist_ok=True)
     os.chmod(SOCKET_ROOT, 0o711)

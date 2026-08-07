@@ -648,10 +648,13 @@ class ProjectDispatcher:
                 execution = existing.get("execution", {})
                 if (existing.get("idempotency_key") != idempotency_key
                         or identity.get("repository") != repository
-                        or identity.get("issue_number") != issue_number
-                        or execution.get("phase") not in {"starting", "active"}):
+                        or identity.get("issue_number") != issue_number):
                     raise RuntimeError("controller status does not match recoverable start")
-                return {"controller": existing, "github": None}
+                phase = execution.get("phase")
+                if phase in {"starting", "active"}:
+                    return {"controller": existing, "github": None}
+                if phase != "never_started":
+                    raise RuntimeError("controller status does not match recoverable start")
         evidence_args = []
         evidence_document = None
         if operation == "resume":
@@ -720,9 +723,15 @@ class Consumer:
                 if record.get("decision") != "proceed":
                     self.capability_broker.finish_decision(path, record)
                     return False
-                self.dispatcher.attest(
-                    REPOSITORY, record["issue_number"], record["workflow_id"],
-                )
+                try:
+                    self.dispatcher.attest(
+                        REPOSITORY, record["issue_number"], record["workflow_id"],
+                    )
+                except Exception:
+                    # The trusted PR/artifact evidence can legitimately lag the
+                    # worker decision. Keep the one-use decision pending and
+                    # retry without crashing the durable consumer container.
+                    return False
                 self.capability_broker.finish_decision(path, record)
                 return True
         finalization = self.store.claim_finalization(self.max_attempts)

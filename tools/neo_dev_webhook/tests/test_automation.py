@@ -480,6 +480,25 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(runner.calls, [])
         self.assertEqual(self.github.calls[-1], (REPOSITORY, 77))
 
+    def test_pending_attestation_does_not_crash_or_consume_decision(self):
+        broker = mock.Mock()
+        path = mock.sentinel.path
+        record = {
+            "decision": "proceed", "issue_number": 13,
+            "workflow_id": TASK_KEY,
+        }
+        broker.claim_decision.return_value = (path, record)
+        dispatcher = mock.Mock()
+        dispatcher.attest.side_effect = RuntimeError("governed PR not available yet")
+        consumer = Consumer(
+            self.store, FakeRunner(), self.github,
+            dispatcher=dispatcher, capability_broker=broker,
+        )
+
+        self.assertFalse(consumer.run_one())
+        dispatcher.attest.assert_called_once_with(REPOSITORY, 13, TASK_KEY)
+        broker.finish_decision.assert_not_called()
+
     def test_failures_are_bounded_and_dead_lettered(self):
         self.send()
         runner = FakeRunner(failures=10)

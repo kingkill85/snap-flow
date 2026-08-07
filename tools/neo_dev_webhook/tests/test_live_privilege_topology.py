@@ -75,7 +75,9 @@ class LivePrivilegeTopologyTest(unittest.TestCase):
 
             with mock.patch.object(runtime_supervisor, "SOCKET_ROOT", socket_root), \
                  mock.patch("neo_dev_webhook.runtime_supervisor.os.geteuid", return_value=0), \
-                 mock.patch("neo_dev_webhook.runtime_supervisor.os.chown"):
+                 mock.patch("neo_dev_webhook.runtime_supervisor.os.chown"), \
+                 mock.patch("neo_dev_webhook.runtime_supervisor.pwd.getpwnam", \
+                            return_value=mock.Mock(pw_uid=1000, pw_gid=1000)):
                 thread = threading.Thread(target=target); thread.start()
                 path = socket_root / f"{KEY}.sock"
                 for _ in range(100):
@@ -109,7 +111,9 @@ class LivePrivilegeTopologyTest(unittest.TestCase):
             socket_root = root / "run"
             with mock.patch.object(runtime_supervisor, "SOCKET_ROOT", socket_root), \
                  mock.patch("neo_dev_webhook.runtime_supervisor.os.geteuid", return_value=0), \
-                 mock.patch("neo_dev_webhook.runtime_supervisor.os.chown"):
+                 mock.patch("neo_dev_webhook.runtime_supervisor.os.chown"), \
+                 mock.patch("neo_dev_webhook.runtime_supervisor.pwd.getpwnam", \
+                            return_value=mock.Mock(pw_uid=1000, pw_gid=1000)):
                 thread = threading.Thread(target=runtime_supervisor.supervise,
                     args=("start", KEY, None), kwargs={"registry_path": registry_path,
                     "state_path": state_path})
@@ -121,6 +125,55 @@ class LivePrivilegeTopologyTest(unittest.TestCase):
                 client.connect(str(path)); client.recv(4096); client.close(); thread.join(3)
             final = store.load(KEY)
             self.assertEqual((final.phase, final.terminal.resumable), ("crashed", True))
+
+    def test_supervisor_resumes_initial_spec_session_without_approval_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            registry_path = root / "registry.json"
+            registry_path.write_text(json.dumps({
+                "version": 1, "projects": [], "project_templates": [],
+                "targets": [ISSUE_77_TARGET.as_dict()],
+            }))
+            state_path = root / "state/resolutions.json"; state_path.parent.mkdir()
+            store = FileResolutionStore(state_path)
+            initial = store.bind(KEY, ISSUE_77_TARGET)
+            store.save(KEY, initial, replace(
+                initial, phase="resuming", codex_session_id=SESSION,
+            ))
+            socket_root = root / "run"
+            errors = []
+
+            def target():
+                try:
+                    runtime_supervisor.supervise(
+                        "resume", KEY, SESSION, registry_path=registry_path,
+                        state_path=state_path,
+                    )
+                except BaseException as error:
+                    errors.append(error)
+
+            with mock.patch.object(runtime_supervisor, "SOCKET_ROOT", socket_root), \
+                 mock.patch("neo_dev_webhook.runtime_supervisor.os.geteuid", return_value=0), \
+                 mock.patch("neo_dev_webhook.runtime_supervisor.os.chown"), \
+                 mock.patch("neo_dev_webhook.runtime_supervisor.pwd.getpwnam", \
+                            return_value=mock.Mock(pw_uid=1000, pw_gid=1000)):
+                thread = threading.Thread(target=target); thread.start()
+                path = socket_root / f"{KEY}.sock"
+                for _ in range(100):
+                    if path.exists(): break
+                    time.sleep(0.01)
+                client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                client.connect(str(path)); stream = client.makefile("rwb", buffering=0)
+                launch = json.loads(stream.readline())
+                self.assertEqual(launch["lifecycle_state"], "label")
+                self.assertEqual(launch["session_id"], SESSION)
+                stream.write((json.dumps({"event": "session", "session_id": SESSION}) + "\n").encode())
+                stream.write((json.dumps({"event": "terminal", "exit_code": 1,
+                    "semantic_outcome": "correctable", "resumable": True}) + "\n").encode())
+                stream.close(); client.close(); thread.join(3)
+            self.assertFalse(errors)
+            final = store.load(KEY)
+            self.assertEqual((final.codex_session_id, final.phase), (SESSION, "exited_resumable"))
 
     def test_install_requires_public_key_only_sshd_and_never_grants_dev_sudo(self):
         deploy = pathlib.Path(__file__).parents[1] / "deploy/controller-install.sh"
