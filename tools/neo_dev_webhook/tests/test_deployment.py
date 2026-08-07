@@ -159,6 +159,8 @@ class DeploymentTest(unittest.TestCase):
 
     def test_dockge_verify_and_activate_need_no_python(self):
         script = pathlib.Path(__file__).parents[1] / "deploy/dockge-activate.sh"
+        script_text = script.read_text()
+        self.assertIn("activate) compose=$stack/compose.yaml; verify_definition;", script_text)
         fixture_compose = pathlib.Path(__file__).with_name("fixtures") / "live-compose.yaml"
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory); stack = root / "stack"; bin_dir = root / "bin"
