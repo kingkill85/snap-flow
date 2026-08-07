@@ -480,6 +480,45 @@ class ProjectControlTest(unittest.TestCase):
                 spec_sha="a" * 40,
             )
 
+    def test_archive_authorization_precedes_controller_archive_sha_and_merge_authorization(self):
+        store = InMemoryResolutionStore()
+        initial = store.bind(KEY, TARGET)
+        accepted = WorkState(
+            TARGET, lifecycle_state="accepted",
+            lifecycle_updated_at="2026-08-07T00:00:00Z", base_sha="b" * 40,
+            spec_sha="a" * 40, implementation_sha="c" * 40,
+            accepted_sha="c" * 40, approval_at="2026-08-06T00:00:00Z",
+            accepted_at="2026-08-07T00:00:00Z",
+        )
+        store.save(KEY, initial, accepted)
+        controller = Controller(Registry((TARGET,)), store, FakeExecutor([]))
+
+        authorized = controller.advance_lifecycle(
+            KEY, lifecycle_state="archive_authorized",
+            lifecycle_updated_at="2026-08-07T00:00:01Z",
+            merge_authorized_at="2026-08-07T00:00:01Z",
+        )
+        self.assertEqual(authorized.lifecycle_state, "archive_authorized")
+        self.assertIsNone(authorized.archive_sha)
+
+        archived = controller.advance_lifecycle(
+            KEY, lifecycle_state="archive_ci_verified",
+            lifecycle_updated_at="2026-08-07T00:00:02Z", archive_sha="d" * 40,
+        )
+        self.assertEqual(archived.archive_sha, "d" * 40)
+
+        merge_authorized = controller.advance_lifecycle(
+            KEY, lifecycle_state="merge_authorized",
+            lifecycle_updated_at="2026-08-07T00:00:01Z",
+        )
+        self.assertEqual(merge_authorized.archive_sha, "d" * 40)
+
+        closed = controller.advance_lifecycle(
+            KEY, lifecycle_state="merged_closed",
+            lifecycle_updated_at="2026-08-07T00:00:03Z",
+        )
+        self.assertEqual(closed.archive_sha, "d" * 40)
+
 
 if __name__ == "__main__":
     unittest.main()

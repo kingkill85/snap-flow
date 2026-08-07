@@ -49,6 +49,18 @@ class DeploymentTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "bounded"):
                 broker.submit("execution", "wrong", "shell", "id")
 
+    def test_transition_capability_persists_the_exact_current_wakeup(self):
+        wakeup = {
+            "comment_id": 9001, "command": "/merge",
+            "created_at": "2026-08-07T00:00:02Z", "delivery_id": "delivery",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            broker = CapabilityBroker(root)
+            broker.issue("workflow", "execution", 13, "merge-finalization", wakeup)
+            record = json.loads((root / "execution.json").read_text())
+        self.assertEqual(record["current_wakeup"], wakeup)
+
     def test_hermes_scope_stage_and_rollback_are_byte_identical(self):
         script = pathlib.Path(__file__).parents[1] / "deploy/hermes-stage.sh"
         with tempfile.TemporaryDirectory() as directory:

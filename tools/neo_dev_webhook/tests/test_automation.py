@@ -159,6 +159,20 @@ class AutomationTest(unittest.TestCase):
         claimed = self.store.claim()
         self.assertEqual(claimed["wakeups"][0]["command"], command)
 
+    def test_revision_request_is_persisted_verbatim_from_authorized_comment(self):
+        command = "/revise-spec clarify the failure scenario"
+        data = payload(event="issue_comment", body=command)
+        self.assertEqual(self.send(data, event="issue_comment"), (202, "accepted"))
+        claimed = self.store.claim()
+        self.assertEqual(claimed["wakeups"][0]["command"], command)
+
+    def test_fix_request_is_persisted_verbatim_from_authorized_comment(self):
+        command = "/fix repair the retry race"
+        data = payload(event="issue_comment", body=command)
+        self.assertEqual(self.send(data, event="issue_comment"), (202, "accepted"))
+        claimed = self.store.claim()
+        self.assertEqual(claimed["wakeups"][0]["command"], command)
+
     def test_raw_byte_hmac_and_canonical_delivery_uuid(self):
         raw, headers = request("secret", payload())
         headers["X-Hub-Signature-256"] = hmac.new(b"secret", raw + b" ", hashlib.sha256).hexdigest()
@@ -496,8 +510,69 @@ class AutomationTest(unittest.TestCase):
         )
 
         self.assertFalse(consumer.run_one())
-        dispatcher.attest.assert_called_once_with(REPOSITORY, 13, TASK_KEY)
+        dispatcher.attest.assert_called_once_with(REPOSITORY, 13, TASK_KEY, None)
         broker.finish_decision.assert_not_called()
+
+    def test_merge_worker_waits_for_controller_archive_attestation_then_auto_resumes(self):
+        merge_wakeup = {
+            "comment_id": 9001,
+            "command": "/merge",
+            "created_at": "2026-08-07T00:00:02Z",
+            "delivery_id": WAKEUP_KEY,
+        }
+        broker = mock.Mock()
+        path = mock.sentinel.path
+        record = {
+            "decision": "proceed",
+            "issue_number": 13,
+            "workflow_id": TASK_KEY,
+            "execution_id": "same-worker-execution",
+            "current_wakeup": merge_wakeup,
+        }
+        broker.claim_decision.return_value = (path, record)
+        dispatcher = mock.Mock()
+        dispatcher.attest.side_effect = [
+            RuntimeError("archive SHA and successful checks are not controller-persisted"),
+            {
+                "controller": {
+                    "execution": {
+                        "lifecycle_state": "archive_ci_verified",
+                        "archive_sha": "d" * 40,
+                    },
+                },
+            },
+        ]
+        dispatcher.dispatch.return_value = {
+            "controller": {
+                "execution": {
+                    "lifecycle_state": "merge_authorized",
+                    "archive_sha": "d" * 40,
+                },
+            },
+            "github": {"current_wakeup": merge_wakeup},
+        }
+        runner = FakeRunner()
+        consumer = Consumer(
+            self.store, runner, self.github,
+            dispatcher=dispatcher, capability_broker=broker,
+        )
+
+        self.assertFalse(consumer.run_one())
+        self.assertEqual(runner.calls, [])
+        broker.finish_decision.assert_not_called()
+
+        self.assertTrue(consumer.run_one())
+        dispatcher.attest.assert_called_with(
+            REPOSITORY, 13, TASK_KEY, merge_wakeup,
+        )
+        dispatcher.dispatch.assert_called_once_with(
+            "resume", REPOSITORY, 13, TASK_KEY, merge_wakeup,
+        )
+        resumed_work, resumed_identity = runner.calls[0]
+        self.assertEqual(resumed_identity, TASK_KEY)
+        self.assertEqual(resumed_work["task_id"], "same-worker-execution")
+        self.assertEqual(resumed_work["wakeups"], [merge_wakeup])
+        broker.finish_decision.assert_called_once_with(path, record)
 
     def test_failures_are_bounded_and_dead_lettered(self):
         self.send()
@@ -535,6 +610,25 @@ class AutomationTest(unittest.TestCase):
         self.assertNotIn("shell", run.call_args.kwargs)
         self.assertNotIn("/opt/data/bin/neo-dev-project-control", argv[argv.index("--body") + 1])
         self.assertNotIn("ssh:snapflow-dev", argv)
+
+    def test_revision_and_fix_prompts_include_exact_trusted_request_and_reuse_worker(self):
+        help_result = mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
+        for command in ("/revise-spec clarify exact retry behavior", "/fix repair exact retry race"):
+            with self.subTest(command=command), mock.patch(
+                "subprocess.run", side_effect=[help_result, mock.Mock(
+                    stdout='{"task_id":"same-task","durable":true}\n')],
+            ) as run:
+                runner = TaskRunner(script_path="/test/task.py")
+                work = {"issue_number": 77, "task_id": "same-task", "wakeups": [{
+                    "delivery_id": WAKEUP_KEY, "event": "issue_comment",
+                    "action": "created", "command": command,
+                }]}
+                self.assertEqual(runner.create(work, TASK_KEY), "same-task")
+                body = run.call_args_list[1].args[0][4]
+                self.assertIn(command, body)
+                self.assertIn("product implementation is forbidden", body)
+                self.assertIn("dispatch operation already performed by the consumer: resume", body)
+                self.assertIn("never create a duplicate worker/session", body)
 
     def test_controller_card_is_fixed_and_is_not_the_implementation_target(self):
         with self.assertRaises(TypeError):

@@ -179,7 +179,7 @@ class GenericOrchestratorTest(unittest.TestCase):
         self.assertNotIn("dev ALL=(root)", (pathlib.Path(__file__).parents[1] /
                                             "controller/neo-dev-control.sudoers").read_text())
 
-    def test_continuation_task_reuses_identity_and_selects_accept_archive_phase(self):
+    def test_continuation_task_reuses_identity_and_selects_accept_awaiting_merge_phase(self):
         runner = TaskRunner(script_path="/test/task.py")
         help_result = mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
         completed = mock.Mock(stdout='{"task_id":"same-task","durable":true}\n')
@@ -190,7 +190,7 @@ class GenericOrchestratorTest(unittest.TestCase):
         with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
             self.assertEqual(runner.create(work, KEY), "same-task")
         body = run.call_args_list[1].args[0][4]
-        self.assertIn("Current phase: archive", body)
+        self.assertIn("Current phase: awaiting-merge", body)
         self.assertIn("dispatch operation already performed", body)
         self.assertIn(KEY, body)
         self.assertIn("Acceptance does not authorize merge", body)
@@ -200,11 +200,14 @@ class GenericOrchestratorTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported"):
             dispatcher.dispatch("shell", REPOSITORY, 13, KEY)
         controller_output = json.dumps({"status": "resuming"})
+        wakeup = {"comment_id": 102, "command": "/fix repair the race",
+                  "delivery_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}
         with mock.patch("neo_dev_webhook.automation.collect_host_evidence",
-                        return_value=base64.b64encode(b'{}').decode()), mock.patch(
+                        return_value=base64.b64encode(b'{}').decode()) as collect, mock.patch(
                             "subprocess.run", return_value=subprocess.CompletedProcess([], 0, controller_output)
                         ) as run:
-            dispatcher.dispatch("resume", REPOSITORY, 13, KEY)
+            dispatcher.dispatch("resume", REPOSITORY, 13, KEY, wakeup)
+        collect.assert_called_once_with("/fixed/controller", REPOSITORY, 13, KEY, wakeup)
         self.assertEqual(run.call_args.args[0], [
             "/fixed/controller", "resume", "--repository", REPOSITORY,
             "--issue-number", "13", "--idempotency-key", KEY, "--evidence",
@@ -266,7 +269,7 @@ class GenericOrchestratorTest(unittest.TestCase):
         self.assertEqual(len(cards), 2)
         self.assertIn("Current phase: specification", cards[
             str(uuid.uuid5(uuid.UUID(KEY), str(uuid.UUID(first_wakeup))))]["body"])
-        self.assertIn("Current phase: archive", cards[
+        self.assertIn("Current phase: awaiting-merge", cards[
             str(uuid.uuid5(uuid.UUID(KEY), str(uuid.UUID(second_wakeup))))]["body"])
 
     def test_deployment_updates_existing_compose_stack_without_systemd_or_profile_overwrite(self):

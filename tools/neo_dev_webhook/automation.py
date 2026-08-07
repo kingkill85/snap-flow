@@ -21,6 +21,8 @@ ACTOR_ID = 11455872
 ACTOR_LOGIN = "kingkill85"
 MARKER = "<!-- neo-dev -->"
 APPROVE_SPEC_PATTERN = re.compile(r"^/approve-spec [0-9a-f]{40}$")
+REVISE_SPEC_PATTERN = re.compile(r"^/revise-spec\s+\S(?:.*\S)?$", re.DOTALL)
+FIX_PATTERN = re.compile(r"^/fix\s+\S(?:.*\S)?$", re.DOTALL)
 
 
 def has_standalone_marker(body: str) -> bool:
@@ -469,6 +471,10 @@ class Receiver:
                 body = data["comment"]["body"].strip()
                 if APPROVE_SPEC_PATTERN.fullmatch(body):
                     command = body
+                elif REVISE_SPEC_PATTERN.fullmatch(body):
+                    command = body
+                elif FIX_PATTERN.fullmatch(body):
+                    command = body
                 elif body in {"/accept", "/merge"}:
                     command = body
                 else:
@@ -547,16 +553,21 @@ class TaskRunner:
         except (ValueError, TypeError, AttributeError) as error:
             raise ValueError("lifecycle and wakeup identities must be canonical UUIDs") from error
         command = latest.get("command")
-        phase_command = "approve-spec" if isinstance(command, str) and command.startswith(
-            "/approve-spec ") else command
+        phase_command = command
+        if isinstance(command, str):
+            if command.startswith("/approve-spec "):
+                phase_command = "approve-spec"
+            elif command.startswith("/revise-spec "):
+                phase_command = "revise-spec"
+            elif command.startswith("/fix "):
+                phase_command = "fix"
         phase = {None: "specification", "approve-spec": "implementation",
-                 "/accept": "archive", "/merge": "merge-finalization",
-                 "finding": "review-correction"}.get(command, "blocked-invalid-phase")
-        if phase_command == "approve-spec":
-            phase = "implementation"
+                 "revise-spec": "specification-revision", "fix": "implementation-correction",
+                 "/accept": "awaiting-merge", "/merge": "merge-finalization",
+                 "finding": "review-correction"}.get(phase_command, "blocked-invalid-phase")
         operation = "start" if work.get("task_id") is None else "resume"
         capability = (self.capability_broker.issue(
-            idempotency_key, execution_id, work["issue_number"], phase,
+            idempotency_key, execution_id, work["issue_number"], phase, latest,
         ) if self.capability_broker else "unavailable-outside-installed-Hermes-profile")
         description = f"""SnapFlow governed Issue workflow (self-contained controller task)
 Repository: {REPOSITORY}
@@ -571,7 +582,7 @@ Controller dispatch operation already performed by the consumer: {operation}. Th
 Allowed decision tool: native Hermes tool `snapflow_neo_dev_transition` with execution_id=`{execution_id}`, capability=`{capability}`, decision=`proceed|block`, and a bounded summary.
 Use only structured lifecycle context and that one-use decision tool. Terminal, code execution, shell, SSH, Git, filesystem writes, and project-controller commands are unavailable to this task.
 Initial specification phase must create ONLY OpenSpec proposal/design/delta specs/tasks, an issue branch/worktree, a Draft PR, immutable full-SHA artifact links, and request exactly `/approve-spec <full-sha>`; implementation is forbidden.
-Implementation requires the matching trusted full-SHA approval. Review requires independent code/test review and UI review when applicable. Acceptance does not authorize merge. Archive phase must sync delta specs, validate and archive before requesting `/merge`. Merge-finalization requires separately verified merge authorization, then merge, close, and clean up the issue worker/worktree/branch state.
+`/revise-spec` uses the exact trusted persisted request above, edits only the active OpenSpec planning artifacts, invalidates prior approval and acceptance, validates, commits and pushes a new SHA, updates immutable approval evidence, and returns to `/approve-spec <new-full-sha>`; product implementation is forbidden. `/fix` uses the exact trusted persisted request above, preserves the approved spec SHA, changes only implementation defects plus tests/review, and returns to awaiting acceptance. Implementation requires the matching trusted full-SHA approval. Review requires independent code/test review and UI review when applicable. Acceptance does not authorize merge: `/accept` records acceptance and must not sync or archive. `/merge` first permits only sync/archive and pushing the archive SHA. Merge, close, and cleanup require controller-persisted archive SHA and successful current checks under an automatic continuation of that same exact `/merge` wakeup; never request or accept a second command.
 Heartbeats are liveness only and never progress. Expected evidence is structured controller state plus repository artifacts and GitHub verification. If any prerequisite is absent or ambiguous, stop immediately and publish one concrete blocker; do not heartbeat-wait or claim completion. Reuse this task, idempotency identity, tmux window, and Codex session for every continuation; never create a duplicate worker/session."""
         result = subprocess.run(
             [self.python, self.script, f"SnapFlow issue #{work['issue_number']}",
@@ -628,7 +639,7 @@ class ProjectDispatcher:
         self.adapter = adapter
 
     def dispatch(self, operation: str, repository: str, issue_number: int,
-                 idempotency_key: str) -> dict:
+                 idempotency_key: str, current_wakeup: dict | None = None) -> dict:
         if operation not in {"start", "resume"}:
             raise ValueError("unsupported project dispatch operation")
         if operation == "start":
@@ -659,7 +670,7 @@ class ProjectDispatcher:
         evidence_document = None
         if operation == "resume":
             encoded = collect_host_evidence(
-                self.adapter, repository, issue_number, idempotency_key,
+                self.adapter, repository, issue_number, idempotency_key, current_wakeup,
             )
             evidence_args = ["--evidence", encoded]
             evidence_document = json.loads(base64.b64decode(encoded))
@@ -671,18 +682,25 @@ class ProjectDispatcher:
         controller = json.loads(result.stdout)
         return {"controller": controller, "github": evidence_document}
 
-    def attest(self, repository: str, issue_number: int, idempotency_key: str) -> None:
-        evidence = collect_host_evidence(self.adapter, repository, issue_number, idempotency_key)
-        subprocess.run(
+    def attest(self, repository: str, issue_number: int, idempotency_key: str,
+               current_wakeup: dict | None = None) -> dict:
+        evidence = collect_host_evidence(
+            self.adapter, repository, issue_number, idempotency_key, current_wakeup,
+        )
+        result = subprocess.run(
             [self.adapter, "attest", "--repository", repository, "--issue-number",
              str(issue_number), "--idempotency-key", idempotency_key,
              "--evidence", evidence],
             check=True, capture_output=True, text=True, timeout=90, shell=False,
         )
+        controller = json.loads(result.stdout)
+        if not isinstance(controller, dict):
+            raise RuntimeError("controller attestation must return a JSON object")
+        return {"controller": controller}
 
 
 def collect_host_evidence(adapter: str, repository: str, issue_number: int,
-                          idempotency_key: str) -> str:
+                          idempotency_key: str, current_wakeup: dict | None = None) -> str:
     status = subprocess.run(
         [adapter, "status", "--repository", repository, "--issue-number",
          str(issue_number), "--idempotency-key", idempotency_key],
@@ -698,6 +716,7 @@ def collect_host_evidence(adapter: str, repository: str, issue_number: int,
     from .verification import HostGitHubEvidenceCollector
     evidence = HostGitHubEvidenceCollector(SubprocessExecutor()).collect_bound(
         repository, issue_number, branch, resolution_id, lifecycle_state, idempotency_key,
+        current_wakeup,
     )
     encoded = base64.b64encode(json.dumps(
         evidence, sort_keys=True, separators=(",", ":"),
@@ -724,9 +743,23 @@ class Consumer:
                     self.capability_broker.finish_decision(path, record)
                     return False
                 try:
-                    self.dispatcher.attest(
+                    attestation = self.dispatcher.attest(
                         REPOSITORY, record["issue_number"], record["workflow_id"],
+                        record.get("current_wakeup"),
                     )
+                    execution = attestation.get("controller", {}).get("execution", {})
+                    if execution.get("lifecycle_state") == "archive_ci_verified":
+                        wakeup = record.get("current_wakeup")
+                        context = self.dispatcher.dispatch(
+                            "resume", REPOSITORY, record["issue_number"],
+                            record["workflow_id"], wakeup,
+                        )
+                        self.runner.create({
+                            "issue_number": record["issue_number"],
+                            "task_id": record["execution_id"],
+                            "wakeups": [wakeup],
+                            "controller_context": context,
+                        }, record["workflow_id"])
                 except Exception:
                     # The trusted PR/artifact evidence can legitimately lag the
                     # worker decision. Keep the one-use decision pending and
@@ -762,6 +795,7 @@ class Consumer:
                 work["controller_context"] = self.dispatcher.dispatch(
                     "start" if work.get("task_id") is None else "resume",
                     work["repository"], work["issue_number"], work["idempotency_key"],
+                    work["wakeups"][-1] if work["wakeups"] else None,
                 )
             task_id = self.runner.create(work, work["idempotency_key"])
             self.store.complete(work["id"], work["claim_token"], task_id, now)

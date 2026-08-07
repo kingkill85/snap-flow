@@ -33,7 +33,8 @@ PHASES = frozenset({
 SEMANTIC_OUTCOMES = frozenset({"success", "correctable", "blocked", "crashed", "invalid"})
 LIFECYCLE_STATES = (
     "label", "specification_ready", "spec_approved", "implementation_verified",
-    "accepted", "archive_ci_verified", "merge_authorized", "merged_closed",
+    "accepted", "archive_authorized", "archive_ci_verified", "merge_authorized",
+    "merged_closed",
 )
 
 
@@ -161,9 +162,14 @@ class WorkState:
             "implementation_verified": (self.base_sha, self.spec_sha, self.implementation_sha),
             "accepted": (self.base_sha, self.spec_sha, self.implementation_sha, self.accepted_sha,
                          self.accepted_at),
+            "archive_authorized": (self.base_sha, self.spec_sha, self.implementation_sha,
+                                   self.accepted_sha, self.accepted_at,
+                                   self.merge_authorized_at),
             "archive_ci_verified": (self.base_sha, self.spec_sha, self.implementation_sha,
                                     self.accepted_sha, self.archive_sha),
-            "merge_authorized": (self.base_sha, self.archive_sha, self.merge_authorized_at),
+            "merge_authorized": (self.base_sha, self.spec_sha, self.implementation_sha,
+                                 self.accepted_sha, self.accepted_at, self.archive_sha,
+                                 self.merge_authorized_at),
             "merged_closed": (self.base_sha, self.archive_sha, self.merge_authorized_at),
         }
         if self.lifecycle_state != "label" and self.lifecycle_updated_at is None:
@@ -480,6 +486,7 @@ class Controller:
                 "process_generation": state.process_generation,
                 "restart_count": state.restart_count,
                 "lifecycle_state": state.lifecycle_state,
+                "archive_sha": state.archive_sha,
             },
             "governed_identity": {"repository": state.target.repository,
                                   "issue_number": state.target.issue_number},
@@ -538,7 +545,13 @@ class Controller:
             next_index = LIFECYCLE_STATES.index(next_state)
         except ValueError as error:
             raise RuntimeError("invalid lifecycle transition") from error
-        if next_index != current_index + 1:
+        revision_reopen = next_state == "label" and state.lifecycle_state in {
+            "specification_ready", "spec_approved", "implementation_verified", "accepted",
+        }
+        fix_reopen = next_state == "spec_approved" and state.lifecycle_state in {
+            "spec_approved", "implementation_verified", "accepted",
+        }
+        if (next_index != current_index + 1 and not revision_reopen and not fix_reopen):
             raise RuntimeError("lifecycle transition skipped or repeated a governed gate")
         allowed = {
             "lifecycle_updated_at", "base_sha", "spec_sha", "implementation_sha", "accepted_sha",
@@ -747,9 +760,12 @@ class Controller:
             return self._result(operation, idempotency_key, state, "observed")
         if operation == "attest":
             if state.github_evidence is None or state.lifecycle_state not in {
-                "label", "spec_approved", "accepted", "merge_authorized",
+                "label", "spec_approved", "accepted", "archive_authorized",
+                "merge_authorized",
             }:
                 raise RuntimeError("attestation does not match a verifiable lifecycle state")
+            if state.lifecycle_state == "accepted":
+                return self._result(operation, idempotency_key, state, "awaiting_merge")
             from .verification import RepositoryGitHubVerifier
             transition = RepositoryGitHubVerifier(
                 self.executor, state.github_evidence,
@@ -771,7 +787,7 @@ class Controller:
                                     "pending")
             from .verification import RepositoryGitHubVerifier
             verification = RepositoryGitHubVerifier(self.executor, state.github_evidence).verify(
-                target, "merge-finalization",
+                target, "merge-finalization", expected_archive_sha=state.archive_sha,
             )
             if not verification.verified:
                 raise RuntimeError(verification.blocker or "merge finalization verification failed")

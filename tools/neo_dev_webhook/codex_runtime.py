@@ -42,13 +42,17 @@ def continuation_prompt(repository: str, issue_number: int, lifecycle_state: str
             "accept, archive, merge, close, deploy, or clean up the worktree."
         ),
         "accepted": (
-            "Perform the accepted post-implementation phase: synchronize with main as required, "
-            "run the strict validation suite, archive the OpenSpec change, commit and push those "
-            "artifacts, and verify CI. Do not merge, close, deploy, or clean up the worktree."
+            "Acceptance is recorded. Make no repository changes and wait for the separate trusted "
+            "`/merge` authorization; specifically do not sync or archive the OpenSpec change."
+        ),
+        "archive_authorized": (
+            "The bound `/merge` authorizes only OpenSpec sync/archive and pushing that exact archive "
+            "SHA. Do not merge, close the Issue, or clean up; stop and wait for controller archive "
+            "and CI attestation."
         ),
         "merge_authorized": (
-            "Perform only the separately authorized merge-finalization: verify the exact authorized "
-            "head and CI, merge the governed PR, close the Issue, and perform governed cleanup."
+            "Perform only final exact-archive-SHA verification, merge the governed PR, close the "
+            "Issue, and perform governed cleanup. Do not modify or re-archive repository content."
         ),
     }.get(lifecycle_state)
     if phase_work is None:
@@ -316,7 +320,8 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
         if lifecycle.github_evidence is None:
             raise RuntimeError("resume requires fresh host-side GitHub evidence")
         if lifecycle.lifecycle_state not in {
-            "specification_ready", "implementation_verified", "archive_ci_verified",
+            "specification_ready", "spec_approved", "implementation_verified", "accepted",
+            "archive_authorized", "archive_ci_verified", "merge_authorized",
         }:
             raise RuntimeError("continuation is not at a command-authorizable lifecycle gate")
         authorization = trusted_verifier.authorize(target, lifecycle)
@@ -327,9 +332,12 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
         f"Continue the same governed {target.repository} Issue #{target.issue_number} workflow and "
         f"same Codex session from controller-owned lifecycle state `{lifecycle.lifecycle_state}`. "
         "Read the live Issue command and artifacts, enforce only that current gate, "
-        "and fail fast with one concrete blocker if prerequisites are missing. /approve-spec permits "
-        "implementation only for the matching full SHA; /accept permits sync/strict validation/archive "
-        "but not merge; /merge is a separate authorization for merge, closure, and cleanup. Heartbeats "
+        "and fail fast with one concrete blocker if prerequisites are missing. `/revise-spec` permits "
+        "planning-artifact revision only and invalidates approval and acceptance; `/fix` permits only "
+        "implementation correction while preserving the approved spec SHA. /approve-spec permits "
+        "implementation only for the matching full SHA; /accept records acceptance without archiving; "
+        "/merge first permits only sync/archive; controller-persisted archive SHA and successful checks "
+        "must precede automatic same-command continuation for merge, closure, and cleanup. Heartbeats "
         "are liveness only and never progress."
     )
     turn = server.request("turn/start", {
@@ -440,7 +448,7 @@ def run_supervised_runtime(operation: str, idempotency_key: str,
         target.validate()
         lifecycle_state = launch.get("lifecycle_state")
         if lifecycle_state not in {
-            "label", "spec_approved", "accepted", "merge_authorized",
+            "label", "spec_approved", "accepted", "archive_authorized", "merge_authorized",
         }:
             raise RuntimeError("supervisor lifecycle state is invalid")
         schema_path: pathlib.Path | None = None

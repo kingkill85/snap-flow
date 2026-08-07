@@ -13,12 +13,14 @@ class CapabilityBroker:
     def __init__(self, root: pathlib.Path = pathlib.Path("/opt/data/state/snapflow-neo-dev/capabilities")):
         self.root = root
 
-    def issue(self, workflow_id: str, execution_id: str, issue_number: int, phase: str) -> str:
+    def issue(self, workflow_id: str, execution_id: str, issue_number: int, phase: str,
+              current_wakeup: dict | None = None) -> str:
         token = secrets.token_urlsafe(32)
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         record = {"workflow_id": workflow_id, "execution_id": execution_id,
                   "issue_number": issue_number, "phase": phase, "token": token,
-                  "expires_at": time.time() + 7200, "used": False}
+                  "expires_at": time.time() + 7200, "used": False,
+                  "current_wakeup": current_wakeup}
         path = self.root / f"{execution_id}.json"
         with tempfile.NamedTemporaryFile("w", dir=self.root, delete=False) as handle:
             json.dump(record, handle, sort_keys=True, separators=(",", ":")); handle.write("\n")

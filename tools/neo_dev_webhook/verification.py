@@ -11,6 +11,11 @@ from typing import Protocol
 from .project_control import GovernedTarget, ProcessExecutor, WorkState
 
 APPROVAL = re.compile(r"^/approve-spec ([0-9a-f]{40})$")
+REVISION = re.compile(r"^/revise-spec\s+\S(?:.*\S)?$", re.DOTALL)
+FIX = re.compile(r"^/fix\s+\S(?:.*\S)?$", re.DOTALL)
+AUTHORIZED_ACTOR_ID = 11455872
+AUTHORIZED_ACTOR_LOGIN = "kingkill85"
+COMMANDS = (APPROVAL, REVISION, FIX)
 
 
 @dataclass(frozen=True)
@@ -32,10 +37,10 @@ class LifecycleTransition:
 
 def validate_host_evidence(evidence: dict, state: WorkState, workflow_id: str | None = None) -> None:
     required = {"version", "workflow_id", "repository", "issue_number", "resolution_id",
-                "expected_state", "observed_at", "issue", "pr", "checks"}
+                "expected_state", "observed_at", "issue", "pr", "checks", "current_wakeup"}
     if not isinstance(evidence, dict) or set(evidence) != required:
         raise ValueError("host GitHub evidence schema is invalid")
-    if (evidence["version"] != 1 or evidence["repository"] != state.target.repository
+    if (evidence["version"] != 2 or evidence["repository"] != state.target.repository
             or evidence["issue_number"] != state.target.issue_number
             or evidence["resolution_id"] != state.target.resolution_id
             or (workflow_id is not None and evidence["workflow_id"] != workflow_id)
@@ -47,6 +52,23 @@ def validate_host_evidence(evidence: dict, state: WorkState, workflow_id: str | 
         raise ValueError("host GitHub evidence is stale")
     if not isinstance(evidence["issue"], dict) or not isinstance(evidence["pr"], dict):
         raise ValueError("host GitHub evidence payload is invalid")
+    wakeup = evidence["current_wakeup"]
+    if wakeup is not None:
+        if not isinstance(wakeup, dict) or set(wakeup) != {
+            "comment_id", "command", "delivery_id", "created_at",
+        }:
+            raise ValueError("host GitHub evidence wakeup schema is invalid")
+        if (type(wakeup["comment_id"]) is not int or wakeup["comment_id"] <= 0
+                or not isinstance(wakeup["command"], str)
+                or not 1 <= len(wakeup["command"]) <= 4096
+                or not isinstance(wakeup["delivery_id"], str)
+                or not isinstance(wakeup["created_at"], str)
+                or not re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                    wakeup["delivery_id"], re.IGNORECASE,
+                )):
+            raise ValueError("host GitHub evidence wakeup identity is invalid")
+        datetime.fromisoformat(wakeup["created_at"].replace("Z", "+00:00"))
 
 
 class HostGitHubEvidenceCollector:
@@ -60,7 +82,8 @@ class HostGitHubEvidenceCollector:
         raise RuntimeError("collect_bound requires the explicit workflow identity")
 
     def collect_bound(self, repository: str, issue_number: int, branch: str,
-                      resolution_id: str, expected_state: str, workflow_id: str) -> dict:
+                      resolution_id: str, expected_state: str, workflow_id: str,
+                      current_wakeup: dict | None = None) -> dict:
         gh = ("/usr/bin/env", "GH_CONFIG_DIR=/opt/data/home/.config/gh", "/opt/data/bin/gh")
         issue = json.loads(self.executor.run((
             *gh, "issue", "view", str(issue_number), "--repo",
@@ -72,8 +95,41 @@ class HostGitHubEvidenceCollector:
                          if isinstance(comment, dict)
                          and comment.get("author", {}).get("login") == "kingkill85"
                          and (APPROVAL.fullmatch(comment.get("body", "").strip())
+                              or REVISION.fullmatch(comment.get("body", "").strip())
+                              or FIX.fullmatch(comment.get("body", "").strip())
                               or comment.get("body", "").strip() in {"/accept", "/merge"})],
         }
+        verified_wakeup = None
+        if current_wakeup is not None and current_wakeup.get("command") is not None:
+            comment_id = current_wakeup.get("comment_id")
+            command = current_wakeup.get("command")
+            delivery_id = current_wakeup.get("delivery_id")
+            if (type(comment_id) is not int or comment_id <= 0 or not isinstance(command, str)
+                    or not isinstance(delivery_id, str)):
+                raise RuntimeError("persisted wakeup comment identity is invalid")
+            comment = json.loads(self.executor.run((
+                *gh, "api", f"repos/{repository}/issues/comments/{comment_id}",
+            ), timeout=20.0))
+            expected_issue_url = f"https://api.github.com/repos/{repository}/issues/{issue_number}"
+            command_is_valid = (
+                any(pattern.fullmatch(command.strip()) for pattern in COMMANDS)
+                or command.strip() in {"/accept", "/merge"}
+            )
+            if (not isinstance(comment, dict) or comment.get("id") != comment_id
+                    or comment.get("user", {}).get("id") != AUTHORIZED_ACTOR_ID
+                    or comment.get("user", {}).get("login") != AUTHORIZED_ACTOR_LOGIN
+                    or comment.get("issue_url") != expected_issue_url
+                    or comment.get("body") != command
+                    or not command_is_valid):
+                raise RuntimeError("persisted wakeup does not match the exact trusted Issue comment")
+            created_at = comment.get("created_at")
+            if not isinstance(created_at, str):
+                raise RuntimeError("trusted Issue comment timestamp is unavailable")
+            datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            verified_wakeup = {
+                "comment_id": comment_id, "command": command, "delivery_id": delivery_id,
+                "created_at": created_at,
+            }
         prs = json.loads(self.executor.run((
             *gh, "pr", "list", "--repo", repository, "--head",
             branch, "--state", "all", "--json",
@@ -88,11 +144,12 @@ class HostGitHubEvidenceCollector:
                 repository, "--json", "state",
             ), timeout=20.0))
         return {
-            "version": 1, "workflow_id": workflow_id, "repository": repository,
+            "version": 2, "workflow_id": workflow_id, "repository": repository,
             "issue_number": issue_number, "resolution_id": resolution_id,
             "expected_state": expected_state,
             "observed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "issue": issue, "pr": prs[0], "checks": checks,
+            "current_wakeup": verified_wakeup,
         }
 
 
@@ -103,7 +160,8 @@ class RepositoryGitHubVerifier:
         self.executor = executor
         if github_evidence is None and all(hasattr(executor, name) for name in ("issue", "pr", "checks")):
             github_evidence = {"issue": executor.issue, "pr": executor.pr,
-                               "checks": executor.checks}
+                               "checks": executor.checks,
+                               "current_wakeup": getattr(executor, "current_wakeup", None)}
         self.github_evidence = github_evidence
 
     def _run(self, *argv: str, timeout: float = 20.0) -> str:
@@ -156,22 +214,68 @@ class RepositoryGitHubVerifier:
         try:
             head, _issue, pr, comments = self._snapshot(target)
             evidence = None
-            if state.lifecycle_state == "specification_ready":
-                command = self._command_after(comments, APPROVAL, state.lifecycle_updated_at)
+            wakeup = self.github_evidence.get("current_wakeup")
+            if not isinstance(wakeup, dict):
+                return LifecycleTransition(False, blocker="exact trusted wakeup comment is required")
+            command = {"body": wakeup.get("command"), "createdAt": wakeup.get("created_at")}
+            internal_archive_continuation = (
+                state.lifecycle_state == "archive_ci_verified"
+                and command["body"] == "/merge"
+                and command["createdAt"] == state.merge_authorized_at
+            )
+            if (not isinstance(command["body"], str) or not isinstance(command["createdAt"], str)
+                    or (not internal_archive_continuation
+                        and self._command_after(
+                            [command], command["body"], state.lifecycle_updated_at,
+                        ) is None)):
+                return LifecycleTransition(False, blocker="exact trusted wakeup is not current")
+            revision = command if REVISION.fullmatch(command["body"].strip()) else None
+            fix = command if FIX.fullmatch(command["body"].strip()) else None
+            if revision and state.lifecycle_state in {
+                "specification_ready", "spec_approved", "implementation_verified", "accepted",
+            }:
+                evidence = {
+                    "lifecycle_state": "label", "lifecycle_updated_at": revision["createdAt"],
+                    "base_sha": head,
+                    "spec_sha": None, "implementation_sha": None, "accepted_sha": None,
+                    "archive_sha": None, "approval_at": None, "accepted_at": None,
+                    "merge_authorized_at": None,
+                }
+            elif fix and state.lifecycle_state in {
+                "spec_approved", "implementation_verified", "accepted",
+            }:
+                evidence = {
+                    "lifecycle_state": "spec_approved", "lifecycle_updated_at": fix["createdAt"],
+                    "implementation_sha": None, "accepted_sha": None, "archive_sha": None,
+                    "accepted_at": None, "merge_authorized_at": None,
+                }
+            elif state.lifecycle_state == "specification_ready":
+                command = command if APPROVAL.fullmatch(command["body"].strip()) else None
                 if command and APPROVAL.fullmatch(command["body"].strip()).group(1) == state.spec_sha:
                     evidence = {"lifecycle_state": "spec_approved", "approval_at": command["createdAt"],
                                 "lifecycle_updated_at": command["createdAt"]}
             elif state.lifecycle_state == "implementation_verified":
-                command = self._command_after(comments, "/accept", state.lifecycle_updated_at)
+                command = command if command["body"].strip() == "/accept" else None
                 if command and head == state.implementation_sha:
                     evidence = {"lifecycle_state": "accepted", "accepted_sha": head,
                                 "accepted_at": command["createdAt"],
                                 "lifecycle_updated_at": command["createdAt"]}
-            elif state.lifecycle_state == "archive_ci_verified":
-                command = self._command_after(comments, "/merge", state.lifecycle_updated_at)
-                if command and head == state.archive_sha and pr.get("headRefOid") == state.archive_sha:
-                    evidence = {"lifecycle_state": "merge_authorized",
+            elif state.lifecycle_state == "accepted":
+                command = command if command["body"].strip() == "/merge" else None
+                if command and head == state.accepted_sha and pr.get("headRefOid") == state.accepted_sha:
+                    evidence = {"lifecycle_state": "archive_authorized",
                                 "merge_authorized_at": command["createdAt"],
+                                "lifecycle_updated_at": command["createdAt"]}
+            elif state.lifecycle_state == "archive_ci_verified":
+                command = command if command["body"].strip() == "/merge" else None
+                same_authorization = command and command["createdAt"] == state.merge_authorized_at
+                legacy_authorization = command and state.merge_authorized_at is None
+                checks = self.github_evidence.get("checks")
+                if ((same_authorization or legacy_authorization)
+                        and head == state.archive_sha and pr.get("headRefOid") == state.archive_sha
+                        and checks and all(item.get("state") == "SUCCESS" for item in checks)):
+                    evidence = {"lifecycle_state": "merge_authorized",
+                                "merge_authorized_at": state.merge_authorized_at or command["createdAt"],
                                 "lifecycle_updated_at": command["createdAt"]}
             if evidence is None:
                 return LifecycleTransition(False, blocker="no legal trusted command for current lifecycle state")
@@ -184,19 +288,24 @@ class RepositoryGitHubVerifier:
         phase = {
             "label": "specification",
             "spec_approved": "review",
-            "accepted": "archive",
+            "archive_authorized": "archive",
             "merge_authorized": "merge-finalization",
         }.get(state.lifecycle_state)
         if phase is None:
             return LifecycleTransition(False, blocker="current lifecycle state requires a trusted command")
-        result = self.verify(target, phase)
+        result = self.verify(
+            target, phase, approved_spec_sha=state.spec_sha,
+            expected_archive_sha=state.archive_sha,
+            revision_base_sha=state.base_sha if state.lifecycle_state == "label" else None,
+        )
         if not result.verified:
             return LifecycleTransition(False, blocker=result.blocker)
         try:
             head = self._run("git", "-C", target.worktree, "rev-parse", "HEAD")
             now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             next_state = {"label": "specification_ready", "spec_approved": "implementation_verified",
-                          "accepted": "archive_ci_verified", "merge_authorized": "merged_closed"}[
+                          "archive_authorized": "archive_ci_verified",
+                          "merge_authorized": "merged_closed"}[
                               state.lifecycle_state]
             evidence = {"lifecycle_state": next_state, "lifecycle_updated_at": now}
             if next_state == "specification_ready":
@@ -206,11 +315,15 @@ class RepositoryGitHubVerifier:
                 )
             elif next_state == "implementation_verified": evidence["implementation_sha"] = head
             elif next_state == "archive_ci_verified": evidence["archive_sha"] = head
+            elif next_state == "merged_closed": evidence["archive_sha"] = head
             return LifecycleTransition(True, evidence)
         except (OSError, RuntimeError, subprocess.SubprocessError) as error:
             return LifecycleTransition(False, blocker=str(error))
 
-    def verify(self, target: GovernedTarget, phase: str) -> VerificationResult:
+    def verify(self, target: GovernedTarget, phase: str, *,
+               approved_spec_sha: str | None = None,
+               expected_archive_sha: str | None = None,
+               revision_base_sha: str | None = None) -> VerificationResult:
         try:
             head, issue, pr, comment_records = self._snapshot(target)
             comments = self._bodies(comment_records)
@@ -229,26 +342,40 @@ class RepositoryGitHubVerifier:
                     return VerificationResult(False, "required OpenSpec planning artifacts are missing")
                 if not any((active[0] / "specs").glob("*/spec.md")):
                     return VerificationResult(False, "OpenSpec delta specification is missing")
-                base = self._run("git", "-C", target.worktree, "merge-base", "HEAD", "origin/main")
+                base = revision_base_sha or self._run(
+                    "git", "-C", target.worktree, "merge-base", "HEAD", "origin/main",
+                )
                 changed = self._run("git", "-C", target.worktree, "diff", "--name-only", base, "HEAD")
                 allowed_root = active[0].relative_to(root).as_posix()
                 for path in changed.splitlines():
                     evidence_doc = (path.startswith(f"docs/issue-{target.issue_number}-")
                                     and path.endswith(".md") and "/" not in path[5:])
-                    if not (path == allowed_root or path.startswith(allowed_root + "/")
-                            or evidence_doc):
+                    planning_artifact = (
+                        path in {f"{allowed_root}/proposal.md", f"{allowed_root}/design.md",
+                                 f"{allowed_root}/tasks.md"}
+                        or path.startswith(f"{allowed_root}/specs/")
+                    )
+                    allowed = (planning_artifact or evidence_doc) if revision_base_sha else (
+                        path == allowed_root or path.startswith(allowed_root + "/") or evidence_doc
+                    )
+                    if not allowed:
                         return VerificationResult(False, f"specification changed prohibited path: {path}")
             elif phase in {"implementation", "review"}:
                 approvals = [match.group(1) for body in comments
                              if (match := APPROVAL.fullmatch(body.strip()))]
-                if len(approvals) != 1:
-                    return VerificationResult(False, "exactly one immutable spec approval is required")
+                if not approvals:
+                    return VerificationResult(False, "immutable spec approval is required")
+                approved_sha = approved_spec_sha
+                if approved_sha is None and len(approvals) == 1:
+                    approved_sha = approvals[0]
+                if approved_sha is None or approved_sha not in approvals:
+                    return VerificationResult(False, "controller-approved spec SHA is unavailable")
                 self._run("git", "-C", target.worktree, "merge-base", "--is-ancestor",
-                          approvals[0], head)
+                          approved_sha, head)
                 if len(active) != 1:
                     return VerificationResult(False, "approved OpenSpec change is unavailable")
                 self._run(
-                    "git", "-C", target.worktree, "diff", "--quiet", approvals[0], head, "--",
+                    "git", "-C", target.worktree, "diff", "--quiet", approved_sha, head, "--",
                     str((active[0] / "proposal.md").relative_to(root)),
                     str((active[0] / "design.md").relative_to(root)),
                     str((active[0] / "specs").relative_to(root)),
@@ -275,6 +402,13 @@ class RepositoryGitHubVerifier:
                     return VerificationResult(False, "merge authorization predates acceptance")
                 if active or pr.get("state") != "MERGED" or not pr.get("mergeCommit"):
                     return VerificationResult(False, "PR is not merged with archived OpenSpec state")
+                if expected_archive_sha is not None and (
+                    head != expected_archive_sha or pr.get("headRefOid") != expected_archive_sha
+                ):
+                    return VerificationResult(False, "merged archive head does not match exact SHA")
+                checks = self.github_evidence["checks"]
+                if not checks or any(item.get("state") != "SUCCESS" for item in checks):
+                    return VerificationResult(False, "merge-finalization checks are not successful")
                 if issue.get("state") != "CLOSED":
                     return VerificationResult(False, "Issue is not closed")
             else:
