@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "profile": "dev",
-  "dispatcher_tasks": {
-    "allow": ["/opt/data/bin/snapflow-neo-dev-transition"],
-    "deny": ["terminal", "code_execution", "shell", "ssh", "git", "filesystem_write"]
-  },
-  "fail_if_runtime_cannot_enforce": true
-}

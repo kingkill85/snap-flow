@@ -212,21 +212,6 @@ class GenericOrchestratorTest(unittest.TestCase):
         ])
         self.assertFalse(run.call_args.kwargs["shell"])
 
-    def test_card_admission_rejects_policy_with_any_project_tool(self):
-        with tempfile.TemporaryDirectory() as directory:
-            policy = pathlib.Path(directory) / "policy.json"
-            policy.write_text(json.dumps({
-                "project_command_capabilities": {"allow": ["/bin/sh"]},
-            }))
-            runner = TaskRunner(script_path="/test/task.py", policy_path=str(policy))
-            help_result = mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
-            with mock.patch("subprocess.run", return_value=help_result) as run:
-                with self.assertRaisesRegex(RuntimeError, "unsafe task capability"):
-                    runner.create({"issue_number": 13, "task_id": None, "wakeups": [{
-                        "delivery_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                    }]}, KEY)
-            self.assertEqual(run.call_count, 1)
-
     def test_terminal_real_helper_semantics_get_unique_runnable_execution_per_wakeup(self):
         fixture = pathlib.Path(__file__).with_name("fixtures") / "terminal_task.py"
         with tempfile.TemporaryDirectory() as directory:
@@ -264,7 +249,8 @@ class GenericOrchestratorTest(unittest.TestCase):
         dockge = (deploy / "dockge-activate.sh").read_text()
         self.assertIn("services/snapflow-neo-dev-webhook/src", hermes)
         self.assertNotIn("docker ", hermes)
-        self.assertNotIn("/opt/data", dockge)
+        self.assertNotIn("python3 verify_live_compose", dockge)
+        self.assertIn("grep -Fxq /opt/data", dockge)
         self.assertIn("/mnt/marder/docker/dockge/stacks/snapflow-neo-dev-webhook", dockge)
         self.assertNotIn("docker", controller)
         self.assertFalse((deploy / "compose.neo-dev-repair.yaml").exists())

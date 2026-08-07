@@ -15,8 +15,8 @@ def main():
     args = parser.parse_args()
     consumer = Consumer(
         Store(args.database), TaskRunner(
-            max_runtime=args.max_runtime,
-            policy_path="/opt/data/profiles/dev/neo-dev-task-tools.json",
+            max_runtime=args.max_runtime, capability_broker=CapabilityBroker(),
+            enforcement_path="/opt/data/profiles/dev/.snapflow-neo-dev-tools.enforced",
         ),
         PublicGitHubAdapter(), max_attempts=args.max_attempts, finalizer=ProjectFinalizer(),
         dispatcher=ProjectDispatcher(),

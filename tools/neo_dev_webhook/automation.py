@@ -504,8 +504,8 @@ class Receiver:
 
 class TaskRunner:
     def __init__(self, script_path: str | None = None, python: str = "python3",
-                 max_runtime: str = "2h", policy_path: str | None = None,
-                 capability_broker=None):
+                 max_runtime: str = "2h", capability_broker=None,
+                 enforcement_path: str | None = None):
         if not max_runtime or max_runtime.startswith("-"):
             raise ValueError("max_runtime must be a bounded task.py duration")
         self.script = script_path or os.environ.get("NEO_DEV_TASK_RUNNER")
@@ -514,8 +514,8 @@ class TaskRunner:
         self.python = python
         self.workspace = "dir:/opt/data/profiles/dev"
         self.max_runtime, self.validated = max_runtime, False
-        self.policy_path = policy_path or os.environ.get("NEO_DEV_CARD_POLICY")
         self.capability_broker = capability_broker
+        self.enforcement_path = enforcement_path
 
     def _validate_contract(self):
         if self.validated:
@@ -527,25 +527,12 @@ class TaskRunner:
         required = ("--body", "--max-runtime", "--workspace", "--idempotency-key", "title")
         if any(option not in help_result.stdout for option in required):
             raise RuntimeError("task.py contract is incompatible")
-        if self.policy_path:
-            policy = json.loads(pathlib.Path(self.policy_path).read_text(encoding="utf-8"))
-            capabilities = policy.get("dispatcher_tasks") or policy.get(
-                "project_command_capabilities", {})
-            allowed = capabilities.get("allow")
-            if allowed not in ([], ["/opt/data/bin/snapflow-neo-dev-transition"]):
-                raise RuntimeError("card policy permits an unsafe task capability")
-            denied = set(capabilities.get("deny", []))
-            if allowed and not {"terminal", "code_execution", "shell", "ssh", "git"} <= denied:
-                raise RuntimeError("card policy does not disable general execution tools")
-            if allowed:
-                enforcement = pathlib.Path(self.policy_path + ".enforced")
-                attestation = json.loads(enforcement.read_text(encoding="utf-8"))
-                expected_hash = hashlib.sha256(pathlib.Path(self.policy_path).read_bytes()).hexdigest()
-                if (attestation.get("policy_sha256") != expected_hash
-                        or set(attestation.get("disabled", [])) != denied):
-                    raise RuntimeError("Hermes effective task-tool policy is not attested")
-            from .hermes_transition import CapabilityBroker
-            self.capability_broker = self.capability_broker or CapabilityBroker()
+        if self.enforcement_path:
+            enforcement = pathlib.Path(self.enforcement_path).read_text(encoding="utf-8")
+            if ("toolset=snapflow_neo_dev\n" not in enforcement
+                    or "tool=snapflow_neo_dev_transition\n" not in enforcement
+                    or "resolved_worker_toolsets" not in enforcement):
+                raise RuntimeError("Hermes native task-tool enforcement is not verified")
         self.validated = True
 
     def create(self, work: dict, idempotency_key: str) -> str:
@@ -581,7 +568,7 @@ Current phase: {phase}
 Structured controller context: {json.dumps(work.get('controller_context', {}), sort_keys=True, separators=(',', ':'))}
 Controller workspace: dir:/opt/data/profiles/dev (read /opt/data/profiles/dev/projects/snapflow.md before any action).
 Controller dispatch operation already performed by the consumer: {operation}. This card has no project-command capability.
-Allowed decision tool: `/opt/data/bin/snapflow-neo-dev-transition --execution-id {execution_id} --capability {capability} --decision <proceed|block> --summary <bounded-summary>`.
+Allowed decision tool: native Hermes tool `snapflow_neo_dev_transition` with execution_id=`{execution_id}`, capability=`{capability}`, decision=`proceed|block`, and a bounded summary.
 Use only structured lifecycle context and that one-use decision tool. Terminal, code execution, shell, SSH, Git, filesystem writes, and project-controller commands are unavailable to this task.
 Initial specification phase must create ONLY OpenSpec proposal/design/delta specs/tasks, an issue branch/worktree, a Draft PR, immutable full-SHA artifact links, and request exactly `/approve-spec <full-sha>`; implementation is forbidden.
 Implementation requires the matching trusted full-SHA approval. Review requires independent code/test review and UI review when applicable. Acceptance does not authorize merge. Archive phase must sync delta specs, validate and archive before requesting `/merge`. Merge-finalization requires separately verified merge authorization, then merge, close, and clean up the issue worker/worktree/branch state.

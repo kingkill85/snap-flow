@@ -12,18 +12,20 @@ The operator authorized an emergency repository-only repair of the mechanism tha
 - The host adapter is fixed to dedicated `neo-controller@192.168.178.4:2222`, `/opt/data/credentials/snapflow-controller-client`, and `/opt/data/tailscale_known_hosts`. It accepts the actual non-symlink `hermes:hermes 0600` private-key boundary, ignores uncontrolled SSH configuration, and uses `shell=False`.
 - Only locked `neo-controller` has lifecycle sudo rights. Controller code is root-owned, trusted state is `neo-controller:neo-controller 0700`, and Codex remains `dev` without lifecycle sudo or state access.
 - The controller owns the legal lifecycle chain and immutable SHA/timestamp evidence. Worker-selected phases, early commands, spec commits containing runtime paths, and gate-order bypasses are rejected.
-- Cards have no project-command capability; the consumer performs narrow lifecycle dispatch before creating each deterministic reasoning card.
+- Cards resolve the dev profile's real Hermes CLI toolsets to one profile-local native plugin tool. Its handler requires dispatcher context and submits one-use decisions directly to the capability broker without shell; the consumer performs lifecycle dispatch.
 - Closure synchronization uses durable backoff without consuming the failure budget and automatically finalizes after verified `merged_closed` state.
-- Compose explicitly replaces the live shell entrypoint, retains `/var/lib/neo-dev/neo-dev.sqlite`, and targets `/opt/data/build/snapflow-neo-dev-webhook/compose.yaml`.
+- No Compose mutation is required. Dockge verification uses shell and Docker inspection only, preserves both exact live commands and mounts, and observes `/var/lib/neo-dev/neo-dev.sqlite` in the consumer.
 - Initial Codex work is specification-only. Later approval/review/accept/merge commands resume the same session with separate gates.
 - Semantic success and closure require controller-side repository/GitHub verification. Worker claims, heartbeats and manual closure do not establish progress or release concurrency.
 - Launch intent is recoverable once and then fails closed with an auditable state instead of wedging indefinitely.
 
 ## Verification
 
-- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -p 'test_*.py'`: **115 passed**.
-- `python3 -m py_compile tools/neo_dev_webhook/*.py tools/neo_dev_webhook/tests/*.py tools/neo_dev_webhook/tests/fixtures/*.py`: **passed**.
+- `PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -p 'test_*.py'`: **117 passed**.
+- `python3 -m py_compile $(find tools/neo_dev_webhook -name '*.py' -type f -print)`: **passed**, including the profile plugin and runtime verifier.
 - `bash -n tools/neo_dev_webhook/deploy/*.sh`: **passed**.
+- `python3 -m json.tool` over controller JSON and the JSON-compatible `plugin.yaml`: **passed**.
+- No-Python Dockge fixture `fixture-verify` plus `fixture-activate`: **passed** as part of the focused suite.
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict`: **passed**.
 - `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate --specs --strict`: **2 passed, 0 failed**.
 - `backend/deno lint`: **passed**.
@@ -37,7 +39,7 @@ No UI behavior changed, so Playwright review is not applicable. The real `/opt/d
 ## Operational prerequisites not performed
 
 - Provision the dedicated `/opt/data/credentials/snapflow-controller-client` identity and forced `neo-controller` public-key authorization through the separately authorized split installer. The existing maintenance `dev` identity is not a workflow fallback.
-- Configure Hermes' effective dispatcher task toolset to the staged policy and create the matching `.enforced` attestation only after verifying that terminal, code execution, shell, SSH, Git and filesystem writes are absent. Task creation fails closed without that attestation.
+- Provision the profile-local plugin, run the official Hermes plugin/config commands, restart the dev gateway, and let `hermes-stage.sh verify` exercise the live plugin registry and `_resolve_worker_cli_toolsets`. The current broad profile must not be activated; only successful verification creates the enforcement marker.
 - From Dockge control, compare the source Compose copy with the active stack and run its scope-local verification before any authorized recreation. No Compose override is needed.
 
 ## Deployment artifacts (not applied)
@@ -46,10 +48,11 @@ No UI behavior changed, so Playwright review is not applicable. The real `/opt/d
 - `tools/neo_dev_webhook/deploy/hermes-controller-install.sh`
 - `tools/neo_dev_webhook/deploy/controller-install.sh`
 - `tools/neo_dev_webhook/deploy/dockge-activate.sh`
-- `tools/neo_dev_webhook/deploy/verify_live_compose.py`
-- `tools/neo_dev_webhook/deploy/hermes-task-tools.json`
+- `tools/neo_dev_webhook/deploy/verify_live_compose.py` (repository-side fixture validator; Dockge does not invoke Python)
+- `tools/neo_dev_webhook/deploy/verify_hermes_runtime.py`
+- `tools/neo_dev_webhook/deploy/hermes-plugin/snapflow_neo_dev_transition/plugin.yaml`
+- `tools/neo_dev_webhook/deploy/hermes-plugin/snapflow_neo_dev_transition/__init__.py`
 - `tools/neo_dev_webhook/hermes_transition.py`
-- `tools/neo_dev_webhook/controller/snapflow-neo-dev-transition`
 - `tools/neo_dev_webhook/deploy/profile.managed-block.md`
 - `tools/neo_dev_webhook/deploy/README.md`
 - `tools/neo_dev_webhook/deployment.py`
@@ -66,4 +69,4 @@ No UI behavior changed, so Playwright review is not applicable. The real `/opt/d
 - `tools/neo_dev_webhook/controller/authorized_keys.options`
 - `tools/neo_dev_webhook/controller/neo-dev-control.sudoers`
 
-The installer requires the existing non-empty `/opt/data/profiles/dev/projects/snapflow.md`, appends only a delimited managed block, stages a Compose override for the existing receiver/consumer services, and keeps activation as a separate explicit operator step. Its README contains verification and rollback steps.
+The split installer requires the existing non-empty `/opt/data/profiles/dev/projects/snapflow.md`, appends only a delimited managed block, stages the supported profile plugin, and keeps Dockge activation separate. It does not create a Compose override. Its README contains scope-local verification and rollback steps. No live deployment, gateway restart, access change, or E2E was performed.

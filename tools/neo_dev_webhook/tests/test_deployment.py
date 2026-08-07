@@ -6,6 +6,9 @@ import unittest
 import subprocess
 import hashlib
 import json
+import importlib.util
+import sys
+import types
 from unittest import mock
 
 from neo_dev_webhook.deployment import validate_pinned_host
@@ -75,20 +78,52 @@ class DeploymentTest(unittest.TestCase):
             after = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
             self.assertEqual(after, before)
 
-    def test_attested_safe_policy_admits_only_one_use_transition_tool(self):
+    def test_native_plugin_registers_exact_narrow_tool_and_requires_kanban(self):
+        plugin = pathlib.Path(__file__).parents[1] / "deploy/hermes-plugin/snapflow_neo_dev_transition/__init__.py"
+        manifest = json.loads((plugin.parent / "plugin.yaml").read_text())
+        self.assertEqual(manifest["provides_tools"], ["snapflow_neo_dev_transition"])
+        spec = importlib.util.spec_from_file_location("snapflow_plugin", plugin)
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        ctx = mock.Mock(); module.register(ctx)
+        kwargs = ctx.register_tool.call_args.kwargs
+        self.assertEqual((kwargs["name"], kwargs["toolset"]),
+                         ("snapflow_neo_dev_transition", "snapflow_neo_dev"))
+        self.assertFalse(kwargs["schema"]["additionalProperties"])
+        self.assertEqual(kwargs["schema"]["properties"]["decision"]["enum"], ["proceed", "block"])
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(PermissionError):
+                kwargs["handler"]("execution", "x" * 32, "proceed", "ok")
+        broker = mock.Mock(); broker.submit.return_value = {"decision": "block"}
+        with mock.patch.object(module, "CapabilityBroker", return_value=broker), \
+             mock.patch.dict(os.environ, {"HERMES_KANBAN_TASK": "t_1"}, clear=True):
+            self.assertEqual(kwargs["handler"]("execution", "x" * 32, "block", "bounded"),
+                             {"decision": "block"})
+        broker.submit.assert_called_once_with("execution", "x" * 32, "block", "bounded")
+
+    def test_live_resolver_verifier_rejects_broad_worker_toolsets(self):
+        verifier_path = pathlib.Path(__file__).parents[1] / "deploy/verify_hermes_runtime.py"
+        spec = importlib.util.spec_from_file_location("hermes_runtime_verifier", verifier_path)
+        verifier = importlib.util.module_from_spec(spec); spec.loader.exec_module(verifier)
+        package = types.ModuleType("hermes_cli"); package.__path__ = []
+        kanban = types.ModuleType("hermes_cli.kanban_db")
+        plugins = types.ModuleType("hermes_cli.plugins")
+        plugins._ensure_plugins_discovered = lambda: None
+        plugins.get_plugin_tool_names = lambda: ["snapflow_neo_dev_transition"]
+        with mock.patch.dict(sys.modules, {
+            "hermes_cli": package, "hermes_cli.kanban_db": kanban,
+            "hermes_cli.plugins": plugins,
+        }):
+            kanban._resolve_worker_cli_toolsets = lambda _home: ["snapflow_neo_dev"]
+            self.assertEqual(verifier.verify("/profile")["resolved_worker_toolsets"],
+                             ["snapflow_neo_dev"])
+            kanban._resolve_worker_cli_toolsets = lambda _home: ["snapflow_neo_dev", "terminal"]
+            with self.assertRaisesRegex(RuntimeError, "unsafe"):
+                verifier.verify("/profile")
+
+    def test_task_body_names_native_tool_not_executable(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory); policy = root / "policy.json"
-            document = {"dispatcher_tasks": {
-                "allow": ["/opt/data/bin/snapflow-neo-dev-transition"],
-                "deny": ["terminal", "code_execution", "shell", "ssh", "git", "filesystem_write"],
-            }}
-            policy.write_text(json.dumps(document))
-            (root / "policy.json.enforced").write_text(json.dumps({
-                "policy_sha256": hashlib.sha256(policy.read_bytes()).hexdigest(),
-                "disabled": document["dispatcher_tasks"]["deny"],
-            }))
-            runner = TaskRunner(script_path="/task.py", policy_path=str(policy),
-                                capability_broker=CapabilityBroker(root / "caps"))
+            root = pathlib.Path(directory)
+            runner = TaskRunner(script_path="/task.py", capability_broker=CapabilityBroker(root / "caps"))
             help_result = mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
             completed = mock.Mock(stdout='{"task_id":"card","durable":true}')
             with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
@@ -96,8 +131,42 @@ class DeploymentTest(unittest.TestCase):
                     "delivery_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 }]}, "12345678-1234-4abc-8def-123456789abc")
             body = run.call_args_list[1].args[0][4]
-            self.assertIn("snapflow-neo-dev-transition", body)
+            self.assertIn("snapflow_neo_dev_transition", body)
+            self.assertNotIn("/opt/data/bin/snapflow-neo-dev-transition", body)
             self.assertIn("Terminal, code execution, shell, SSH, Git", body)
+
+    def test_dockge_verify_and_activate_need_no_python(self):
+        script = pathlib.Path(__file__).parents[1] / "deploy/dockge-activate.sh"
+        fixture_compose = pathlib.Path(__file__).with_name("fixtures") / "live-compose.yaml"
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory); stack = root / "stack"; bin_dir = root / "bin"
+            stack.mkdir(); bin_dir.mkdir()
+            (stack / ".dockge-scope-fixture").write_text("guard\n")
+            (stack / "compose.yaml").write_bytes(fixture_compose.read_bytes())
+            for command in ("bash", "grep"):
+                (bin_dir / command).symlink_to(pathlib.Path("/usr/bin") / command)
+            docker = bin_dir / "docker"
+            docker.write_text("""#!/bin/bash
+args="$*"
+case "$args" in
+  "compose version") exit 0;;
+  *"config --services") printf 'receiver\\nconsumer\\n';;
+  *" config") exit 0;;
+  *"ps -q receiver") echo rid;;
+  *"ps -q consumer") echo cid;;
+  "inspect --format {{json .Config.Cmd}} rid") echo '["exec python3 -m neo_dev_webhook.server --host 0.0.0.0 --port 8787"]';;
+  "inspect --format {{json .Config.Cmd}} cid") echo '["exec python3 -m neo_dev_webhook.consumer /var/lib/neo-dev/neo-dev.sqlite --max-runtime 2h --max-attempts 5"]';;
+  "inspect --format {{range .Mounts}}{{println .Destination}}{{end}} rid") printf '/srv/webhook\\n/var/lib/neo-dev\\n';;
+  "inspect --format {{range .Mounts}}{{println .Destination}}{{end}} cid") printf '/srv/webhook\\n/var/lib/neo-dev\\n/opt/data\\n';;
+  *" up -d --no-deps --force-recreate receiver consumer") exit 0;;
+  "exec cid test -s /var/lib/neo-dev/neo-dev.sqlite") exit 0;;
+  *) echo "unexpected docker argv: $args" >&2; exit 3;;
+esac
+""")
+            docker.chmod(0o755)
+            env = {"PATH": str(bin_dir)}
+            subprocess.run([str(script), "fixture-verify", str(stack)], check=True, env=env)
+            subprocess.run([str(script), "fixture-activate", str(stack)], check=True, env=env)
 
 
 if __name__ == "__main__":
