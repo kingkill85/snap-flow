@@ -26,6 +26,7 @@ class CodexExecRuntimeTest(unittest.TestCase):
         prompt = continuation_prompt("kingkill85/snap-flow", 13, "label")
         self.assertIn("Create ONLY the issue-scoped OpenSpec proposal", prompt)
         self.assertIn("create/update the Draft PR", prompt)
+        self.assertIn("clean-main baseline exception", prompt)
         self.assertNotIn("enforce only that current gate", prompt)
 
     def test_start_is_bound_to_governed_worktree_without_interactive_approval(self):
