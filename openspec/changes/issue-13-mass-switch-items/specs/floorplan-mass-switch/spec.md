@@ -59,6 +59,10 @@ The mass switch SHALL preserve each replaced placement's identity, floorplan mem
 - **WHEN** placements with different coordinates, sizes, rotations, or area relationships are mass switched
 - **THEN** those placement-specific values remain unchanged while their configured product selection is replaced
 
+#### Scenario: Items outside the selected set remain unchanged
+- **WHEN** a mass switch is confirmed while the floorplan contains item placements outside the validated source set
+- **THEN** every item placement outside that selected set retains its existing product, style/variant, add-ons, and placement-specific state
+
 #### Scenario: Refresh affected totals
 - **WHEN** a mass switch succeeds
 - **THEN** the active floorplan, bill of materials, and proposal pricing views reflect the replacement and returned quantity without a page reload
