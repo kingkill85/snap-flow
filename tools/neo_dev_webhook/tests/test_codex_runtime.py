@@ -158,8 +158,8 @@ class CodexRuntimeTest(unittest.TestCase):
             result = controller.execute("start", REPOSITORY, 77, KEY)
             self.assertEqual(result["execution"]["phase"], "starting")
             self.assertEqual(executor.calls[-1][0], (
-                "tmux", "new-window", "-d", "-t", "snapflow-dev", "-n", "issue-77",
-                "-c", "/workspace/snap-flow-issue-77", CODEX_RUNTIME_PATH, "start",
+                "tmux", "respawn-pane", "-k", "-t", "snapflow-dev:issue-77", "-c",
+                "/workspace/snap-flow-issue-77", CODEX_RUNTIME_PATH, "start",
                 "--idempotency-key", KEY,
             ))
 

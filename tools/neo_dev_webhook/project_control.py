@@ -814,7 +814,15 @@ class Controller:
                     self._start_supervisor("start", idempotency_key)
                     self.executor.run(
                         ("tmux", "new-window", "-d", "-t", target.session, "-n", target.window,
-                         "-c", target.worktree, CODEX_RUNTIME_PATH, "start",
+                         "-c", target.worktree), timeout=20.0,
+                    )
+                    self.executor.run(
+                        ("tmux", "set-option", "-w", "-t", target.tmux_target,
+                         "remain-on-exit", "on"), timeout=10.0,
+                    )
+                    self.executor.run(
+                        ("tmux", "respawn-pane", "-k", "-t", target.tmux_target, "-c",
+                         target.worktree, CODEX_RUNTIME_PATH, "start",
                          "--idempotency-key", idempotency_key), timeout=20.0,
                     )
                 except BaseException:

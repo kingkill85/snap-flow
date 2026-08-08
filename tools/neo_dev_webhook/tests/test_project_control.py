@@ -114,6 +114,10 @@ class ProjectControlTest(unittest.TestCase):
             ("tmux", "list-windows", "-t", "snapflow-dev", "-F", "#{window_name}"),
             ("git", "-C", "/workspace/snap-flow-issue-77", "branch", "--show-current"),
             ("tmux", "new-window", "-d", "-t", "snapflow-dev", "-n", "issue-77", "-c",
+             "/workspace/snap-flow-issue-77"),
+            ("tmux", "set-option", "-w", "-t", "snapflow-dev:issue-77",
+             "remain-on-exit", "on"),
+            ("tmux", "respawn-pane", "-k", "-t", "snapflow-dev:issue-77", "-c",
              "/workspace/snap-flow-issue-77", CODEX_RUNTIME_PATH, "start",
              "--idempotency-key", KEY),
         ])

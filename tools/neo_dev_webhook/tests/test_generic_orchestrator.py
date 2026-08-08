@@ -81,9 +81,31 @@ class GenericOrchestratorTest(unittest.TestCase):
         self.assertIn(("git", "-C", "/workspace/snap-flow", "worktree", "add", "-b",
                        "feature/issue-13", "/workspace/snap-flow-issue-13", "origin/main"), argv)
         self.assertEqual(argv.count(("tmux", "new-window", "-d", "-t", "snapflow-dev", "-n",
-                                     "issue-13", "-c", "/workspace/snap-flow-issue-13",
-                                     CODEX_RUNTIME_PATH, "start", "--idempotency-key", KEY)), 1)
+                                     "issue-13", "-c", "/workspace/snap-flow-issue-13")), 1)
         self.assertEqual(result["status"], "starting")
+
+    def test_generic_start_sets_issue_window_to_remain_before_worker_launch(self):
+        registry = Registry((), (TEMPLATE,), (PROJECT,))
+        executor = FakeExecutor([
+            "/workspace/snap-flow\n", "/workspace/snap-flow/.git\n",
+            "git@github.com:kingkill85/snap-flow.git\n", "", "", "", "",
+            "feature/issue-13\n", "", "", "feature/issue-13\n", "", "", "",
+        ])
+
+        Controller(registry, InMemoryResolutionStore(), executor).execute(
+            "start", REPOSITORY, 13, KEY,
+        )
+
+        argv = [call[0] for call in executor.calls]
+        create = ("tmux", "new-window", "-d", "-t", "snapflow-dev", "-n", "issue-13",
+                  "-c", "/workspace/snap-flow-issue-13")
+        configure = ("tmux", "set-option", "-w", "-t", "snapflow-dev:issue-13",
+                     "remain-on-exit", "on")
+        launch = ("tmux", "respawn-pane", "-k", "-t", "snapflow-dev:issue-13", "-c",
+                  "/workspace/snap-flow-issue-13", CODEX_RUNTIME_PATH, "start",
+                  "--idempotency-key", KEY)
+        self.assertLess(argv.index(create), argv.index(configure))
+        self.assertLess(argv.index(configure), argv.index(launch))
 
     def test_existing_generic_worktree_is_verified_not_recreated(self):
         executor = FakeExecutor([
