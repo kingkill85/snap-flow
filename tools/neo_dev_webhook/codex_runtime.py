@@ -49,7 +49,9 @@ def continuation_prompt(repository: str, issue_number: int, lifecycle_state: str
             "tests, commit and push the implementation, and update the existing Draft PR. Then stop: "
             "the controller will run deterministic gates and create a separate independent "
             "fresh-context reviewer session. Never review your own implementation or publish an "
-            "acceptance command. Do not accept, archive, merge, close, deploy, or clean up the worktree."
+            "acceptance command. Include implementation_handoff with the exact approved spec SHA, "
+            "pushed implementation SHA, and governed PR number in the structured completion. Do not "
+            "accept, archive, merge, close, deploy, or clean up the worktree."
         ),
         "accepted": (
             "Acceptance is recorded. Make no repository changes and wait for the separate trusted "
@@ -94,6 +96,17 @@ COMPLETION_SCHEMA = {
         },
         "resumable": {"type": "boolean"},
         "summary": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "implementation_handoff": {
+            "type": "object", "additionalProperties": False,
+            "required": ["phase", "approved_spec_sha", "implementation_sha",
+                         "pull_request_number"],
+            "properties": {
+                "phase": {"const": "implementation_complete"},
+                "approved_spec_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                "implementation_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                "pull_request_number": {"type": "integer", "minimum": 1},
+            },
+        },
     },
 }
 
@@ -265,7 +278,9 @@ def run_exec_worker(operation: str, target: GovernedTarget, session_id: str | No
 
 def validate_completion(value: object, exit_code: int) -> dict:
     required = {"semantic_outcome", "resumable", "summary"}
-    if not isinstance(value, dict) or set(value) != required:
+    if (not isinstance(value, dict) or not required.issubset(value)
+            or set(value) - required != ({"implementation_handoff"}
+                                         if "implementation_handoff" in value else set())):
         raise ValueError("completion does not match the trusted schema")
     outcome = value["semantic_outcome"]
     if outcome not in {"success", "correctable", "blocked", "crashed", "invalid"}:
@@ -277,6 +292,20 @@ def validate_completion(value: object, exit_code: int) -> dict:
         raise ValueError("completion summary is invalid")
     if outcome == "success" and exit_code != 0:
         raise ValueError("semantic success requires process exit code zero")
+    handoff = value.get("implementation_handoff")
+    if handoff is not None:
+        fields = {"phase", "approved_spec_sha", "implementation_sha", "pull_request_number"}
+        if (not isinstance(handoff, dict) or set(handoff) != fields
+                or handoff.get("phase") != "implementation_complete"
+                or not isinstance(handoff.get("approved_spec_sha"), str)
+                or not isinstance(handoff.get("implementation_sha"), str)
+                or type(handoff.get("pull_request_number")) is not int
+                or handoff["pull_request_number"] <= 0):
+            raise ValueError("implementation handoff is malformed")
+        import re
+        if (re.fullmatch(r"[0-9a-f]{40}", handoff["approved_spec_sha"]) is None
+                or re.fullmatch(r"[0-9a-f]{40}", handoff["implementation_sha"]) is None):
+            raise ValueError("implementation handoff SHA is malformed")
     return value
 
 
@@ -610,6 +639,8 @@ def run_supervised_runtime(operation: str, idempotency_key: str,
                 "semantic_outcome": completion["semantic_outcome"],
                 "resumable": completion["resumable"],
             }
+            if "implementation_handoff" in completion:
+                report["implementation_handoff"] = completion["implementation_handoff"]
             stream.write((json.dumps(report) + "\n").encode())
             return 0 if completion["semantic_outcome"] == "success" else 1
         finally:

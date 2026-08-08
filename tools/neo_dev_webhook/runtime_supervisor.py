@@ -11,7 +11,8 @@ from typing import Sequence
 
 from .project_control import (
     CONTROLLER_REGISTRY_PATH, CONTROLLER_STATE_PATH, Controller,
-    FileResolutionStore, ProjectWorkerExecutor, Registry, validate_idempotency_key,
+    FileResolutionStore, ProjectWorkerExecutor, Registry,
+    validate_idempotency_key,
 )
 from .verification import RepositoryGitHubVerifier
 
@@ -34,7 +35,8 @@ def supervise(operation: str, key: str, session_id: str | None, review_run_id: s
     if session_id is not None:
         validate_idempotency_key(session_id)
     store = FileResolutionStore(state_path)
-    controller = Controller(Registry.load(registry_path), store, ProjectWorkerExecutor())
+    executor = ProjectWorkerExecutor()
+    controller = Controller(Registry.load(registry_path), store, executor)
     state = store.load(key)
     if state is None or (operation != "review" and state.phase not in {"starting", "resuming"}):
         raise RuntimeError("supervisor launch conflicts with trusted state")
@@ -102,6 +104,8 @@ def supervise(operation: str, key: str, session_id: str | None, review_run_id: s
                 if not isinstance(message, dict) or set(message) not in (
                     {"event", "session_id"},
                     {"event", "exit_code", "semantic_outcome", "resumable"},
+                    {"event", "exit_code", "semantic_outcome", "resumable",
+                     "implementation_handoff"},
                     {"event", "session_id", "reviewer_run_id"},
                     {"event", "reviewer_run_id", "verdict"},
                 ):
@@ -125,8 +129,9 @@ def supervise(operation: str, key: str, session_id: str | None, review_run_id: s
                     outcome = message["semantic_outcome"]
                     if outcome == "success":
                         outcome = "correctable"
-                    controller.observe_terminal(
+                    controller.complete_terminal(
                         key, message["exit_code"], outcome, message["resumable"],
+                        message.get("implementation_handoff"),
                     )
                     terminal_received = True
                     return 0

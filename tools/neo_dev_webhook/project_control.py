@@ -130,6 +130,7 @@ class WorkState:
     merge_authorized_at: str | None = None
     github_evidence: dict | None = None
     review_state: dict | None = None
+    implementation_handoff: dict | None = None
 
     def validate(self) -> None:
         self.target.validate()
@@ -186,6 +187,17 @@ class WorkState:
             raise ValueError("invalid host GitHub evidence")
         if self.review_state is not None and not isinstance(self.review_state, dict):
             raise ValueError("invalid independent review state")
+        if self.implementation_handoff is not None:
+            handoff = self.implementation_handoff
+            fields = {"phase", "approved_spec_sha", "implementation_sha", "pull_request_number"}
+            if (not isinstance(handoff, dict) or set(handoff) != fields
+                    or handoff.get("phase") != "implementation_complete"
+                    or handoff.get("approved_spec_sha") != self.spec_sha
+                    or not isinstance(handoff.get("implementation_sha"), str)
+                    or sha.fullmatch(handoff["implementation_sha"]) is None
+                    or type(handoff.get("pull_request_number")) is not int
+                    or handoff["pull_request_number"] <= 0):
+                raise ValueError("invalid implementation handoff state")
         if self.lifecycle_state == "independent_review" and self.review_state is None:
             raise ValueError("independent review lifecycle requires durable review state")
         if self.lifecycle_state in {
@@ -471,6 +483,7 @@ class FileResolutionStore:
                 merge_authorized_at=record.get("merge_authorized_at"),
                 github_evidence=record.get("github_evidence"),
                 review_state=review_state,
+                implementation_handoff=record.get("implementation_handoff"),
             )
         except TypeError as error:
             raise RuntimeError("invalid persisted resolution record") from error
@@ -528,6 +541,7 @@ class Controller:
                 "lifecycle_state": state.lifecycle_state,
                 "archive_sha": state.archive_sha,
                 "review_phase": ((state.review_state or {}).get("review_phase")),
+                "implementation_handoff": state.implementation_handoff,
             },
             "governed_identity": {"repository": state.target.repository,
                                   "issue_number": state.target.issue_number},
@@ -827,6 +841,11 @@ class Controller:
         terminal = TerminalObservation(exit_code, semantic_outcome, resumable)
         terminal.validate()
         state = self.store.load(idempotency_key)
+        if state is not None and state.terminal == terminal and state.phase in {
+            "exited_resumable", "exited_unresumable", "semantic_success",
+            "semantic_blocked", "crashed",
+        }:
+            return state
         if state is None or state.phase not in {"starting", "active", "correctable", "resuming"}:
             raise RuntimeError("terminal observation conflicts with persisted state")
         if semantic_outcome == "success":
@@ -840,6 +859,76 @@ class Controller:
         updated = replace(state, phase=phase, terminal=terminal)
         self.store.save(idempotency_key, state, updated)
         return updated
+
+    def complete_terminal(self, idempotency_key: str, exit_code: int,
+                          semantic_outcome: str, resumable: bool,
+                          implementation_handoff: dict | None = None) -> WorkState:
+        """Finalize a worker terminal and hand an exact implementation to review."""
+        state = self.store.load(idempotency_key)
+        if state is None:
+            raise RuntimeError("terminal completion requires persisted controller state")
+        if state.lifecycle_state == "independent_review":
+            if (not isinstance(implementation_handoff, dict)
+                    or implementation_handoff.get("implementation_sha") != state.implementation_sha):
+                raise RuntimeError("duplicate implementation handoff conflicts with controller state")
+            return state
+        if state.lifecycle_state != "spec_approved":
+            return self.observe_terminal(
+                idempotency_key, exit_code, semantic_outcome, resumable,
+            )
+        required = {
+            "phase", "approved_spec_sha", "implementation_sha", "pull_request_number",
+        }
+        if not isinstance(implementation_handoff, dict) or set(implementation_handoff) != required:
+            raise ValueError("implementation terminal omitted exact handoff evidence")
+        implementation_sha = implementation_handoff["implementation_sha"]
+        if (implementation_handoff["phase"] != "implementation_complete"
+                or implementation_handoff["approved_spec_sha"] != state.spec_sha
+                or not isinstance(implementation_sha, str)
+                or re.fullmatch(r"[0-9a-f]{40}", implementation_sha) is None
+                or type(implementation_handoff["pull_request_number"]) is not int
+                or implementation_handoff["pull_request_number"] <= 0):
+            raise ValueError("implementation terminal handoff evidence is malformed or stale")
+        if exit_code != 0 or semantic_outcome != "correctable" or resumable is not True:
+            raise RuntimeError("implementation terminal is not a resumable controller handoff")
+
+        state = self.observe_terminal(
+            idempotency_key, exit_code, semantic_outcome, resumable,
+        )
+        if self.github_collector is None:
+            persisted = replace(state, implementation_handoff=dict(implementation_handoff))
+            self.store.save(idempotency_key, state, persisted)
+            return persisted
+        fresh = self.github_collector.collect_bound(
+            state.target.repository, state.target.issue_number, state.target.branch,
+            state.target.resolution_id, state.lifecycle_state, idempotency_key,
+            (state.github_evidence or {}).get("current_wakeup"),
+        )
+        from .verification import validate_host_evidence, RepositoryGitHubVerifier
+        validate_host_evidence(fresh, state, idempotency_key)
+        pr = fresh.get("pr") if isinstance(fresh, dict) else None
+        if (not isinstance(pr, dict)
+                or pr.get("number") != implementation_handoff["pull_request_number"]
+                or pr.get("headRefOid") != implementation_sha):
+            raise RuntimeError("fresh PR evidence does not match implementation handoff")
+        with_evidence = replace(state, github_evidence=fresh)
+        self.store.save(idempotency_key, state, with_evidence)
+        transition = RepositoryGitHubVerifier(self.executor, fresh).verify_next(
+            state.target, with_evidence,
+        )
+        if not transition.verified or transition.evidence is None:
+            raise RuntimeError(transition.blocker or "implementation handoff verification failed")
+        if transition.evidence.get("implementation_sha") != implementation_sha:
+            raise RuntimeError("verified implementation SHA differs from terminal handoff")
+        advanced = self.advance_lifecycle(idempotency_key, **dict(transition.evidence))
+        deterministic = (advanced.review_state or {}).get("deterministic_evidence")
+        if not isinstance(deterministic, dict):
+            raise RuntimeError("controller omitted deterministic review evidence")
+        self.execute(
+            "review", advanced.target.repository, advanced.target.issue_number,
+            idempotency_key, deterministic,
+        )
+        return self.store.load(idempotency_key) or advanced
 
     def _windows(self, target: GovernedTarget) -> list[str]:
         output = self.executor.run(
@@ -1037,9 +1126,9 @@ class Controller:
             if not isinstance(run_id, str):
                 raise RuntimeError("independent reviewer run identity is missing")
             review_window = f"{state.target.window}-review-{review_state.get('review_generation', 0) + 1}"
-            self._start_supervisor("review", idempotency_key, run_id=run_id)
             windows = self._windows(state.target)
             if review_window not in windows:
+                self._start_supervisor("review", idempotency_key, run_id=run_id)
                 self.executor.run(
                     ("tmux", "new-window", "-d", "-t", state.target.session, "-n", review_window,
                      "-c", state.target.worktree, REVIEW_RUNTIME_PATH, "review",

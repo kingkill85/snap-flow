@@ -661,6 +661,37 @@ class AutomationTest(unittest.TestCase):
         dispatcher.review.assert_called_once_with(REPOSITORY, 13, TASK_KEY, evidence)
         broker.finish_decision.assert_called_once_with(path, record)
 
+    def test_waiting_terminal_handoff_attests_and_starts_one_reviewer_without_decision(self):
+        self.send()
+        claimed = self.store.claim(now=10)
+        self.store.complete(claimed["id"], claimed["claim_token"], "implementation-worker", now=11)
+        workflow_id = self.store.get_active(REPOSITORY, 77)["idempotency_key"]
+        evidence = {"sha": "a" * 40, "approved_spec_sha": "9" * 40}
+        dispatcher = mock.Mock()
+        dispatcher.status.side_effect = [
+            {"controller": {"execution": {
+                "lifecycle_state": "spec_approved", "phase": "exited_resumable",
+                "implementation_handoff": {"implementation_sha": "a" * 40},
+            }}},
+            {"controller": {"execution": {
+                "lifecycle_state": "independent_review", "phase": "exited_resumable",
+                "review_phase": "reviewer_starting",
+            }}},
+        ]
+        dispatcher.attest.return_value = {"controller": {
+            "execution": {"lifecycle_state": "independent_review",
+                          "review_phase": "awaiting_review"},
+            "review_evidence": evidence,
+        }}
+        consumer = Consumer(self.store, FakeRunner(), self.github, dispatcher=dispatcher)
+
+        self.assertTrue(consumer.run_one())
+        dispatcher.attest.assert_called_once_with(REPOSITORY, 77, workflow_id)
+        dispatcher.review.assert_called_once_with(REPOSITORY, 77, workflow_id, evidence)
+
+        self.assertFalse(consumer.run_one())
+        dispatcher.review.assert_called_once()
+
     def test_failures_are_bounded_and_dead_lettered(self):
         self.send()
         runner = FakeRunner(failures=10)

@@ -64,7 +64,23 @@
     "accepted_at": { "type": ["string", "null"] },
     "merge_authorized_at": { "type": ["string", "null"] },
     "github_evidence": { "type": ["object", "null"] },
-    "review_state": { "type": ["object", "null"] }
+    "review_state": { "type": ["object", "null"] },
+    "implementation_handoff": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["phase", "approved_spec_sha", "implementation_sha", "pull_request_number"],
+          "properties": {
+            "phase": { "const": "implementation_complete" },
+            "approved_spec_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "implementation_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "pull_request_number": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
+    }
   },
   "additionalProperties": false
 }

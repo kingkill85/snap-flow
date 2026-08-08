@@ -322,9 +322,7 @@ class IndependentReviewEntrypointTests(unittest.TestCase):
         supervisor = Supervisor()
         controller = Controller(Registry([TARGET]), store, FakeExecutor(["issue-77-review-1\n"]), supervisor)
         controller.execute("review", TARGET.repository, TARGET.issue_number, key, valid_evidence())
-        self.assertEqual(supervisor.calls[0][3], review["reviewer_run_id"])
-        self.assertIsNone(supervisor.calls[0][2])
-        self.assertNotEqual(supervisor.calls[0][3], implementer)
+        self.assertEqual(supervisor.calls, [])
 
     def test_runtime_builds_fresh_reviewer_process_and_schema(self):
         from tools.neo_dev_webhook.codex_runtime import (

@@ -375,6 +375,12 @@ class Store:
         row = self.db.execute("SELECT * FROM active_work WHERE repository=? AND issue_number=? ORDER BY id DESC LIMIT 1", (repository, issue_number)).fetchone()
         return None if row is None else dict(row)
 
+    def get_waiting(self):
+        row = self.db.execute(
+            "SELECT * FROM active_work WHERE status='waiting' ORDER BY id LIMIT 1"
+        ).fetchone()
+        return None if row is None else dict(row)
+
 
 class PublicGitHubAdapter:
     """Fail-closed public API adapter. Intentionally sends no Authorization header."""
@@ -707,6 +713,17 @@ class ProjectDispatcher:
             raise RuntimeError("controller attestation must return a JSON object")
         return {"controller": controller}
 
+    def status(self, repository: str, issue_number: int, idempotency_key: str) -> dict:
+        result = subprocess.run(
+            [self.adapter, "status", "--repository", repository, "--issue-number",
+             str(issue_number), "--idempotency-key", idempotency_key],
+            check=True, capture_output=True, text=True, timeout=90, shell=False,
+        )
+        controller = json.loads(result.stdout)
+        if not isinstance(controller, dict):
+            raise RuntimeError("controller status must return a JSON object")
+        return {"controller": controller}
+
     def review(self, repository: str, issue_number: int, idempotency_key: str,
                evidence: dict) -> dict:
         encoded = base64.b64encode(json.dumps(
@@ -823,6 +840,39 @@ class Consumer:
                     return False
                 self.capability_broker.finish_decision(path, record)
                 return True
+        if self.dispatcher is not None:
+            waiting = self.store.get_waiting()
+            if waiting is not None:
+                try:
+                    observed = self.dispatcher.status(
+                        waiting["repository"], waiting["issue_number"],
+                        waiting["idempotency_key"],
+                    )
+                    controller = observed.get("controller", {})
+                    execution = controller.get("execution", {})
+                    lifecycle = execution.get("lifecycle_state")
+                    if (lifecycle == "spec_approved"
+                            and execution.get("phase") == "exited_resumable"
+                            and isinstance(execution.get("implementation_handoff"), dict)):
+                        observed = self.dispatcher.attest(
+                            waiting["repository"], waiting["issue_number"],
+                            waiting["idempotency_key"],
+                        )
+                        controller = observed.get("controller", {})
+                        execution = controller.get("execution", {})
+                        lifecycle = execution.get("lifecycle_state")
+                    if (lifecycle == "independent_review"
+                            and execution.get("review_phase") == "awaiting_review"):
+                        evidence = controller.get("review_evidence")
+                        if not isinstance(evidence, dict):
+                            raise RuntimeError("controller omitted deterministic review evidence")
+                        self.dispatcher.review(
+                            waiting["repository"], waiting["issue_number"],
+                            waiting["idempotency_key"], evidence,
+                        )
+                        return True
+                except Exception:
+                    return False
         finalization = self.store.claim_finalization(self.max_attempts)
         if finalization is not None:
             verified = False
