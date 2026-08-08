@@ -42,6 +42,7 @@ class CucumberE2EGateTests(unittest.TestCase):
         valid = {
             "id": 77, "name": "E2E (Cucumber + Playwright)", "head_sha": HEAD,
             "status": "completed", "conclusion": "success", "state": "SUCCESS",
+            "artifacts": ["cucumber-report-" + HEAD],
         }
         self.assertEqual(validate_e2e_check([valid], HEAD)["id"], 77)
         mutations = [
@@ -51,6 +52,7 @@ class CucumberE2EGateTests(unittest.TestCase):
             [{**valid, "conclusion": "failure", "state": "FAILURE"}],
             [{**valid, "conclusion": "skipped", "state": "SKIPPED"}],
             [{**valid, "conclusion": "cancelled", "state": "CANCELLED"}],
+            [{**valid, "artifacts": []}],
         ]
         for checks in mutations:
             with self.subTest(checks=checks), self.assertRaisesRegex(RuntimeError, "E2E"):
@@ -83,7 +85,7 @@ class CucumberE2EGateTests(unittest.TestCase):
             "github_check": {
                 "id": 77, "name": "E2E (Cucumber + Playwright)",
                 "head_sha": HEAD, "status": "completed", "conclusion": "success",
-                "state": "SUCCESS",
+                "state": "SUCCESS", "artifacts": ["cucumber-report-" + HEAD],
             },
             "artifacts": {
                 "cucumber_report": "cucumber-report-" + HEAD,

@@ -22,6 +22,8 @@ def validate_e2e_check(checks: list[dict], head_sha: str) -> dict:
             or check.get("status") != "completed" or check.get("conclusion") != "success"
             or check.get("state") != "SUCCESS"):
         raise RuntimeError("dedicated GitHub E2E check is pending, stale, skipped, cancelled, or failed")
+    if check.get("artifacts") != [f"cucumber-report-{head_sha}"]:
+        raise RuntimeError("dedicated GitHub E2E report artifact is missing or stale")
     return check
 
 FOCUSED_CONTROLLER_TESTS = (

@@ -766,7 +766,8 @@ class StaticCollector:
 
 def trusted_check(sha):
     return {"id": 42, "name": "E2E (Cucumber + Playwright)", "head_sha": sha,
-            "status": "completed", "conclusion": "success", "state": "SUCCESS"}
+            "status": "completed", "conclusion": "success", "state": "SUCCESS",
+            "artifacts": [f"cucumber-report-{sha}"]}
 
 
 def fresh_github_evidence(target, workflow_id, sha):
@@ -813,7 +814,8 @@ def valid_evidence(sha="a" * 40, *, worktree="/workspace/snap-flow-issue-6",
             "mapping": {"status": "passed", "required": 0, "mapped": 0},
             "github_check": {"id": 42, "name": "E2E (Cucumber + Playwright)",
                              "head_sha": sha, "status": "completed",
-                             "conclusion": "success", "state": "SUCCESS"},
+                             "conclusion": "success", "state": "SUCCESS",
+                             "artifacts": [f"cucumber-report-{sha}"]},
             "artifacts": {"cucumber_report": f"cucumber-report-{sha}",
                           "playwright_failures": f"playwright-failures-{sha}"},
         },

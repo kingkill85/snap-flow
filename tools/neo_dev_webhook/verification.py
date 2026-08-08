@@ -158,9 +158,30 @@ class HostGitHubEvidenceCollector:
                         or item.get("conclusion") != "success"
                         or not isinstance(item.get("name"), str)):
                     raise RuntimeError("check-run SHA/status provenance is invalid")
+                artifacts = []
+                if item["name"] == "E2E (Cucumber + Playwright)":
+                    details_url = item.get("details_url")
+                    match = re.fullmatch(
+                        r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/([1-9][0-9]*)/job/[1-9][0-9]*",
+                        details_url or "",
+                    )
+                    if match is None:
+                        raise RuntimeError("dedicated E2E check run identity is invalid")
+                    artifact_response = json.loads(self.executor.run((
+                        *gh, "api", f"repos/{repository}/actions/runs/{match.group(1)}/artifacts",
+                    ), timeout=20.0))
+                    raw_artifacts = artifact_response.get("artifacts") \
+                        if isinstance(artifact_response, dict) else None
+                    if not isinstance(raw_artifacts, list):
+                        raise RuntimeError("dedicated E2E artifacts are unavailable")
+                    artifacts = sorted(entry.get("name") for entry in raw_artifacts
+                                       if isinstance(entry, dict)
+                                       and entry.get("expired") is False
+                                       and isinstance(entry.get("name"), str))
                 checks.append({"id": item["id"], "name": item["name"],
                                "head_sha": item["head_sha"], "status": item["status"],
-                               "conclusion": item["conclusion"], "state": "SUCCESS"})
+                               "conclusion": item["conclusion"], "state": "SUCCESS",
+                               "artifacts": artifacts})
         return {
             "version": 2, "workflow_id": workflow_id, "repository": repository,
             "issue_number": issue_number, "resolution_id": resolution_id,

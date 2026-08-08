@@ -112,7 +112,8 @@ class DeterministicGateTests(unittest.TestCase):
 
 def check_run(sha="a" * 40):
     return {"id": 42, "name": "E2E (Cucumber + Playwright)", "head_sha": sha,
-            "status": "completed", "conclusion": "success", "state": "SUCCESS"}
+            "status": "completed", "conclusion": "success", "state": "SUCCESS",
+            "artifacts": [f"cucumber-report-{sha}"]}
 
 
 if __name__ == "__main__":
