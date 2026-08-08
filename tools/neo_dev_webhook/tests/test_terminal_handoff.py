@@ -91,7 +91,8 @@ class TerminalImplementationHandoffTest(unittest.TestCase):
         current = self.store.load(WORKFLOW)
         advanced = replace(current, phase="exited_resumable",
                            terminal=None, lifecycle_state="independent_review",
-                           implementation_sha=IMPLEMENTATION, review_state=review)
+                           implementation_sha=IMPLEMENTATION, review_state=review,
+                           implementation_handoff=HANDOFF)
         self.store.save(WORKFLOW, current, advanced)
         with mock.patch.object(self.controller, "execute") as execute:
             result = self.controller.complete_terminal(
@@ -100,6 +101,82 @@ class TerminalImplementationHandoffTest(unittest.TestCase):
         self.assertEqual(result, advanced)
         execute.assert_not_called()
         self.collector.collect_bound.assert_not_called()
+
+    def test_duplicate_terminal_callback_requires_complete_canonical_handoff(self):
+        review = {**self.store.load(WORKFLOW).review_state,
+                  "review_phase": "reviewing", "reviewed_sha": IMPLEMENTATION,
+                  "deterministic_evidence": {"sha": IMPLEMENTATION}}
+        current = self.store.load(WORKFLOW)
+        advanced = replace(current, phase="exited_resumable",
+                           lifecycle_state="independent_review",
+                           implementation_sha=IMPLEMENTATION, review_state=review,
+                           implementation_handoff=HANDOFF)
+        self.store.save(WORKFLOW, current, advanced)
+        malformed = (
+            ({key: value for key, value in HANDOFF.items() if key != "pull_request_number"},
+             0, "correctable", True),
+            ({**HANDOFF, "approved_spec_sha": "b" * 40}, 0, "correctable", True),
+            ({**HANDOFF, "pull_request_number": 999}, 0, "correctable", True),
+            ({**HANDOFF, "implementation_sha": "b" * 40}, 0, "correctable", True),
+            ({**HANDOFF, "phase": "implementation_started"}, 0, "correctable", True),
+            (HANDOFF, 1, "correctable", True),
+            (HANDOFF, 0, "blocked", True),
+            (HANDOFF, 0, "correctable", False),
+        )
+        for handoff, exit_code, outcome, resumable in malformed:
+            with self.subTest(handoff=handoff, exit_code=exit_code,
+                              outcome=outcome, resumable=resumable), \
+                    self.assertRaises((ValueError, RuntimeError)):
+                self.controller.complete_terminal(
+                    WORKFLOW, exit_code, outcome, resumable, handoff,
+                )
+            self.assertEqual(self.store.load(WORKFLOW), advanced)
+
+    def test_attest_recovery_rejects_fresh_pr_not_bound_to_persisted_handoff(self):
+        persisted = Controller(Registry((TARGET,)), self.store, mock.Mock()).complete_terminal(
+            WORKFLOW, 0, "correctable", True, HANDOFF,
+        )
+        fresh = {"pr": {"number": 999, "headRefOid": "b" * 40}}
+        transition = mock.Mock(verified=True, blocker=None, evidence={
+            "lifecycle_state": "independent_review",
+            "lifecycle_updated_at": "2026-08-08T01:00:00Z",
+            "implementation_sha": "b" * 40,
+            "review_state": {**persisted.review_state, "review_phase": "awaiting_review"},
+        })
+        with mock.patch("neo_dev_webhook.verification.validate_host_evidence"), \
+             mock.patch("neo_dev_webhook.verification.RepositoryGitHubVerifier.verify_next",
+                        return_value=transition) as verify:
+            with self.assertRaisesRegex(RuntimeError, "persisted implementation handoff"):
+                self.controller.execute(
+                    "attest", TARGET.repository, TARGET.issue_number, WORKFLOW, fresh,
+                )
+        verify.assert_not_called()
+        state = self.store.load(WORKFLOW)
+        self.assertEqual(state.lifecycle_state, "spec_approved")
+        self.assertEqual(state.spec_sha, SPEC)
+        self.assertEqual(state.implementation_handoff, HANDOFF)
+
+    def test_attest_recovery_rejects_verifier_sha_not_bound_to_persisted_handoff(self):
+        persisted = Controller(Registry((TARGET,)), self.store, mock.Mock()).complete_terminal(
+            WORKFLOW, 0, "correctable", True, HANDOFF,
+        )
+        fresh = {"pr": {"number": 85, "headRefOid": IMPLEMENTATION}}
+        transition = mock.Mock(verified=True, blocker=None, evidence={
+            "lifecycle_state": "independent_review",
+            "lifecycle_updated_at": "2026-08-08T01:00:00Z",
+            "implementation_sha": "b" * 40,
+            "review_state": {**persisted.review_state, "review_phase": "awaiting_review"},
+        })
+        with mock.patch("neo_dev_webhook.verification.validate_host_evidence"), \
+             mock.patch("neo_dev_webhook.verification.RepositoryGitHubVerifier.verify_next",
+                        return_value=transition):
+            with self.assertRaisesRegex(RuntimeError, "persisted implementation handoff"):
+                self.controller.execute(
+                    "attest", TARGET.repository, TARGET.issue_number, WORKFLOW, fresh,
+                )
+        state = self.store.load(WORKFLOW)
+        self.assertEqual(state.lifecycle_state, "spec_approved")
+        self.assertEqual(state.spec_sha, SPEC)
 
     def test_missing_malformed_and_stale_handoff_evidence_fail_closed(self):
         invalid = (

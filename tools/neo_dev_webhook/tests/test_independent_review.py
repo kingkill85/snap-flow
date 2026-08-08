@@ -4,6 +4,7 @@ import unittest
 import json
 import pathlib
 import tempfile
+import threading
 
 SPEC_SHA = "9fcf912d46afe5fadc40c9fcb7dae3f7ff59f96b"
 
@@ -254,6 +255,73 @@ class IndependentReviewCanaryTests(unittest.TestCase):
 
 
 class IndependentReviewEntrypointTests(unittest.TestCase):
+    def test_concurrent_review_retries_claim_one_durable_launch(self):
+        from neo_dev_webhook.project_control import (
+            Controller, FileResolutionStore, Registry, WorkState,
+        )
+        from neo_dev_webhook.tests.test_project_control import TARGET
+
+        class ConcurrentExecutor:
+            def __init__(self):
+                self.lock = threading.Lock()
+                self.new_windows = 0
+
+            def run(self, argv, *, timeout):
+                if argv[:2] == ("tmux", "list-windows"):
+                    return ""
+                if argv[:2] == ("tmux", "new-window"):
+                    with self.lock:
+                        self.new_windows += 1
+                    return ""
+                raise AssertionError(argv)
+
+        class Supervisor:
+            def __init__(self):
+                self.lock = threading.Lock()
+                self.starts = 0
+
+            def start(self, operation, key, session_id=None, run_id=None):
+                with self.lock:
+                    self.starts += 1
+
+        key = "12345678-1234-4abc-8def-123456789abc"
+        implementer = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        review = migrate_fixture()
+        review.update(implementation_session_id=implementer, review_phase="awaiting_review")
+        with tempfile.TemporaryDirectory() as directory:
+            store = FileResolutionStore(pathlib.Path(directory) / "state.json")
+            initial = store.bind(key, TARGET)
+            store.save(key, initial, WorkState(
+                TARGET, codex_session_id=implementer, phase="exited_resumable",
+                lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
+                base_sha="0" * 40, spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+                approval_at="2026-08-08T00:00:00Z", review_state=review,
+            ))
+            executor, supervisor = ConcurrentExecutor(), Supervisor()
+            controllers = [Controller(Registry([TARGET]), store, executor, supervisor)
+                           for _ in range(2)]
+            barrier = threading.Barrier(2)
+            errors = []
+
+            def launch(controller):
+                try:
+                    barrier.wait()
+                    controller.execute("review", TARGET.repository, TARGET.issue_number,
+                                       key, valid_evidence())
+                except BaseException as error:
+                    errors.append(error)
+
+            threads = [threading.Thread(target=launch, args=(controller,))
+                       for controller in controllers]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            self.assertEqual(errors, [])
+            self.assertEqual(supervisor.starts, 1)
+            self.assertEqual(executor.new_windows, 1)
+
     def test_review_entrypoint_persists_intent_and_launches_separate_supervisor(self):
         from tools.neo_dev_webhook.project_control import (
             Controller, InMemoryResolutionStore, Registry, WorkState,

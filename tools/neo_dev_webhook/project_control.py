@@ -33,6 +33,7 @@ PHASES = frozenset({
     "semantic_blocked", "crashed", "failed_closed",
 })
 SEMANTIC_OUTCOMES = frozenset({"success", "correctable", "blocked", "crashed", "invalid"})
+REVIEW_LAUNCH_LEASE_SECONDS = 30
 LIFECYCLE_STATES = (
     "label", "specification_ready", "spec_approved", "independent_review", "implementation_verified",
     "accepted", "archive_authorized", "archive_ci_verified", "merge_authorized",
@@ -868,8 +869,15 @@ class Controller:
         if state is None:
             raise RuntimeError("terminal completion requires persisted controller state")
         if state.lifecycle_state == "independent_review":
-            if (not isinstance(implementation_handoff, dict)
-                    or implementation_handoff.get("implementation_sha") != state.implementation_sha):
+            required = {
+                "phase", "approved_spec_sha", "implementation_sha", "pull_request_number",
+            }
+            if (exit_code != 0 or semantic_outcome != "correctable" or resumable is not True
+                    or not isinstance(implementation_handoff, dict)
+                    or set(implementation_handoff) != required
+                    or implementation_handoff.get("phase") != "implementation_complete"
+                    or implementation_handoff.get("approved_spec_sha") != state.spec_sha
+                    or implementation_handoff != state.implementation_handoff):
                 raise RuntimeError("duplicate implementation handoff conflicts with controller state")
             return state
         if state.lifecycle_state != "spec_approved":
@@ -1105,40 +1113,101 @@ class Controller:
             if state.review_state.get("approved_spec_sha") != state.spec_sha:
                 raise RuntimeError("approved spec SHA conflicts with persisted controller state")
             validate_review_evidence(evidence, state.implementation_sha or "", state.spec_sha or "")
-            review_state = dict(state.review_state)
-            if review_state.get("review_phase") == "awaiting_review":
-                run_id = str(uuid.uuid5(
-                    uuid.UUID(idempotency_key),
-                    f"review:{review_state.get('review_generation', 0) + 1}:{state.implementation_sha}",
-                ))
-                review_state.update(
-                    review_phase="reviewer_starting", reviewer_run_id=run_id,
-                    reviewer_session_id=None, deterministic_evidence=evidence,
-                    reviewed_sha=state.implementation_sha,
+            claim_token = None
+            for _ in range(4):
+                current = self.store.load(idempotency_key)
+                if (current is None or current.lifecycle_state != "independent_review"
+                        or current.review_state is None):
+                    raise RuntimeError("independent review launch conflicts with controller state")
+                validate_review_evidence(
+                    evidence, current.implementation_sha or "", current.spec_sha or "",
                 )
-                updated = replace(state, review_state=review_state)
-                self.store.save(idempotency_key, state, updated)
-                state = updated
-            elif review_state.get("review_phase") == "reviewer_starting":
-                run_id = review_state.get("reviewer_run_id")
+                review_state = dict(current.review_state)
+                generation = review_state.get("review_generation", 0) + 1
+                if review_state.get("review_phase") == "awaiting_review":
+                    run_id = str(uuid.uuid5(
+                        uuid.UUID(idempotency_key),
+                        f"review:{generation}:{current.implementation_sha}",
+                    ))
+                    review_state.update(
+                        review_phase="reviewer_starting", reviewer_run_id=run_id,
+                        reviewer_session_id=None, deterministic_evidence=evidence,
+                        reviewed_sha=current.implementation_sha,
+                    )
+                elif review_state.get("review_phase") == "reviewer_starting":
+                    run_id = review_state.get("reviewer_run_id")
+                else:
+                    raise RuntimeError("independent reviewer launch is not expected")
+                if not isinstance(run_id, str):
+                    raise RuntimeError("independent reviewer run identity is missing")
+                # The persisted CAS lease, not tmux observation, owns launch authority.
+                # A handled launch failure releases it below; a controller crash leaves a
+                # bounded lease so a later retry can reclaim without a permanent wedge.
+                now = time.time()
+                existing_claim = review_state.get("reviewer_launch_claim")
+                if (isinstance(existing_claim, dict)
+                        and existing_claim.get("run_id") == run_id
+                        and existing_claim.get("generation") == generation
+                        and isinstance(existing_claim.get("lease_until"), (int, float))
+                        and existing_claim["lease_until"] > now):
+                    return self._result(
+                        operation, idempotency_key, current, "reviewer_starting",
+                    )
+                claim_token = str(uuid.uuid4())
+                review_state["reviewer_launch_claim"] = {
+                    "token": claim_token, "run_id": run_id, "generation": generation,
+                    "lease_until": now + REVIEW_LAUNCH_LEASE_SECONDS,
+                }
+                claimed = replace(current, review_state=review_state)
+                try:
+                    self.store.save(idempotency_key, current, claimed)
+                except RuntimeError as error:
+                    if "stale persisted execution state" not in str(error):
+                        raise
+                    continue
+                state = claimed
+                break
             else:
-                raise RuntimeError("independent reviewer launch is not expected")
-            if not isinstance(run_id, str):
-                raise RuntimeError("independent reviewer run identity is missing")
-            review_window = f"{state.target.window}-review-{review_state.get('review_generation', 0) + 1}"
-            windows = self._windows(state.target)
-            if review_window not in windows:
-                self._start_supervisor("review", idempotency_key, run_id=run_id)
-                self.executor.run(
-                    ("tmux", "new-window", "-d", "-t", state.target.session, "-n", review_window,
-                     "-c", state.target.worktree, REVIEW_RUNTIME_PATH, "review",
-                     "--idempotency-key", idempotency_key, "--review-run-id", run_id),
-                    timeout=20.0,
-                )
+                raise RuntimeError("independent reviewer launch claim contention")
+            review_window = f"{state.target.window}-review-{generation}"
+            try:
+                windows = self._windows(state.target)
+                if review_window not in windows:
+                    self._start_supervisor("review", idempotency_key, run_id=run_id)
+                    self.executor.run(
+                        ("tmux", "new-window", "-d", "-t", state.target.session,
+                         "-n", review_window, "-c", state.target.worktree,
+                         REVIEW_RUNTIME_PATH, "review", "--idempotency-key",
+                         idempotency_key, "--review-run-id", run_id),
+                        timeout=20.0,
+                    )
+            except BaseException:
+                current = self.store.load(idempotency_key)
+                claim = ((current.review_state or {}).get("reviewer_launch_claim")
+                         if current is not None else None)
+                if isinstance(claim, dict) and claim.get("token") == claim_token:
+                    review = dict(current.review_state or {})
+                    review.pop("reviewer_launch_claim", None)
+                    try:
+                        self.store.save(idempotency_key, current,
+                                        replace(current, review_state=review))
+                    except RuntimeError:
+                        pass
+                raise
             return self._result(operation, idempotency_key, state, "reviewer_starting")
         if evidence is not None:
             from .verification import validate_host_evidence
             validate_host_evidence(evidence, state, idempotency_key)
+            if (operation == "attest" and state.lifecycle_state == "spec_approved"
+                    and state.implementation_handoff is not None):
+                handoff = state.implementation_handoff
+                pr = evidence.get("pr") if isinstance(evidence, dict) else None
+                if (not isinstance(pr, dict)
+                        or pr.get("number") != handoff.get("pull_request_number")
+                        or pr.get("headRefOid") != handoff.get("implementation_sha")):
+                    raise RuntimeError(
+                        "fresh PR evidence conflicts with persisted implementation handoff",
+                    )
             updated = replace(state, github_evidence=evidence)
             self.store.save(idempotency_key, state, updated)
             state = updated
@@ -1199,6 +1268,13 @@ class Controller:
             ).verify_next(target, state)
             if not transition.verified or transition.evidence is None:
                 raise RuntimeError(transition.blocker or "attestation verification failed")
+            if (state.lifecycle_state == "spec_approved"
+                    and state.implementation_handoff is not None
+                    and transition.evidence.get("implementation_sha")
+                    != state.implementation_handoff.get("implementation_sha")):
+                raise RuntimeError(
+                    "verified implementation SHA conflicts with persisted implementation handoff",
+                )
             state = self.advance_lifecycle(idempotency_key, **transition.evidence)
             return self._result(operation, idempotency_key, state, "attested")
         if operation == "finalize":
