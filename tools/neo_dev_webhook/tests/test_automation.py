@@ -3,6 +3,7 @@ import hmac
 import json
 import socket
 import os
+import pathlib
 import tempfile
 import threading
 import unittest
@@ -22,6 +23,7 @@ from neo_dev_webhook.automation import (
     has_standalone_marker,
 )
 from neo_dev_webhook import server as server_module
+from neo_dev_webhook.hermes_transition import CapabilityBroker
 
 
 REPOSITORY = "kingkill85/snap-flow"
@@ -575,6 +577,105 @@ class AutomationTest(unittest.TestCase):
         self.assertFalse(consumer.run_one())
         dispatcher.attest.assert_called_once_with(REPOSITORY, 13, TASK_KEY, None)
         broker.finish_decision.assert_not_called()
+
+    def _capability_starvation_fixture(self, root):
+        issue = {"number": 84, "state": "open", "labels": [{"name": "neo-dev"}]}
+        workflow = "ecfc6f5a-931b-11f1-9ca7-8a64afe8ca67"
+        old_delivery = "019fe11f-7edd-7420-ba7a-9753456b43f1"
+        finding_delivery = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        self.assertEqual(self.send(payload(issue=issue), delivery=workflow), (202, "accepted"))
+        claimed = self.store.claim(now=10)
+        self.store.complete(claimed["id"], claimed["claim_token"],
+                            "existing-controller-execution", now=11)
+        self.assertEqual(self.send(
+            payload(event="issue_comment", body="independent review finding", issue=issue),
+            event="issue_comment", delivery=finding_delivery,
+        ), (202, "accepted"))
+
+        broker = CapabilityBroker(root / "capabilities")
+        token = broker.issue(workflow, old_delivery, 84, "implementation", {
+            "delivery_id": old_delivery, "command": "/approve-spec " + "a" * 40,
+        })
+        broker.submit(old_delivery, token, "proceed", "old implementation decision")
+        dispatcher = mock.Mock()
+        dispatcher.attest.side_effect = RuntimeError("trusted implementation checks pending")
+        dispatcher.dispatch.return_value = {"controller": {"execution": {
+            "lifecycle_state": "independent_review",
+            "codex_session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        }}}
+        bodies = []
+
+        def task_process(argv, **kwargs):
+            if "--help" in argv:
+                return mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
+            bodies.append(argv[argv.index("--body") + 1])
+            return mock.Mock(stdout=json.dumps({
+                "task_id": "capability-bearing-continuation", "durable": True,
+            }))
+
+        runner = TaskRunner(script_path="/task.py", capability_broker=broker)
+        consumer = Consumer(
+            self.store, runner, self.github, dispatcher=dispatcher,
+            capability_broker=broker,
+        )
+        return workflow, finding_delivery, broker, dispatcher, consumer, bodies, task_process
+
+    def test_retryable_old_decision_cannot_starve_newer_finding_across_repeated_loops(self):
+        root = pathlib.Path(self.temp.name)
+        (workflow, finding_delivery, broker, dispatcher, consumer, bodies,
+         task_process) = self._capability_starvation_fixture(root)
+
+        with mock.patch("neo_dev_webhook.automation.subprocess.run", side_effect=task_process):
+            self.assertEqual([consumer.run_one() for _ in range(4)],
+                             [True, False, False, False])
+
+        self.assertEqual(len(bodies), 1)
+        self.assertIn("Current phase: review-correction", bodies[0])
+        self.assertIn("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", bodies[0])
+        dispatcher.dispatch.assert_called_once_with(
+            "resume", REPOSITORY, 84, workflow, mock.ANY,
+        )
+        wakeup = dispatcher.dispatch.call_args.args[4]
+        self.assertEqual((wakeup["delivery_id"], wakeup["command"]),
+                         (finding_delivery, "finding"))
+        records = [json.loads(path.read_text())
+                   for path in sorted((root / "capabilities").glob("*.json"))]
+        old = next(record for record in records if record["execution_id"]
+                   == "019fe11f-7edd-7420-ba7a-9753456b43f1")
+        continuation = next(record for record in records if record is not old)
+        self.assertEqual((old["used"], old["processed"]), (True, False))
+        self.assertEqual((continuation["workflow_id"], continuation["phase"],
+                          continuation["used"]),
+                         (workflow, "review-correction", False))
+        self.assertEqual(len(records), 2)
+
+    def test_concurrent_retryable_decision_and_finding_create_one_continuation(self):
+        root = pathlib.Path(self.temp.name)
+        (workflow, _finding_delivery, broker, dispatcher, consumer, bodies,
+         task_process) = self._capability_starvation_fixture(root)
+        stores = [Store(self.db) for _ in range(16)]
+        consumers = [Consumer(
+            store, consumer.runner, self.github, dispatcher=dispatcher,
+            capability_broker=broker,
+        ) for store in stores]
+
+        with mock.patch("neo_dev_webhook.automation.subprocess.run", side_effect=task_process), \
+             ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(lambda item: item.run_one(), consumers))
+        for store in stores:
+            store.close()
+
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(len(bodies), 1)
+        dispatcher.dispatch.assert_called_once()
+        self.assertEqual(dispatcher.dispatch.call_args.args[:4],
+                         ("resume", REPOSITORY, 84, workflow))
+        records = [json.loads(path.read_text())
+                   for path in sorted((root / "capabilities").glob("*.json"))]
+        self.assertEqual(len(records), 2)
+        self.assertEqual(sum(record.get("used") is False for record in records), 1)
+        self.assertEqual(sum(record.get("used") is True
+                             and record.get("processed") is False for record in records), 1)
 
     def test_merge_worker_waits_for_controller_archive_attestation_then_auto_resumes(self):
         merge_wakeup = {

@@ -853,10 +853,11 @@ class Consumer:
                 except Exception:
                     # The trusted PR/artifact evidence can legitimately lag the
                     # worker decision. Keep the one-use decision pending and
-                    # retry without crashing the durable consumer container.
-                    return False
-                self.capability_broker.finish_decision(path, record)
-                return True
+                    # retry without blocking newer durable queue work.
+                    pass
+                else:
+                    self.capability_broker.finish_decision(path, record)
+                    return True
         if self.dispatcher is not None:
             for waiting in self.store.get_waiting_batch(after_id=self.waiting_cursor):
                 self.waiting_cursor = waiting["id"]
