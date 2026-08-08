@@ -581,27 +581,45 @@ class AutomationTest(unittest.TestCase):
     def _capability_starvation_fixture(self, root):
         issue = {"number": 84, "state": "open", "labels": [{"name": "neo-dev"}]}
         workflow = "ecfc6f5a-931b-11f1-9ca7-8a64afe8ca67"
-        old_delivery = "019fe11f-7edd-7420-ba7a-9753456b43f1"
-        finding_delivery = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        old_execution = "65aecd68-f485-55b5-9603-8a924ae52d54"
+        finding_delivery = "cd34e870-9341-11f1-8fd9-eac5b88ceff8"
         self.assertEqual(self.send(payload(issue=issue), delivery=workflow), (202, "accepted"))
         claimed = self.store.claim(now=10)
         self.store.complete(claimed["id"], claimed["claim_token"],
                             "existing-controller-execution", now=11)
+        active = self.store.get_active(REPOSITORY, 84)
+        historical_delivery = "11111111-1111-4111-8111-111111111111"
+        self.store.db.execute(
+            "INSERT INTO deliveries(delivery_id,received_at) VALUES (?,?)",
+            (historical_delivery, 12),
+        )
+        self.store.db.execute(
+            "INSERT INTO wakeups(id,delivery_id,work_id,event,action,comment_id,command,created_at) "
+            "VALUES (21,?,?, 'issue_comment','created',?,?,?)",
+            (historical_delivery, active["id"], 5226880431, "finding", 12),
+        )
         self.assertEqual(self.send(
-            payload(event="issue_comment", body="independent review finding", issue=issue),
+            payload(event="issue_comment", body="independent review finding", issue=issue,
+                    comment={"id": 5226880432, "body": "independent review finding",
+                             "user": ACTOR.copy()}),
             event="issue_comment", delivery=finding_delivery,
         ), (202, "accepted"))
+        finding = self.store.db.execute(
+            "SELECT * FROM wakeups WHERE delivery_id=?", (finding_delivery,),
+        ).fetchone()
+        self.assertEqual((finding["id"], finding["comment_id"], finding["command"]),
+                         (22, 5226880432, "finding"))
 
         broker = CapabilityBroker(root / "capabilities")
-        token = broker.issue(workflow, old_delivery, 84, "implementation", {
-            "delivery_id": old_delivery, "command": "/approve-spec " + "a" * 40,
+        token = broker.issue(workflow, old_execution, 84, "implementation", {
+            "delivery_id": workflow, "command": "/approve-spec " + "a" * 40,
         })
-        broker.submit(old_delivery, token, "proceed", "old implementation decision")
+        broker.submit(old_execution, token, "proceed", "old implementation decision")
         dispatcher = mock.Mock()
         dispatcher.attest.side_effect = RuntimeError("trusted implementation checks pending")
         dispatcher.dispatch.return_value = {"controller": {"execution": {
             "lifecycle_state": "independent_review",
-            "codex_session_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "codex_session_id": "019fe11f-7edd-7420-ba7a-9753456b43f1",
         }}}
         bodies = []
 
@@ -631,22 +649,27 @@ class AutomationTest(unittest.TestCase):
 
         self.assertEqual(len(bodies), 1)
         self.assertIn("Current phase: review-correction", bodies[0])
-        self.assertIn("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", bodies[0])
+        self.assertIn("019fe11f-7edd-7420-ba7a-9753456b43f1", bodies[0])
         dispatcher.dispatch.assert_called_once_with(
             "resume", REPOSITORY, 84, workflow, mock.ANY,
         )
         wakeup = dispatcher.dispatch.call_args.args[4]
-        self.assertEqual((wakeup["delivery_id"], wakeup["command"]),
-                         (finding_delivery, "finding"))
+        self.assertEqual((wakeup["id"], wakeup["delivery_id"], wakeup["comment_id"],
+                          wakeup["command"]),
+                         (22, finding_delivery, 5226880432, "finding"))
         records = [json.loads(path.read_text())
                    for path in sorted((root / "capabilities").glob("*.json"))]
         old = next(record for record in records if record["execution_id"]
-                   == "019fe11f-7edd-7420-ba7a-9753456b43f1")
+                   == "65aecd68-f485-55b5-9603-8a924ae52d54")
         continuation = next(record for record in records if record is not old)
-        self.assertEqual((old["used"], old["processed"]), (True, False))
+        self.assertEqual((old["decision"], old["used"], old["processed"]),
+                         ("proceed", True, False))
         self.assertEqual((continuation["workflow_id"], continuation["phase"],
                           continuation["used"]),
                          (workflow, "review-correction", False))
+        expected_execution = str(uuid.uuid5(uuid.UUID(workflow), finding_delivery))
+        self.assertEqual(continuation["execution_id"], expected_execution)
+        self.assertGreater(len(continuation["token"]), 32)
         self.assertEqual(len(records), 2)
 
     def test_concurrent_retryable_decision_and_finding_create_one_continuation(self):
