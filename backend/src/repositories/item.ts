@@ -289,7 +289,7 @@ export class ItemRepository {
     let importedPredicate = '';
 
     if (importedBaseModelNumbers.length > 0) {
-      importedPredicate = `AND base_model_number NOT IN (${importedBaseModelNumbers.map(() => '?').join(', ')})`;
+      importedPredicate = `AND (base_model_number IS NULL OR base_model_number NOT IN (${importedBaseModelNumbers.map(() => '?').join(', ')}))`;
       values.push(...importedBaseModelNumbers);
     }
 

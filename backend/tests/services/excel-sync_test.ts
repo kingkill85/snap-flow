@@ -6,6 +6,7 @@ import { categoryRepository } from '../../src/repositories/category.ts';
 import { itemRepository } from '../../src/repositories/item.ts';
 import { itemVariantRepository } from '../../src/repositories/item-variant.ts';
 import { itemTypeRepository } from '../../src/repositories/item-type.ts';
+import { getDb } from '../../src/config/database.ts';
 
 // Setup test database before all tests
 await setupTestDatabase();
@@ -217,6 +218,7 @@ Deno.test('ExcelSyncService - import only deactivates missing items from the sel
 
     assertEquals(result.success, true);
     assertEquals(result.phases.items.deactivated, 1);
+    assertEquals(result.phases.categories.deactivated, 1);
 
     const missingImportedAfter = await itemRepository.findById(missingImportedItem.id);
     const protectedAfter = await itemRepository.findById(protectedItem.id);
@@ -263,16 +265,25 @@ Deno.test('ItemRepository - missing-item mutation is constrained to the selected
     name: 'Protected',
     base_model_number: 'PRO-KEEP',
   });
+  const selectedWithoutModel = await itemRepository.create({
+    category_id: category.id,
+    type_id: selectedType.id,
+    name: 'Selected Without Model',
+  });
 
   const changed = await itemRepository.deactivateMissingForType(
     selectedType.id,
     ['SEL-KEEP'],
   );
 
-  assertEquals(changed.map((item) => item.id), [selectedMissing.id]);
+  assertEquals(
+    changed.map((item) => item.id).sort((a, b) => a - b),
+    [selectedMissing.id, selectedWithoutModel.id],
+  );
   assertEquals(Boolean((await itemRepository.findById(selectedMissing.id))?.is_active), false);
   assertEquals(Boolean((await itemRepository.findById(selectedPresent.id))?.is_active), true);
   assertEquals(Boolean((await itemRepository.findById(protectedItem.id))?.is_active), true);
+  assertEquals(Boolean((await itemRepository.findById(selectedWithoutModel.id))?.is_active), false);
 });
 
 Deno.test('ExcelSyncService - invalid type rolls back without broadening scope', async () => {
@@ -335,6 +346,48 @@ Deno.test('ExcelSyncService - empty or unreadable workbook leaves catalog unchan
     assertEquals(Boolean((await itemRepository.findById(existingItem.id))?.is_active), true);
     assertEquals(Boolean((await categoryRepository.findById(category.id))?.is_active), true);
   } finally {
+    await Deno.remove(fullPath).catch(() => {});
+  }
+});
+
+Deno.test('ExcelSyncService - in-transaction failure rolls back catalog mutations', async () => {
+  clearDatabase();
+
+  const selectedType = await itemTypeRepository.create({ name: 'Selected', abbreviation: 'SEL' });
+  const category = await categoryRepository.create({ name: 'Existing Category' });
+  const existingItem = await itemRepository.create({
+    category_id: category.id,
+    type_id: selectedType.id,
+    name: 'Existing Product',
+    base_model_number: 'OLD',
+  });
+  const worksheet = xlsx.utils.aoa_to_sheet([
+    [], [], [],
+    ['New Category', '', '', 'New Product', '', 'NEW', '', 'Default', 'NEW-DEFAULT', 10],
+  ]);
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
+  const relativePath = 'imports/rollback-scope-test.xlsx';
+  const fullPath = `./uploads/${relativePath}`;
+  await Deno.mkdir('./uploads/imports', { recursive: true });
+  await Deno.writeFile(fullPath, new Uint8Array(xlsx.write(workbook, { type: 'array', bookType: 'xlsx' })));
+  getDb().query(`
+    CREATE TRIGGER fail_sync_timestamp
+    BEFORE INSERT ON app_settings
+    BEGIN
+      SELECT RAISE(ABORT, 'forced sync rollback');
+    END
+  `);
+
+  try {
+    const result = await excelSyncService.syncCatalog(relativePath, selectedType.id);
+    assertEquals(result.success, false);
+    assertEquals(await categoryRepository.findByName('New Category'), null);
+    assertEquals(await itemRepository.findByBaseModelNumber('NEW'), null);
+    assertEquals(Boolean((await itemRepository.findById(existingItem.id))?.is_active), true);
+    assertEquals(Boolean((await categoryRepository.findById(category.id))?.is_active), true);
+  } finally {
+    getDb().query('DROP TRIGGER IF EXISTS fail_sync_timestamp');
     await Deno.remove(fullPath).catch(() => {});
   }
 });

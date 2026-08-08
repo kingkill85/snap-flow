@@ -126,7 +126,6 @@ export class ExcelSyncService {
       // Phase 0: Parse Excel
       this.log(result, '📖 Parsing Excel file...', 'parsing');
       const groupedItems = await this.parseAndGroupExcel(excelPath);
-      const extractedImages = await this.extractImages(excelPath);
 
       if (Object.keys(groupedItems).length === 0) {
         throw new Error('Workbook contains no valid catalog rows');
@@ -136,6 +135,8 @@ export class ExcelSyncService {
       if (!selectedType) {
         throw new Error(`Product type not found: ${typeId}`);
       }
+
+      const extractedImages = await this.extractImages(excelPath);
       
       this.log(result, `✓ Found ${Object.keys(groupedItems).length} unique items with ${Object.values(groupedItems).reduce((acc, item) => acc + item.variants.length, 0)} variants`, 'parsing');
       this.log(result, `✓ Extracted ${extractedImages.size} images`, 'parsing');

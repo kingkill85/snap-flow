@@ -111,6 +111,10 @@ export function assertTestDatabase(): void {
 export function clearDatabase(): void {
   // Clear rate limits to prevent tests from hitting rate limits
   clearRateLimitStore();
+
+  // Guard the destructive reset boundary itself. Never let a lost test
+  // injection silently fall back to an environment-selected database.
+  assertTestDatabase();
   
   const dbInstance = getDb();
   
