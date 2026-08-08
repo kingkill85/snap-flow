@@ -381,6 +381,22 @@ class Store:
         ).fetchone()
         return None if row is None else dict(row)
 
+    def get_waiting_batch(self, limit: int = 16, after_id: int = 0):
+        if not isinstance(limit, int) or limit < 1 or limit > 64:
+            raise ValueError("waiting batch limit is out of bounds")
+        if not isinstance(after_id, int) or after_id < 0:
+            raise ValueError("waiting cursor is invalid")
+        rows = list(self.db.execute(
+            "SELECT * FROM active_work WHERE status='waiting' AND id>? ORDER BY id LIMIT ?",
+            (after_id, limit),
+        ))
+        if len(rows) < limit and after_id:
+            rows.extend(self.db.execute(
+                "SELECT * FROM active_work WHERE status='waiting' AND id<=? ORDER BY id LIMIT ?",
+                (after_id, limit - len(rows)),
+            ))
+        return [dict(row) for row in rows]
+
 
 class PublicGitHubAdapter:
     """Fail-closed public API adapter. Intentionally sends no Authorization header."""
@@ -799,6 +815,7 @@ class Consumer:
         self.finalizer = finalizer
         self.dispatcher = dispatcher
         self.capability_broker = capability_broker
+        self.waiting_cursor = 0
 
     def run_one(self, now=None) -> bool:
         if self.capability_broker is not None and self.dispatcher is not None:
@@ -841,8 +858,8 @@ class Consumer:
                 self.capability_broker.finish_decision(path, record)
                 return True
         if self.dispatcher is not None:
-            waiting = self.store.get_waiting()
-            if waiting is not None:
+            for waiting in self.store.get_waiting_batch(after_id=self.waiting_cursor):
+                self.waiting_cursor = waiting["id"]
                 try:
                     observed = self.dispatcher.status(
                         waiting["repository"], waiting["issue_number"],
@@ -872,7 +889,7 @@ class Consumer:
                         )
                         return True
                 except Exception:
-                    return False
+                    continue
         finalization = self.store.claim_finalization(self.max_attempts)
         if finalization is not None:
             verified = False

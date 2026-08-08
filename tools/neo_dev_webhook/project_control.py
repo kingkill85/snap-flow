@@ -273,6 +273,10 @@ class ProjectWorkerExecutor:
 
 class RuntimeSupervisorLauncher:
     @staticmethod
+    def _ownership_path(key: str) -> pathlib.Path:
+        return pathlib.Path("/run/neo-dev-runtime") / f"{key}.owner.json"
+
+    @staticmethod
     def _socket_is_live(path: pathlib.Path) -> bool:
         """Distinguish a bound supervisor socket from a stale filesystem entry."""
         try:
@@ -280,6 +284,26 @@ class RuntimeSupervisorLauncher:
         except OSError:
             return False
         return any(line.split()[-1:] == [str(path)] for line in entries)
+
+    def is_live(self, operation: str, idempotency_key: str,
+                session_id: str | None = None, run_id: str | None = None) -> bool:
+        try:
+            owner = json.loads(self._ownership_path(idempotency_key).read_text(encoding="utf-8"))
+            pid = owner["pid"]
+            start_time = owner["start_time"]
+            actual_start = pathlib.Path(f"/proc/{pid}/stat").read_text().split()[21]
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError, IndexError):
+            return False
+        return (
+            owner.get("operation") == operation
+            and owner.get("idempotency_key") == idempotency_key
+            and owner.get("session_id") == session_id
+            and owner.get("review_run_id") == run_id
+            and actual_start == start_time
+            and self._socket_is_live(
+                pathlib.Path("/run/neo-dev-runtime") / f"{idempotency_key}.sock"
+            )
+        )
 
     def start(self, operation: str, idempotency_key: str,
               session_id: str | None = None, run_id: str | None = None) -> None:
@@ -291,7 +315,7 @@ class RuntimeSupervisorLauncher:
         if run_id is not None:
             argv.extend(("--review-run-id", run_id))
         path = pathlib.Path("/run/neo-dev-runtime") / f"{idempotency_key}.sock"
-        if operation == "review" and self._socket_is_live(path):
+        if self.is_live(operation, idempotency_key, session_id, run_id):
             return
         path.unlink(missing_ok=True)
         process = subprocess.Popen(
@@ -299,7 +323,7 @@ class RuntimeSupervisorLauncher:
             stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
         )
         deadline = time.monotonic() + 5
-        while not path.exists():
+        while not self.is_live(operation, idempotency_key, session_id, run_id):
             if process.poll() is not None:
                 raise RuntimeError("runtime supervisor failed before socket readiness")
             if time.monotonic() >= deadline:
@@ -1113,6 +1137,13 @@ class Controller:
         if self.supervisor is not None:
             self.supervisor.start(operation, key, session_id, run_id)
 
+    def _supervisor_is_live(self, operation: str, key: str,
+                            session_id: str | None = None, run_id: str | None = None) -> bool:
+        if self.supervisor is None:
+            return True
+        probe = getattr(self.supervisor, "is_live", None)
+        return bool(probe(operation, key, session_id, run_id)) if probe is not None else False
+
     def execute(self, operation: str, repository: str, issue_number: int,
                 idempotency_key: str, evidence: dict | None = None) -> dict:
         state = self._resolve(operation, repository, issue_number, idempotency_key)
@@ -1191,27 +1222,33 @@ class Controller:
             else:
                 raise RuntimeError("independent reviewer launch claim contention")
             review_window = f"{state.target.window}-review-{generation}"
-            supervisor_confirmed = launch_step == "supervisor_started"
+            supervisor_confirmed = self._supervisor_is_live(
+                "review", idempotency_key, run_id=run_id,
+            )
             try:
                 windows = self._windows(state.target)
+                if not supervisor_confirmed:
+                    self._start_supervisor("review", idempotency_key, run_id=run_id)
+                    probe = getattr(self.supervisor, "is_live", None)
+                    if probe is not None and not self._supervisor_is_live(
+                            "review", idempotency_key, run_id=run_id):
+                        raise RuntimeError("review supervisor did not become live")
+                    current = self.store.load(idempotency_key)
+                    if current is None:
+                        raise RuntimeError("independent reviewer launch state disappeared")
+                    claim = ((current.review_state or {}).get("reviewer_launch_claim")
+                             if current is not None else None)
+                    if not isinstance(claim, dict) or claim.get("token") != claim_token:
+                        raise RuntimeError("independent reviewer launch authority was lost")
+                    review = dict(current.review_state or {})
+                    review["reviewer_launch_claim"] = {
+                        **claim, "step": "supervisor_started",
+                    }
+                    confirmed = replace(current, review_state=review)
+                    self.store.save(idempotency_key, current, confirmed)
+                    state = confirmed
+                    supervisor_confirmed = True
                 if review_window not in windows:
-                    if not supervisor_confirmed:
-                        self._start_supervisor("review", idempotency_key, run_id=run_id)
-                        current = self.store.load(idempotency_key)
-                        if current is None:
-                            raise RuntimeError("independent reviewer launch state disappeared")
-                        claim = ((current.review_state or {}).get("reviewer_launch_claim")
-                                 if current is not None else None)
-                        if not isinstance(claim, dict) or claim.get("token") != claim_token:
-                            raise RuntimeError("independent reviewer launch authority was lost")
-                        review = dict(current.review_state or {})
-                        review["reviewer_launch_claim"] = {
-                            **claim, "step": "supervisor_started",
-                        }
-                        confirmed = replace(current, review_state=review)
-                        self.store.save(idempotency_key, current, confirmed)
-                        state = confirmed
-                        supervisor_confirmed = True
                     self.executor.run(
                         ("tmux", "new-window", "-d", "-t", state.target.session,
                          "-n", review_window, "-c", state.target.worktree,
@@ -1240,6 +1277,10 @@ class Controller:
             current = self.store.load(idempotency_key)
             if current is None:
                 raise RuntimeError("independent reviewer launch state disappeared")
+            probe = getattr(self.supervisor, "is_live", None)
+            if probe is not None and not self._supervisor_is_live(
+                    "review", idempotency_key, run_id=run_id):
+                raise RuntimeError("review supervisor died before launch reconciliation")
             claim = ((current.review_state or {}).get("reviewer_launch_claim")
                      if current is not None else None)
             if isinstance(claim, dict) and claim.get("token") == claim_token:

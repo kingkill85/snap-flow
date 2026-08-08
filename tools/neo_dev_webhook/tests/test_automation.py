@@ -692,6 +692,114 @@ class AutomationTest(unittest.TestCase):
         self.assertFalse(consumer.run_one())
         dispatcher.review.assert_called_once()
 
+    def test_later_actionable_waiting_handoff_is_not_starved_by_oldest_issue(self):
+        for issue in (1, 2):
+            self.send(payload(issue={"number": issue, "state": "open",
+                                     "labels": [{"name": "neo-dev"}]}))
+            claimed = self.store.claim(now=issue * 10)
+            self.store.complete(claimed["id"], claimed["claim_token"],
+                                f"implementation-{issue}", now=issue * 10 + 1)
+        issue2 = self.store.get_active(REPOSITORY, 2)
+        evidence = {"sha": "a" * 40, "approved_spec_sha": "9" * 40}
+        dispatcher = mock.Mock()
+
+        def status(repository, issue_number, workflow_id):
+            if issue_number == 1:
+                return {"controller": {"execution": {"lifecycle_state": "spec_approved",
+                                                       "phase": "active"}}}
+            return {"controller": {"execution": {
+                "lifecycle_state": "spec_approved", "phase": "exited_resumable",
+                "implementation_handoff": {"implementation_sha": "a" * 40},
+            }}}
+
+        dispatcher.status.side_effect = status
+        dispatcher.attest.return_value = {"controller": {
+            "execution": {"lifecycle_state": "independent_review",
+                          "review_phase": "awaiting_review"},
+            "review_evidence": evidence,
+        }}
+        consumer = Consumer(self.store, FakeRunner(), self.github, dispatcher=dispatcher)
+
+        self.assertTrue(consumer.run_one())
+        dispatcher.attest.assert_called_once_with(REPOSITORY, 2, issue2["idempotency_key"])
+        dispatcher.review.assert_called_once_with(
+            REPOSITORY, 2, issue2["idempotency_key"], evidence,
+        )
+        self.assertEqual(self.store.get_active(REPOSITORY, 1)["status"], "waiting")
+
+    def test_waiting_scan_rotates_after_bounded_non_actionable_batch(self):
+        for issue in range(1, 18):
+            self.send(payload(issue={"number": issue, "state": "open",
+                                     "labels": [{"name": "neo-dev"}]}))
+            claimed = self.store.claim(now=issue * 10)
+            self.store.complete(claimed["id"], claimed["claim_token"],
+                                f"implementation-{issue}", now=issue * 10 + 1)
+        issue17 = self.store.get_active(REPOSITORY, 17)
+        evidence = {"sha": "a" * 40, "approved_spec_sha": "9" * 40}
+        reviewed = False
+        dispatcher = mock.Mock()
+
+        def status(repository, issue_number, workflow_id):
+            if issue_number != 17:
+                return {"controller": {"execution": {"lifecycle_state": "spec_approved",
+                                                       "phase": "active"}}}
+            if reviewed:
+                return {"controller": {"execution": {
+                    "lifecycle_state": "independent_review",
+                    "review_phase": "reviewer_starting",
+                }}}
+            return {"controller": {"execution": {
+                "lifecycle_state": "spec_approved", "phase": "exited_resumable",
+                "implementation_handoff": {"implementation_sha": "a" * 40},
+            }}}
+
+        def review(*args):
+            nonlocal reviewed
+            reviewed = True
+
+        dispatcher.status.side_effect = status
+        dispatcher.attest.return_value = {"controller": {
+            "execution": {"lifecycle_state": "independent_review",
+                          "review_phase": "awaiting_review"},
+            "review_evidence": evidence,
+        }}
+        dispatcher.review.side_effect = review
+        consumer = Consumer(self.store, FakeRunner(), self.github, dispatcher=dispatcher)
+
+        self.assertFalse(consumer.run_one())
+        self.assertTrue(consumer.run_one())
+        self.assertFalse(consumer.run_one())
+        dispatcher.review.assert_called_once_with(
+            REPOSITORY, 17, issue17["idempotency_key"], evidence,
+        )
+
+    def test_waiting_status_exceptions_are_bounded_and_eventual_actionable_runs_once(self):
+        for issue in range(1, 19):
+            self.send(payload(issue={"number": issue, "state": "open",
+                                     "labels": [{"name": "neo-dev"}]}))
+            claimed = self.store.claim(now=issue * 10)
+            self.store.complete(claimed["id"], claimed["claim_token"],
+                                f"implementation-{issue}", now=issue * 10 + 1)
+        target = self.store.get_active(REPOSITORY, 18)
+        dispatcher = mock.Mock()
+        def status(repository, issue_number, workflow_id):
+            if issue_number < 18:
+                raise RuntimeError("injected retry")
+            return {"controller": {"execution": {
+                "lifecycle_state": "independent_review", "review_phase": "awaiting_review",
+            }, "review_evidence": {"sha": "a" * 40}}}
+        dispatcher.status.side_effect = status
+        consumer = Consumer(self.store, FakeRunner(), self.github, dispatcher=dispatcher)
+
+        self.assertFalse(consumer.run_one())
+        self.assertEqual(dispatcher.status.call_count, 16)
+        self.assertTrue(consumer.run_one())
+        self.assertLessEqual(dispatcher.status.call_count, 32)
+        self.assertFalse(consumer.run_one())
+        dispatcher.review.assert_called_once_with(
+            REPOSITORY, 18, target["idempotency_key"], {"sha": "a" * 40},
+        )
+
     def test_failures_are_bounded_and_dead_lettered(self):
         self.send()
         runner = FakeRunner(failures=10)

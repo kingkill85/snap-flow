@@ -18,6 +18,49 @@ SESSION = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 
 class LivePrivilegeTopologyTest(unittest.TestCase):
+    def test_review_accept_timeout_cleans_owner_and_same_generation_can_restart(self):
+        class TimeoutServer:
+            def bind(self, path): pathlib.Path(path).touch()
+            def listen(self, backlog): pass
+            def settimeout(self, seconds): self.timeout = seconds
+            def accept(self): raise socket.timeout("injected 30-second timeout")
+            def close(self): pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            registry_path = root / "registry.json"
+            registry_path.write_text(json.dumps({"version": 1, "projects": [],
+                "project_templates": [], "targets": [ISSUE_77_TARGET.as_dict()]}))
+            state_path = root / "state.json"
+            store = FileResolutionStore(state_path)
+            initial = store.bind(KEY, ISSUE_77_TARGET)
+            review = {"review_phase": "reviewer_starting", "reviewer_run_id": SESSION,
+                      "review_generation": 1, "implementation_session_id": "c" * 36}
+            store.save(KEY, initial, replace(initial, phase="exited_resumable",
+                lifecycle_state="independent_review", implementation_sha="a" * 40,
+                spec_sha="b" * 40, codex_session_id=SESSION, review_state=review,
+                lifecycle_updated_at="2026-08-08T00:00:00Z", base_sha="0" * 40,
+                approval_at="2026-08-08T00:00:00Z"))
+            socket_root = root / "run"
+            servers = []
+            def server_factory(*args):
+                server = TimeoutServer(); servers.append(server); return server
+            patches = (mock.patch.object(runtime_supervisor, "SOCKET_ROOT", socket_root),
+                       mock.patch("neo_dev_webhook.runtime_supervisor.os.geteuid", return_value=0),
+                       mock.patch("neo_dev_webhook.runtime_supervisor.os.chown"),
+                       mock.patch("neo_dev_webhook.runtime_supervisor.pwd.getpwnam",
+                                  return_value=mock.Mock(pw_uid=1000, pw_gid=1000)),
+                       mock.patch("neo_dev_webhook.runtime_supervisor.socket.socket",
+                                  side_effect=server_factory))
+            with patches[0], patches[1], patches[2], patches[3], patches[4]:
+                for _ in range(2):
+                    with self.assertRaises(socket.timeout):
+                        runtime_supervisor.supervise(
+                            "review", KEY, None, SESSION, registry_path=registry_path,
+                            state_path=state_path)
+                    self.assertFalse(runtime_supervisor.ownership_path(KEY).exists())
+            self.assertEqual([server.timeout for server in servers], [30, 30])
+
     def test_root_only_worker_boundary_drops_exact_argv_to_dev(self):
         with mock.patch("os.geteuid", return_value=0):
             self.assertEqual(project_worker.validated_worker_argv((

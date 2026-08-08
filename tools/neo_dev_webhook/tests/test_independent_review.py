@@ -256,6 +256,132 @@ class IndependentReviewCanaryTests(unittest.TestCase):
 
 
 class IndependentReviewEntrypointTests(unittest.TestCase):
+    def _starting_review_store(self, *, claim=None):
+        from neo_dev_webhook.project_control import InMemoryResolutionStore, WorkState
+        from neo_dev_webhook.tests.test_project_control import TARGET
+
+        key = "12345678-1234-4abc-8def-123456789abc"
+        run_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        review = migrate_fixture()
+        review.update(
+            review_phase="reviewer_starting", reviewer_run_id=run_id,
+            reviewed_sha="a" * 40, deterministic_evidence=valid_evidence(),
+        )
+        if claim is not None:
+            review["reviewer_launch_claim"] = {
+                "token": "owner", "run_id": run_id, "generation": 1,
+                **claim,
+            }
+        store = InMemoryResolutionStore()
+        store.records[key] = WorkState(
+            TARGET, codex_session_id=review["implementation_session_id"],
+            phase="exited_resumable", lifecycle_state="independent_review",
+            lifecycle_updated_at="2026-08-08T00:00:00Z", base_sha="0" * 40,
+            spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+            approval_at="2026-08-08T00:00:00Z", review_state=review,
+        )
+        return key, run_id, store
+
+    def test_exact_generation_live_supervisor_is_reused_with_exactly_one_window(self):
+        from neo_dev_webhook.project_control import Controller, Registry
+        from neo_dev_webhook.tests.test_project_control import TARGET
+
+        class Executor:
+            def __init__(self): self.windows, self.creates = [], 0
+            def run(self, argv, *, timeout):
+                if argv[:2] == ("tmux", "list-windows"):
+                    return "".join(f"{item}\n" for item in self.windows)
+                if argv[:2] == ("tmux", "new-window"):
+                    self.creates += 1
+                    self.windows.append(argv[argv.index("-n") + 1]); return ""
+                raise AssertionError(argv)
+        class Supervisor:
+            def __init__(self): self.starts = 0
+            def is_live(self, operation, key, session_id=None, run_id=None): return True
+            def start(self, operation, key, session_id=None, run_id=None): self.starts += 1
+
+        key, _, store = self._starting_review_store(claim={"lease_until": 0, "step": "launching"})
+        executor, supervisor = Executor(), Supervisor()
+        controller = Controller(Registry([TARGET]), store, executor, supervisor)
+        controller.execute("review", TARGET.repository, TARGET.issue_number, key, valid_evidence())
+        controller.execute("review", TARGET.repository, TARGET.issue_number, key, valid_evidence())
+        self.assertEqual((supervisor.starts, executor.creates, executor.windows),
+                         (0, 1, ["issue-77-review-1"]))
+
+    def test_window_present_dead_supervisor_repeated_recovery_restarts_once_and_clears_claim(self):
+        from neo_dev_webhook.project_control import Controller, Registry
+        from neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+
+        class Supervisor:
+            def __init__(self): self.live, self.starts = False, 0
+            def is_live(self, operation, key, session_id=None, run_id=None): return self.live
+            def start(self, operation, key, session_id=None, run_id=None):
+                self.starts += 1; self.live = True
+
+        key, _, store = self._starting_review_store(
+            claim={"lease_until": 0, "step": "supervisor_started"})
+        supervisor = Supervisor()
+        controller = Controller(Registry([TARGET]), store,
+                                FakeExecutor(["issue-77-review-1\n"] * 2), supervisor)
+        controller.execute("review", TARGET.repository, TARGET.issue_number, key, valid_evidence())
+        controller.execute("review", TARGET.repository, TARGET.issue_number, key, valid_evidence())
+        self.assertEqual(supervisor.starts, 1)
+        self.assertNotIn("reviewer_launch_claim", store.load(key).review_state)
+
+    def test_active_claim_has_one_owner_then_stale_claim_recovers(self):
+        from neo_dev_webhook.project_control import Controller, Registry
+        from neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+
+        class Supervisor:
+            def __init__(self): self.live, self.starts = False, 0
+            def is_live(self, operation, key, session_id=None, run_id=None): return self.live
+            def start(self, operation, key, session_id=None, run_id=None):
+                self.starts += 1; self.live = True
+
+        key, _, store = self._starting_review_store(
+            claim={"lease_until": 4102444800, "step": "launching"})
+        supervisor = Supervisor()
+        controller = Controller(Registry([TARGET]), store, FakeExecutor([""]), supervisor)
+        first = controller.execute("review", TARGET.repository, TARGET.issue_number,
+                                   key, valid_evidence())
+        self.assertEqual((first["status"], supervisor.starts), ("reviewer_starting", 0))
+        current = store.load(key); review = dict(current.review_state)
+        review["reviewer_launch_claim"] = {**review["reviewer_launch_claim"], "lease_until": 0}
+        store.save(key, current, current.__class__(**{**current.__dict__, "review_state": review}))
+        controller.execute("review", TARGET.repository, TARGET.issue_number, key, valid_evidence())
+        self.assertEqual(supervisor.starts, 1)
+
+    def test_repeated_retry_failures_do_not_leave_permanent_reviewer_starting_wedge(self):
+        from neo_dev_webhook.project_control import Controller, Registry
+        from neo_dev_webhook.tests.test_project_control import TARGET
+
+        class Executor:
+            def __init__(self): self.failures, self.windows = 3, []
+            def run(self, argv, *, timeout):
+                if argv[:2] == ("tmux", "list-windows"):
+                    return "".join(f"{item}\n" for item in self.windows)
+                if argv[:2] == ("tmux", "new-window"):
+                    if self.failures:
+                        self.failures -= 1; raise RuntimeError("retry failure")
+                    self.windows.append(argv[argv.index("-n") + 1]); return ""
+                raise AssertionError(argv)
+        class Supervisor:
+            def __init__(self): self.live, self.starts = False, 0
+            def is_live(self, operation, key, session_id=None, run_id=None): return self.live
+            def start(self, operation, key, session_id=None, run_id=None):
+                self.starts += 1; self.live = True
+
+        key, _, store = self._starting_review_store(claim={"lease_until": 0, "step": "launching"})
+        executor, supervisor = Executor(), Supervisor()
+        controller = Controller(Registry([TARGET]), store, executor, supervisor)
+        for _ in range(3):
+            with self.assertRaisesRegex(RuntimeError, "retry failure"):
+                controller.execute("review", TARGET.repository, TARGET.issue_number,
+                                   key, valid_evidence())
+        controller.execute("review", TARGET.repository, TARGET.issue_number, key, valid_evidence())
+        self.assertEqual((supervisor.starts, executor.windows), (1, ["issue-77-review-1"]))
+        self.assertNotIn("reviewer_launch_claim", store.load(key).review_state)
+
     def test_window_failure_keeps_generation_authority_and_immediate_retry_is_exactly_once(self):
         from neo_dev_webhook.project_control import (
             Controller, InMemoryResolutionStore, Registry, WorkState,
@@ -281,9 +407,14 @@ class IndependentReviewEntrypointTests(unittest.TestCase):
         class Supervisor:
             def __init__(self):
                 self.starts = 0
+                self.live = False
+
+            def is_live(self, operation, key, session_id=None, run_id=None):
+                return self.live
 
             def start(self, operation, key, session_id=None, run_id=None):
                 self.starts += 1
+                self.live = True
 
         key = "12345678-1234-4abc-8def-123456789abc"
         implementer = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -352,15 +483,18 @@ class IndependentReviewEntrypointTests(unittest.TestCase):
 
         self.assertEqual(supervisor.starts, 1)
 
-    def test_stale_post_supervisor_crash_boundary_resumes_at_window_step(self):
+    def test_stale_post_supervisor_crash_boundary_restarts_dead_same_generation(self):
         from neo_dev_webhook.project_control import (
             Controller, InMemoryResolutionStore, Registry, WorkState,
         )
         from neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
 
         class Supervisor:
-            def __init__(self): self.starts = 0
-            def start(self, operation, key, session_id=None, run_id=None): self.starts += 1
+            def __init__(self): self.starts, self.live = 0, False
+            def is_live(self, operation, key, session_id=None, run_id=None): return self.live
+            def start(self, operation, key, session_id=None, run_id=None):
+                self.starts += 1
+                self.live = True
 
         key = "12345678-1234-4abc-8def-123456789abc"
         run_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -382,12 +516,14 @@ class IndependentReviewEntrypointTests(unittest.TestCase):
             approval_at="2026-08-08T00:00:00Z", review_state=review,
         )
         supervisor = Supervisor()
-        controller = Controller(Registry([TARGET]), store, FakeExecutor(["", ""]), supervisor)
+        controller = Controller(
+            Registry([TARGET]), store, FakeExecutor(["issue-77-review-1\n"]), supervisor,
+        )
 
         controller.execute("review", TARGET.repository, TARGET.issue_number,
                            key, valid_evidence())
 
-        self.assertEqual(supervisor.starts, 0)
+        self.assertEqual(supervisor.starts, 1)
 
     def test_crash_after_unrecorded_supervisor_start_reconciles_live_generation_socket(self):
         from neo_dev_webhook.project_control import (
@@ -419,8 +555,7 @@ class IndependentReviewEntrypointTests(unittest.TestCase):
         )
 
         with mock.patch("neo_dev_webhook.project_control.os.geteuid", return_value=0), \
-             mock.patch.object(RuntimeSupervisorLauncher, "_socket_is_live",
-                               return_value=True), \
+             mock.patch.object(RuntimeSupervisorLauncher, "is_live", return_value=True), \
              mock.patch("neo_dev_webhook.project_control.subprocess.Popen") as popen:
             controller.execute("review", TARGET.repository, TARGET.issue_number,
                                key, valid_evidence())
@@ -543,6 +678,7 @@ class IndependentReviewEntrypointTests(unittest.TestCase):
 
         class Supervisor:
             def __init__(self): self.calls = []
+            def is_live(self, operation, key, session_id=None, run_id=None): return True
             def start(self, operation, key, session_id=None, run_id=None):
                 self.calls.append((operation, key, session_id, run_id))
 

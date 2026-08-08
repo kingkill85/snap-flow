@@ -24,6 +24,11 @@ def socket_path(key: str) -> pathlib.Path:
     return SOCKET_ROOT / f"{key}.sock"
 
 
+def ownership_path(key: str) -> pathlib.Path:
+    validate_idempotency_key(key)
+    return SOCKET_ROOT / f"{key}.owner.json"
+
+
 def supervise(operation: str, key: str, session_id: str | None, review_run_id: str | None = None, *,
               registry_path: pathlib.Path = CONTROLLER_REGISTRY_PATH,
               state_path: pathlib.Path = CONTROLLER_STATE_PATH) -> int:
@@ -73,17 +78,28 @@ def supervise(operation: str, key: str, session_id: str | None, review_run_id: s
     SOCKET_ROOT.mkdir(mode=0o711, parents=True, exist_ok=True)
     os.chmod(SOCKET_ROOT, 0o711)
     path = socket_path(key)
+    owner_path = ownership_path(key)
     path.unlink(missing_ok=True)
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     terminal_received = False
+    worker_attached = False
     try:
         server.bind(str(path))
         dev = pwd.getpwnam("dev")
         os.chown(path, dev.pw_uid, dev.pw_gid)
         os.chmod(path, 0o600)
         server.listen(1)
+        owner_path.write_text(json.dumps({
+            "pid": os.getpid(),
+            "start_time": pathlib.Path("/proc/self/stat").read_text().split()[21],
+            "operation": operation,
+            "idempotency_key": key,
+            "session_id": session_id,
+            "review_run_id": review_run_id,
+        }, sort_keys=True), encoding="utf-8")
         server.settimeout(30)
         connection, _ = server.accept()
+        worker_attached = True
         path.unlink(missing_ok=True)
         with connection:
             launch = {
@@ -139,10 +155,17 @@ def supervise(operation: str, key: str, session_id: str | None, review_run_id: s
                     raise RuntimeError("unsupported worker supervisor event")
     finally:
         path.unlink(missing_ok=True)
+        try:
+            owner = json.loads(owner_path.read_text(encoding="utf-8"))
+            if owner.get("pid") == os.getpid():
+                owner_path.unlink(missing_ok=True)
+        except (OSError, json.JSONDecodeError):
+            pass
         server.close()
         if not terminal_received:
             current = store.load(key)
-            if operation == "review" and current is not None and review_run_id is not None:
+            if (operation == "review" and worker_attached and current is not None
+                    and review_run_id is not None):
                 controller.record_reviewer_failure(key, review_run_id,
                                                    "reviewer runtime exited without verdict")
                 return 1
