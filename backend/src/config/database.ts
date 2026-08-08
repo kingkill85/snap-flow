@@ -49,6 +49,10 @@ export function setTestDb(db: DB | null): void {
   testDb = db;
 }
 
+export function hasTestDb(): boolean {
+  return testDb !== null;
+}
+
 // Export the database instance - uses testDb if set, otherwise creates default
 export function getDb(): DB {
   if (testDb) {

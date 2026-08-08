@@ -6,7 +6,7 @@
   "tasks": {
     "dev": "deno run --allow-all --watch src/main.ts",
     "start": "deno run --allow-all src/main.ts",
-    "test": "deno test --allow-all",
+    "test": "NODE_ENV=test DATABASE_URL=:memory: UPLOAD_DIR=./uploads JWT_SECRET=test-secret-key-for-tests-32-chars deno test --allow-all",
     "migrate": "deno run --allow-all src/scripts/migrate.ts",
     "install": "echo 'No install needed - using Deno-native dependencies'"
   },

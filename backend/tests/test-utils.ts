@@ -1,7 +1,7 @@
 /**
  * Test utilities for backend tests
  */
-import Database, { setTestDb, getDb } from '../src/config/database.ts';
+import Database, { getDb, hasTestDb, setTestDb } from '../src/config/database.ts';
 import { runMigrations } from '../src/scripts/migrate.ts';
 import { clearRateLimitStore } from '../src/middleware/rate-limit.ts';
 import { fileStorageService } from '../src/services/file-storage.ts';
@@ -89,6 +89,19 @@ export async function setupTestDatabase(): Promise<void> {
     isTestDatabaseInitialized = true;
     console.log('✅ Test database initialized');
   }
+
+  assertTestDatabase();
+}
+
+export function assertTestDatabase(): void {
+  if (!hasTestDb()) {
+    throw new Error('Refusing to run tests without an injected test database');
+  }
+  const databases = getDb().queryEntries<{ file: string }>('PRAGMA database_list');
+  const mainDatabase = databases.find((database) => database.file !== undefined);
+  if (!mainDatabase || mainDatabase.file !== '') {
+    throw new Error(`Refusing to run tests against non-memory database: ${mainDatabase?.file ?? 'unknown'}`);
+  }
 }
 
 /**
@@ -117,6 +130,8 @@ export function clearDatabase(): void {
       // Ignore errors (might be view or other non-deletable object)
     }
   }
+
+  dbInstance.query("DELETE FROM sqlite_sequence");
   
   // Re-enable foreign key checks
   dbInstance.query('PRAGMA foreign_keys = ON');
@@ -131,6 +146,7 @@ export function clearDatabase(): void {
  * Teardown test database
  */
 export function teardownTestDatabase(): void {
+  setTestDb(null);
   Database.close();
   isTestDatabaseInitialized = false;
 }

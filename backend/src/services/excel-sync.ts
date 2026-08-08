@@ -3,6 +3,7 @@ import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { categoryRepository } from '../repositories/category.ts';
 import { settingsRepository } from '../repositories/settings.ts';
+import { itemTypeRepository } from '../repositories/item-type.ts';
 import { processImageSafe } from './image-processing.ts';
 import { env } from '../config/env.ts';
 import { getDb } from '../config/database.ts';
@@ -126,6 +127,15 @@ export class ExcelSyncService {
       this.log(result, '📖 Parsing Excel file...', 'parsing');
       const groupedItems = await this.parseAndGroupExcel(excelPath);
       const extractedImages = await this.extractImages(excelPath);
+
+      if (Object.keys(groupedItems).length === 0) {
+        throw new Error('Workbook contains no valid catalog rows');
+      }
+
+      const selectedType = await itemTypeRepository.findById(typeId);
+      if (!selectedType) {
+        throw new Error(`Product type not found: ${typeId}`);
+      }
       
       this.log(result, `✓ Found ${Object.keys(groupedItems).length} unique items with ${Object.values(groupedItems).reduce((acc, item) => acc + item.variants.length, 0)} variants`, 'parsing');
       this.log(result, `✓ Extracted ${extractedImages.size} images`, 'parsing');
@@ -590,21 +600,19 @@ export class ExcelSyncService {
       }
     }
 
-    // Deactivate items not in Excel
-    for (const [baseModel, item] of existingItemsMap) {
-      if (!excelModelNumbers.has(baseModel) && item.is_active) {
-        try {
-          await itemRepository.deactivate(item.id);
-          result.phases.items.deactivated++;
-          this.log(result, `  ✗ Deactivated item: ${item.name} (${baseModel})`, 'items');
-        } catch (_error) {
-          result.errors.push({
-            row: 0,
-            message: `Failed to deactivate item ${item.name}`,
-            details: String(_error),
-          });
-        }
-      }
+    // Enforce the selected type again at the mutation boundary. The returned
+    // rows are the source of truth for synchronization accounting.
+    const deactivatedItems = await itemRepository.deactivateMissingForType(
+      typeId,
+      [...excelModelNumbers],
+    );
+    for (const item of deactivatedItems) {
+      result.phases.items.deactivated++;
+      this.log(
+        result,
+        `  ✗ Deactivated item: ${item.name} (${item.base_model_number})`,
+        'items',
+      );
     }
 
     result.phases.items.total = excelModelNumbers.size;

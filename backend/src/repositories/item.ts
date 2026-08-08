@@ -284,6 +284,36 @@ export class ItemRepository {
     return Promise.resolve(result[0] as unknown as Item);
   }
 
+  deactivateMissingForType(typeId: number, importedBaseModelNumbers: string[]): Promise<Item[]> {
+    const values: (number | string)[] = [typeId];
+    let importedPredicate = '';
+
+    if (importedBaseModelNumbers.length > 0) {
+      importedPredicate = `AND base_model_number NOT IN (${importedBaseModelNumbers.map(() => '?').join(', ')})`;
+      values.push(...importedBaseModelNumbers);
+    }
+
+    const deactivated = getDb().queryEntries(`
+      UPDATE items
+      SET is_active = false
+      WHERE type_id = ?
+        AND is_active = true
+        ${importedPredicate}
+      RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
+    `, values) as unknown as Item[];
+
+    if (deactivated.length > 0) {
+      const placeholders = deactivated.map(() => '?').join(', ');
+      getDb().query(`
+        UPDATE item_variants
+        SET is_active = false
+        WHERE item_id IN (${placeholders})
+      `, deactivated.map((item) => item.id));
+    }
+
+    return Promise.resolve(deactivated);
+  }
+
   activate(id: number): Promise<Item | null> {
     const result = getDb().queryEntries(`
       UPDATE items
