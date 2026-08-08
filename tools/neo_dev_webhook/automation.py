@@ -288,8 +288,8 @@ class Store:
                 row = self.db.execute(
                     "SELECT * FROM active_work WHERE attempts<? AND (status='queued' OR "
                     "(status='processing' AND lease_until<=?)) AND NOT EXISTS ("
-                    "SELECT 1 FROM active_work blocker WHERE blocker.status='waiting' OR "
-                    "(blocker.status='processing' AND blocker.lease_until>?)"
+                    "SELECT 1 FROM active_work blocker "
+                    "WHERE blocker.status='processing' AND blocker.lease_until>?"
                     ") ORDER BY id LIMIT 1",
                     (max_attempts, now, now),
                 ).fetchone()

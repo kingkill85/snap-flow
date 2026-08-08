@@ -371,7 +371,7 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(self.store.count("active_work"), 1)
         self.assertEqual(self.store.count("wakeups"), 8)
 
-    def test_project_concurrency_one_queues_later_issue_until_trusted_closure(self):
+    def test_waiting_issue_does_not_consume_project_worker_capacity(self):
         first = str(uuid.uuid4())
         second = str(uuid.uuid4())
         for issue_number, delivery in ((13, first), (42, second)):
@@ -381,12 +381,43 @@ class AutomationTest(unittest.TestCase):
         claimed = self.store.claim(now=10)
         self.assertEqual(claimed["issue_number"], 13)
         self.store.complete(claimed["id"], claimed["claim_token"], "task-13", now=11)
-        self.assertIsNone(self.store.claim(now=12))
-        self.assertEqual(self.store.request_finalization(
-            REPOSITORY, 13, str(uuid.uuid4())), "finalization_pending")
-        finalization = self.store.claim_finalization()
-        self.store.finish_finalization(finalization["id"], True, None)
-        self.assertEqual(self.store.claim(now=13)["issue_number"], 42)
+        next_claim = self.store.claim(now=12)
+        self.assertEqual(next_claim["issue_number"], 42)
+
+    def test_valid_processing_lease_blocks_other_issue_and_expired_lease_recovers(self):
+        for issue_number in (13, 42):
+            self.store.accept({"delivery_id": str(uuid.uuid4()), "event": "issues",
+                               "action": "labeled", "repository": REPOSITORY,
+                               "issue_number": issue_number, "comment_id": None,
+                               "command": None})
+
+        first_claim = self.store.claim(now=10, lease_seconds=5)
+        self.assertEqual(first_claim["issue_number"], 13)
+        self.assertIsNone(self.store.claim(now=14, lease_seconds=5))
+
+        recovered = self.store.claim(now=16, lease_seconds=5)
+        self.assertEqual(recovered["id"], first_claim["id"])
+        self.assertEqual(recovered["attempts"], 2)
+
+    def test_same_issue_wakeup_reuses_waiting_work_and_lifecycle_identity(self):
+        lifecycle = str(uuid.uuid4())
+        self.store.accept({"delivery_id": lifecycle, "event": "issues", "action": "labeled",
+                           "repository": REPOSITORY, "issue_number": 13,
+                           "comment_id": None, "command": None})
+        claimed = self.store.claim(now=10)
+        self.store.complete(claimed["id"], claimed["claim_token"], "task-13", now=11)
+
+        wakeup = str(uuid.uuid4())
+        self.store.accept({"delivery_id": wakeup, "event": "issue_comment", "action": "created",
+                           "repository": REPOSITORY, "issue_number": 13,
+                           "comment_id": 123, "command": "/fix keep coalescing"})
+
+        resumed = self.store.claim(now=12)
+        self.assertEqual(resumed["id"], claimed["id"])
+        self.assertEqual(resumed["idempotency_key"], lifecycle)
+        self.assertEqual([item["delivery_id"] for item in resumed["wakeups"]],
+                         [lifecycle, wakeup])
+        self.assertEqual(self.store.count("active_work"), 1)
 
     def test_manual_closure_cannot_finalize_without_controller_merge_verification(self):
         lifecycle = str(uuid.uuid4())
