@@ -33,6 +33,8 @@ SPEC_STEP = re.compile(r"^\s*-\s*\*\*(GIVEN|WHEN|THEN|AND|BUT)\*\*\s+(.+?)\s*$",
                        re.IGNORECASE)
 FEATURE_STEP = re.compile(r"^\s*(Given|When|Then|And|But)\s+(.+?)\s*$", re.IGNORECASE)
 FEATURE_SCENARIO = re.compile(r"^\s*Scenario(?: Outline)?:\s*(.+?)\s*$", re.IGNORECASE)
+FEATURE_BACKGROUND = re.compile(r"^\s*Background:\s*(.*?)\s*$", re.IGNORECASE)
+TAG_LINE = re.compile(r"^\s*(@\S+(?:\s+@\S+)*)\s*$")
 
 
 def _normalize_step(keyword: str, text: str) -> tuple[str, str]:
@@ -63,17 +65,44 @@ def _spec_scenarios(specs: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
 def _feature_scenarios(features: dict[str, str]) -> dict[str, list[list[tuple[str, str]]]]:
     result: dict[str, list[list[tuple[str, str]]]] = {}
     for path, content in features.items():
+        lines = content.splitlines()
+        nonempty = [(index, line.strip()) for index, line in enumerate(lines) if line.strip()]
+        tag_lines = [(index, match.group(1).split()) for index, line in enumerate(lines)
+                     if (match := TAG_LINE.match(line))]
+        infrastructure = bool(nonempty and nonempty[0][1] == "@infrastructure")
+        for _, tags in tag_lines:
+            for tag in tags:
+                if "infrastructure" in tag.casefold() and tag != "@infrastructure":
+                    raise ValueError(f"malformed infrastructure tag/classification in {path}")
+        if infrastructure:
+            if tag_lines != [(nonempty[0][0], ["@infrastructure"])] \
+                    or len(nonempty) < 2 or not nonempty[1][1].casefold().startswith("feature:"):
+                raise ValueError(f"malformed infrastructure classification in {path}")
+        elif any("@infrastructure" in tags for _, tags in tag_lines):
+            raise ValueError(f"infrastructure classification must apply to the feature in {path}")
+
         pending: list[str] = []
-        active_refs: list[str] = []
         steps: list[tuple[str, str]] | None = None
-        for line in content.splitlines():
+        in_background = False
+        scenario_count = 0
+        for line in lines:
             reference = REFERENCE.match(line)
             if reference:
+                if infrastructure:
+                    raise ValueError(f"mixed infrastructure and product behavior in {path}")
                 pending.append(reference.group(1))
                 continue
+            if FEATURE_BACKGROUND.match(line):
+                in_background = True
+                steps = None
+                continue
             if FEATURE_SCENARIO.match(line):
+                scenario_count += 1
+                in_background = False
                 if len(pending) > 1:
                     raise ValueError(f"reference must bind exactly one Gherkin scenario in {path}")
+                if not infrastructure and not pending:
+                    raise ValueError(f"unreferenced Gherkin scenario in {path}")
                 active_refs = list(pending)
                 pending = []
                 steps = []
@@ -81,10 +110,15 @@ def _feature_scenarios(features: dict[str, str]) -> dict[str, list[list[tuple[st
                     result.setdefault(item, []).append(steps)
                 continue
             step = FEATURE_STEP.match(line)
-            if step and steps is not None:
-                steps.append(_normalize_step(*step.groups()))
+            if step:
+                if in_background:
+                    raise ValueError(f"Background behavior is unmapped in {path}")
+                if steps is not None:
+                    steps.append(_normalize_step(*step.groups()))
         if pending:
             raise ValueError(f"reference must bind exactly one Gherkin scenario in {path}")
+        if infrastructure and scenario_count == 0:
+            raise ValueError(f"infrastructure feature contains no scenario in {path}")
     return result
 
 
