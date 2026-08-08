@@ -616,6 +616,30 @@ class AutomationTest(unittest.TestCase):
         self.assertEqual(resumed_work["wakeups"], [merge_wakeup])
         broker.finish_decision.assert_called_once_with(path, record)
 
+    def test_implementation_attestation_autonomously_starts_independent_review(self):
+        broker = mock.Mock()
+        path = mock.sentinel.path
+        record = {"decision": "proceed", "issue_number": 13,
+                  "workflow_id": TASK_KEY, "execution_id": "implementation-worker"}
+        broker.claim_decision.return_value = (path, record)
+        evidence = {"sha": "a" * 40, "approved_spec_sha": "9" * 40}
+        dispatcher = mock.Mock()
+        dispatcher.attest.return_value = {"controller": {
+            "execution": {"lifecycle_state": "independent_review"},
+            "review_evidence": evidence,
+        }}
+        dispatcher.review.return_value = {"controller": {
+            "execution": {"lifecycle_state": "independent_review"},
+            "status": "reviewer_starting",
+        }}
+        consumer = Consumer(self.store, FakeRunner(), self.github,
+                            dispatcher=dispatcher, capability_broker=broker)
+
+        self.assertTrue(consumer.run_one())
+
+        dispatcher.review.assert_called_once_with(REPOSITORY, 13, TASK_KEY, evidence)
+        broker.finish_decision.assert_called_once_with(path, record)
+
     def test_failures_are_bounded_and_dead_lettered(self):
         self.send()
         runner = FakeRunner(failures=10)

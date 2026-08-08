@@ -28,7 +28,7 @@ install_scope() {
   passwd -d neo-controller
   install -d -o root -g root -m 0755 /usr/local/lib/neo_dev_webhook /usr/local/lib/neo-dev-project-control /etc/neo-dev/project-control
   install -d -o neo-controller -g neo-controller -m 0700 /var/lib/neo-dev/project-control
-  install -o root -g root -m 0644 "$bundle/neo_dev_webhook/"{__init__,project_control,project_worker,codex_runtime,runtime_supervisor,verification,forced_command}.py /usr/local/lib/neo_dev_webhook/
+  install -o root -g root -m 0644 "$bundle/neo_dev_webhook/"{__init__,project_control,project_worker,codex_runtime,runtime_supervisor,verification,forced_command,independent_review,independent_review_canary}.py /usr/local/lib/neo_dev_webhook/
   install -o root -g root -m 0644 "$bundle/controller/registry.v1.json" /etc/neo-dev/project-control/registry.json
   install -o root -g root -m 0644 "$bundle/controller/card-capability-policy.v1.json" /etc/neo-dev/project-control/card-capability-policy.json
   install -o root -g root -m 0644 "$bundle/controller/state-schema.v1.json" /etc/neo-dev/project-control/state-schema.json
@@ -59,6 +59,7 @@ verify_scope() {
     test "$(sha256sum "$source_path" | cut -d' ' -f1)" = "$(sha256sum "$destination" | cut -d' ' -f1)"
     test "$(stat -c '%U:%G:%a' "$destination")" = "$owner:$group:${mode#0}"
   done < <(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); [print(x["source"],x["destination"],x["owner"],x["group"],x["mode"],sep="\t") for x in d["files"]]' "$bundle/controller/install-manifest.v1.json")
+  PYTHONPATH=/usr/local/lib python3 -m neo_dev_webhook.independent_review_canary
 }
 
 rollback_scope() {
@@ -70,5 +71,6 @@ rollback_scope() {
 case "$action" in
   fixture-install) fixture=${2:?fixture root}; backup=${3:?fixture backup}; test -f "$fixture/.controller-scope-fixture"; install -d -m 0700 "$backup/tree"; cp -a "$fixture/." "$backup/tree/"; install -d "$fixture/usr/local/bin"; install -m 0755 "$bundle/controller/neo-dev-project-control" "$fixture/usr/local/bin/neo-dev-project-control" ;;
   fixture-rollback) fixture=${2:?fixture root}; backup=${3:?fixture backup}; test -f "$fixture/.controller-scope-fixture"; find "$fixture" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; cp -a "$backup/tree/." "$fixture/" ;;
+  fixture-verify-canary) runtime=${2:?runtime root}; PYTHONPATH="$runtime" python3 -m neo_dev_webhook.independent_review_canary ;;
   install) install_scope ;; verify) verify_scope ;; rollback) rollback_scope "$@" ;; *) echo "usage: $0 <install|verify|rollback BACKUP>" >&2; exit 2 ;;
 esac

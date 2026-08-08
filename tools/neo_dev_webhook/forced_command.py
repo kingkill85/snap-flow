@@ -10,7 +10,7 @@ from typing import Sequence
 from .project_control import validate_idempotency_key, validate_issue_number
 
 PRIVILEGED_CONTROLLER = "/usr/local/sbin/neo-dev-project-control-privileged"
-OPERATIONS = {"status", "attest", "preflight", "start", "resume", "finalize"}
+OPERATIONS = {"status", "attest", "preflight", "start", "resume", "review", "finalize"}
 
 
 def validated_original_command(value: str) -> tuple[str, ...]:
@@ -30,7 +30,7 @@ def validated_original_command(value: str) -> tuple[str, ...]:
     result = (PRIVILEGED_CONTROLLER, operation, repo_flag, repository, issue_flag, issue,
               key_flag, key)
     if len(argv) == 10:
-        if argv[8] != "--evidence" or operation not in {"attest", "resume", "finalize"}:
+        if argv[8] != "--evidence" or operation not in {"attest", "resume", "review", "finalize"}:
             raise ValueError("evidence is accepted only for continuation/finalization")
         if len(argv[9]) > 65536:
             raise ValueError("evidence envelope is too large")

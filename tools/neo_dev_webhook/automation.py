@@ -705,6 +705,22 @@ class ProjectDispatcher:
             raise RuntimeError("controller attestation must return a JSON object")
         return {"controller": controller}
 
+    def review(self, repository: str, issue_number: int, idempotency_key: str,
+               evidence: dict) -> dict:
+        encoded = base64.b64encode(json.dumps(
+            evidence, sort_keys=True, separators=(",", ":"),
+        ).encode()).decode()
+        result = subprocess.run(
+            [self.adapter, "review", "--repository", repository, "--issue-number",
+             str(issue_number), "--idempotency-key", idempotency_key,
+             "--evidence", encoded],
+            check=True, capture_output=True, text=True, timeout=90, shell=False,
+        )
+        controller = json.loads(result.stdout)
+        if not isinstance(controller, dict):
+            raise RuntimeError("controller review launch must return a JSON object")
+        return {"controller": controller}
+
 
 def collect_host_evidence(adapter: str, repository: str, issue_number: int,
                           idempotency_key: str, current_wakeup: dict | None = None) -> str:
@@ -755,7 +771,14 @@ class Consumer:
                         record.get("current_wakeup"),
                     )
                     execution = attestation.get("controller", {}).get("execution", {})
-                    if execution.get("lifecycle_state") == "archive_ci_verified":
+                    if execution.get("lifecycle_state") == "independent_review":
+                        evidence = attestation.get("controller", {}).get("review_evidence")
+                        if not isinstance(evidence, dict):
+                            raise RuntimeError("controller omitted deterministic review evidence")
+                        self.dispatcher.review(
+                            REPOSITORY, record["issue_number"], record["workflow_id"], evidence,
+                        )
+                    elif execution.get("lifecycle_state") == "archive_ci_verified":
                         wakeup = record.get("current_wakeup")
                         context = self.dispatcher.dispatch(
                             "resume", REPOSITORY, record["issue_number"],

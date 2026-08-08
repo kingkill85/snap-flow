@@ -5,6 +5,8 @@ import json
 import pathlib
 import tempfile
 
+SPEC_SHA = "9fcf912d46afe5fadc40c9fcb7dae3f7ff59f96b"
+
 
 class IndependentReviewMigrationTests(unittest.TestCase):
     def test_migrates_inflight_spec_approved_without_reapproval_or_new_implementer(self):
@@ -208,7 +210,7 @@ class IndependentReviewPersistenceTests(unittest.TestCase):
         initial = WorkState(TARGET, codex_session_id=key, phase="correctable",
                             lifecycle_state="independent_review",
                             lifecycle_updated_at="2026-08-08T00:00:00Z", base_sha="0" * 40,
-                            spec_sha="9" * 40, implementation_sha="a" * 40,
+                            spec_sha=SPEC_SHA, implementation_sha="a" * 40,
                             approval_at="2026-08-08T00:00:00Z",
                             review_state={**migrate_fixture(), "review_phase": "awaiting_review"})
         store.records[key] = initial
@@ -241,6 +243,292 @@ class IndependentReviewCanaryTests(unittest.TestCase):
         self.assertEqual(manifest["verification"], {"backup": True, "sha256": True})
 
 
+class IndependentReviewEntrypointTests(unittest.TestCase):
+    def test_review_entrypoint_persists_intent_and_launches_separate_supervisor(self):
+        from tools.neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from tools.neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+
+        class Supervisor:
+            def __init__(self):
+                self.calls = []
+
+            def start(self, operation, key, session_id=None, run_id=None):
+                self.calls.append((operation, key, session_id, run_id))
+
+        key = "12345678-1234-4abc-8def-123456789abc"
+        implementer = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        store = InMemoryResolutionStore()
+        initial = store.bind(key, TARGET)
+        review = migrate_fixture()
+        review.update(implementation_session_id=implementer, review_phase="awaiting_review")
+        state = WorkState(
+            TARGET, codex_session_id=implementer, phase="exited_resumable",
+            lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
+            base_sha="0" * 40, spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+            approval_at="2026-08-08T00:00:00Z", review_state=review,
+        )
+        store.save(key, initial, state)
+        supervisor = Supervisor()
+        controller = Controller(Registry([TARGET]), store, FakeExecutor(), supervisor)
+
+        result = controller.execute("review", TARGET.repository, TARGET.issue_number, key,
+                                    valid_evidence())
+
+        persisted = store.load(key)
+        self.assertEqual(result["status"], "reviewer_starting")
+        self.assertEqual(persisted.review_state["review_phase"], "reviewer_starting")
+        self.assertIsNone(persisted.review_state["reviewer_session_id"])
+        self.assertEqual(supervisor.calls, [
+            ("review", key, None, persisted.review_state["reviewer_run_id"]),
+        ])
+        self.assertNotEqual(persisted.review_state["reviewer_run_id"], implementer)
+
+    def test_review_retry_reuses_persisted_run_without_implementer_identity(self):
+        from tools.neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from tools.neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+
+        class Supervisor:
+            def __init__(self): self.calls = []
+            def start(self, operation, key, session_id=None, run_id=None):
+                self.calls.append((operation, key, session_id, run_id))
+
+        key = "12345678-1234-4abc-8def-123456789abc"
+        implementer = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        review = migrate_fixture()
+        review.update(implementation_session_id=implementer, review_phase="reviewer_starting",
+                      reviewer_run_id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                      reviewed_sha="a" * 40, deterministic_evidence=valid_evidence())
+        store = InMemoryResolutionStore()
+        store.records[key] = WorkState(
+            TARGET, codex_session_id=implementer, phase="exited_resumable",
+            lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
+            base_sha="0" * 40, spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+            approval_at="2026-08-08T00:00:00Z", review_state=review,
+        )
+        supervisor = Supervisor()
+        controller = Controller(Registry([TARGET]), store, FakeExecutor(["issue-77-review-1\n"]), supervisor)
+        controller.execute("review", TARGET.repository, TARGET.issue_number, key, valid_evidence())
+        self.assertEqual(supervisor.calls[0][3], review["reviewer_run_id"])
+        self.assertIsNone(supervisor.calls[0][2])
+        self.assertNotEqual(supervisor.calls[0][3], implementer)
+
+    def test_runtime_builds_fresh_reviewer_process_and_schema(self):
+        from tools.neo_dev_webhook.codex_runtime import (
+            REVIEW_COMPLETION_SCHEMA, build_exec_argv, independent_review_prompt,
+        )
+        from tools.neo_dev_webhook.tests.test_project_control import TARGET
+        prompt = independent_review_prompt(TARGET.repository, TARGET.issue_number,
+                                           "a" * 40, "9" * 40, "run-1")
+        argv = build_exec_argv("review", TARGET, None, pathlib.Path("/tmp/schema"), prompt)
+        self.assertEqual(argv[:3], ("/usr/local/bin/codex", "exec", "--json"))
+        self.assertNotIn("resume", argv)
+        self.assertIn("fresh-context independent reviewer", prompt)
+        self.assertIn("a" * 40, prompt)
+        self.assertIn("9" * 40, prompt)
+        self.assertEqual(REVIEW_COMPLETION_SCHEMA["required"],
+                         ["reviewed_sha", "reviewer_run_id", "disposition", "findings"])
+
+    def test_correction_prompt_contains_exact_findings_and_preserves_spec(self):
+        from tools.neo_dev_webhook.codex_runtime import implementation_correction_prompt
+        finding = finding_verdict("IR-001")["findings"]
+        prompt = implementation_correction_prompt(
+            "kingkill85/snap-flow", 6, SPEC_SHA,
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", finding,
+        )
+        self.assertIn("IR-001", prompt)
+        self.assertIn(SPEC_SHA, prompt)
+        self.assertIn("same durable implementation session", prompt)
+        self.assertNotIn("/accept", prompt)
+
+    def test_supervisor_callbacks_bind_reviewer_and_render_clean_handoff(self):
+        from tools.neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from tools.neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+        key = "12345678-1234-4abc-8def-123456789abc"
+        implementer = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        reviewer = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        run_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        review = migrate_fixture()
+        review.update(implementation_session_id=implementer, review_phase="reviewer_starting",
+                      reviewer_run_id=run_id, reviewed_sha="a" * 40,
+                      deterministic_evidence=valid_evidence())
+        store = InMemoryResolutionStore()
+        store.records[key] = WorkState(
+            TARGET, codex_session_id=implementer, phase="exited_resumable",
+            lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
+            base_sha="0" * 40, spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+            approval_at="2026-08-08T00:00:00Z", review_state=review,
+        )
+        controller = Controller(Registry([TARGET]), store, FakeExecutor())
+        active = controller.observe_reviewer_session(key, reviewer, run_id)
+        self.assertEqual(active.review_state["review_phase"], "reviewing")
+        verdict = clean_verdict(reviewer=reviewer, run=run_id)
+        clean = controller.record_independent_verdict(
+            key, "a" * 40, verdict, "2026-08-08T00:01:00Z",
+        )
+        result = controller._result("review", key, clean, "review_clean")
+        self.assertEqual(clean.codex_session_id, implementer)
+        self.assertEqual(clean.lifecycle_state, "implementation_verified")
+        self.assertTrue(result["handoff"].endswith("/cancel"))
+
+    def test_duplicate_supervisor_clean_terminal_is_idempotent_after_promotion(self):
+        from tools.neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from tools.neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+        key = "12345678-1234-4abc-8def-123456789abc"
+        reviewer = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        run_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        review = migrate_fixture()
+        review.update(review_phase="reviewing", reviewer_session_id=reviewer,
+                      reviewer_run_id=run_id, reviewed_sha="a" * 40,
+                      deterministic_evidence=valid_evidence())
+        store = InMemoryResolutionStore()
+        store.records[key] = WorkState(
+            TARGET, codex_session_id=review["implementation_session_id"], phase="exited_resumable",
+            lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
+            base_sha="0" * 40, spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+            approval_at="2026-08-08T00:00:00Z", review_state=review,
+        )
+        controller = Controller(Registry([TARGET]), store, FakeExecutor())
+        verdict = clean_verdict(reviewer=reviewer, run=run_id)
+        first = controller.record_independent_verdict(
+            key, "a" * 40, verdict, "2026-08-08T00:01:00Z",
+        )
+        second = controller.record_independent_verdict(
+            key, "a" * 40, verdict, "2026-08-08T00:01:00Z",
+        )
+        self.assertEqual(second, first)
+
+    def test_review_start_and_clean_promotion_reject_spec_approval_mismatch(self):
+        from tools.neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from tools.neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+        key = "12345678-1234-4abc-8def-123456789abc"
+        implementer = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        review = migrate_fixture()
+        review.update(implementation_session_id=implementer, review_phase="awaiting_review")
+        store = InMemoryResolutionStore()
+        store.records[key] = WorkState(
+            TARGET, codex_session_id=implementer, phase="exited_resumable",
+            lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
+            base_sha="0" * 40, spec_sha=review["approved_spec_sha"],
+            implementation_sha="a" * 40, approval_at="2026-08-08T00:00:00Z",
+            review_state=review,
+        )
+        controller = Controller(Registry([TARGET]), store, FakeExecutor())
+        bad = valid_evidence()
+        bad["approved_spec_sha"] = "8" * 40
+        with self.assertRaisesRegex((ValueError, RuntimeError), "approved spec"):
+            controller.execute("review", TARGET.repository, TARGET.issue_number, key, bad)
+
+        good = valid_evidence()
+        controller.execute("review", TARGET.repository, TARGET.issue_number, key, good)
+        started = store.load(key)
+        reviewer = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        controller.observe_reviewer_session(
+            key, reviewer, started.review_state["reviewer_run_id"],
+        )
+        tampered = store.load(key)
+        review_state = dict(tampered.review_state)
+        review_state["approval_artifact_sha"] = "7" * 40
+        store.records[key] = __import__("dataclasses").replace(tampered, review_state=review_state)
+        verdict = clean_verdict(reviewer=reviewer, run=started.review_state["reviewer_run_id"])
+        with self.assertRaisesRegex((ValueError, RuntimeError), "approval artifact"):
+            controller.record_independent_verdict(
+                key, "a" * 40, verdict, "2026-08-08T00:01:00Z",
+            )
+
+    def test_blocking_verdict_autonomously_resumes_same_implementer_with_findings(self):
+        from tools.neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from tools.neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+
+        class Supervisor:
+            def __init__(self): self.calls = []
+            def start(self, operation, key, session_id=None, run_id=None):
+                self.calls.append((operation, key, session_id, run_id))
+
+        key = "12345678-1234-4abc-8def-123456789abc"
+        implementer = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        reviewer = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        run_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        review = migrate_fixture()
+        review.update(implementation_session_id=implementer, review_phase="reviewing",
+                      reviewer_session_id=reviewer, reviewer_run_id=run_id,
+                      reviewed_sha="a" * 40, deterministic_evidence=valid_evidence())
+        store = InMemoryResolutionStore()
+        store.records[key] = WorkState(
+            TARGET, codex_session_id=implementer, phase="exited_resumable",
+            lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
+            base_sha="0" * 40, spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+            approval_at="2026-08-08T00:00:00Z", review_state=review,
+        )
+        supervisor = Supervisor()
+        executor = FakeExecutor(["issue-77\n", "1\t4242\t/workspace/snap-flow-issue-77\n",
+                                 "chore/issue-77-openspec-workflow\n", ""])
+        controller = Controller(Registry([TARGET]), store, executor, supervisor)
+        state = controller.record_independent_verdict(
+            key, "a" * 40, finding_verdict("IR-001", reviewer=reviewer, run=run_id),
+            "2026-08-08T00:01:00Z",
+        )
+        self.assertEqual(state.phase, "resuming")
+        self.assertEqual(state.codex_session_id, implementer)
+        self.assertEqual(supervisor.calls, [("resume", key, implementer, None)])
+        self.assertEqual(state.review_state["review_findings"][0]["fingerprint"], "IR-001")
+
+    def test_correction_attestation_records_new_sha_and_returns_to_fresh_review(self):
+        import subprocess
+        from tools.neo_dev_webhook.independent_review import migrate_review_state
+        from tools.neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from tools.neo_dev_webhook.tests.test_verification import EvidenceExecutor, VerificationTest
+        with tempfile.TemporaryDirectory() as directory:
+            target, spec_sha = VerificationTest().repository(pathlib.Path(directory))
+            evidence_doc = pathlib.Path(target.worktree) / "docs" / "implementation-evidence.md"
+            evidence_doc.parent.mkdir()
+            evidence_doc.write_text("gates passed\n")
+            subprocess.run(["git", "-C", target.worktree, "add", "docs"], check=True)
+            subprocess.run(["git", "-C", target.worktree, "commit", "-m", "fix implementation"],
+                           check=True, capture_output=True)
+            fixed_sha = subprocess.run(
+                ["git", "-C", target.worktree, "rev-parse", "HEAD"], check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+            issue = {"state": "OPEN", "comments": [{"body": "/approve-spec " + spec_sha,
+                                                       "author": {"login": "kingkill85"}}]}
+            pr = {"headRefOid": fixed_sha, "isDraft": True}
+            github = {"issue": issue, "pr": pr, "checks": [{"state": "SUCCESS"}],
+                      "current_wakeup": None}
+            review = migrate_review_state({"codex_session_id": reviewer_id(), "spec_sha": spec_sha})
+            review.update(review_phase="correction_required", reviewed_sha=spec_sha,
+                          review_findings=finding_verdict("IR-001")["findings"])
+            key = "12345678-1234-4abc-8def-123456789abc"
+            store = InMemoryResolutionStore()
+            store.records[key] = WorkState(
+                target, codex_session_id=reviewer_id(), phase="exited_resumable",
+                lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
+                base_sha=spec_sha, spec_sha=spec_sha, implementation_sha=spec_sha,
+                approval_at="2026-08-08T00:00:00Z", review_state=review,
+                github_evidence=github,
+            )
+            result = Controller(Registry([target]), store, EvidenceExecutor(issue, pr)).execute(
+                "attest", target.repository, target.issue_number, key,
+            )
+            state = store.load(key)
+            self.assertEqual(state.implementation_sha, fixed_sha)
+            self.assertEqual(state.review_state["review_phase"], "awaiting_review")
+            self.assertEqual(result["review_evidence"]["sha"], fixed_sha)
+
+
 def migrate_fixture():
     from tools.neo_dev_webhook.independent_review import migrate_review_state
     return migrate_review_state({
@@ -257,6 +545,8 @@ def reviewer_id():
 def valid_evidence(sha="a" * 40):
     return {
         "sha": sha,
+        "approved_spec_sha": SPEC_SHA,
+        "approval_artifact_sha": SPEC_SHA,
         "tests": {"focused": "passed", "full": "passed"},
         "lint": "passed", "typecheck": "passed", "build": "passed",
         "openspec": {"validate": "passed", "verify": "passed", "strict": True},

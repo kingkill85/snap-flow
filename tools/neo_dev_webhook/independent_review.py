@@ -28,7 +28,7 @@ def begin_review(state: dict[str, Any], head_sha: str, reviewer_session_id: str,
         raise ValueError("each changed SHA requires a fresh independent reviewer")
     if not isinstance(reviewer_run_id, str) or not reviewer_run_id.strip():
         raise ValueError("reviewer run identity is required")
-    _validate_evidence(evidence, head_sha)
+    _validate_evidence(evidence, head_sha, state.get("approved_spec_sha"))
     updated = dict(state)
     updated.update(review_phase="reviewing", reviewed_sha=head_sha,
                    reviewer_session_id=reviewer_session_id,
@@ -39,10 +39,16 @@ def begin_review(state: dict[str, Any], head_sha: str, reviewer_session_id: str,
 
 def apply_verdict(state: dict[str, Any], current_head_sha: str,
                   verdict: dict[str, Any]) -> dict[str, Any]:
-    if state.get("review_verdict") == verdict and state.get("review_phase") in {"clean", "needs_input"}:
+    if state.get("review_verdict") == verdict and state.get("review_phase") in {
+        "clean", "needs_input", "correction_required",
+    }:
         return state
     if state.get("review_phase") != "reviewing":
         raise ValueError("review verdict is not expected in the current phase")
+    if (state.get("approval_artifact_sha") != state.get("approved_spec_sha")
+            or state.get("deterministic_evidence", {}).get("approval_artifact_sha")
+            != state.get("approved_spec_sha")):
+        raise ValueError("approval artifact SHA does not match approved spec SHA")
     _validate_sha(current_head_sha)
     if not isinstance(verdict, dict) or set(verdict) != VERDICT_KEYS:
         raise ValueError("malformed independent review verdict")
@@ -113,7 +119,8 @@ def record_correction(state: dict[str, Any], new_head_sha: str,
 
 
 def record_reviewer_failure(state: dict[str, Any], exact_evidence: str) -> dict[str, Any]:
-    if state.get("review_phase") != "reviewing" or not isinstance(exact_evidence, str) \
+    if state.get("review_phase") not in {"reviewer_starting", "reviewing"} \
+            or not isinstance(exact_evidence, str) \
             or not exact_evidence.strip():
         raise ValueError("reviewer failure evidence is invalid")
     updated = dict(state)
@@ -149,11 +156,21 @@ def _validate_uuid(value: object) -> None:
         raise ValueError("reviewer session identity must be a canonical UUID")
 
 
-def _validate_evidence(evidence: object, sha: str) -> None:
-    required = {"sha", "tests", "lint", "typecheck", "build", "openspec", "checks",
+def validate_review_evidence(evidence: object, sha: str, approved_spec_sha: str) -> None:
+    _validate_evidence(evidence, sha, approved_spec_sha)
+
+
+def _validate_evidence(evidence: object, sha: str, approved_spec_sha: object) -> None:
+    required = {"sha", "approved_spec_sha", "approval_artifact_sha", "tests", "lint",
+                "typecheck", "build", "openspec", "checks",
                 "approval_artifacts", "secret_scan", "worktree", "ui"}
     if not isinstance(evidence, dict) or set(evidence) != required or evidence.get("sha") != sha:
         raise ValueError("deterministic review evidence is missing or stale")
+    _validate_sha(approved_spec_sha)
+    if evidence["approved_spec_sha"] != approved_spec_sha:
+        raise ValueError("approved spec SHA does not match controller authority")
+    if evidence["approval_artifact_sha"] != approved_spec_sha:
+        raise ValueError("approval artifact SHA does not match approved spec SHA")
     tests = evidence["tests"]
     if not isinstance(tests, dict) or tests.get("focused") != "passed" or tests.get("full") != "passed":
         raise ValueError("required tests are not successful")
@@ -205,6 +222,7 @@ def migrate_review_state(record: dict[str, Any]) -> dict[str, Any]:
     migrated = dict(record)
     migrated.setdefault("implementation_session_id", record.get("codex_session_id"))
     migrated.setdefault("approved_spec_sha", record.get("spec_sha"))
+    migrated.setdefault("approval_artifact_sha", record.get("spec_sha"))
     migrated.setdefault("review_phase", "awaiting_implementation")
     migrated.setdefault("review_generation", 0)
     migrated.setdefault("fix_cycle", 0)

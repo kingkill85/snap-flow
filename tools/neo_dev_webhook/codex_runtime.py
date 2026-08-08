@@ -97,12 +97,49 @@ COMPLETION_SCHEMA = {
     },
 }
 
+REVIEW_COMPLETION_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["reviewed_sha", "reviewer_run_id", "disposition", "findings"],
+    "properties": {
+        "reviewed_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "reviewer_run_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "disposition": {"enum": ["clean", "blocking"]},
+        "findings": {"type": "array", "items": {"type": "object"}},
+    },
+}
+
+
+def independent_review_prompt(repository: str, issue_number: int, implementation_sha: str,
+                              approved_spec_sha: str, reviewer_run_id: str) -> str:
+    return (
+        f"You are the fresh-context independent reviewer for {repository} Issue #{issue_number}. "
+        f"Review exact implementation SHA {implementation_sha} against controller-approved spec "
+        f"SHA {approved_spec_sha}; reviewer run identity is {reviewer_run_id}. Inspect the issue/base "
+        "diff, tasks, repository instructions, tests, live GitHub state, every tracked change, and "
+        "relevant untracked file. Do not modify files, resume the implementer session, accept, merge, "
+        "deploy, or publish. Return only the structured review verdict."
+    )
+
+
+def implementation_correction_prompt(repository: str, issue_number: int,
+                                     approved_spec_sha: str, implementation_session_id: str,
+                                     findings: list[dict]) -> str:
+    return (
+        f"Continue the same durable implementation session {implementation_session_id} for "
+        f"{repository} Issue #{issue_number}. Correct only these controller-verified blocking "
+        f"findings while preserving approved spec SHA {approved_spec_sha}: "
+        f"{json.dumps(findings, sort_keys=True, separators=(',', ':'))}. Run deterministic gates, "
+        "commit and push the correction, then stop for a new fresh reviewer. Do not revise approved "
+        "planning artifacts, accept, merge, archive, deploy, or publish operator commands."
+    )
+
 
 def build_exec_argv(operation: str, target: GovernedTarget, session_id: str | None,
                     schema_path: pathlib.Path, prompt: str) -> tuple[str, ...]:
-    if operation == "start":
+    if operation in {"start", "review"}:
         if session_id is not None:
-            raise ValueError("initial runtime cannot accept a session identity")
+            raise ValueError("fresh runtime cannot accept a session identity")
         return (
             "/usr/local/bin/codex", "exec", "--json",
             "--dangerously-bypass-approvals-and-sandbox",
@@ -121,7 +158,20 @@ def build_exec_argv(operation: str, target: GovernedTarget, session_id: str | No
     raise ValueError("unsupported internal runtime operation")
 
 
-def parse_exec_event(line: str) -> tuple[str, object] | None:
+def validate_review_completion(value: object, exit_code: int) -> dict:
+    required = {"reviewed_sha", "reviewer_run_id", "disposition", "findings"}
+    if exit_code != 0 or not isinstance(value, dict) or set(value) != required:
+        raise ValueError("review completion does not match the trusted schema")
+    if (not isinstance(value["reviewed_sha"], str)
+            or not isinstance(value["reviewer_run_id"], str)
+            or value["disposition"] not in {"clean", "blocking"}
+            or not isinstance(value["findings"], list)):
+        raise ValueError("review completion is malformed")
+    return value
+
+
+def parse_exec_event(line: str, completion_validator=None) -> tuple[str, object] | None:
+    completion_validator = completion_validator or validate_completion
     event = json.loads(line)
     if not isinstance(event, dict):
         raise ValueError("Codex exec emitted an invalid event")
@@ -137,7 +187,7 @@ def parse_exec_event(line: str) -> tuple[str, object] | None:
             text = item.get("text")
             if isinstance(text, str):
                 try:
-                    return "completion", validate_completion(json.loads(text), 0)
+                    return "completion", completion_validator(json.loads(text), 0)
                 except (json.JSONDecodeError, ValueError):
                     return None
     if event.get("type") == "turn.completed":
@@ -151,7 +201,9 @@ def run_exec_worker(operation: str, target: GovernedTarget, session_id: str | No
                     schema_path: pathlib.Path, prompt: str,
                     session_observer: Callable[[str], None], *,
                     process_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
-                    timeout_seconds: int = 1800) -> tuple[str, dict, int]:
+                    timeout_seconds: int = 1800,
+                    completion_validator=None) -> tuple[str, dict, int]:
+    completion_validator = completion_validator or validate_completion
     argv = build_exec_argv(operation, target, session_id, schema_path, prompt)
     process = process_factory(
         [
@@ -167,7 +219,7 @@ def run_exec_worker(operation: str, target: GovernedTarget, session_id: str | No
     completion: dict | None = None
     terminal_exit: int | None = None
     for line in process.stdout:
-        parsed = parse_exec_event(line)
+        parsed = parse_exec_event(line, completion_validator)
         if parsed is None:
             continue
         event, value = parsed
@@ -191,7 +243,7 @@ def run_exec_worker(operation: str, target: GovernedTarget, session_id: str | No
             "summary": "Codex exec omitted structured completion",
         }
     else:
-        completion = validate_completion(completion, exit_code)
+        completion = completion_validator(completion, exit_code)
     return observed_session, completion, exit_code
 
 
@@ -456,7 +508,7 @@ def run_runtime(operation: str, idempotency_key: str, session_id: str | None, *,
 
 
 def run_supervised_runtime(operation: str, idempotency_key: str,
-                           session_id: str | None, *,
+                           session_id: str | None, review_run_id: str | None = None, *,
                            app_server: AppServer | None = None,
                            control_input: TextIO = sys.stdin) -> int:
     validate_idempotency_key(idempotency_key)
@@ -477,35 +529,66 @@ def run_supervised_runtime(operation: str, idempotency_key: str,
         if (not isinstance(launch, dict) or launch.get("version") != 1
                 or launch.get("operation") != operation
                 or launch.get("idempotency_key") != idempotency_key
-                or launch.get("session_id") != session_id):
+                or launch.get("session_id") != session_id
+                or launch.get("review_run_id") != review_run_id):
             raise RuntimeError("supervisor launch envelope does not match runtime")
         target = GovernedTarget(**launch["target"])
         target.validate()
         lifecycle_state = launch.get("lifecycle_state")
         if lifecycle_state not in {
             "label", "spec_approved", "accepted", "archive_authorized", "merge_authorized",
-            "cancelled",
+            "independent_review", "cancelled",
         }:
             raise RuntimeError("supervisor lifecycle state is invalid")
         schema_path: pathlib.Path | None = None
         try:
-            prompt = initial_prompt(target.repository, target.issue_number) if operation == "start" else (
-                continuation_prompt(target.repository, target.issue_number, lifecycle_state)
-            )
+            if operation == "review":
+                if not isinstance(review_run_id, str):
+                    raise RuntimeError("review runtime identity is missing")
+                prompt = independent_review_prompt(
+                    target.repository, target.issue_number, launch["implementation_sha"],
+                    launch["approved_spec_sha"], review_run_id,
+                )
+                output_schema = REVIEW_COMPLETION_SCHEMA
+            elif operation == "resume" and lifecycle_state == "independent_review":
+                review_state = launch.get("review_state")
+                if not isinstance(review_state, dict):
+                    raise RuntimeError("implementation correction review state is missing")
+                prompt = implementation_correction_prompt(
+                    target.repository, target.issue_number, launch["approved_spec_sha"],
+                    session_id or "", review_state.get("review_findings", []),
+                )
+                output_schema = COMPLETION_SCHEMA
+            else:
+                prompt = initial_prompt(target.repository, target.issue_number) if operation == "start" else (
+                    continuation_prompt(target.repository, target.issue_number, lifecycle_state)
+                )
+                output_schema = COMPLETION_SCHEMA
             with tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", prefix="neo-dev-completion-",
                 suffix=".json", delete=False,
             ) as schema:
-                json.dump(COMPLETION_SCHEMA, schema, separators=(",", ":"))
+                json.dump(output_schema, schema, separators=(",", ":"))
                 schema_path = pathlib.Path(schema.name)
 
             def observe_session(observed_session: str) -> None:
-                report = {"event": "session", "session_id": observed_session}
+                report = {"event": "reviewer_session" if operation == "review" else "session",
+                          "session_id": observed_session}
+                if operation == "review":
+                    report["reviewer_run_id"] = review_run_id
                 stream.write((json.dumps(report) + "\n").encode())
 
             _, completion, exit_code = run_exec_worker(
                 operation, target, session_id, schema_path, prompt, observe_session,
+                completion_validator=(validate_review_completion if operation == "review"
+                                      else validate_completion),
             )
+            if operation == "review":
+                completion["reviewer_session_id"] = _
+                report = {"event": "reviewer_verdict", "reviewer_run_id": review_run_id,
+                          "verdict": completion}
+                stream.write((json.dumps(report) + "\n").encode())
+                return 0
             report = {
                 "event": "terminal", "exit_code": exit_code,
                 "semantic_outcome": completion["semantic_outcome"],
@@ -525,9 +608,10 @@ def run_supervised_runtime(operation: str, idempotency_key: str,
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="neo-dev-codex-runtime", allow_abbrev=False)
-    result.add_argument("operation", choices=("start", "resume"))
+    result.add_argument("operation", choices=("start", "resume", "review"))
     result.add_argument("--idempotency-key", required=True)
     result.add_argument("--session-id")
+    result.add_argument("--review-run-id")
     return result
 
 
@@ -536,6 +620,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return run_supervised_runtime(
             arguments.operation, arguments.idempotency_key, arguments.session_id,
+            arguments.review_run_id,
         )
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError):
         return 1

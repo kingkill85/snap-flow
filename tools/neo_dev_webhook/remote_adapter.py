@@ -14,7 +14,7 @@ REMOTE_CONTROLLER = "/usr/local/bin/neo-dev-project-control"
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="neo-dev-project-control", allow_abbrev=False)
-    result.add_argument("operation", choices=("status", "attest", "preflight", "start", "resume", "finalize"))
+    result.add_argument("operation", choices=("status", "attest", "preflight", "start", "resume", "review", "finalize"))
     result.add_argument("--repository", required=True, choices=("kingkill85/snap-flow",))
     result.add_argument("--issue-number", required=True, type=int)
     result.add_argument("--idempotency-key", required=True)

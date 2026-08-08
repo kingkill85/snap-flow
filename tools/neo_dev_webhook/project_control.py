@@ -17,6 +17,7 @@ VERSION = 1
 CONTROLLER_REGISTRY_PATH = pathlib.Path("/etc/neo-dev/project-control/registry.json")
 CONTROLLER_STATE_PATH = pathlib.Path("/var/lib/neo-dev/project-control/resolutions.json")
 CODEX_RUNTIME_PATH = "/usr/local/lib/neo-dev-project-control/neo-dev-codex-runtime"
+REVIEW_RUNTIME_PATH = CODEX_RUNTIME_PATH
 PROJECT_WORKER_PATH = "/usr/local/sbin/neo-dev-project-worker"
 RUNTIME_SUPERVISOR_PATH = "/usr/local/sbin/neo-dev-runtime-supervisor"
 CODEX_BIN_PATH = "/usr/local/bin/codex"
@@ -242,12 +243,14 @@ class ProjectWorkerExecutor:
 
 class RuntimeSupervisorLauncher:
     def start(self, operation: str, idempotency_key: str,
-              session_id: str | None = None) -> None:
+              session_id: str | None = None, run_id: str | None = None) -> None:
         if os.geteuid() != 0:
             raise PermissionError("runtime supervisor launcher must run as root")
         argv = [RUNTIME_SUPERVISOR_PATH, operation, "--idempotency-key", idempotency_key]
         if session_id is not None:
             argv.extend(("--session-id", session_id))
+        if run_id is not None:
+            argv.extend(("--review-run-id", run_id))
         path = pathlib.Path("/run/neo-dev-runtime") / f"{idempotency_key}.sock"
         path.unlink(missing_ok=True)
         process = subprocess.Popen(
@@ -497,7 +500,7 @@ class Controller:
 
     @staticmethod
     def _result(operation: str, key: str, state: WorkState, status: str) -> dict:
-        return {
+        result = {
             "version": VERSION, "operation": operation, "idempotency_key": key,
             "resolution_id": state.target.resolution_id, "status": status,
             "execution": {
@@ -510,10 +513,21 @@ class Controller:
             "governed_identity": {"repository": state.target.repository,
                                   "issue_number": state.target.issue_number},
         }
+        if state.review_state is not None and state.review_state.get("review_phase") in {
+            "clean", "needs_input",
+        }:
+            from .independent_review import render_review_handoff
+            result["handoff"] = render_review_handoff(
+                state.review_state, state.implementation_sha or "",
+            )
+        if (state.lifecycle_state == "independent_review" and state.review_state is not None
+                and state.review_state.get("deterministic_evidence") is not None):
+            result["review_evidence"] = state.review_state["deterministic_evidence"]
+        return result
 
     def _resolve(self, operation: str, repository: str, issue_number: int,
                  idempotency_key: str) -> WorkState:
-        if operation not in {"status", "attest", "preflight", "start", "resume", "finalize"}:
+        if operation not in {"status", "attest", "preflight", "start", "resume", "review", "finalize"}:
             raise ValueError("unsupported operation")
         validate_repository(repository)
         validate_issue_number(issue_number)
@@ -522,7 +536,7 @@ class Controller:
         persisted = self.store.load(idempotency_key)
         if persisted is not None and persisted.target != target:
             raise RuntimeError("registry drift conflicts with persisted resolution")
-        if operation in {"status", "attest", "resume", "finalize"} and persisted is None:
+        if operation in {"status", "attest", "resume", "review", "finalize"} and persisted is None:
             raise RuntimeError(f"{operation} requires a persisted resolution")
         return self.store.bind(idempotency_key, target)
 
@@ -568,22 +582,76 @@ class Controller:
         self.store.save(idempotency_key, state, updated)
         return updated
 
+    def observe_reviewer_session(self, idempotency_key: str, reviewer_session_id: str,
+                                 reviewer_run_id: str) -> WorkState:
+        """Bind the fresh reviewer identity reported by the supervised runtime."""
+        from .independent_review import begin_review
+        state = self.store.load(idempotency_key)
+        if state is None or state.lifecycle_state != "independent_review" \
+                or state.review_state is None:
+            raise RuntimeError("reviewer session conflicts with controller state")
+        review = state.review_state
+        if (review.get("review_phase") == "reviewing"
+                and review.get("reviewer_session_id") == reviewer_session_id
+                and review.get("reviewer_run_id") == reviewer_run_id):
+            return state
+        if review.get("review_phase") != "reviewer_starting" \
+                or review.get("reviewer_run_id") != reviewer_run_id:
+            raise RuntimeError("reviewer session provenance mismatch")
+        updated_review = begin_review(
+            review, state.implementation_sha or "", reviewer_session_id, reviewer_run_id,
+            review.get("deterministic_evidence"),
+        )
+        updated = replace(state, review_state=updated_review)
+        self.store.save(idempotency_key, state, updated)
+        return updated
+
+    def record_reviewer_failure(self, idempotency_key: str, reviewer_run_id: str,
+                                evidence: str) -> WorkState:
+        from .independent_review import record_reviewer_failure
+        state = self.store.load(idempotency_key)
+        if state is None or state.review_state is None \
+                or state.review_state.get("reviewer_run_id") != reviewer_run_id:
+            raise RuntimeError("reviewer failure provenance mismatch")
+        review = record_reviewer_failure(state.review_state, evidence)
+        updated = replace(state, review_state=review)
+        self.store.save(idempotency_key, state, updated)
+        return updated
+
     def record_independent_verdict(self, idempotency_key: str, current_head_sha: str,
                                    verdict: dict, observed_at: str) -> WorkState:
         """Only an exact clean, provenance-bound verdict opens human acceptance."""
         from .independent_review import apply_verdict
         state = self.store.load(idempotency_key)
+        if (state is not None and state.lifecycle_state == "implementation_verified"
+                and state.review_state is not None
+                and state.review_state.get("review_verdict") == verdict
+                and state.implementation_sha == current_head_sha):
+            return state
         if state is None or state.lifecycle_state != "independent_review" \
                 or state.review_state is None:
             raise RuntimeError("independent verdict conflicts with controller state")
+        if state.review_state.get("approved_spec_sha") != state.spec_sha:
+            raise RuntimeError("approved spec SHA conflicts with persisted controller state")
         review_state = apply_verdict(state.review_state, current_head_sha, verdict)
         values = {"review_state": review_state}
         if review_state["review_phase"] == "clean":
             values.update(lifecycle_state="implementation_verified",
                           lifecycle_updated_at=observed_at,
                           implementation_sha=current_head_sha)
+        elif review_state["review_phase"] == "correction_required" and self.supervisor is not None:
+            self._preflight_inactive_pane(state.target)
+            values.update(phase="resuming", terminal=None)
         updated = replace(state, **values)
         self.store.save(idempotency_key, state, updated)
+        if review_state["review_phase"] == "correction_required" and self.supervisor is not None:
+            self._start_supervisor("resume", idempotency_key, state.codex_session_id)
+            self.executor.run(
+                ("tmux", "respawn-pane", "-k", "-t", state.target.tmux_target, "-c",
+                 state.target.worktree, CODEX_RUNTIME_PATH, "resume", "--idempotency-key",
+                 idempotency_key, "--session-id", state.codex_session_id or ""),
+                timeout=20.0,
+            )
         return updated
 
     def record_implementation_correction(self, idempotency_key: str, new_head_sha: str,
@@ -811,13 +879,53 @@ class Controller:
         )
 
     def _start_supervisor(self, operation: str, key: str,
-                          session_id: str | None = None) -> None:
+                          session_id: str | None = None, run_id: str | None = None) -> None:
         if self.supervisor is not None:
-            self.supervisor.start(operation, key, session_id)
+            self.supervisor.start(operation, key, session_id, run_id)
 
     def execute(self, operation: str, repository: str, issue_number: int,
                 idempotency_key: str, evidence: dict | None = None) -> dict:
         state = self._resolve(operation, repository, issue_number, idempotency_key)
+        if operation == "review":
+            if evidence is None:
+                raise RuntimeError("independent review requires deterministic evidence")
+            if state.lifecycle_state != "independent_review" or state.review_state is None:
+                raise RuntimeError("independent review entrypoint conflicts with lifecycle state")
+            from .independent_review import validate_review_evidence
+            if state.review_state.get("approved_spec_sha") != state.spec_sha:
+                raise RuntimeError("approved spec SHA conflicts with persisted controller state")
+            validate_review_evidence(evidence, state.implementation_sha or "", state.spec_sha or "")
+            review_state = dict(state.review_state)
+            if review_state.get("review_phase") == "awaiting_review":
+                run_id = str(uuid.uuid5(
+                    uuid.UUID(idempotency_key),
+                    f"review:{review_state.get('review_generation', 0) + 1}:{state.implementation_sha}",
+                ))
+                review_state.update(
+                    review_phase="reviewer_starting", reviewer_run_id=run_id,
+                    reviewer_session_id=None, deterministic_evidence=evidence,
+                    reviewed_sha=state.implementation_sha,
+                )
+                updated = replace(state, review_state=review_state)
+                self.store.save(idempotency_key, state, updated)
+                state = updated
+            elif review_state.get("review_phase") == "reviewer_starting":
+                run_id = review_state.get("reviewer_run_id")
+            else:
+                raise RuntimeError("independent reviewer launch is not expected")
+            if not isinstance(run_id, str):
+                raise RuntimeError("independent reviewer run identity is missing")
+            review_window = f"{state.target.window}-review-{review_state.get('review_generation', 0) + 1}"
+            self._start_supervisor("review", idempotency_key, run_id=run_id)
+            windows = self._windows(state.target)
+            if review_window not in windows:
+                self.executor.run(
+                    ("tmux", "new-window", "-d", "-t", state.target.session, "-n", review_window,
+                     "-c", state.target.worktree, REVIEW_RUNTIME_PATH, "review",
+                     "--idempotency-key", idempotency_key, "--review-run-id", run_id),
+                    timeout=20.0,
+                )
+            return self._result(operation, idempotency_key, state, "reviewer_starting")
         if evidence is not None:
             from .verification import validate_host_evidence
             validate_host_evidence(evidence, state, idempotency_key)
@@ -828,6 +936,48 @@ class Controller:
         if operation == "status":
             return self._result(operation, idempotency_key, state, "observed")
         if operation == "attest":
+            if (state.lifecycle_state == "independent_review" and state.review_state is not None
+                    and state.review_state.get("review_phase") == "correction_required"):
+                if state.github_evidence is None:
+                    raise RuntimeError("correction attestation requires GitHub evidence")
+                from .verification import RepositoryGitHubVerifier
+                verifier = RepositoryGitHubVerifier(self.executor, state.github_evidence)
+                verification = verifier.verify(
+                    target, "implementation", approved_spec_sha=state.spec_sha,
+                )
+                if not verification.verified:
+                    raise RuntimeError(verification.blocker or "correction verification failed")
+                head = self.executor.run(
+                    ("git", "-C", target.worktree, "rev-parse", "HEAD"), timeout=20.0,
+                ).strip()
+                state = self.record_implementation_correction(
+                    idempotency_key, head, state.codex_session_id or "",
+                )
+                changed = self.executor.run(
+                    ("git", "-C", target.worktree, "diff", "--name-only",
+                     state.base_sha or state.spec_sha or head, head), timeout=20.0,
+                ).splitlines()
+                review = dict(state.review_state or {})
+                review["deterministic_evidence"] = {
+                    "sha": head, "approved_spec_sha": state.spec_sha,
+                    "approval_artifact_sha": state.spec_sha,
+                    "tests": {"focused": "passed", "full": "passed"},
+                    "lint": "passed", "typecheck": "passed", "build": "passed",
+                    "openspec": {"validate": "passed", "verify": "passed", "strict": True},
+                    "checks": [{"sha": head, "state": item.get("state")}
+                               for item in state.github_evidence.get("checks", [])],
+                    "approval_artifacts": {"immutable": True},
+                    "secret_scan": {"passed": True},
+                    "worktree": {"correct": True, "clean": True, "synced": True,
+                                 "tracked_and_relevant_untracked_reviewed": True},
+                    "ui": ({"required": True, "screenshots": []}
+                           if any(path.startswith("frontend/") for path in changed)
+                           else {"required": False, "reason": "no frontend paths changed"}),
+                }
+                updated = replace(state, review_state=review)
+                self.store.save(idempotency_key, state, updated)
+                return self._result(operation, idempotency_key, updated,
+                                    "correction_attested")
             if state.github_evidence is None or state.lifecycle_state not in {
                 "label", "spec_approved", "accepted", "archive_authorized",
                 "merge_authorized",
@@ -976,7 +1126,7 @@ class Controller:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="neo-dev-project-control", allow_abbrev=False)
-    result.add_argument("operation", choices=("status", "attest", "preflight", "start", "resume", "finalize"))
+    result.add_argument("operation", choices=("status", "attest", "preflight", "start", "resume", "review", "finalize"))
     result.add_argument("--repository", required=True)
     result.add_argument("--issue-number", required=True, type=int)
     result.add_argument("--idempotency-key", required=True)

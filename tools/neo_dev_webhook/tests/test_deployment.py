@@ -90,6 +90,39 @@ class DeploymentTest(unittest.TestCase):
             after = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
             self.assertEqual(after, before)
 
+    def test_installed_canary_failure_blocks_verification_and_rollback_remains_exact(self):
+        script = pathlib.Path(__file__).parents[1] / "deploy/controller-install.sh"
+        source = pathlib.Path(__file__).parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory) / "root"
+            backup = pathlib.Path(directory) / "backup"
+            runtime = root / "usr/local/lib"
+            package = runtime / "neo_dev_webhook"
+            package.mkdir(parents=True)
+            for name in ("__init__.py", "independent_review.py", "independent_review_canary.py"):
+                (package / name).write_bytes((source / "neo_dev_webhook" / name).read_bytes())
+            root.mkdir(exist_ok=True)
+            (root / ".controller-scope-fixture").write_text("guard\n")
+            before = {str(p.relative_to(root)): p.read_bytes()
+                      for p in root.rglob("*") if p.is_file()}
+            env = {**os.environ, "NEO_CONTROLLER_BUNDLE": str(source)}
+            good = subprocess.run([str(script), "fixture-verify-canary", str(runtime)], env=env)
+            self.assertEqual(good.returncode, 0)
+            (package / "independent_review_canary.py").write_text("raise SystemExit(9)\n")
+            bad = subprocess.run([str(script), "fixture-verify-canary", str(runtime)], env=env)
+            self.assertNotEqual(bad.returncode, 0)
+            backup.mkdir()
+            (backup / "tree").mkdir()
+            for relative, content in before.items():
+                target = backup / "tree" / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            subprocess.run([str(script), "fixture-rollback", str(root), str(backup)],
+                           check=True, env=env)
+            after = {str(p.relative_to(root)): p.read_bytes()
+                     for p in root.rglob("*") if p.is_file()}
+            self.assertEqual(after, before)
+
     def test_native_plugin_registers_exact_narrow_tool_and_requires_kanban(self):
         plugin = pathlib.Path(__file__).parents[1] / "deploy/hermes-plugin/snapflow_neo_dev_transition/__init__.py"
         manifest = json.loads((plugin.parent / "plugin.yaml").read_text())

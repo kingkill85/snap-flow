@@ -5,10 +5,17 @@ from .independent_review import (
     render_review_handoff,
 )
 
+EXPECTED_PHASES = [
+    "reviewing", "stale_rejected", "correction_required",
+    "awaiting_review", "reviewing", "clean",
+]
+
 
 def _evidence(sha: str) -> dict:
     return {
-        "sha": sha, "tests": {"focused": "passed", "full": "passed"},
+        "sha": sha, "approved_spec_sha": "9" * 40,
+        "approval_artifact_sha": "9" * 40,
+        "tests": {"focused": "passed", "full": "passed"},
         "lint": "passed", "typecheck": "passed", "build": "passed",
         "openspec": {"validate": "passed", "verify": "passed", "strict": True},
         "checks": [{"sha": sha, "state": "SUCCESS"}],
@@ -56,3 +63,16 @@ def run_canary() -> dict:
     return {"phases": phases, "same_implementer": state["implementation_session_id"] == implementer,
             "fresh_reviewer": first_reviewer != second_reviewer,
             "footer": render_review_handoff(state, fixed_sha)}
+
+
+def main() -> int:
+    result = run_canary()
+    if (result.get("phases") != EXPECTED_PHASES or result.get("same_implementer") is not True
+            or result.get("fresh_reviewer") is not True
+            or not result.get("footer", "").endswith("/cancel")):
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
