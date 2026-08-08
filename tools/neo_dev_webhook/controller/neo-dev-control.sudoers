@@ -1,1 +1,0 @@
-neo-controller ALL=(root) NOPASSWD: /usr/local/sbin/neo-dev-project-control-privileged *

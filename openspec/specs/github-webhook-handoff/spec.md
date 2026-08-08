@@ -34,12 +34,23 @@ Immediately before external task creation, a GitHub adapter using no repository 
 - **WHEN** the public adapter errors or reports ineligible state
 - **THEN** no task work is accepted
 
-### Requirement: Durable asynchronous coalesced handoff
-The receiver SHALL atomically persist delivery, wakeup, and active work before responding, and SHALL never run long work. Canonical `X-GitHub-Delivery` SHALL be the downstream idempotency key. Concurrent events for one repo+issue SHALL append wakeups to one active task. Durable Kanban creation and persistence of its returned task ID SHALL be the external handoff boundary; dispatcher wake-up is best effort because the gateway provides an embedded dispatcher.
+### Requirement: Durable persistent-profile Kanban handoff
+The receiver SHALL atomically persist exactly one durable Kanban wakeup for each eligible human delivery before responding and SHALL never run long work. The canonical `X-GitHub-Delivery` SHALL be the downstream idempotency key. Delivery replay SHALL NOT add a second wakeup, while each later eligible delivery SHALL add another wakeup even for the same Issue. Every wakeup SHALL target the persistent `dev` profile, `private-dev` Kanban inbox, and `dir:/opt/data/profiles/dev` workspace. The task creation interface SHALL require and strictly constrain explicit `--board private-dev`, `--assignee dev`, and `--max-runtime 2h` arguments; none may come from webhook input. Before staging, a read-only verifier SHALL confirm the pinned Hermes Agent v0.20.0 (2026.8.3) CLI and private-board schema contract without creating or changing a task. Its body SHALL contain stable repository, Issue, event/action, delivery ID, optional comment ID, and routing to the `snapflow-orchestrator` skill plus `/opt/data/profiles/dev/projects/snapflow.md`; it SHALL NOT contain a receiver-decided phase, lifecycle action, transition capability, or decision. Durable Kanban creation and persistence of its returned task ID SHALL be the external handoff boundary.
 
 #### Scenario: Replay and concurrency
-- **WHEN** deliveries repeat, race, or arrive while work is active
-- **THEN** delivery replay is deduplicated and at most one active task exists per repo+issue
+- **WHEN** a delivery repeats or races with its replay
+- **THEN** exactly one wakeup exists for that delivery identity
+
+#### Scenario: Later human delivery
+- **WHEN** another eligible human delivery arrives for the same Issue
+- **THEN** another wakeup is durably available to the same profile, inbox, and workspace
+
+### Requirement: Retired queue records remain blocked
+On initialization, every wakeup found in the retired durable queue that is not already represented in the new inbox SHALL be copied with its delivery, repository, Issue, event/action, and optional comment identity into a `blocked_legacy` wakeup. The consumer SHALL NOT execute blocked legacy wakeups. Inspection or disposition SHALL require separate authorization and SHALL NOT automatically continue historical Issues including #6, #13, or #84.
+
+#### Scenario: Legacy database opens after upgrade
+- **WHEN** the new consumer initializes a database containing retired wakeups
+- **THEN** those wakeups are preserved idempotently as blocked records and no Kanban task is created from them
 
 ### Requirement: Recoverable consumer
 The consumer SHALL transactionally claim queued work with an ownership token, lease processing, recover expired claims by compare-and-set, count attempts, and transactionally complete with a persisted task ID or retry/dead-letter failure. Receiver and consumer SHALL safely initialize the same previously nonexistent SQLite database concurrently through bounded lock handling. Retry SHALL be bounded and reuse task.py idempotency.

@@ -1,96 +1,35 @@
 import hashlib
 import hmac
+import http.client
 import json
-import socket
 import os
 import pathlib
+import sqlite3
+import socket
 import tempfile
 import threading
+import time
 import unittest
 import uuid
-from http.client import HTTPConnection
+from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 from http.server import BaseHTTPRequestHandler
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from unittest import mock
 
-from neo_dev_webhook.automation import (
-    Consumer,
-    Limits,
-    Receiver,
-    Store,
-    TaskRunner,
-    ProjectDispatcher,
-    has_standalone_marker,
-)
-from neo_dev_webhook import server as server_module
-from neo_dev_webhook.hermes_transition import CapabilityBroker
+from neo_dev_webhook.automation import Consumer, Limits, Receiver, Store, TaskRunner
+from neo_dev_webhook.server import BoundedThreadingHTTPServer, LimitedHeaderReader
 
 
 REPOSITORY = "kingkill85/snap-flow"
 ACTOR = {"id": 11455872, "login": "kingkill85"}
-TASK_KEY = "12345678-1234-4abc-8def-123456789abc"
-WAKEUP_KEY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-
-
-def initialize_store(path):
-    try:
-        store = Store(path)
-        store.close()
-        return "ok"
-    except Exception as error:
-        return f"{type(error).__name__}: {error}"
-
-
-class FakeGitHub:
-    def __init__(self, *, open=True, labels=("neo-dev",), is_pr=False):
-        self.open = open
-        self.labels = labels
-        self.is_pr = is_pr
-        self.calls = []
-        self.error = None
-
-    def revalidate(self, repository, issue_number):
-        self.calls.append((repository, issue_number))
-        if self.error:
-            raise self.error
-        return {"open": self.open, "labels": list(self.labels), "is_pr": self.is_pr}
-
-
-class FakeRunner:
-    def __init__(self, failures=0):
-        self.failures = failures
-        self.calls = []
-
-    def create(self, work, idempotency_key):
-        self.calls.append((work, idempotency_key))
-        if len(self.calls) <= self.failures:
-            raise RuntimeError("simulated crash boundary")
-        return f"task-{idempotency_key}"
-
-
-class FakeFinalizer:
-    def __init__(self, verified):
-        self.verified = verified
-        self.calls = []
-
-    def verify(self, repository, issue_number, idempotency_key):
-        self.calls.append((repository, issue_number, idempotency_key))
-        if isinstance(self.verified, list):
-            return self.verified.pop(0)
-        return self.verified
 
 
 def payload(event="issues", action=None, body="human update", **changes):
-    action = action or ("created" if event == "issue_comment" else "edited")
     data = {
-        "action": action,
+        "action": action or ("created" if event == "issue_comment" else "edited"),
         "repository": {"full_name": REPOSITORY},
         "sender": ACTOR.copy(),
-        "issue": {
-            "number": 77,
-            "state": "open",
-            "labels": [{"name": "neo-dev"}],
-        },
+        "issue": {"number": 77, "state": "open", "labels": [{"name": "neo-dev"}]},
     }
     if event == "issue_comment":
         data["comment"] = {"id": 9001, "body": body, "user": ACTOR.copy()}
@@ -109,48 +48,38 @@ def request(secret, data, event="issues", delivery=None):
     }
 
 
-class MarkerTests(unittest.TestCase):
-    def test_exact_standalone_marker_positions(self):
-        marker = "<!-- neo-dev -->"
-        for value in (marker, marker + "\ntext", "text\n" + marker, "a\n" + marker + "\nb"):
-            with self.subTest(value=value):
-                self.assertTrue(has_standalone_marker(value))
+class FakeGitHub:
+    def __init__(self, *, open=True, labels=("neo-dev",), is_pr=False):
+        self.result = {"open": open, "labels": list(labels), "is_pr": is_pr}
+        self.calls = []
 
-    def test_marker_lookalikes_are_not_markers(self):
-        for value in (
-            " <!-- neo-dev -->", "<!-- neo-dev --> ", "<!-- NEO-DEV -->",
-            "<!-- neo-dev-->", "<!-- neo-dev -->suffix", "prefix<!-- neo-dev -->",
-            "<!-- neo-dev-extra -->", "neo-dev", "<!--  neo-dev  -->", "",
-        ):
-            with self.subTest(value=value):
-                self.assertFalse(has_standalone_marker(value))
+    def revalidate(self, repository, issue_number):
+        self.calls.append((repository, issue_number))
+        return self.result
 
 
-class AutomationTest(unittest.TestCase):
-    def test_review_dispatcher_collects_fresh_host_evidence_before_clean_promotion(self):
-        launch = mock.Mock(returncode=0, stdout=json.dumps({"execution": {
-            "lifecycle_state": "independent_review", "review_phase": "reviewer_starting"}}))
-        pending = mock.Mock(returncode=0, stdout=json.dumps({"execution": {
-            "lifecycle_state": "independent_review", "review_phase": "clean_pending_evidence"}}))
-        promoted = mock.Mock(returncode=0, stdout=json.dumps({"execution": {
-            "lifecycle_state": "implementation_verified", "review_phase": "clean"}}))
-        with mock.patch("neo_dev_webhook.automation.subprocess.run",
-                        side_effect=[launch, pending, promoted]) as run, \
-             mock.patch("neo_dev_webhook.automation.collect_host_evidence",
-                        return_value="fresh-evidence") as collect:
-            result = ProjectDispatcher(poll_interval=0, max_polls=1).review(
-                REPOSITORY, 13, TASK_KEY, {"sha": "a" * 40},
-            )
-        self.assertEqual(result["controller"]["execution"]["lifecycle_state"],
-                         "implementation_verified")
-        collect.assert_called_once_with("/opt/data/bin/neo-dev-project-control",
-                                        REPOSITORY, 13, TASK_KEY)
-        self.assertIn("fresh-evidence", run.call_args_list[-1].args[0])
+class FakeRunner:
+    def __init__(self):
+        self.calls = []
 
+    def create(self, wakeup):
+        self.calls.append(wakeup)
+        return f"task-{wakeup['delivery_id']}"
+
+
+class FlakyRunner(FakeRunner):
+    def create(self, wakeup):
+        self.calls.append(wakeup)
+        if len(self.calls) == 1:
+            raise RuntimeError("ambiguous task-runner response")
+        return f"task-{wakeup['delivery_id']}"
+
+
+class WebhookInboxTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.db = os.path.join(self.temp.name, "queue.sqlite")
-        self.store = Store(self.db)
+        self.path = os.path.join(self.temp.name, "queue.sqlite")
+        self.store = Store(self.path)
         self.github = FakeGitHub()
         self.receiver = Receiver("secret", self.store, self.github)
 
@@ -158,1064 +87,349 @@ class AutomationTest(unittest.TestCase):
         self.store.close()
         self.temp.cleanup()
 
-    def send(self, data=None, event="issues", delivery=None, mutate=None):
-        raw, headers = request("secret", data or payload(event=event), event, delivery)
-        if mutate:
-            mutate(raw, headers)
+    def send(self, data=None, event="issues", delivery=None, secret="secret"):
+        raw, headers = request(secret, data or payload(event), event, delivery)
         return self.receiver.handle(headers, raw)
 
-    def test_accepts_only_after_durable_enqueue_and_replays_uuid_delivery(self):
+    def test_valid_signed_delivery_creates_exactly_one_durable_dev_task(self):
         delivery = str(uuid.uuid4())
         self.assertEqual(self.send(delivery=delivery), (202, "accepted"))
         self.assertEqual(self.store.count("deliveries"), 1)
-        self.assertEqual(self.store.count("wakeups"), 1)
+        self.assertEqual(self.store.count("kanban_wakeups"), 1)
         self.store.close()
-        self.store = Store(self.db)
-        self.receiver = Receiver("secret", self.store, self.github)
+        self.store = Store(self.path)
+        runner = FakeRunner()
+        consumer = Consumer(self.store, runner, self.github)
+        self.assertTrue(consumer.run_one())
+        self.assertFalse(consumer.run_one())
+        self.assertEqual(self.github.calls, [(REPOSITORY, 77)])
+        self.assertEqual(len(runner.calls), 1)
+        wakeup = self.store.list_wakeups()[0]
+        self.assertEqual(wakeup["status"], "created")
+        self.assertEqual(wakeup["task_id"], f"task-{delivery}")
+
+    def test_duplicate_delivery_creates_no_duplicate_card(self):
+        delivery = str(uuid.uuid4())
+        self.assertEqual(self.send(delivery=delivery), (202, "accepted"))
         self.assertEqual(self.send(delivery=delivery), (200, "duplicate"))
-        self.assertEqual(self.store.count("wakeups"), 1)
+        runner = FakeRunner()
+        consumer = Consumer(self.store, runner, self.github)
+        self.assertTrue(consumer.run_one())
+        self.assertFalse(consumer.run_one())
+        self.assertEqual(len(runner.calls), 1)
 
-    def test_approval_command_and_full_sha_are_persisted_for_phase_continuation(self):
-        command = "/approve-spec " + "a" * 40
-        data = payload(event="issue_comment", body=command)
-        self.assertEqual(self.send(data, event="issue_comment"), (202, "accepted"))
-        claimed = self.store.claim()
-        self.assertEqual(claimed["wakeups"][0]["command"], command)
-
-    def test_revision_request_is_persisted_verbatim_from_authorized_comment(self):
-        command = "/revise-spec clarify the failure scenario"
-        data = payload(event="issue_comment", body=command)
-        self.assertEqual(self.send(data, event="issue_comment"), (202, "accepted"))
-        claimed = self.store.claim()
-        self.assertEqual(claimed["wakeups"][0]["command"], command)
-
-    def test_fix_request_is_persisted_verbatim_from_authorized_comment(self):
-        command = "/fix repair the retry race"
-        data = payload(event="issue_comment", body=command)
-        self.assertEqual(self.send(data, event="issue_comment"), (202, "accepted"))
-        claimed = self.store.claim()
-        self.assertEqual(claimed["wakeups"][0]["command"], command)
-
-    def test_accept_requires_exact_full_implementation_sha_and_cancel_is_persisted(self):
-        commands = ["/accept " + "b" * 40, "/cancel", "/accept"]
-        for command in commands:
-            data = payload(event="issue_comment", body=command)
-            self.assertEqual(self.send(data, event="issue_comment"), (202, "accepted"))
-        claimed = self.store.claim()
-        self.assertEqual(
-            [wakeup["command"] for wakeup in claimed["wakeups"]],
-            [commands[0], commands[1], "finding"],
-        )
-
-    def test_raw_byte_hmac_and_canonical_delivery_uuid(self):
+    def test_valid_delivery_reports_persistence_failures_as_retryable(self):
         raw, headers = request("secret", payload())
-        headers["X-Hub-Signature-256"] = hmac.new(b"secret", raw + b" ", hashlib.sha256).hexdigest()
-        self.assertEqual(self.receiver.handle(headers, raw)[0], 401)
-        for bad in (
-            "abc", str(uuid.uuid4()).upper(),
-            "{12345678-1234-1234-1234-123456789abc}",
+        for error in (
+            sqlite3.OperationalError("database is locked"),
+            sqlite3.DatabaseError("disk I/O error"),
+            sqlite3.Error("unable to open database file"),
         ):
-            with self.subTest(bad=bad):
-                self.assertEqual(self.send(delivery=bad)[0], 400)
+            with self.subTest(error=error):
+                store = mock.Mock()
+                store.accept.side_effect = error
+                receiver = Receiver("secret", store, self.github)
+                self.assertEqual(receiver.handle(headers, raw),
+                                 (503, "persistence_unavailable"))
+                store.accept.assert_called_once()
 
-    def test_repository_event_open_label_and_labeled_action_policy(self):
-        cases = [
-            (payload(repository={"full_name": "other/repo"}), "issues", 403),
-            (payload(), "push", 202),
-            (payload(issue={"number": 77, "state": "closed", "labels": [{"name": "neo-dev"}]}), "issues", 202),
-            (payload(issue={"number": 77, "state": "open", "labels": [{"name": "NEO-DEV"}]}), "issues", 202),
-            (payload(action="labeled", label={"name": "needs-input"}), "issues", 202),
-            (payload(action="labeled", label={"name": "neo-dev"}), "issues", 202),
-        ]
-        for index, (data, event, status) in enumerate(cases):
-            with self.subTest(data=data, event=event):
-                before = (self.store.count("deliveries"), self.store.count("wakeups"))
-                self.assertEqual(self.send(data, event)[0], status)
-                after = (self.store.count("deliveries"), self.store.count("wakeups"))
-                if index == len(cases) - 1:
-                    self.assertEqual(after, (before[0] + 1, before[1] + 1))
-                else:
-                    self.assertEqual(after, before)
-
-    def test_rejects_pr_comments_and_actor_mismatch(self):
-        comment = payload(event="issue_comment")
-        comment["issue"]["pull_request"] = {"url": "https://example.invalid"}
-        self.assertEqual(self.send(comment, "issue_comment")[0], 202)
-        wrong = payload(event="issue_comment")
-        wrong["comment"]["user"] = {"id": 1, "login": "kingkill85"}
-        self.assertEqual(self.send(wrong, "issue_comment")[0], 403)
-
-    def test_receiver_only_durably_enqueues_without_live_network_work(self):
-        self.github.error = RuntimeError("network must not run in receiver")
-        self.assertEqual(self.send(), (202, "accepted"))
-        self.assertEqual(self.github.calls, [])
-        self.assertEqual(self.store.count("wakeups"), 1)
-
-    def test_exact_marker_ignored_only_on_own_line(self):
-        for body, ignored in (
-            ("<!-- neo-dev -->", True),
-            ("<!-- neo-dev -->\nhuman", True),
-            ("human\n<!-- neo-dev -->", True),
-            ("human\n<!-- neo-dev -->\nmore", True),
-            ("human\r\n<!-- neo-dev -->\r\nmore", True),
-            ("x<!-- neo-dev -->", False),
-            ("<!-- neo-dev -->x", False),
-            (" <!-- neo-dev -->", False),
-        ):
-            with self.subTest(body=body):
-                before = self.store.count("wakeups")
-                self.assertIn(self.send(payload(event="issue_comment", body=body), "issue_comment")[0], (202, 503))
-                self.assertEqual(self.store.count("wakeups"), before + (0 if ignored else 1))
-
-    def test_bounded_headers_body_comment_labels_and_schema(self):
-        limits = Limits(body_bytes=512, header_bytes=80, total_header_bytes=240,
-                        comment_chars=20, labels=2, label_chars=12)
-        receiver = Receiver("secret", self.store, self.github, limits=limits)
-        raw, headers = request("secret", payload())
-        self.assertEqual(receiver.handle(headers, b"{" + b"x" * 513)[0], 413)
-        huge_headers = dict(headers, **{"X-GitHub-Event": "x" * 81})
-        self.assertEqual(receiver.handle(huge_headers, raw)[0], 431)
-        many_headers = dict(headers)
-        many_headers.update({f"X-Filler-{index}": "x" * 50 for index in range(5)})
-        self.assertEqual(receiver.handle(many_headers, raw)[0], 431)
-        for data, event in (
-            (payload(event="issue_comment", body="x" * 21), "issue_comment"),
-            (payload(issue={"number": 77, "state": "open", "labels": [{"name": "a"}] * 3}), "issues"),
-            (payload(sender={"id": "11455872", "login": "kingkill85"}), "issues"),
-        ):
-            raw2, headers2 = request("secret", data, event)
-            expected = 403 if data.get("sender", {}).get("id") == "11455872" else 400
-            self.assertEqual(receiver.handle(headers2, raw2)[0], expected)
-        malformed, malformed_headers = request("secret", payload(repository=[]))
-        self.assertEqual(receiver.handle(malformed_headers, malformed), (400, "invalid_payload"))
-
-    def test_rate_and_concurrency_limits(self):
-        limited = Receiver("secret", self.store, self.github, rate_limit=1, concurrency_limit=0)
-        raw, headers = request("secret", payload())
-        self.assertEqual(limited.handle(headers, raw)[0], 503)
-        limited = Receiver("secret", self.store, self.github, rate_limit=1)
-        invalid_headers = dict(headers, **{"X-Hub-Signature-256": "sha256=" + "0" * 64})
-        self.assertEqual(limited.handle(invalid_headers, raw)[0], 401)
-        self.assertEqual(limited.handle(headers, raw)[0], 202)
-        raw2, headers2 = request("secret", payload())
-        self.assertEqual(limited.handle(headers2, raw2)[0], 429)
-
-    def test_consumer_claim_lease_retry_task_id_and_issue_coalescing(self):
-        first, first_headers = request("secret", payload())
-        second, second_headers = request("secret", payload(action="edited"))
-        self.assertEqual(self.receiver.handle(first_headers, first)[0], 202)
-        self.assertEqual(self.receiver.handle(second_headers, second)[0], 202)
-        self.assertEqual(self.store.count("active_work"), 1)
-        self.assertEqual(self.store.count("wakeups"), 2)
-
-        runner = FakeRunner(failures=1)
-        consumer = Consumer(self.store, runner, self.github, lease_seconds=1)
-        self.assertFalse(consumer.run_one(now=100))
-        work = self.store.get_active(REPOSITORY, 77)
-        self.assertEqual(work["status"], "queued")
-        self.assertEqual(work["attempts"], 1)
-        self.assertTrue(consumer.run_one(now=102))
-        work = self.store.get_active(REPOSITORY, 77)
-        self.assertEqual(work["status"], "waiting")
-        self.assertEqual(work["task_id"], f"task-{first_headers['X-GitHub-Delivery']}")
-        self.assertEqual([call[1] for call in runner.calls], [first_headers["X-GitHub-Delivery"]] * 2)
-
-    def test_expired_processing_lease_is_recovered_transactionally(self):
-        self.send()
-        claimed = self.store.claim(now=10, lease_seconds=5)
-        self.assertEqual(claimed["status"], "processing")
-        self.assertIsNone(self.store.claim(now=14, lease_seconds=5))
-        recovered = self.store.claim(now=16, lease_seconds=5)
-        self.assertEqual(recovered["id"], claimed["id"])
-        self.assertEqual(recovered["attempts"], 2)
-
-    def test_late_wakeup_after_claim_continues_same_persistent_work(self):
-        first_delivery = str(uuid.uuid4())
-        late_delivery = str(uuid.uuid4())
-        self.send(delivery=first_delivery)
-        claimed = self.store.claim(now=10, lease_seconds=30, max_attempts=5)
-
-        self.assertEqual(self.send(delivery=late_delivery), (202, "accepted"))
-        self.store.complete(claimed["id"], claimed["claim_token"], "task-first", now=11)
-
-        successor = self.store.claim(now=12, lease_seconds=30, max_attempts=5)
-        self.assertIsNotNone(successor)
-        self.assertEqual(successor["id"], claimed["id"])
-        self.assertEqual(successor["idempotency_key"], first_delivery)
-        self.assertEqual([item["delivery_id"] for item in successor["wakeups"]],
-                         [first_delivery, late_delivery])
-        live_count = self.store.db.execute(
-            "SELECT count(*) FROM active_work WHERE repository=? AND issue_number=? "
-            "AND status IN ('queued','processing')", (REPOSITORY, 77),
-        ).fetchone()[0]
-        self.assertEqual(live_count, 1)
-
-    def test_late_wakeup_after_terminal_failure_becomes_successor_work(self):
-        first_delivery = str(uuid.uuid4())
-        late_delivery = str(uuid.uuid4())
-        self.send(delivery=first_delivery)
-        claimed = self.store.claim(now=10, lease_seconds=30, max_attempts=1)
-        self.assertEqual(self.send(delivery=late_delivery), (202, "accepted"))
-
-        self.store.fail(claimed["id"], claimed["claim_token"], "terminal", 1, now=11)
-        successor = self.store.claim(now=12, lease_seconds=30, max_attempts=1)
-        self.assertIsNotNone(successor)
-        self.assertNotEqual(successor["id"], claimed["id"])
-        self.assertEqual(successor["idempotency_key"], late_delivery)
-        self.assertEqual([item["delivery_id"] for item in successor["wakeups"]], [late_delivery])
-
-    def test_late_wakeup_after_exhausted_lease_becomes_successor_work(self):
-        first_delivery = str(uuid.uuid4())
-        late_delivery = str(uuid.uuid4())
-        self.send(delivery=first_delivery)
-        claimed = self.store.claim(now=10, lease_seconds=1, max_attempts=1)
-        self.assertEqual(self.send(delivery=late_delivery), (202, "accepted"))
-
-        successor = self.store.claim(now=12, lease_seconds=30, max_attempts=1)
-        self.assertIsNotNone(successor)
-        self.assertNotEqual(successor["id"], claimed["id"])
-        self.assertEqual(successor["idempotency_key"], late_delivery)
-        self.assertEqual([item["delivery_id"] for item in successor["wakeups"]], [late_delivery])
-        dead = self.store.db.execute(
-            "SELECT status FROM active_work WHERE id=?", (claimed["id"],)
-        ).fetchone()["status"]
-        self.assertEqual(dead, "dead")
-
-    def test_expired_leases_dead_letter_at_attempt_limit_without_fail(self):
-        self.send()
-        first = self.store.claim(now=10, lease_seconds=1, max_attempts=2)
-        self.assertEqual(first["attempts"], 1)
-        second = self.store.claim(now=12, lease_seconds=1, max_attempts=2)
-        self.assertEqual(second["attempts"], 2)
-
-        self.assertIsNone(self.store.claim(now=14, lease_seconds=1, max_attempts=2))
-        work = self.store.get_active(REPOSITORY, 77)
-        self.assertEqual(work["status"], "dead")
-        self.assertEqual(work["attempts"], 2)
-
-    def test_concurrent_deliveries_create_one_active_issue_task(self):
-        requests = [request("secret", payload()) for _ in range(8)]
+    def test_concurrent_replay_is_deduplicated_across_store_connections(self):
+        delivery = str(uuid.uuid4())
+        raw, headers = request("secret", payload(), delivery=delivery)
         results = []
-        threads = [threading.Thread(target=lambda item=item: results.append(self.receiver.handle(item[1], item[0]))) for item in requests]
+
+        def send_once():
+            store = Store(self.path)
+            try:
+                results.append(Receiver("secret", store, FakeGitHub()).handle(headers, raw))
+            finally:
+                store.close()
+
+        threads = [threading.Thread(target=send_once) for _ in range(2)]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
-        self.assertEqual(results.count((202, "accepted")), 8)
-        self.assertEqual(self.store.count("active_work"), 1)
-        self.assertEqual(self.store.count("wakeups"), 8)
+        self.assertCountEqual(results, [(202, "accepted"), (200, "duplicate")])
+        self.assertEqual(self.store.count("kanban_wakeups"), 1)
 
-    def test_waiting_issue_does_not_consume_project_worker_capacity(self):
-        first = str(uuid.uuid4())
-        second = str(uuid.uuid4())
-        for issue_number, delivery in ((13, first), (42, second)):
-            self.store.accept({"delivery_id": delivery, "event": "issues", "action": "labeled",
-                               "repository": REPOSITORY, "issue_number": issue_number,
-                               "comment_id": None, "command": None})
-        claimed = self.store.claim(now=10)
-        self.assertEqual(claimed["issue_number"], 13)
-        self.store.complete(claimed["id"], claimed["claim_token"], "task-13", now=11)
-        next_claim = self.store.claim(now=12)
-        self.assertEqual(next_claim["issue_number"], 42)
+    def test_automated_self_marked_and_ineligible_events_create_none(self):
+        cases = [
+            (payload(event="issue_comment", body="<!-- neo-dev -->"), "issue_comment"),
+            (payload(event="issue_comment", sender={"id": 1, "login": "bot"}), "issue_comment"),
+            (payload(issue={"number": 77, "state": "open", "labels": []}), "issues"),
+            (payload(issue={"number": 77, "state": "closed", "labels": [{"name": "neo-dev"}]}), "issues"),
+            (payload(action="unlabeled"), "issues"),
+            (payload(event="issue_comment", issue={"number": 77, "state": "open",
+                     "labels": [{"name": "neo-dev"}], "pull_request": {}}), "issue_comment"),
+        ]
+        for data, event in cases:
+            with self.subTest(event=event, action=data["action"]):
+                self.send(data, event)
+        self.assertEqual(self.store.count("kanban_wakeups"), 0)
 
-    def test_valid_processing_lease_blocks_other_issue_and_expired_lease_recovers(self):
-        for issue_number in (13, 42):
-            self.store.accept({"delivery_id": str(uuid.uuid4()), "event": "issues",
-                               "action": "labeled", "repository": REPOSITORY,
-                               "issue_number": issue_number, "comment_id": None,
-                               "command": None})
+    def test_exact_marker_lookalikes_remain_human_wakeups(self):
+        lookalikes = (
+            " <!-- neo-dev -->", "<!-- neo-dev --> ", "<!-- NEO-DEV -->",
+            "prefix<!-- neo-dev -->", "<!-- neo-dev -->suffix", "<!-- neo-dev-->",
+        )
+        for body in lookalikes:
+            with self.subTest(body=body):
+                self.assertEqual(self.send(payload(event="issue_comment", body=body),
+                                           "issue_comment"), (202, "accepted"))
+        self.assertEqual(self.store.count("kanban_wakeups"), len(lookalikes))
 
-        first_claim = self.store.claim(now=10, lease_seconds=5)
-        self.assertEqual(first_claim["issue_number"], 13)
-        self.assertIsNone(self.store.claim(now=14, lease_seconds=5))
-
-        recovered = self.store.claim(now=16, lease_seconds=5)
-        self.assertEqual(recovered["id"], first_claim["id"])
-        self.assertEqual(recovered["attempts"], 2)
-
-    def test_same_issue_wakeup_reuses_waiting_work_and_lifecycle_identity(self):
-        lifecycle = str(uuid.uuid4())
-        self.store.accept({"delivery_id": lifecycle, "event": "issues", "action": "labeled",
-                           "repository": REPOSITORY, "issue_number": 13,
-                           "comment_id": None, "command": None})
-        claimed = self.store.claim(now=10)
-        self.store.complete(claimed["id"], claimed["claim_token"], "task-13", now=11)
-
-        wakeup = str(uuid.uuid4())
-        self.store.accept({"delivery_id": wakeup, "event": "issue_comment", "action": "created",
-                           "repository": REPOSITORY, "issue_number": 13,
-                           "comment_id": 123, "command": "/fix keep coalescing"})
-
-        resumed = self.store.claim(now=12)
-        self.assertEqual(resumed["id"], claimed["id"])
-        self.assertEqual(resumed["idempotency_key"], lifecycle)
-        self.assertEqual([item["delivery_id"] for item in resumed["wakeups"]],
-                         [lifecycle, wakeup])
-        self.assertEqual(self.store.count("active_work"), 1)
-
-    def test_manual_closure_cannot_finalize_without_controller_merge_verification(self):
-        lifecycle = str(uuid.uuid4())
-        self.store.accept({"delivery_id": lifecycle, "event": "issues", "action": "labeled",
-                           "repository": REPOSITORY, "issue_number": 13,
-                           "comment_id": None, "command": None})
-        work = self.store.claim(now=1)
-        self.store.complete(work["id"], work["claim_token"], "phase-task", now=2)
-        closed = payload(action="closed", issue={
-            "number": 13, "state": "closed", "labels": [{"name": "neo-dev"}],
-        })
-        receiver = Receiver("secret", self.store, self.github)
-        raw, headers = request("secret", closed)
-        self.assertEqual(receiver.handle(headers, raw), (202, "finalization_pending"))
-        consumer = Consumer(self.store, FakeRunner(), self.github, max_attempts=2,
-                            finalizer=FakeFinalizer(False))
-        self.assertFalse(consumer.run_one())
-        self.assertFalse(consumer.run_one())
-        self.assertEqual(self.store.get_active(REPOSITORY, 13)["status"], "waiting")
-        request_state = self.store.db.execute(
-            "SELECT status,last_error FROM finalization_requests"
-        ).fetchone()
-        self.assertEqual(request_state["status"], "blocked")
-        self.assertIn("rejected closure", request_state["last_error"])
-
-    def test_closure_before_controller_state_backs_off_then_finalizes(self):
-        lifecycle = str(uuid.uuid4())
-        self.store.accept({"delivery_id": lifecycle, "event": "issues", "action": "labeled",
-                           "repository": REPOSITORY, "issue_number": 13,
-                           "comment_id": None, "command": None})
-        work = self.store.claim(now=1)
-        self.store.complete(work["id"], work["claim_token"], "phase-task", now=2)
-        self.store.request_finalization(REPOSITORY, 13, str(uuid.uuid4()))
-        finalizer = FakeFinalizer([None, True])
-        consumer = Consumer(self.store, FakeRunner(), self.github, max_attempts=2,
-                            finalizer=finalizer)
-        self.assertFalse(consumer.run_one())
-        pending = self.store.db.execute("SELECT * FROM finalization_requests").fetchone()
-        self.assertEqual(pending["status"], "pending")
-        self.assertEqual(pending["attempts"], 0)
-        self.assertIsNone(self.store.claim_finalization(now=pending["next_attempt_at"] - 1))
-        claimed = self.store.claim_finalization(now=pending["next_attempt_at"])
-        self.store.finish_finalization(claimed["id"], finalizer.verify(
-            claimed["repository"], claimed["issue_number"], claimed["idempotency_key"]
-        ), None, now=pending["next_attempt_at"])
-        self.assertEqual(self.store.get_active(REPOSITORY, 13)["status"], "completed")
-
-    def test_successful_phase_handoffs_reset_retry_budget_beyond_six_wakeups(self):
-        lifecycle = str(uuid.uuid4())
-        for phase in range(8):
-            delivery = lifecycle if phase == 0 else str(uuid.uuid4())
-            self.store.accept({"delivery_id": delivery, "event": "issue_comment",
-                               "action": "created", "repository": REPOSITORY,
-                               "issue_number": 13, "comment_id": phase, "command": "finding"})
-            work = self.store.claim(now=100 + phase, max_attempts=5)
-            self.assertIsNotNone(work)
-            self.store.complete(work["id"], work["claim_token"], "same-controller", now=100 + phase)
-            persisted = self.store.get_active(REPOSITORY, 13)
-            self.assertEqual(persisted["attempts"], 0)
-            self.assertEqual(persisted["idempotency_key"], lifecycle)
-
-    def test_simultaneous_process_initialization_of_fresh_database(self):
-        with tempfile.TemporaryDirectory() as directory:
-            database = os.path.join(directory, "fresh.sqlite3")
-            with ProcessPoolExecutor(max_workers=12) as pool:
-                results = list(pool.map(initialize_store, [database] * 24))
-        self.assertEqual(results, ["ok"] * 24)
-
-    def test_separate_connections_race_to_one_active_issue_task(self):
-        requests = [request("secret", payload()) for _ in range(12)]
-
-        def send(item):
-            store = Store(self.db)
-            try:
-                return Receiver("secret", store, FakeGitHub()).handle(item[1], item[0])
-            finally:
-                store.close()
-
-        with ThreadPoolExecutor(max_workers=12) as pool:
-            results = list(pool.map(send, requests))
-        self.assertEqual(results.count((202, "accepted")), 12)
-        self.assertEqual(self.store.count("active_work"), 1)
-        self.assertEqual(self.store.count("wakeups"), 12)
-
-    def test_claim_owner_compare_and_set_rejects_stale_worker(self):
-        self.send()
-        first = self.store.claim(now=10, lease_seconds=1)
-        second_store = Store(self.db)
-        try:
-            second = second_store.claim(now=12, lease_seconds=10)
-            self.assertNotEqual(first["claim_token"], second["claim_token"])
-            with self.assertRaises(RuntimeError):
-                self.store.complete(first["id"], first["claim_token"], "stale", now=13)
-            second_store.complete(second["id"], second["claim_token"], "current", now=13)
-        finally:
-            second_store.close()
-        self.assertEqual(self.store.get_active(REPOSITORY, 77)["task_id"], "current")
-
-    def test_consumer_revalidates_immediately_before_create(self):
-        self.send()
-        self.github.open = False
+    def test_subsequent_human_delivery_creates_another_same_inbox_wakeup(self):
+        first, second = str(uuid.uuid4()), str(uuid.uuid4())
+        self.send(delivery=first)
+        self.send(payload(event="issue_comment"), "issue_comment", second)
         runner = FakeRunner()
+        consumer = Consumer(self.store, runner, self.github)
+        self.assertTrue(consumer.run_one())
+        self.assertTrue(consumer.run_one())
+        self.assertEqual([call["delivery_id"] for call in runner.calls], [first, second])
+        self.assertEqual([call["issue_number"] for call in runner.calls], [77, 77])
+
+    def test_public_revalidation_blocks_card_when_live_issue_is_ineligible(self):
+        self.send()
+        github = FakeGitHub(labels=())
+        runner = FakeRunner()
+        self.assertFalse(Consumer(self.store, runner, github, max_attempts=1).run_one())
+        self.assertEqual(github.calls, [(REPOSITORY, 77)])
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(self.store.list_wakeups()[0]["status"], "dead")
+
+    def test_retry_reuses_delivery_identity_and_task_runner_deduplicates(self):
+        delivery = str(uuid.uuid4())
+        self.send(delivery=delivery)
+        runner = FlakyRunner()
         consumer = Consumer(self.store, runner, self.github, max_attempts=2)
         self.assertFalse(consumer.run_one(now=100))
-        self.assertEqual(runner.calls, [])
-        self.assertEqual(self.github.calls[-1], (REPOSITORY, 77))
+        self.assertTrue(consumer.run_one(now=101))
+        self.assertEqual([call["delivery_id"] for call in runner.calls], [delivery, delivery])
+        self.assertEqual(self.store.list_wakeups()[0]["status"], "created")
 
-    def test_pending_attestation_does_not_crash_or_consume_decision(self):
-        broker = mock.Mock()
-        path = mock.sentinel.path
-        record = {
-            "decision": "proceed", "issue_number": 13,
-            "workflow_id": TASK_KEY,
-        }
-        broker.claim_decision.return_value = (path, record)
-        dispatcher = mock.Mock()
-        dispatcher.attest.side_effect = RuntimeError("governed PR not available yet")
-        consumer = Consumer(
-            self.store, FakeRunner(), self.github,
-            dispatcher=dispatcher, capability_broker=broker,
-        )
+    def test_security_and_payload_limits_remain_fail_closed(self):
+        data = payload()
+        raw, headers = request("wrong", data)
+        self.assertEqual(self.receiver.handle(headers, raw), (401, "invalid_signature"))
+        self.assertEqual(self.send(data, delivery="not-a-uuid"), (400, "invalid_delivery"))
+        wrong_repo = payload(repository={"full_name": "someone/else"})
+        self.assertEqual(self.send(wrong_repo), (403, "wrong_repository"))
+        large = payload(event="issue_comment", body="x" * (Limits().comment_chars + 1))
+        self.assertEqual(self.send(large, "issue_comment"), (400, "invalid_payload"))
+        self.assertEqual(self.store.count("kanban_wakeups"), 0)
 
-        self.assertFalse(consumer.run_one())
-        dispatcher.attest.assert_called_once_with(REPOSITORY, 13, TASK_KEY, None)
-        broker.finish_decision.assert_not_called()
+    def test_rate_and_concurrency_limits_fail_closed(self):
+        limited = Receiver("secret", self.store, self.github, rate_limit=1)
+        first_raw, first_headers = request("secret", payload())
+        second_raw, second_headers = request("secret", payload())
+        self.assertEqual(limited.handle(first_headers, first_raw), (202, "accepted"))
+        self.assertEqual(limited.handle(second_headers, second_raw), (429, "rate_limited"))
+        busy = Receiver("secret", self.store, self.github, concurrency_limit=1)
+        self.assertTrue(busy.semaphore.acquire(blocking=False))
+        try:
+            self.assertEqual(busy.handle(second_headers, second_raw), (503, "busy"))
+        finally:
+            busy.semaphore.release()
 
-    def _capability_starvation_fixture(self, root):
-        issue = {"number": 84, "state": "open", "labels": [{"name": "neo-dev"}]}
-        workflow = "ecfc6f5a-931b-11f1-9ca7-8a64afe8ca67"
-        old_execution = "65aecd68-f485-55b5-9603-8a924ae52d54"
-        finding_delivery = "cd34e870-9341-11f1-8fd9-eac5b88ceff8"
-        self.assertEqual(self.send(payload(issue=issue), delivery=workflow), (202, "accepted"))
-        claimed = self.store.claim(now=10)
-        self.store.complete(claimed["id"], claimed["claim_token"],
-                            "existing-controller-execution", now=11)
-        active = self.store.get_active(REPOSITORY, 84)
-        historical_delivery = "11111111-1111-4111-8111-111111111111"
-        self.store.db.execute(
-            "INSERT INTO deliveries(delivery_id,received_at) VALUES (?,?)",
-            (historical_delivery, 12),
-        )
-        self.store.db.execute(
-            "INSERT INTO wakeups(id,delivery_id,work_id,event,action,comment_id,command,created_at) "
-            "VALUES (21,?,?, 'issue_comment','created',?,?,?)",
-            (historical_delivery, active["id"], 5226880431, "finding", 12),
-        )
-        self.assertEqual(self.send(
-            payload(event="issue_comment", body="independent review finding", issue=issue,
-                    comment={"id": 5226880432, "body": "independent review finding",
-                             "user": ACTOR.copy()}),
-            event="issue_comment", delivery=finding_delivery,
-        ), (202, "accepted"))
-        finding = self.store.db.execute(
-            "SELECT * FROM wakeups WHERE delivery_id=?", (finding_delivery,),
-        ).fetchone()
-        self.assertEqual((finding["id"], finding["comment_id"], finding["command"]),
-                         (22, 5226880432, "finding"))
-
-        broker = CapabilityBroker(root / "capabilities")
-        token = broker.issue(workflow, old_execution, 84, "implementation", {
-            "delivery_id": workflow, "command": "/approve-spec " + "a" * 40,
-        })
-        broker.submit(old_execution, token, "proceed", "old implementation decision")
-        dispatcher = mock.Mock()
-        dispatcher.attest.side_effect = RuntimeError("trusted implementation checks pending")
-        dispatcher.dispatch.return_value = {"controller": {"execution": {
-            "lifecycle_state": "independent_review",
-            "codex_session_id": "019fe11f-7edd-7420-ba7a-9753456b43f1",
-        }}}
-        bodies = []
-
-        def task_process(argv, **kwargs):
-            if "--help" in argv:
-                return mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
-            bodies.append(argv[argv.index("--body") + 1])
-            return mock.Mock(stdout=json.dumps({
-                "task_id": "capability-bearing-continuation", "durable": True,
-            }))
-
-        runner = TaskRunner(script_path="/task.py", capability_broker=broker)
-        consumer = Consumer(
-            self.store, runner, self.github, dispatcher=dispatcher,
-            capability_broker=broker,
-        )
-        return workflow, finding_delivery, broker, dispatcher, consumer, bodies, task_process
-
-    def test_retryable_old_decision_cannot_starve_newer_finding_across_repeated_loops(self):
-        root = pathlib.Path(self.temp.name)
-        (workflow, finding_delivery, broker, dispatcher, consumer, bodies,
-         task_process) = self._capability_starvation_fixture(root)
-
-        with mock.patch("neo_dev_webhook.automation.subprocess.run", side_effect=task_process):
-            self.assertEqual([consumer.run_one() for _ in range(4)],
-                             [True, False, False, False])
-
-        self.assertEqual(len(bodies), 1)
-        self.assertIn("Current phase: review-correction", bodies[0])
-        self.assertIn("019fe11f-7edd-7420-ba7a-9753456b43f1", bodies[0])
-        dispatcher.dispatch.assert_called_once_with(
-            "resume", REPOSITORY, 84, workflow, mock.ANY,
-        )
-        wakeup = dispatcher.dispatch.call_args.args[4]
-        self.assertEqual((wakeup["id"], wakeup["delivery_id"], wakeup["comment_id"],
-                          wakeup["command"]),
-                         (22, finding_delivery, 5226880432, "finding"))
-        records = [json.loads(path.read_text())
-                   for path in sorted((root / "capabilities").glob("*.json"))]
-        old = next(record for record in records if record["execution_id"]
-                   == "65aecd68-f485-55b5-9603-8a924ae52d54")
-        continuation = next(record for record in records if record is not old)
-        self.assertEqual((old["decision"], old["used"], old["processed"]),
-                         ("proceed", True, False))
-        self.assertEqual((continuation["workflow_id"], continuation["phase"],
-                          continuation["used"]),
-                         (workflow, "review-correction", False))
-        expected_execution = str(uuid.uuid5(uuid.UUID(workflow), finding_delivery))
-        self.assertEqual(continuation["execution_id"], expected_execution)
-        self.assertGreater(len(continuation["token"]), 32)
-        self.assertEqual(len(records), 2)
-
-    def test_concurrent_retryable_decision_and_finding_create_one_continuation(self):
-        root = pathlib.Path(self.temp.name)
-        (workflow, _finding_delivery, broker, dispatcher, consumer, bodies,
-         task_process) = self._capability_starvation_fixture(root)
-        stores = [Store(self.db) for _ in range(16)]
-        consumers = [Consumer(
-            store, consumer.runner, self.github, dispatcher=dispatcher,
-            capability_broker=broker,
-        ) for store in stores]
-
-        with mock.patch("neo_dev_webhook.automation.subprocess.run", side_effect=task_process), \
-             ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(lambda item: item.run_one(), consumers))
-        for store in stores:
-            store.close()
-
-        self.assertEqual(results.count(True), 1)
-        self.assertEqual(len(bodies), 1)
-        dispatcher.dispatch.assert_called_once()
-        self.assertEqual(dispatcher.dispatch.call_args.args[:4],
-                         ("resume", REPOSITORY, 84, workflow))
-        records = [json.loads(path.read_text())
-                   for path in sorted((root / "capabilities").glob("*.json"))]
-        self.assertEqual(len(records), 2)
-        self.assertEqual(sum(record.get("used") is False for record in records), 1)
-        self.assertEqual(sum(record.get("used") is True
-                             and record.get("processed") is False for record in records), 1)
-
-    def test_merge_worker_waits_for_controller_archive_attestation_then_auto_resumes(self):
-        merge_wakeup = {
-            "comment_id": 9001,
-            "command": "/merge",
-            "created_at": "2026-08-07T00:00:02Z",
-            "delivery_id": WAKEUP_KEY,
-        }
-        broker = mock.Mock()
-        path = mock.sentinel.path
-        record = {
-            "decision": "proceed",
-            "issue_number": 13,
-            "workflow_id": TASK_KEY,
-            "execution_id": "same-worker-execution",
-            "current_wakeup": merge_wakeup,
-        }
-        broker.claim_decision.return_value = (path, record)
-        dispatcher = mock.Mock()
-        dispatcher.attest.side_effect = [
-            RuntimeError("archive SHA and successful checks are not controller-persisted"),
-            {
-                "controller": {
-                    "execution": {
-                        "lifecycle_state": "archive_ci_verified",
-                        "archive_sha": "d" * 40,
-                    },
-                },
-            },
-        ]
-        dispatcher.dispatch.return_value = {
-            "controller": {
-                "execution": {
-                    "lifecycle_state": "merge_authorized",
-                    "archive_sha": "d" * 40,
-                },
-            },
-            "github": {"current_wakeup": merge_wakeup},
-        }
-        runner = FakeRunner()
-        consumer = Consumer(
-            self.store, runner, self.github,
-            dispatcher=dispatcher, capability_broker=broker,
-        )
-
-        self.assertFalse(consumer.run_one())
-        self.assertEqual(runner.calls, [])
-        broker.finish_decision.assert_not_called()
-
-        self.assertTrue(consumer.run_one())
-        dispatcher.attest.assert_called_with(
-            REPOSITORY, 13, TASK_KEY, merge_wakeup,
-        )
-        dispatcher.dispatch.assert_called_once_with(
-            "resume", REPOSITORY, 13, TASK_KEY, merge_wakeup,
-        )
-        resumed_work, resumed_identity = runner.calls[0]
-        self.assertEqual(resumed_identity, TASK_KEY)
-        self.assertEqual(resumed_work["task_id"], "same-worker-execution")
-        self.assertEqual(resumed_work["wakeups"], [merge_wakeup])
-        broker.finish_decision.assert_called_once_with(path, record)
-
-    def test_implementation_attestation_autonomously_starts_independent_review(self):
-        broker = mock.Mock()
-        path = mock.sentinel.path
-        record = {"decision": "proceed", "issue_number": 13,
-                  "workflow_id": TASK_KEY, "execution_id": "implementation-worker"}
-        broker.claim_decision.return_value = (path, record)
-        evidence = {"sha": "a" * 40, "approved_spec_sha": "9" * 40}
-        dispatcher = mock.Mock()
-        dispatcher.attest.return_value = {"controller": {
-            "execution": {"lifecycle_state": "independent_review"},
-            "review_evidence": evidence,
-        }}
-        dispatcher.review.return_value = {"controller": {
-            "execution": {"lifecycle_state": "independent_review"},
-            "status": "reviewer_starting",
-        }}
-        consumer = Consumer(self.store, FakeRunner(), self.github,
-                            dispatcher=dispatcher, capability_broker=broker)
-
-        self.assertTrue(consumer.run_one())
-
-        dispatcher.review.assert_called_once_with(REPOSITORY, 13, TASK_KEY, evidence)
-        broker.finish_decision.assert_called_once_with(path, record)
-
-    def test_waiting_terminal_handoff_attests_and_starts_one_reviewer_without_decision(self):
+    def test_expired_lease_recovers_and_stale_owner_is_rejected(self):
         self.send()
-        claimed = self.store.claim(now=10)
-        self.store.complete(claimed["id"], claimed["claim_token"], "implementation-worker", now=11)
-        workflow_id = self.store.get_active(REPOSITORY, 77)["idempotency_key"]
-        evidence = {"sha": "a" * 40, "approved_spec_sha": "9" * 40}
-        dispatcher = mock.Mock()
-        dispatcher.status.side_effect = [
-            {"controller": {"execution": {
-                "lifecycle_state": "spec_approved", "phase": "exited_resumable",
-                "implementation_handoff": {"implementation_sha": "a" * 40},
-            }}},
-            {"controller": {"execution": {
-                "lifecycle_state": "independent_review", "phase": "exited_resumable",
-                "review_phase": "reviewer_starting",
-            }}},
-        ]
-        dispatcher.attest.return_value = {"controller": {
-            "execution": {"lifecycle_state": "independent_review",
-                          "review_phase": "awaiting_review"},
-            "review_evidence": evidence,
-        }}
-        consumer = Consumer(self.store, FakeRunner(), self.github, dispatcher=dispatcher)
+        first = self.store.claim(now=100, lease_seconds=5)
+        second = self.store.claim(now=106, lease_seconds=5)
+        self.assertEqual(first["id"], second["id"])
+        self.assertNotEqual(first["claim_token"], second["claim_token"])
+        with self.assertRaisesRegex(RuntimeError, "no longer owned"):
+            self.store.complete(first["id"], first["claim_token"], "stale", now=107)
+        self.store.complete(second["id"], second["claim_token"], "current", now=107)
 
-        self.assertTrue(consumer.run_one())
-        dispatcher.attest.assert_called_once_with(REPOSITORY, 77, workflow_id)
-        dispatcher.review.assert_called_once_with(REPOSITORY, 77, workflow_id, evidence)
-
-        self.assertFalse(consumer.run_one())
-        dispatcher.review.assert_called_once()
-
-    def test_waiting_old_terminal_without_handoff_is_migrated_and_reviewed(self):
-        self.send(payload(issue={"number": 84, "state": "open",
-                                 "labels": [{"name": "neo-dev"}]}))
-        claimed = self.store.claim(now=10)
-        self.store.complete(claimed["id"], claimed["claim_token"],
-                            "implementation-worker", now=11)
-        workflow_id = self.store.get_active(REPOSITORY, 84)["idempotency_key"]
-        evidence = {"sha": "e22d7580520c8e1ba63c811a3514169e02ceee0b"}
-        dispatcher = mock.Mock()
-        dispatcher.status.return_value = {"controller": {"execution": {
-            "lifecycle_state": "spec_approved", "phase": "exited_resumable",
-            "terminal": {"exit_code": 0, "semantic_outcome": "correctable",
-                         "resumable": True},
-        }}}
-        dispatcher.attest.return_value = {"controller": {
-            "execution": {"lifecycle_state": "independent_review",
-                          "review_phase": "awaiting_review"},
-            "review_evidence": evidence,
-        }}
-        consumer = Consumer(self.store, FakeRunner(), self.github, dispatcher=dispatcher)
-
-        self.assertTrue(consumer.run_one())
-        dispatcher.attest.assert_called_once_with(REPOSITORY, 84, workflow_id)
-        dispatcher.review.assert_called_once_with(REPOSITORY, 84, workflow_id, evidence)
-
-    def test_later_actionable_waiting_handoff_is_not_starved_by_oldest_issue(self):
-        for issue in (1, 2):
-            self.send(payload(issue={"number": issue, "state": "open",
-                                     "labels": [{"name": "neo-dev"}]}))
-            claimed = self.store.claim(now=issue * 10)
-            self.store.complete(claimed["id"], claimed["claim_token"],
-                                f"implementation-{issue}", now=issue * 10 + 1)
-        issue2 = self.store.get_active(REPOSITORY, 2)
-        evidence = {"sha": "a" * 40, "approved_spec_sha": "9" * 40}
-        dispatcher = mock.Mock()
-
-        def status(repository, issue_number, workflow_id):
-            if issue_number == 1:
-                return {"controller": {"execution": {"lifecycle_state": "spec_approved",
-                                                       "phase": "active"}}}
-            return {"controller": {"execution": {
-                "lifecycle_state": "spec_approved", "phase": "exited_resumable",
-                "implementation_handoff": {"implementation_sha": "a" * 40},
-            }}}
-
-        dispatcher.status.side_effect = status
-        dispatcher.attest.return_value = {"controller": {
-            "execution": {"lifecycle_state": "independent_review",
-                          "review_phase": "awaiting_review"},
-            "review_evidence": evidence,
-        }}
-        consumer = Consumer(self.store, FakeRunner(), self.github, dispatcher=dispatcher)
-
-        self.assertTrue(consumer.run_one())
-        dispatcher.attest.assert_called_once_with(REPOSITORY, 2, issue2["idempotency_key"])
-        dispatcher.review.assert_called_once_with(
-            REPOSITORY, 2, issue2["idempotency_key"], evidence,
-        )
-        self.assertEqual(self.store.get_active(REPOSITORY, 1)["status"], "waiting")
-
-    def test_waiting_scan_rotates_after_bounded_non_actionable_batch(self):
-        for issue in range(1, 18):
-            self.send(payload(issue={"number": issue, "state": "open",
-                                     "labels": [{"name": "neo-dev"}]}))
-            claimed = self.store.claim(now=issue * 10)
-            self.store.complete(claimed["id"], claimed["claim_token"],
-                                f"implementation-{issue}", now=issue * 10 + 1)
-        issue17 = self.store.get_active(REPOSITORY, 17)
-        evidence = {"sha": "a" * 40, "approved_spec_sha": "9" * 40}
-        reviewed = False
-        dispatcher = mock.Mock()
-
-        def status(repository, issue_number, workflow_id):
-            if issue_number != 17:
-                return {"controller": {"execution": {"lifecycle_state": "spec_approved",
-                                                       "phase": "active"}}}
-            if reviewed:
-                return {"controller": {"execution": {
-                    "lifecycle_state": "independent_review",
-                    "review_phase": "reviewer_starting",
-                }}}
-            return {"controller": {"execution": {
-                "lifecycle_state": "spec_approved", "phase": "exited_resumable",
-                "implementation_handoff": {"implementation_sha": "a" * 40},
-            }}}
-
-        def review(*args):
-            nonlocal reviewed
-            reviewed = True
-
-        dispatcher.status.side_effect = status
-        dispatcher.attest.return_value = {"controller": {
-            "execution": {"lifecycle_state": "independent_review",
-                          "review_phase": "awaiting_review"},
-            "review_evidence": evidence,
-        }}
-        dispatcher.review.side_effect = review
-        consumer = Consumer(self.store, FakeRunner(), self.github, dispatcher=dispatcher)
-
-        self.assertFalse(consumer.run_one())
-        self.assertTrue(consumer.run_one())
-        self.assertFalse(consumer.run_one())
-        dispatcher.review.assert_called_once_with(
-            REPOSITORY, 17, issue17["idempotency_key"], evidence,
-        )
-
-    def test_waiting_status_exceptions_are_bounded_and_eventual_actionable_runs_once(self):
-        for issue in range(1, 19):
-            self.send(payload(issue={"number": issue, "state": "open",
-                                     "labels": [{"name": "neo-dev"}]}))
-            claimed = self.store.claim(now=issue * 10)
-            self.store.complete(claimed["id"], claimed["claim_token"],
-                                f"implementation-{issue}", now=issue * 10 + 1)
-        target = self.store.get_active(REPOSITORY, 18)
-        dispatcher = mock.Mock()
-        def status(repository, issue_number, workflow_id):
-            if issue_number < 18:
-                raise RuntimeError("injected retry")
-            return {"controller": {"execution": {
-                "lifecycle_state": "independent_review", "review_phase": "awaiting_review",
-            }, "review_evidence": {"sha": "a" * 40}}}
-        dispatcher.status.side_effect = status
-        consumer = Consumer(self.store, FakeRunner(), self.github, dispatcher=dispatcher)
-
-        self.assertFalse(consumer.run_one())
-        self.assertEqual(dispatcher.status.call_count, 16)
-        self.assertTrue(consumer.run_one())
-        self.assertLessEqual(dispatcher.status.call_count, 32)
-        self.assertFalse(consumer.run_one())
-        dispatcher.review.assert_called_once_with(
-            REPOSITORY, 18, target["idempotency_key"], {"sha": "a" * 40},
-        )
-
-    def test_failures_are_bounded_and_dead_lettered(self):
+    def test_attempt_exhaustion_dead_letters_without_another_claim(self):
         self.send()
-        runner = FakeRunner(failures=10)
-        consumer = Consumer(self.store, runner, FakeGitHub(), max_attempts=2)
-        self.assertFalse(consumer.run_one(now=100))
-        self.assertFalse(consumer.run_one(now=101))
-        work = self.store.get_active(REPOSITORY, 77)
-        self.assertEqual(work["status"], "dead")
-        self.assertFalse(consumer.run_one(now=102))
+        first = self.store.claim(now=100, max_attempts=2)
+        self.store.fail(first["id"], first["claim_token"], "first", 2, now=101)
+        second = self.store.claim(now=102, max_attempts=2)
+        self.store.fail(second["id"], second["claim_token"], "second", 2, now=103)
+        self.assertIsNone(self.store.claim(now=104, max_attempts=2))
+        self.assertEqual(self.store.list_wakeups()[0]["status"], "dead")
 
-    def test_task_runner_uses_safe_argv_and_parses_task_id(self):
-        help_result = mock.Mock(stdout="usage: task.py [-h] [--body BODY] [--max-runtime MAX_RUNTIME]\n               [--workspace WORKSPACE] [--idempotency-key IDEMPOTENCY_KEY]\n               title\n")
-        completed = mock.Mock(stdout='{"task_id":"kanban-77","durable":true}\n')
-        runner = TaskRunner(script_path="/test/task.py")
-        with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
-            task_id = runner.create({"issue_number": 77, "wakeups": [{"delivery_id": WAKEUP_KEY}]}, TASK_KEY)
-        self.assertEqual(task_id, "kanban-77")
-        self.assertEqual(run.call_args_list[0].args[0], ["python3", "/test/task.py", "--help"])
+
+class TaskRunnerTest(unittest.TestCase):
+    def test_max_runtime_is_exactly_two_hours(self):
+        for value in (None, "", "1h", "120m", "2h "):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "exactly 2h"):
+                TaskRunner("/test/task.py", max_runtime=value)
+
+    def test_body_routes_persistent_orchestrator_without_controller_decisions(self):
+        delivery = str(uuid.uuid4())
+        wakeup = {"delivery_id": delivery, "repository": REPOSITORY,
+                  "issue_number": 77, "event": "issue_comment", "action": "created",
+                  "comment_id": 9001}
+        help_result = mock.Mock(stdout="title --body --max-runtime --workspace --board --assignee --idempotency-key")
+        created = mock.Mock(stdout='{"task_id":"kanban-77","durable":true}\n')
+        with mock.patch("subprocess.run", side_effect=[help_result, created]) as run:
+            self.assertEqual(TaskRunner("/test/task.py").create(wakeup), "kanban-77")
         argv = run.call_args_list[1].args[0]
-        self.assertEqual(argv[:4], ["python3", "/test/task.py", "SnapFlow issue #77", "--body"])
-        body = argv[4]
-        self.assertIn("Repository: kingkill85/snap-flow", body)
-        self.assertIn("Issue: #77", body)
-        self.assertIn("Current phase: specification", body)
-        self.assertIn("/opt/data/profiles/dev/projects/snapflow.md", body)
-        self.assertIn("ONLY OpenSpec proposal/design/delta specs/tasks", body)
-        self.assertIn("/approve-spec <full-sha>", body)
-        self.assertIn("Heartbeats are liveness only", body)
-        self.assertIn(f"Durable workflow identity: {TASK_KEY}", body)
-        self.assertIn("no project-command capability", body)
-        self.assertEqual(argv[-6:], ["--max-runtime", "2h", "--workspace",
-                                     "dir:/opt/data/profiles/dev", "--idempotency-key",
-                                     str(uuid.uuid5(uuid.UUID(TASK_KEY), str(uuid.UUID(WAKEUP_KEY))))])
-        self.assertNotIn("shell", run.call_args.kwargs)
-        self.assertNotIn("/opt/data/bin/neo-dev-project-control", argv[argv.index("--body") + 1])
-        self.assertNotIn("ssh:snapflow-dev", argv)
+        body = argv[argv.index("--body") + 1]
+        for expected in (
+            "Repository: kingkill85/snap-flow", "Issue: #77", "Event: issue_comment",
+            "Action: created", f"GitHub delivery ID: {delivery}", "Comment ID: 9001",
+            "Assigned profile: dev", "Kanban board: private-dev",
+            "Workspace: dir:/opt/data/profiles/dev", "`snapflow-orchestrator` skill",
+            "`/opt/data/profiles/dev/projects/snapflow.md`", "Fetch the live Issue",
+            "sole resumable Codex implementation worker", "fresh independent reviewers",
+        ):
+            self.assertIn(expected, body)
+        for forbidden in (
+            "Current phase", "capability", "controller decision", "transition",
+            "snapflow_neo_dev_transition", "neo-dev-project-control",
+        ):
+            self.assertNotIn(forbidden, body)
+        self.assertEqual(argv[-10:], ["--max-runtime", "2h", "--workspace",
+                                      "dir:/opt/data/profiles/dev", "--board", "private-dev",
+                                      "--assignee", "dev", "--idempotency-key", delivery])
 
-    def test_revision_and_fix_prompts_include_exact_trusted_request_and_reuse_worker(self):
-        help_result = mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
-        for command in ("/revise-spec clarify exact retry behavior", "/fix repair exact retry race"):
-            with self.subTest(command=command), mock.patch(
-                "subprocess.run", side_effect=[help_result, mock.Mock(
-                    stdout='{"task_id":"same-task","durable":true}\n')],
-            ) as run:
-                runner = TaskRunner(script_path="/test/task.py")
-                work = {"issue_number": 77, "task_id": "same-task", "wakeups": [{
-                    "delivery_id": WAKEUP_KEY, "event": "issue_comment",
-                    "action": "created", "command": command,
-                }]}
-                self.assertEqual(runner.create(work, TASK_KEY), "same-task")
-                body = run.call_args_list[1].args[0][4]
-                self.assertIn(command, body)
-                self.assertIn("product implementation is forbidden", body)
-                self.assertIn("dispatch operation already performed by the consumer: resume", body)
-                self.assertIn("never create a duplicate worker/session", body)
-
-    def test_controller_card_is_fixed_and_is_not_the_implementation_target(self):
-        with self.assertRaises(TypeError):
-            TaskRunner(script_path="/test/task.py", workspace="ssh:snapflow-dev")
-
-    def test_task_runner_max_runtime_is_configurable(self):
-        help_result = mock.Mock(stdout="usage: task.py title --body BODY --max-runtime MAX_RUNTIME --workspace WORKSPACE --idempotency-key KEY")
-        completed = mock.Mock(stdout='{"task_id":"kanban-77","durable":true}\n')
-        runner = TaskRunner(script_path="/test/task.py", max_runtime="45m")
-        with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
-            runner.create({"issue_number": 77, "wakeups": [{"delivery_id": WAKEUP_KEY}]}, TASK_KEY)
-        self.assertIn("45m", run.call_args_list[1].args[0])
-
-    def test_task_runner_rejects_empty_or_nonstring_idempotency_keys_before_execution(self):
-        for key in ("", "   ", 0, -1, None):
-            with self.subTest(key=key):
-                runner = TaskRunner(script_path="/test/task.py")
-                with mock.patch("subprocess.run") as run:
-                    with self.assertRaises(ValueError):
-                        runner.create({"issue_number": 77, "wakeups": [{"delivery_id": WAKEUP_KEY}]}, key)
-                run.assert_not_called()
-
-    def test_task_runner_rejects_ambiguous_or_unrelated_json_ids(self):
-        help_result = mock.Mock(stdout="usage: task.py title --body BODY --max-runtime MAX_RUNTIME --workspace WORKSPACE --idempotency-key KEY")
-        invalid_outputs = (
-            '{"id":"dispatcher-wakeup-1"}\n',
-            '{"data":{"id":"request-1"}}\n',
-            '{"task_id":"kanban-77","durable":true}\n{"id":"other"}\n',
-            '{"task_id":"kanban-77","durable":false}\n',
-            '{"task_id":"","durable":true}\n',
-            '{"task_id":"   ","durable":true}\n',
-            '{"task_id":0,"durable":true}\n',
-            '{"task_id":-1,"durable":true}\n',
-            '{"task_id":1,"durable":true}\n',
-        )
-        for output in invalid_outputs:
-            with self.subTest(output=output):
-                runner = TaskRunner(script_path="/test/task.py")
-                with mock.patch("subprocess.run", side_effect=[help_result, mock.Mock(stdout=output)]):
-                    with self.assertRaises(RuntimeError):
-                        runner.create({"issue_number": 77, "wakeups": [{"delivery_id": WAKEUP_KEY}]}, TASK_KEY)
-
-    def test_task_runner_rejects_incompatible_real_help_shape(self):
-        runner = TaskRunner(script_path="/test/task.py")
-        with mock.patch("subprocess.run", return_value=mock.Mock(stdout="usage: task.py title --body BODY")):
-            with self.assertRaisesRegex(RuntimeError, "incompatible"):
-                runner.create({"issue_number": 77, "wakeups": [{"delivery_id": WAKEUP_KEY}]}, TASK_KEY)
-
-
-class ServerAdmissionTest(unittest.TestCase):
-    def test_wire_header_limits_apply_during_parsing(self):
-        class LimitedHandler(server_module.HeaderLimitHandlerMixin, BaseHTTPRequestHandler):
-            header_line_limit = 32
-            header_total_limit = 64
-
-            def do_POST(self):
-                self.send_response(204)
-                self.end_headers()
-
-            def log_message(self, format, *args):
-                return
-
-        server = server_module.BoundedThreadingHTTPServer(
-            ("127.0.0.1", 0), LimitedHandler,
-            concurrency_limit=1, read_timeout=1,
-        )
-        thread = threading.Thread(target=server.serve_forever)
-        thread.start()
-        try:
-            for headers in (
-                b"X-Oversized: " + b"a" * 40 + b"\r\n",
-                b"X-A: 1234567890\r\nX-B: 1234567890\r\nX-C: 1234567890\r\n",
+    def test_task_creation_requires_unambiguous_durable_confirmation(self):
+        wakeup = {"delivery_id": str(uuid.uuid4()), "repository": REPOSITORY,
+                  "issue_number": 1, "event": "issues", "action": "labeled",
+                  "comment_id": None}
+        help_result = mock.Mock(stdout="title --body --max-runtime --workspace --board --assignee --idempotency-key")
+        for output in ('{}', '{"task_id":"x","durable":false}', 'not-json',
+                       '{"task_id":"x","durable":true}\n{"task_id":"y","durable":true}'):
+            with self.subTest(output=output), mock.patch(
+                "subprocess.run", side_effect=[help_result, mock.Mock(stdout=output)]
             ):
-                with self.subTest(headers=headers):
-                    client = socket.create_connection(("127.0.0.1", server.server_port), timeout=1)
-                    client.sendall(b"POST / HTTP/1.1\r\nHost: test\r\n" + headers + b"Content-Length: 0\r\n\r\n")
-                    response = client.recv(4096)
-                    self.assertIn(b" 431 ", response)
-                    client.close()
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join()
-
-    def test_server_rejects_before_allocating_second_handler_thread(self):
-        entered = threading.Event()
-        release = threading.Event()
-        handler_calls = 0
-        handler_lock = threading.Lock()
-
-        class BlockingHandler(BaseHTTPRequestHandler):
-            def do_POST(self):
-                nonlocal handler_calls
-                with handler_lock:
-                    handler_calls += 1
-                entered.set()
-                release.wait(timeout=2)
-                self.send_response(204)
-                self.end_headers()
-
-            def log_message(self, format, *args):
-                return
-
-        server = server_module.BoundedThreadingHTTPServer(
-            ("127.0.0.1", 0), BlockingHandler, concurrency_limit=1
-        )
-        server_thread = threading.Thread(target=server.serve_forever)
-        server_thread.start()
-        first = HTTPConnection("127.0.0.1", server.server_port, timeout=2)
-        first_thread = threading.Thread(target=lambda: (first.request("POST", "/", b""), first.getresponse().read()))
-        try:
-            first_thread.start()
-            self.assertTrue(entered.wait(timeout=1))
-            second = HTTPConnection("127.0.0.1", server.server_port, timeout=2)
-            try:
-                second.request("POST", "/", b"unread body")
-                rejected_status = second.getresponse().status
-            except BrokenPipeError:
-                rejected_status = 503
-            self.assertEqual(rejected_status, 503)
-            second.close()
-            with handler_lock:
-                self.assertEqual(handler_calls, 1)
-        finally:
-            release.set()
-            first_thread.join(timeout=2)
-            first.close()
-            server.shutdown()
-            server.server_close()
-            server_thread.join(timeout=2)
+                with self.assertRaises(RuntimeError):
+                    TaskRunner("/test/task.py").create(wakeup)
 
 
-    def test_slow_drip_cannot_extend_absolute_request_deadline(self):
-        class ReadingHandler(BaseHTTPRequestHandler):
+class BoundedServerTest(unittest.TestCase):
+    def test_header_reader_rejects_individual_and_aggregate_overflow(self):
+        reader = LimitedHeaderReader(BytesIO(b"Long: 123456\r\n"), line_limit=8, total_limit=20)
+        with self.assertRaises(Exception):
+            reader.readline()
+        reader = LimitedHeaderReader(BytesIO(b"A: 1\r\nB: 2\r\n"), line_limit=8, total_limit=8)
+        reader.readline()
+        with self.assertRaises(Exception):
+            reader.readline()
+
+    def test_server_rejects_invalid_resource_bounds(self):
+        with self.assertRaises(ValueError):
+            BoundedThreadingHTTPServer(("127.0.0.1", 0), mock.Mock(), concurrency_limit=0)
+        with self.assertRaises(ValueError):
+            BoundedThreadingHTTPServer(("127.0.0.1", 0), mock.Mock(), read_timeout=0)
+
+    def test_real_socket_header_and_body_deadlines_release_admission(self):
+        class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 length = int(self.headers.get("Content-Length", "0"))
                 self.rfile.read(length)
                 self.send_response(204)
                 self.end_headers()
 
-            def log_message(self, format, *args):
+            def log_message(self, _format, *_args):
                 return
 
-        server = server_module.BoundedThreadingHTTPServer(
-            ("127.0.0.1", 0),
-            ReadingHandler,
-            concurrency_limit=1,
-            read_timeout=0.3,
-        )
-        thread = threading.Thread(target=server.serve_forever)
+        server = BoundedThreadingHTTPServer(("127.0.0.1", 0), Handler,
+                                            concurrency_limit=1, read_timeout=0.1)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        slow = socket.create_connection(("127.0.0.1", server.server_port), timeout=1)
-        stop = threading.Event()
-
-        def drip():
-            while not stop.wait(0.04):
-                try:
-                    slow.sendall(b"P")
-                except OSError:
-                    return
-
-        dripper = threading.Thread(target=drip)
-        dripper.start()
-        try:
-            slow.sendall(b"P")
-            stop.wait(0.45)
-            connection = HTTPConnection("127.0.0.1", server.server_port, timeout=2)
-            connection.request("POST", "/", body=b"x")
-            self.assertEqual(connection.getresponse().status, 204)
-            connection.close()
-        finally:
-            stop.set()
-            dripper.join(timeout=1)
-            slow.close()
-            server.shutdown()
-            server.server_close()
-            thread.join()
-
-    def test_stalled_header_and_body_release_admission_slot(self):
-        class ReadingHandler(BaseHTTPRequestHandler):
-            def do_POST(self):
-                length = int(self.headers.get("Content-Length", "0"))
-                self.rfile.read(length)
-                self.send_response(204)
-                self.end_headers()
-
-            def log_message(self, format, *args):
-                return
-
-        server = server_module.BoundedThreadingHTTPServer(
-            ("127.0.0.1", 0), ReadingHandler,
-            concurrency_limit=1, read_timeout=0.1,
-        )
-        thread = threading.Thread(target=server.serve_forever)
-        thread.start()
+        host, port = server.server_address
         try:
             for partial in (
                 b"POST / HTTP/1.1\r\nHost: localhost\r\n",
-                b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\n",
+                b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\nx",
             ):
-                stalled = socket.create_connection(("127.0.0.1", server.server_port), timeout=1)
+                stalled = socket.create_connection((host, port), timeout=1)
                 stalled.sendall(partial)
-                threading.Event().wait(0.2)
+                time.sleep(0.2)
                 stalled.close()
-                healthy = HTTPConnection("127.0.0.1", server.server_port, timeout=1)
-                healthy.request("POST", "/", b"")
+                healthy = http.client.HTTPConnection(host, port, timeout=1)
+                healthy.request("POST", "/", body=b"")
                 self.assertEqual(healthy.getresponse().status, 204)
                 healthy.close()
         finally:
             server.shutdown()
             server.server_close()
-            thread.join(timeout=2)
+            thread.join(timeout=1)
+
+
+class StoreInitializationAndMigrationTest(unittest.TestCase):
+    def test_simultaneous_fresh_database_initialization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "fresh.sqlite")
+
+            def initialize(_):
+                store = Store(path)
+                store.close()
+                return True
+
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                self.assertEqual(list(executor.map(initialize, range(4))), [True] * 4)
+
+    def test_legacy_wakeups_migrate_once_as_blocked_and_never_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "legacy.sqlite")
+            db = sqlite3.connect(path)
+            db.executescript("""
+                CREATE TABLE deliveries(delivery_id TEXT PRIMARY KEY, received_at REAL NOT NULL);
+                CREATE TABLE active_work(
+                  id INTEGER PRIMARY KEY, repository TEXT NOT NULL, issue_number INTEGER NOT NULL,
+                  idempotency_key TEXT NOT NULL UNIQUE, status TEXT NOT NULL, attempts INTEGER NOT NULL,
+                  lease_until REAL, claim_token TEXT, task_id TEXT, last_error TEXT,
+                  processed_wakeup_id INTEGER, created_at REAL NOT NULL, updated_at REAL NOT NULL);
+                CREATE TABLE wakeups(
+                  id INTEGER PRIMARY KEY, delivery_id TEXT NOT NULL UNIQUE REFERENCES deliveries,
+                  work_id INTEGER NOT NULL REFERENCES active_work, event TEXT NOT NULL,
+                  action TEXT NOT NULL, comment_id INTEGER, command TEXT, created_at REAL NOT NULL);
+            """)
+            deliveries = [str(uuid.uuid4()) for _ in range(3)]
+            for index, (delivery, issue) in enumerate(
+                    zip(deliveries, (6, 13, 84)), start=1):
+                db.execute("INSERT INTO active_work VALUES (?,?,?,?,?,0,NULL,NULL,NULL,NULL,NULL,1,1)",
+                           (index, REPOSITORY, issue, delivery, "waiting"))
+                db.execute("INSERT INTO deliveries VALUES (?,?)", (delivery, index))
+                db.execute("INSERT INTO wakeups VALUES (?,?,?,?,?,?,?,?)",
+                           (index, delivery, index, "issue_comment", "created", 9000 + index,
+                            None, index))
+            db.commit()
+            db.close()
+
+            store = Store(path)
+            self.assertEqual(store.count("kanban_wakeups"), 3)
+            rows = store.list_wakeups()
+            self.assertEqual({row["status"] for row in rows}, {"blocked_legacy"})
+            self.assertEqual([row["delivery_id"] for row in rows], deliveries)
+            self.assertEqual([row["issue_number"] for row in rows], [6, 13, 84])
+            new_delivery = str(uuid.uuid4())
+            self.assertEqual(store.accept({
+                "delivery_id": new_delivery, "repository": REPOSITORY, "issue_number": 77,
+                "event": "issues", "action": "labeled", "comment_id": None,
+            }), "accepted")
+            claimed = store.claim()
+            self.assertEqual(claimed["delivery_id"], new_delivery)
+            store.close()
+            reopened = Store(path)
+            self.assertEqual(reopened.count("kanban_wakeups"), 4)
+            self.assertEqual(sum(row["status"] == "blocked_legacy"
+                                 for row in reopened.list_wakeups()), 3)
+            reopened.close()
+
+
+class CanonicalContractTest(unittest.TestCase):
+    def test_canonical_specs_describe_inbox_and_frozen_artifacts_without_controller(self):
+        root = pathlib.Path(__file__).parents[3]
+        webhook = (root / "openspec/specs/github-webhook-handoff/spec.md").read_text()
+        governed = (root / "openspec/specs/governed-development-workflow/spec.md").read_text()
+        for expected in ("one durable Kanban wakeup", "persistent `dev` profile",
+                         "`private-dev` Kanban inbox", "canonical `X-GitHub-Delivery`"):
+            self.assertIn(expected, webhook)
+        self.assertIn("byte-frozen", governed)
+        self.assertIn("progress", governed)
+        self.assertIn("Kanban", governed)
+        self.assertNotIn("coalesced", webhook.casefold())
+        self.assertNotIn("controller", webhook.casefold())
+        self.assertNotIn("controller", governed.casefold())
+        self.assertFalse((root / "openspec/changes/issue-77-enforce-container-boundary").exists())
 
 
 if __name__ == "__main__":

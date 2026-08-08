@@ -1,150 +1,196 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-action=${1:-verify}
-repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-data_root=/opt/data
+action=${1:-}
+repo_root=$(cd "$(dirname "$0")/../../.." && pwd)
+requested_data_root=${NEO_DEV_DATA_ROOT:-/opt/data}
+[[ $requested_data_root == /* && $requested_data_root != / ]]
+data_root=$(realpath -m -- "$requested_data_root")
+[[ $data_root == /* && $data_root != / ]]
+if [[ $data_root != /opt/data ]]; then
+  [[ $data_root == */opt/data ]]
+  fixture_root=${data_root%/opt/data}
+  [[ -n $fixture_root && -f $fixture_root/.hermes-scope-fixture ]]
+fi
 live_src=$data_root/services/snapflow-neo-dev-webhook/src
-host_lib=$data_root/lib/neo_dev_webhook
-host_bin=$data_root/bin
-profile=$data_root/profiles/dev/projects/snapflow.md
+profile=$data_root/profiles/dev/SOUL.md
+task_helper=$data_root/scripts/neo-dev/task.py
 plugin=$data_root/profiles/dev/plugins/snapflow_neo_dev_transition
-enforced=$data_root/profiles/dev/.snapflow-neo-dev-tools.enforced
+enforcement=$data_root/profiles/dev/.snapflow-neo-dev-tools.enforced
+host_adapter=$data_root/bin/neo-dev-project-control
+host_transition=$data_root/bin/snapflow-neo-dev-transition
+host_lib=$data_root/lib/neo_dev_webhook
 backup_root=$data_root/backups/snapflow-neo-dev-webhook
-identity=$data_root/credentials/snapflow-controller-client
-known_hosts=$data_root/tailscale_known_hosts
+approved_files=(__init__.py automation.py consumer.py server.py)
+transaction_backup=
+transaction_active=0
 
-require_hermes() {
-  test "$(id -un)" = hermes
-  test ! -L "$identity" && test -f "$identity"
-  test ! -L "$known_hosts" && test -f "$known_hosts"
-  test "$(stat -c '%U:%G:%a' "$identity")" = hermes:hermes:600
-  PYTHONPATH="$repo_root/tools" python3 -c 'import pathlib; from neo_dev_webhook.deployment import validate_pinned_host; validate_pinned_host(pathlib.Path("/opt/data/tailscale_known_hosts"), "192.168.178.4", 2222)'
-  test -d "$live_src" && test -s "$profile"
+restore_transaction() {
+  code=${1:-$?}
+  trap - EXIT INT TERM HUP
+  if [[ $transaction_active -eq 1 && -n $transaction_backup ]]; then
+    restore_scope "$transaction_backup" || true
+  fi
+  exit "$code"
 }
 
-resolve_hermes_python() {
-  for candidate in "${HERMES_PYTHON:-}" /opt/hermes/.venv/bin/python3 /opt/hermes/.venv/bin/python "$(command -v python3)"; do
-    test -n "$candidate" && test -x "$candidate" || continue
-    HERMES_HOME="$data_root/profiles/dev" "$candidate" -c 'import hermes_cli' >/dev/null 2>&1 || continue
-    printf '%s\n' "$candidate"
-    return 0
-  done
-  echo "unable to resolve the Hermes Python interpreter" >&2
-  return 1
+scope_paths() {
+  printf '%s\t%s\n' \
+    live-src "$live_src" \
+    profile "$profile" \
+    task-helper "$task_helper" \
+    transition-plugin "$plugin" \
+    enforcement-marker "$enforcement" \
+    host-adapter "$host_adapter" \
+    host-transition "$host_transition" \
+    host-library "$host_lib"
+}
+
+validate_profile_markers() {
+  [[ ! -e $profile ]] && return
+  local counts
+  counts=$(awk '
+    $0 == "<!-- snapflow-neo-dev-orchestrator:start -->" { starts++; start_line=NR }
+    $0 == "<!-- snapflow-neo-dev-orchestrator:end -->" { ends++; end_line=NR }
+    END { print starts + 0, ends + 0, start_line + 0, end_line + 0 }
+  ' "$profile")
+  read -r starts ends start_line end_line <<<"$counts"
+  if ! { [[ $starts -eq 0 && $ends -eq 0 ]] ||
+         [[ $starts -eq 1 && $ends -eq 1 && $start_line -lt $end_line ]]; }; then
+    echo "malformed managed-profile markers" >&2
+    exit 1
+  fi
+}
+
+snapshot_scope() {
+  backup=$1
+  install -d -m 0700 "$backup/state"
+  while IFS=$'\t' read -r name path; do
+    if [[ -e $path || -L $path ]]; then
+      : >"$backup/state/$name.present"
+      cp -a "$path" "$backup/state/$name.data"
+    else
+      : >"$backup/state/$name.absent"
+    fi
+  done < <(scope_paths)
+}
+
+restore_scope() {
+  backup=$1
+  while IFS=$'\t' read -r name path; do
+    rm -rf -- "$path"
+    if [[ -f $backup/state/$name.present ]]; then
+      install -d "$(dirname "$path")"
+      cp -a "$backup/state/$name.data" "$path"
+    elif [[ ! -f $backup/state/$name.absent ]]; then
+      echo "incomplete backup state for $name" >&2
+      exit 1
+    fi
+  done < <(scope_paths)
 }
 
 install_scope() {
-  require_hermes
-  stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  backup=$backup_root/$stamp
-  install -d -m 0700 "$backup/tree"
-  for path in "$live_src" "$host_lib" "$host_bin/neo-dev-project-control" "$host_bin/snapflow-neo-dev-transition" "$profile" "$plugin" "$enforced"; do
-    relative=${path#"$data_root/"}
-    if test -e "$path"; then
-      install -d "$backup/tree/$(dirname "$relative")"
-      cp -a "$path" "$backup/tree/$relative"
-      printf 'present\t%s\n' "$relative" >>"$backup/manifest.tsv"
-    else
-      printf 'absent\t%s\n' "$relative" >>"$backup/manifest.tsv"
-    fi
-  done
-  (cd "$backup/tree" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum >"$backup/SHA256SUMS")
-  hermes_python=$(resolve_hermes_python)
-  HERMES_HOME="$data_root/profiles/dev" "$hermes_python" -c 'import json,sys; from hermes_cli.kanban_db import _resolve_worker_cli_toolsets; json.dump(_resolve_worker_cli_toolsets(sys.argv[1]) or [],sys.stdout)' "$data_root/profiles/dev" >"$backup/resolved_toolsets.before.json"
-  HERMES_HOME="$data_root/profiles/dev" "$hermes_python" -c 'import json,sys; from hermes_cli.config import load_config; json.dump(load_config().get("plugins",{}).get("enabled",[]),sys.stdout)' >"$backup/plugins.enabled.before.json"
-  (cd "$backup" && sha256sum resolved_toolsets.before.json plugins.enabled.before.json >config.before.sha256)
-  install -d -m 0755 "$live_src/neo_dev_webhook" "$host_lib" "$host_bin"
-  install -m 0644 "$repo_root/tools/neo_dev_webhook/"{__init__,automation,consumer,server,remote_adapter,project_control,deployment,hermes_transition,operator_commands,verification}.py "$live_src/neo_dev_webhook/"
-  install -m 0644 "$repo_root/tools/neo_dev_webhook/"{__init__,remote_adapter,project_control,deployment}.py "$host_lib/"
-  install -m 0755 "$repo_root/tools/neo_dev_webhook/controller/neo-dev-remote-project-control" "$host_bin/neo-dev-project-control"
-  rm -f -- "$enforced" "$host_bin/snapflow-neo-dev-transition"
-  install -d -m 0755 "$plugin"
-  install -m 0644 "$repo_root/tools/neo_dev_webhook/deploy/hermes-plugin/snapflow_neo_dev_transition/"{plugin.yaml,__init__.py} "$plugin/"
-  if ! grep -Fq '<!-- snapflow-neo-dev-orchestrator:start -->' "$profile"; then
-    printf '\n' >>"$profile"
-    sed -n '/<!-- snapflow-neo-dev-orchestrator:start -->/,/<!-- snapflow-neo-dev-orchestrator:end -->/p' "$repo_root/tools/neo_dev_webhook/deploy/profile.managed-block.md" >>"$profile"
+  if [[ $data_root == /opt/data && ${NEO_DEV_DEPLOY_AUTHORIZED:-} != MICHAEL_APPROVED ]]; then
+    echo "Michael deployment authorization required" >&2; return 1
   fi
+  validate_profile_markers
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
+  backup=$backup_root/$stamp
+  snapshot_scope "$backup"
+  transaction_backup=$backup; transaction_active=1
+  trap 'restore_transaction $?' EXIT
+  trap 'restore_transaction 130' INT
+  trap 'restore_transaction 143' TERM
+  trap 'restore_transaction 129' HUP
+
+  rm -rf -- "$live_src" "$plugin" "$enforcement" "$host_adapter" \
+    "$host_transition" "$host_lib"
+  if [[ $data_root != /opt/data ]]; then
+    [[ ${NEO_DEV_INJECT_MUTATION_FAILURE:-} != 1 ]] || return 1
+    [[ ${NEO_DEV_INJECT_MUTATION_SIGNAL:-} != 1 ]] || kill -TERM $$
+  fi
+  install -d -m 0755 "$live_src/neo_dev_webhook" "$(dirname "$profile")" \
+    "$(dirname "$task_helper")"
+  for file in "${approved_files[@]}"; do
+    install -m 0644 "$repo_root/tools/neo_dev_webhook/$file" "$live_src/neo_dev_webhook/$file"
+  done
+  install -m 0755 "$repo_root/tools/neo_dev_webhook/deploy/task.py" "$task_helper"
+
+  touch "$profile"
+  sed -i '/<!-- snapflow-neo-dev-orchestrator:start -->/,/<!-- snapflow-neo-dev-orchestrator:end -->/d' "$profile"
+  if [[ -s $profile ]]; then
+    last_byte=$(tail -c 1 "$profile" | od -An -t u1)
+    [[ $last_byte -eq 10 ]] || printf '\n' >>"$profile"
+  fi
+  sed -n '/<!-- snapflow-neo-dev-orchestrator:start -->/,/<!-- snapflow-neo-dev-orchestrator:end -->/p' \
+    "$repo_root/tools/neo_dev_webhook/deploy/profile.managed-block.md" >>"$profile"
+  if [[ ${NEO_DEV_INJECT_LATE_DRIFT:-} == 1 && $data_root != /opt/data ]]; then
+    install -d "$host_lib"; printf 'fixture drift\n' >"$host_lib/drift"
+  fi
+  if ! verify_scope; then
+    echo "staging verification failed; exact backup restored" >&2
+    return 1
+  fi
+  transaction_active=0; trap - EXIT INT TERM HUP
   printf '%s\n' "$backup"
 }
 
 verify_scope() {
-  require_hermes
-  test -f "$live_src/neo_dev_webhook/consumer.py"
-  test -x "$host_bin/neo-dev-project-control"
-  test -f "$plugin/plugin.yaml" && test -f "$plugin/__init__.py"
-  grep -Fq '<!-- snapflow-neo-dev-orchestrator:start -->' "$profile"
-  for file in __init__ automation consumer server remote_adapter project_control deployment hermes_transition operator_commands verification; do
-    test "$(sha256sum "$repo_root/tools/neo_dev_webhook/$file.py" | cut -d' ' -f1)" = "$(sha256sum "$live_src/neo_dev_webhook/$file.py" | cut -d' ' -f1)"
+  if [[ ${NEO_DEV_INJECT_VERIFY_FAILURE:-} == 1 && $data_root != /opt/data ]]; then
+    return 1
+  fi
+  package=$live_src/neo_dev_webhook
+  test -d "$package" || return 1
+  test "$(find "$live_src" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 || return 1
+  mapfile -t actual < <(find "$package" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort) || return 1
+  mapfile -t expected < <(printf '%s\n' "${approved_files[@]}" | sort)
+  [[ ${actual[*]} == "${expected[*]}" ]] || return 1
+  test "$(find "$package" -mindepth 1 -maxdepth 1 | wc -l)" -eq "${#approved_files[@]}" || return 1
+  for file in "${approved_files[@]}"; do
+    cmp -s "$repo_root/tools/neo_dev_webhook/$file" "$package/$file" || return 1
   done
-  test "$(sha256sum "$repo_root/tools/neo_dev_webhook/controller/neo-dev-remote-project-control" | cut -d' ' -f1)" = "$(sha256sum "$host_bin/neo-dev-project-control" | cut -d' ' -f1)"
-  installed_block=$(mktemp); expected_block=$(mktemp); trap 'rm -f -- "$installed_block" "$expected_block"' RETURN
-  sed -n '/<!-- snapflow-neo-dev-orchestrator:start -->/,/<!-- snapflow-neo-dev-orchestrator:end -->/p' "$profile" >"$installed_block"
-  sed -n '/<!-- snapflow-neo-dev-orchestrator:start -->/,/<!-- snapflow-neo-dev-orchestrator:end -->/p' "$repo_root/tools/neo_dev_webhook/deploy/profile.managed-block.md" >"$expected_block"
-  cmp "$installed_block" "$expected_block"
-  "$host_bin/neo-dev-project-control" --help >/dev/null
-  rm -f -- "$enforced"
-  hermes_python=$(resolve_hermes_python)
-  runtime=$(HERMES_HOME="$data_root/profiles/dev" "$hermes_python" \
-    "$repo_root/tools/neo_dev_webhook/deploy/verify_hermes_runtime.py" \
-    "$data_root/profiles/dev")
-  printf 'verified_at=%s\ntoolsets=snapflow_neo_dev,web,browser,memory,session_search,skills\ntool=snapflow_neo_dev_transition\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$enforced.tmp"
-  printf 'runtime=%s\n' "$runtime" >>"$enforced.tmp"
-  chmod 0600 "$enforced.tmp" && mv -f "$enforced.tmp" "$enforced"
-}
-
-configure_tools() {
-  require_hermes
-  command -v hermes >/dev/null
-  rm -f -- "$enforced"
-  hermes -p dev plugins enable snapflow-neo-dev-transition
-  for toolset in bfl terminal code_execution file delegation cronjob; do
-    hermes -p dev tools disable "$toolset" --platform cli
+  cmp -s "$repo_root/tools/neo_dev_webhook/deploy/task.py" "$task_helper" || return 1
+  test -x "$task_helper" || return 1
+  expected_block=$(mktemp) || return 1
+  trap 'rm -f "$expected_block"' RETURN
+  sed -n '/<!-- snapflow-neo-dev-orchestrator:start -->/,/<!-- snapflow-neo-dev-orchestrator:end -->/p' \
+    "$profile" >"$expected_block" || return 1
+  cmp -s "$expected_block" "$repo_root/tools/neo_dev_webhook/deploy/profile.managed-block.md" || return 1
+  for obsolete in "$plugin" "$enforcement" "$host_adapter" "$host_transition" "$host_lib"; do
+    test ! -e "$obsolete" || return 1
+    test ! -L "$obsolete" || return 1
   done
-  for toolset in snapflow_neo_dev web browser memory session_search skills; do
-    hermes -p dev tools enable "$toolset" --platform cli
-  done
-  echo "restart the dev profile gateway, then run: $0 verify" >&2
+  return 0
 }
 
 rollback_scope() {
-  require_hermes
-  backup=${2:?backup directory required}
-  [[ $backup =~ ^/opt/data/backups/snapflow-neo-dev-webhook/[0-9]{8}T[0-9]{6}Z$ ]]
-  test -f "$backup/manifest.tsv" && test -f "$backup/SHA256SUMS"
-  (cd "$backup/tree" && sha256sum -c "$backup/SHA256SUMS")
-  while IFS=$'\t' read -r state relative; do
-    [[ $relative != /* && $relative != *..* ]]
-    target=$data_root/$relative
-    if test "$state" = present; then
-      rm -rf -- "$target"
-      install -d "$(dirname "$target")"
-      cp -a "$backup/tree/$relative" "$target"
-    else
-      rm -rf -- "$target"
-    fi
-  done <"$backup/manifest.tsv"
-  if test -f "$backup/resolved_toolsets.before.json"; then
-    (cd "$backup" && sha256sum -c config.before.sha256)
-    for toolset in bfl terminal code_execution file delegation cronjob snapflow_neo_dev web browser memory session_search skills; do
-      hermes -p dev tools disable "$toolset" --platform cli
-    done
-    while IFS= read -r toolset; do
-      test "$toolset" = kanban || hermes -p dev tools enable "$toolset" --platform cli
-    done < <(python3 -c 'import json,sys; [print(x) for x in json.load(open(sys.argv[1]))]' "$backup/resolved_toolsets.before.json")
-    if ! python3 -c 'import json,sys; raise SystemExit(0 if "snapflow-neo-dev-transition" in json.load(open(sys.argv[1])) else 1)' "$backup/plugins.enabled.before.json"; then
-      hermes -p dev plugins disable snapflow-neo-dev-transition
-    fi
-  fi
+  backup=${2:?backup required}
+  backup=$(realpath "$backup")
+  canonical_backup_root=$(realpath -m "$backup_root")
+  [[ $backup == "$canonical_backup_root"/* ]]
+  test -d "$backup/state"
+  restore_scope "$backup"
+}
+
+fixture_install() {
+  fixture=${2:?fixture root}; backup=${3:?fixture backup}
+  test -f "$fixture/.hermes-scope-fixture"
+  install -d -m 0700 "$backup"
+  cp -a "$fixture/." "$backup/tree/"
+  NEO_DEV_DATA_ROOT="$fixture/opt/data" "$0" install >/dev/null
+}
+
+fixture_rollback() {
+  fixture=${2:?fixture root}; backup=${3:?fixture backup}
+  test -f "$fixture/.hermes-scope-fixture"
+  find "$fixture" -mindepth 1 -maxdepth 1 ! -name .hermes-scope-fixture -exec rm -rf {} +
+  cp -a "$backup/tree/." "$fixture/"
 }
 
 case "$action" in
-  fixture-install) fixture=${2:?fixture root}; backup=${3:?fixture backup}; test -f "$fixture/.hermes-scope-fixture"; install -d -m 0700 "$backup/tree"; cp -a "$fixture/." "$backup/tree/"; (cd "$backup/tree" && find . -type f -print0 | sort -z | xargs -0 sha256sum >"$backup/SHA256SUMS"); install -d "$fixture/services/snapflow-neo-dev-webhook/src" "$fixture/profiles/dev/plugins/snapflow_neo_dev_transition"; install -m 0644 "$repo_root/tools/neo_dev_webhook/automation.py" "$fixture/services/snapflow-neo-dev-webhook/src/automation.py"; install -m 0644 "$repo_root/tools/neo_dev_webhook/deploy/hermes-plugin/snapflow_neo_dev_transition/"{plugin.yaml,__init__.py} "$fixture/profiles/dev/plugins/snapflow_neo_dev_transition/" ;;
-  fixture-rollback) fixture=${2:?fixture root}; backup=${3:?fixture backup}; test -f "$fixture/.hermes-scope-fixture"; find "$fixture" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; cp -a "$backup/tree/." "$fixture/"; (cd "$fixture" && sha256sum -c "$backup/SHA256SUMS") ;;
   install) install_scope ;;
   verify) verify_scope ;;
   rollback) rollback_scope "$@" ;;
-  configure-tools) configure_tools ;;
-  *) echo "usage: $0 <install|configure-tools|verify|rollback BACKUP>" >&2; exit 2 ;;
+  fixture-install) fixture_install "$@" ;;
+  fixture-rollback) fixture_rollback "$@" ;;
+  *) echo "usage: $0 <install|verify|rollback BACKUP|fixture-install ROOT BACKUP|fixture-rollback ROOT BACKUP>" >&2; exit 2 ;;
 esac

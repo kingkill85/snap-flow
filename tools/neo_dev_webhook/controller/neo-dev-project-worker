@@ -1,8 +1,0 @@
-#!/usr/bin/env python3
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path("/usr/local/lib")))
-from neo_dev_webhook.project_worker import main
-
-raise SystemExit(main())

@@ -9,9 +9,11 @@ Defines auditable approval, state, evidence, and archive gates.
 ### Requirement: One-to-one identity and immutable approval
 Each effort SHALL use one Issue, OpenSpec change, non-main branch, worktree, and Draft PR with full-40-character-SHA artifact links and `/approve-spec <sha>` from the authorized human approver through Neo.
 
+After approval, the approved proposal, design, delta specifications, and task acceptance/scope/order SHALL be byte-frozen. Neo Dev SHALL record implementation progress, evidence, review findings, corrections, and blockers in Kanban rather than modifying approved OpenSpec files.
+
 #### Scenario: Checkbox-only update
-- **WHEN** only task evidence/status checkboxes change
-- **THEN** approval remains valid
+- **WHEN** implementation or review progress changes without a material planning change
+- **THEN** progress is recorded in Kanban and the approved OpenSpec artifacts remain byte-identical
 
 #### Scenario: Material artifact update
 - **WHEN** proposal, design, requirement, scenario, task scope/order/acceptance, or approach materially changes
@@ -53,8 +55,8 @@ Acceptance SHALL NOT authorize merge. Sync/archive SHALL precede a separate merg
 - **WHEN** `/accept` is recorded without a separate authorized `/merge`
 - **THEN** no merge or privileged operation is permitted
 
-### Requirement: One-time bootstrap
-Issue 77 SHALL record the repository owner's explicit one-time bootstrap authorization without weakening later approval gates.
+### Requirement: 2026-08-08 persistent Neo Dev self-bootstrap
+The repository SHALL record the authorized human's explicit 2026-08-08 one-time authorization for the persistent Neo Dev self-bootstrap directly on `main`, without weakening any later approval or privileged-operation gate.
 
 #### Scenario: Later material change occurs
 - **WHEN** any future issue or later material artifact change needs approval
