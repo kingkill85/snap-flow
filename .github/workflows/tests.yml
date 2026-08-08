@@ -92,9 +92,81 @@ jobs:
           path: frontend/test-results/
           if-no-files-found: ignore
 
+  e2e:
+    name: E2E (Cucumber + Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout exact tested revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TESTED_SHA }}
+
+      - name: Verify exact checkout SHA
+        run: test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v2.x
+
+      - name: Install pinned dependencies
+        run: |
+          npm ci
+          npm ci --prefix frontend
+
+      - name: Install pinned Chromium
+        run: npm run e2e:install -- --with-deps
+
+      - name: Run real-runtime Cucumber E2E
+        run: npm run e2e
+
+      - name: Bind report evidence to tested SHA
+        if: always()
+        run: |
+          mkdir -p e2e/results
+          printf '%s\n' "$TESTED_SHA" > e2e/results/tested-sha.txt
+          test "$(cat e2e/results/tested-sha.txt)" = "$TESTED_SHA"
+
+      - name: Upload Cucumber reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cucumber-report-${{ env.TESTED_SHA }}
+          path: |
+            e2e/results/cucumber-report.json
+            e2e/results/cucumber-report.html
+            e2e/results/tested-sha.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Playwright failure evidence
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failures-${{ env.TESTED_SHA }}
+          path: |
+            e2e/results/*.png
+            e2e/results/*-trace.zip
+            e2e/results/tested-sha.txt
+          if-no-files-found: error
+          retention-days: 14
+
   test-summary:
     name: Test Summary
-    needs: [backend-tests, frontend-tests]
+    needs: [backend-tests, frontend-tests, e2e]
     runs-on: ubuntu-latest
     if: always()
     
@@ -107,9 +179,10 @@ jobs:
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Backend (Deno) | ${{ needs.backend-tests.result == 'success' && '✅ Pass' || '❌ Fail' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Frontend (Vitest) | ${{ needs.frontend-tests.result == 'success' && '✅ Pass' || '❌ Fail' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| E2E (Cucumber + Playwright) | ${{ needs.e2e.result == 'success' && '✅ Pass' || '❌ Fail' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          if [ "${{ needs.backend-tests.result }}" != "success" ] || [ "${{ needs.frontend-tests.result }}" != "success" ]; then
+          if [ "${{ needs.backend-tests.result }}" != "success" ] || [ "${{ needs.frontend-tests.result }}" != "success" ] || [ "${{ needs.e2e.result }}" != "success" ]; then
             echo "❌ **Some tests failed!**" >> $GITHUB_STEP_SUMMARY
             exit 1
           else

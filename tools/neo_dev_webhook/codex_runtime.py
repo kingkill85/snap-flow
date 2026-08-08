@@ -106,6 +106,18 @@ REVIEW_COMPLETION_SCHEMA = {
         "reviewer_run_id": {"type": "string", "minLength": 1, "maxLength": 128},
         "disposition": {"enum": ["clean", "blocking"]},
         "findings": {"type": "array", "items": {"type": "object"}},
+        "e2e_applicability": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["required", "reason", "reviewed_sha", "reviewer_session_id",
+                         "reviewer_run_id", "reviewer_approved"],
+            "properties": {
+                "required": {"const": False}, "reason": {"type": "string", "minLength": 20},
+                "reviewed_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                "reviewer_session_id": {"type": "string"},
+                "reviewer_run_id": {"type": "string"}, "reviewer_approved": {"const": True}
+            }
+        },
     },
 }
 
@@ -118,7 +130,9 @@ def independent_review_prompt(repository: str, issue_number: int, implementation
         f"SHA {approved_spec_sha}; reviewer run identity is {reviewer_run_id}. Inspect the issue/base "
         "diff, tasks, repository instructions, tests, live GitHub state, every tracked change, and "
         "relevant untracked file. Do not modify files, resume the implementer session, accept, merge, "
-        "deploy, or publish. Return only the structured review verdict."
+        "deploy, or publish. Omit e2e_applicability when E2E is required. Only when E2E is genuinely "
+        "inapplicable, include a specific exception bound to this reviewed SHA, your fresh reviewer "
+        "session identity, and this reviewer run identity. Return only the structured review verdict."
     )
 
 

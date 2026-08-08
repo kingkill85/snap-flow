@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import pathlib
 import re
+import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Protocol
@@ -19,6 +22,77 @@ REVISION = REVISE_SPEC_PATTERN
 FIX = FIX_PATTERN
 AUTHORIZED_ACTOR_ID = 11455872
 AUTHORIZED_ACTOR_LOGIN = "kingkill85"
+
+
+def collect_paginated(executor, gh: tuple[str, ...], endpoint: str, key: str,
+                      max_pages: int = 10) -> list[dict]:
+    if not 1 <= max_pages <= 10 or not re.fullmatch(r"[A-Za-z0-9_./-]+", endpoint):
+        raise ValueError("invalid bounded GitHub pagination request")
+    result: list[dict] = []
+    for page in range(1, max_pages + 1):
+        response = json.loads(executor.run((
+            *gh, "api", f"{endpoint}?per_page=100&page={page}",
+        ), timeout=20.0))
+        values = response.get(key) if isinstance(response, dict) else None
+        if not isinstance(values, list):
+            raise RuntimeError("paginated GitHub API response is invalid")
+        result.extend(item for item in values if isinstance(item, dict))
+        if len(values) < 100:
+            return result
+    raise RuntimeError("paginated GitHub API response exceeded the page bound")
+
+
+def validate_e2e_artifact_attestation(value: object, head_sha: str, run_id: int,
+                                      run_attempt: int, job_id: int) -> dict:
+    if not isinstance(value, dict):
+        raise ValueError("E2E artifact attestation is missing")
+    artifact, run, job, contents = (value.get(name) for name in
+                                    ("artifact", "run", "job", "contents"))
+    if (not isinstance(artifact, dict) or type(artifact.get("id")) is not int
+            or artifact["id"] <= 0 or artifact.get("name") != f"cucumber-report-{head_sha}"
+            or not isinstance(artifact.get("digest"), str)
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", artifact["digest"]) is None
+            or artifact.get("expired") is not False):
+        raise ValueError("E2E artifact identity, digest, or expiration is invalid")
+    if (run != {"id": run_id, "attempt": run_attempt, "head_sha": head_sha}
+            or job != {"id": job_id, "name": "E2E (Cucumber + Playwright)",
+                       "run_id": run_id, "run_attempt": run_attempt, "head_sha": head_sha}):
+        raise ValueError("E2E artifact run/job attempt provenance is invalid")
+    if (not isinstance(contents, dict) or contents.get("tested_sha") != head_sha
+            or not isinstance(contents.get("cucumber_report_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", contents["cucumber_report_sha256"]) is None
+            or type(contents.get("cucumber_report_documents")) is not int
+            or contents["cucumber_report_documents"] <= 0):
+        raise ValueError("E2E artifact downloaded report content is invalid")
+    if value.get("failure_artifacts") != []:
+        raise ValueError("successful E2E check must not synthesize a failure artifact")
+    return value
+
+
+def _download_e2e_artifact(executor, gh: tuple[str, ...], repository: str,
+                           run_id: int, artifact: dict) -> dict:
+    if type(artifact.get("size_in_bytes")) is not int \
+            or not 0 < artifact["size_in_bytes"] <= 20_000_000:
+        raise RuntimeError("dedicated E2E artifact exceeds the download bound")
+    directory = tempfile.mkdtemp(prefix="neo-e2e-artifact-")
+    try:
+        executor.run((*gh, "run", "download", str(run_id), "--repo", repository,
+                      "--name", artifact["name"], "--dir", directory), timeout=60.0)
+        tested_path = pathlib.Path(directory) / "tested-sha.txt"
+        report_path = pathlib.Path(directory) / "cucumber-report.json"
+        if not tested_path.is_file() or not report_path.is_file():
+            raise RuntimeError("dedicated E2E artifact required contents are missing")
+        if tested_path.stat().st_size > 128 or report_path.stat().st_size > 10_000_000:
+            raise RuntimeError("dedicated E2E artifact content exceeds bounds")
+        report_bytes = report_path.read_bytes()
+        report = json.loads(report_bytes)
+        if not isinstance(report, list) or not report:
+            raise RuntimeError("dedicated E2E Cucumber report is empty or malformed")
+        return {"tested_sha": tested_path.read_text(encoding="utf-8").strip(),
+                "cucumber_report_sha256": hashlib.sha256(report_bytes).hexdigest(),
+                "cucumber_report_documents": len(report)}
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 @dataclass(frozen=True)
@@ -158,9 +232,60 @@ class HostGitHubEvidenceCollector:
                         or item.get("conclusion") != "success"
                         or not isinstance(item.get("name"), str)):
                     raise RuntimeError("check-run SHA/status provenance is invalid")
+                artifacts = []
+                attestation = None
+                if item["name"] == "E2E (Cucumber + Playwright)":
+                    details_url = item.get("details_url")
+                    match = re.fullmatch(
+                        r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/([1-9][0-9]*)/job/([1-9][0-9]*)",
+                        details_url or "",
+                    )
+                    if match is None:
+                        raise RuntimeError("dedicated E2E check run identity is invalid")
+                    run_id, job_id = int(match.group(1)), int(match.group(2))
+                    run = json.loads(self.executor.run((
+                        *gh, "api", f"repos/{repository}/actions/runs/{run_id}",
+                    ), timeout=20.0))
+                    job = json.loads(self.executor.run((
+                        *gh, "api", f"repos/{repository}/actions/jobs/{job_id}",
+                    ), timeout=20.0))
+                    raw_artifacts = collect_paginated(
+                        self.executor, gh, f"repos/{repository}/actions/runs/{run_id}/artifacts",
+                        "artifacts",
+                    )
+                    expected_name = f"cucumber-report-{head_sha}"
+                    matching = [entry for entry in raw_artifacts
+                                if entry.get("name") == expected_name]
+                    if len(matching) != 1:
+                        raise RuntimeError("dedicated E2E artifact is missing or ambiguous")
+                    artifact = matching[0]
+                    contents = _download_e2e_artifact(
+                        self.executor, gh, repository, run_id, artifact,
+                    )
+                    run_attempt = run.get("run_attempt")
+                    attestation = {
+                        "artifact": {name: artifact.get(name) for name in
+                                     ("id", "name", "digest", "expired")},
+                        "run": {"id": run.get("id"), "attempt": run_attempt,
+                                "head_sha": run.get("head_sha")},
+                        "job": {"id": job.get("id"), "name": job.get("name"),
+                                "run_id": job.get("run_id"),
+                                "run_attempt": job.get("run_attempt"),
+                                "head_sha": job.get("head_sha")},
+                        "contents": contents,
+                        "failure_artifacts": sorted(
+                            entry["name"] for entry in raw_artifacts
+                            if isinstance(entry.get("name"), str)
+                            and entry["name"].startswith("playwright-failures-")),
+                    }
+                    validate_e2e_artifact_attestation(
+                        attestation, head_sha, run_id, run_attempt, job_id,
+                    )
+                    artifacts = [expected_name]
                 checks.append({"id": item["id"], "name": item["name"],
                                "head_sha": item["head_sha"], "status": item["status"],
-                               "conclusion": item["conclusion"], "state": "SUCCESS"})
+                               "conclusion": item["conclusion"], "state": "SUCCESS",
+                               "artifacts": artifacts, "artifact_attestation": attestation})
         return {
             "version": 2, "workflow_id": workflow_id, "repository": repository,
             "issue_number": issue_number, "resolution_id": resolution_id,

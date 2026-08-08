@@ -194,6 +194,22 @@ class WorkState:
         } and (self.review_state is None or self.review_state.get("review_phase") != "clean"
                or self.review_state.get("reviewed_sha") != self.implementation_sha):
             raise ValueError("human acceptance gates require exact-SHA clean independent review")
+        if self.lifecycle_state in {
+            "implementation_verified", "accepted", "archive_authorized", "archive_ci_verified",
+            "merge_authorized",
+        }:
+            applicability = self.review_state.get("e2e_applicability")
+            if isinstance(applicability, dict) and applicability.get("required") is True:
+                if applicability.get("reviewed_sha") != self.implementation_sha:
+                    raise ValueError("E2E-required acceptance evidence is stale")
+            else:
+                from .independent_review import validate_persisted_e2e_applicability
+                validate_persisted_e2e_applicability(
+                    applicability, self.implementation_sha or "",
+                    self.review_state.get("reviewer_session_id"),
+                    self.review_state.get("reviewer_run_id"),
+                    self.review_state.get("implementation_session_id"),
+                )
 
     def as_dict(self) -> dict:
         result = asdict(self)
@@ -695,6 +711,8 @@ class Controller:
                 for item in checks
             ):
                 raise RuntimeError("fresh exact-SHA checks are invalid")
+            from .deterministic_gates import validate_e2e_check
+            validate_e2e_check(checks, current_head_sha)
             from .independent_review import validate_review_evidence
             validate_review_evidence(
                 state.review_state.get("deterministic_evidence"),

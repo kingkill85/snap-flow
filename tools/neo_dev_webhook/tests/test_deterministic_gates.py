@@ -111,8 +111,20 @@ class DeterministicGateTests(unittest.TestCase):
 
 
 def check_run(sha="a" * 40):
-    return {"id": 42, "name": "controller", "head_sha": sha,
-            "status": "completed", "conclusion": "success", "state": "SUCCESS"}
+    return {"id": 42, "name": "E2E (Cucumber + Playwright)", "head_sha": sha,
+            "status": "completed", "conclusion": "success", "state": "SUCCESS",
+            "artifacts": [f"cucumber-report-{sha}"],
+            "artifact_attestation": artifact_attestation(sha)}
+
+
+def artifact_attestation(sha):
+    return {"artifact": {"id": 501, "name": f"cucumber-report-{sha}",
+                         "digest": "sha256:" + "1" * 64, "expired": False},
+            "run": {"id": 701, "attempt": 2, "head_sha": sha},
+            "job": {"id": 801, "name": "E2E (Cucumber + Playwright)",
+                    "run_id": 701, "run_attempt": 2, "head_sha": sha},
+            "contents": {"tested_sha": sha, "cucumber_report_sha256": "2" * 64,
+                         "cucumber_report_documents": 1}, "failure_artifacts": []}
 
 
 if __name__ == "__main__":

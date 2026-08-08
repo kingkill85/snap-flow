@@ -111,7 +111,8 @@ class DeploymentTest(unittest.TestCase):
             package = runtime / "neo_dev_webhook"
             package.mkdir(parents=True)
             for name in ("__init__.py", "independent_review.py", "independent_review_canary.py",
-                         "deterministic_gates.py"):
+                         "deterministic_gates.py", "verification.py", "project_control.py",
+                         "operator_commands.py"):
                 (package / name).write_bytes((source / "neo_dev_webhook" / name).read_bytes())
             root.mkdir(exist_ok=True)
             (root / ".controller-scope-fixture").write_text("guard\n")
