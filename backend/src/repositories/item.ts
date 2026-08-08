@@ -285,13 +285,13 @@ export class ItemRepository {
   }
 
   deactivateMissingForType(typeId: number, importedBaseModelNumbers: string[]): Promise<Item[]> {
-    const values: (number | string)[] = [typeId];
-    let importedPredicate = '';
-
-    if (importedBaseModelNumbers.length > 0) {
-      importedPredicate = `AND (base_model_number IS NULL OR base_model_number NOT IN (${importedBaseModelNumbers.map(() => '?').join(', ')}))`;
-      values.push(...importedBaseModelNumbers);
+    if (importedBaseModelNumbers.length === 0) {
+      throw new Error('Cannot deactivate missing products without a validated import set');
     }
+
+    const values: (number | string)[] = [typeId];
+    const importedPredicate = `AND (base_model_number IS NULL OR base_model_number NOT IN (${importedBaseModelNumbers.map(() => '?').join(', ')}))`;
+    values.push(...importedBaseModelNumbers);
 
     const deactivated = getDb().queryEntries(`
       UPDATE items

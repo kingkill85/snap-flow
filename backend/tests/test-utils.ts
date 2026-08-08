@@ -130,8 +130,8 @@ export function clearDatabase(): void {
   for (const table of tables) {
     try {
       dbInstance.query(`DELETE FROM ${table.name}`);
-    } catch {
-      // Ignore errors (might be view or other non-deletable object)
+    } catch (error) {
+      throw new Error(`Failed to reset test table ${table.name}: ${String(error)}`);
     }
   }
 

@@ -205,13 +205,24 @@ export class ExcelSyncService {
       const row = data[i];
       const rowNumber = i + 4; // Excel row number (data starts at row 4)
 
-      // Skip empty rows
-      if (!row || row.length < 9) continue;
+      // Blank rows are harmless, but a partially populated row makes the
+      // destructive import set ambiguous and must fail the entire sync.
+      const isEmptyRow = !row || row.every((value) => String(value ?? '').trim() === '');
+      if (isEmptyRow) continue;
+      if (row.length < 9) {
+        throw new Error(`Invalid catalog row ${rowNumber}: incomplete workbook schema`);
+      }
 
       const parsedRow = this.parseRow(row, rowNumber);
-      
-      // Skip rows without required fields
-      if (!parsedRow.modelNumber || !parsedRow.itemName) continue;
+
+      const missingFields = [
+        !parsedRow.category && 'category',
+        !parsedRow.itemName && 'item name',
+        !parsedRow.modelNumber && 'model number',
+      ].filter(Boolean);
+      if (missingFields.length > 0) {
+        throw new Error(`Invalid catalog row ${rowNumber}: missing ${missingFields.join(', ')}`);
+      }
 
       const baseModel = parsedRow.modelNumber;
 
@@ -555,13 +566,7 @@ export class ExcelSyncService {
         const category = await categoryRepository.findByName(_groupedItem.category);
         const categoryId = category?.id;
 
-        if (!categoryId) {
-          result.errors.push({
-            row: _groupedItem.variants[0]?.rowNumber || 0,
-            message: `Category not found: ${_groupedItem.category}`,
-          });
-          continue;
-        }
+        if (!categoryId) throw new Error(`Category not found: ${_groupedItem.category}`);
 
         const existingItem = existingItemsMap.get(baseModel);
 
@@ -592,12 +597,8 @@ export class ExcelSyncService {
           this.log(result, `  ✓ Created item: ${_groupedItem.name} (${baseModel})`, 'items');
           itemIdMap.set(baseModel, newItem.id);
         }
-      } catch (_error) {
-        result.errors.push({
-          row: _groupedItem.variants[0]?.rowNumber || 0,
-          message: `Failed to sync item ${_groupedItem.name}`,
-          details: String(_error),
-        });
+      } catch (error) {
+        throw new Error(`Failed to sync item ${_groupedItem.name}: ${String(error)}`);
       }
     }
 
@@ -643,7 +644,7 @@ export class ExcelSyncService {
     // First pass: Create/update variants
     for (const [baseModel, groupedItem] of Object.entries(groupedItems)) {
       const itemId = itemIdMap.get(baseModel);
-      if (!itemId) continue;
+      if (!itemId) throw new Error(`Missing synchronized item for model: ${baseModel}`);
 
       // Get existing variants for this item
       const existingVariants = await itemVariantRepository.findByItemId(itemId, true);
@@ -701,12 +702,8 @@ export class ExcelSyncService {
             result.phases.variants.added++;
             this.log(result, `  ✓ Created variant: ${variant.style} ($${variant.price})`, 'variants');
           }
-        } catch (_error) {
-          result.errors.push({
-            row: variant.rowNumber,
-            message: `Failed to sync variant ${variant.style}`,
-            details: String(_error),
-          });
+        } catch (error) {
+          throw new Error(`Failed to sync variant ${variant.style}: ${String(error)}`);
         }
       }
     }
@@ -714,7 +711,7 @@ export class ExcelSyncService {
     // Second pass: Deactivate variants not in Excel
     for (const [baseModel, _groupedItem] of Object.entries(groupedItems)) {
       const itemId = itemIdMap.get(baseModel);
-      if (!itemId) continue;
+      if (!itemId) throw new Error(`Missing synchronized item for model: ${baseModel}`);
 
       const allVariants = await itemVariantRepository.findByItemId(itemId, true);
       
@@ -726,12 +723,8 @@ export class ExcelSyncService {
             await itemVariantRepository.deactivate(variant.id);
             result.phases.variants.deactivated++;
             this.log(result, `  ✗ Deactivated variant: ${variant.style_name} (item: ${baseModel})`, 'variants');
-          } catch (_error) {
-            result.errors.push({
-              row: 0,
-              message: `Failed to deactivate variant ${variant.style_name}`,
-              details: String(_error),
-            });
+          } catch (error) {
+            throw new Error(`Failed to deactivate variant ${variant.style_name}: ${String(error)}`);
           }
         }
       }

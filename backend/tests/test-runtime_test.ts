@@ -22,12 +22,28 @@ Deno.test('test runtime uses tracked environment and an injected memory database
 
 Deno.test('test reset clears rows and sequence state deterministically', async () => {
   clearDatabase();
-  const first = await categoryRepository.create({ name: 'First' });
-  assertEquals(first.id, 1);
+  const db = getDb();
+  db.query("INSERT INTO item_types (name, abbreviation) VALUES ('Type', 'T')");
+  await categoryRepository.create({ name: 'First' });
+  db.query("INSERT INTO items (category_id, type_id, name, base_model_number) VALUES (1, 1, 'Item', 'MODEL')");
+  db.query("INSERT INTO item_variants (item_id, style_name, price) VALUES (1, 'Style', 10)");
+  db.query("INSERT INTO app_settings (key, value) VALUES ('test-setting', 'value')");
 
   clearDatabase();
+  const tables = db.queryEntries<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'migrations'",
+  );
+  for (const table of tables) {
+    const count = db.queryEntries<{ count: number }>(`SELECT COUNT(*) AS count FROM ${table.name}`)[0].count;
+    assertEquals(count, table.name === 'tenants' ? 1 : 0, `unexpected reset rows in ${table.name}`);
+  }
+
   const afterReset = await categoryRepository.create({ name: 'After Reset' });
+  const typeAfterReset = db.queryEntries<{ id: number }>(
+    "INSERT INTO item_types (name, abbreviation) VALUES ('After', 'A') RETURNING id",
+  )[0];
   assertEquals(afterReset.id, 1);
+  assertEquals(typeAfterReset.id, 1);
 });
 
 Deno.test('test teardown clears injected singleton state before reinitialization', async () => {
@@ -40,7 +56,7 @@ Deno.test('test teardown clears injected singleton state before reinitialization
   clearDatabase();
 });
 
-Deno.test('conflicting cwd .env and a pre-bound singleton cannot leak external database state', async () => {
+Deno.test('normal bootstrap ignores hostile cwd .env without resolving its external database', async () => {
   const tempDir = await Deno.makeTempDir({ prefix: 'snapflow-test-runtime-' });
   const externalDatabasePath = `${tempDir}/external.sqlite`;
   const externalDb = new DB(externalDatabasePath);
@@ -53,14 +69,21 @@ Deno.test('conflicting cwd .env and a pre-bound singleton cannot leak external d
   );
 
   const databaseModule = new URL('../src/config/database.ts', import.meta.url).href;
+  const testUtilsModule = new URL('./test-utils.ts', import.meta.url).href;
+  const categoryModule = new URL('../src/repositories/category.ts', import.meta.url).href;
   const denoConfig = new URL('../deno.json', import.meta.url).pathname;
   const code = `
     const database = await import(${JSON.stringify(databaseModule)});
-    database.getDb();
-    const injected = database.default.initInMemory();
-    database.setTestDb(injected);
+    const testUtils = await import(${JSON.stringify(testUtilsModule)});
+    let resetRejected = false;
+    try { testUtils.clearDatabase(); } catch { resetRejected = true; }
+    if (!resetRejected) throw new Error('destructive reset did not fail closed');
+    await testUtils.setupTestDatabase();
+    const categories = await import(${JSON.stringify(categoryModule)});
+    await categories.categoryRepository.create({ name: 'Isolated' });
     const active = database.getDb().queryEntries('PRAGMA database_list');
     if (active[0]?.file !== '') throw new Error('expected injected memory database');
+    Deno.exit(0);
   `;
 
   try {
@@ -78,8 +101,12 @@ Deno.test('conflicting cwd .env and a pre-bound singleton cannot leak external d
 
     const preservedDb = new DB(externalDatabasePath);
     const sentinel = preservedDb.queryEntries<{ value: string }>('SELECT value FROM sentinel');
+    const schema = preservedDb.queryEntries<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+    );
     preservedDb.close();
     assertEquals(sentinel, [{ value: 'preserve-me' }]);
+    assertEquals(schema, [{ name: 'sentinel' }]);
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
@@ -107,4 +134,10 @@ Deno.test('Excel sync regression is equivalent in isolated and ordered execution
 
   assertEquals(isolated.success, true, new TextDecoder().decode(isolated.stderr));
   assertEquals(ordered.success, true, new TextDecoder().decode(ordered.stderr));
+  const extractOutcome = (output: Uint8Array) => {
+    const match = new TextDecoder().decode(output).match(/EXCEL_SYNC_OUTCOME (\{[^\n]+\})/);
+    if (!match) throw new Error('Excel sync subprocess did not emit structured outcome evidence');
+    return JSON.parse(match[1]);
+  };
+  assertEquals(extractOutcome(isolated.stdout), extractOutcome(ordered.stdout));
 });

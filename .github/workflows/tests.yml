@@ -10,10 +10,17 @@ jobs:
   backend-tests:
     name: Backend Tests (Deno)
     runs-on: ubuntu-latest
+    env:
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     
     steps:
-      - name: Checkout repository
+      - name: Checkout exact tested revision
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TESTED_SHA }}
+
+      - name: Verify exact checkout SHA
+        run: test "$(git rev-parse HEAD)" = "$TESTED_SHA"
 
       - name: Setup Deno
         uses: denoland/setup-deno@v1

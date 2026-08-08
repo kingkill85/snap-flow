@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from '@std/assert';
+import { assertEquals, assertExists, assertRejects } from '@std/assert';
 import * as xlsx from 'xlsx';
 import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
 import { excelSyncService } from '../../src/services/excel-sync.ts';
@@ -226,6 +226,17 @@ Deno.test('ExcelSyncService - import only deactivates missing items from the sel
     const sharedCategoryAfter = await categoryRepository.findById(sharedCategory.id);
     const emptyCategoryAfter = await categoryRepository.findById(emptyAfterImportCategory.id);
 
+    console.log('EXCEL_SYNC_OUTCOME ' + JSON.stringify({
+      databaseTarget: getDb().queryEntries<{ file: string }>('PRAGMA database_list')[0].file || ':memory:',
+      importedActive: Boolean(importedExistingAfter?.is_active),
+      missingActive: Boolean(missingImportedAfter?.is_active),
+      protectedActive: Boolean(protectedAfter?.is_active),
+      sharedCategoryActive: Boolean(sharedCategoryAfter?.is_active),
+      emptyCategoryActive: Boolean(emptyCategoryAfter?.is_active),
+      itemDeactivatedCount: result.phases.items.deactivated,
+      categoryDeactivatedCount: result.phases.categories.deactivated,
+    }));
+
     assertExists(missingImportedAfter);
     assertExists(protectedAfter);
     assertExists(importedExistingAfter);
@@ -284,6 +295,15 @@ Deno.test('ItemRepository - missing-item mutation is constrained to the selected
   assertEquals(Boolean((await itemRepository.findById(selectedPresent.id))?.is_active), true);
   assertEquals(Boolean((await itemRepository.findById(protectedItem.id))?.is_active), true);
   assertEquals(Boolean((await itemRepository.findById(selectedWithoutModel.id))?.is_active), false);
+});
+
+Deno.test('ItemRepository - missing-item mutation rejects an empty import set', async () => {
+  clearDatabase();
+  await assertRejects(
+    async () => await itemRepository.deactivateMissingForType(1, []),
+    Error,
+    'without a validated import set',
+  );
 });
 
 Deno.test('ExcelSyncService - invalid type rolls back without broadening scope', async () => {
@@ -346,6 +366,115 @@ Deno.test('ExcelSyncService - empty or unreadable workbook leaves catalog unchan
     assertEquals(Boolean((await itemRepository.findById(existingItem.id))?.is_active), true);
     assertEquals(Boolean((await categoryRepository.findById(category.id))?.is_active), true);
   } finally {
+    await Deno.remove(fullPath).catch(() => {});
+  }
+});
+
+Deno.test('ExcelSyncService - partially malformed workbook fails before cleanup', async () => {
+  clearDatabase();
+  const selectedType = await itemTypeRepository.create({ name: 'Selected', abbreviation: 'SEL' });
+  const category = await categoryRepository.create({ name: 'Existing Category' });
+  const existingItem = await itemRepository.create({
+    category_id: category.id,
+    type_id: selectedType.id,
+    name: 'Existing',
+    base_model_number: 'EXISTING',
+  });
+  const worksheet = xlsx.utils.aoa_to_sheet([
+    [], [], [],
+    ['Valid Category', '', '', 'Valid Product', '', 'VALID', '', 'Default', 'VALID-DEFAULT', 10],
+    ['Malformed partial row'],
+  ]);
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
+  const relativePath = 'imports/partial-invalid-scope-test.xlsx';
+  const fullPath = `./uploads/${relativePath}`;
+  await Deno.mkdir('./uploads/imports', { recursive: true });
+  await Deno.writeFile(fullPath, new Uint8Array(xlsx.write(workbook, { type: 'array', bookType: 'xlsx' })));
+
+  try {
+    const result = await excelSyncService.syncCatalog(relativePath, selectedType.id);
+    assertEquals(result.success, false);
+    assertEquals(result.phases.items.deactivated, 0);
+    assertEquals(await categoryRepository.findByName('Valid Category'), null);
+    assertEquals(Boolean((await itemRepository.findById(existingItem.id))?.is_active), true);
+    assertEquals(Boolean((await categoryRepository.findById(category.id))?.is_active), true);
+  } finally {
+    await Deno.remove(fullPath).catch(() => {});
+  }
+});
+
+Deno.test('ExcelSyncService - caught item persistence failure aborts and rolls back', async () => {
+  clearDatabase();
+  const selectedType = await itemTypeRepository.create({ name: 'Selected', abbreviation: 'SEL' });
+  const category = await categoryRepository.create({ name: 'Catalog Category' });
+  const importedItem = await itemRepository.create({
+    category_id: category.id,
+    type_id: selectedType.id,
+    name: 'Imported Existing',
+    base_model_number: 'IMPORTED',
+    is_active: false,
+  });
+  const missingItem = await itemRepository.create({
+    category_id: category.id,
+    type_id: selectedType.id,
+    name: 'Missing Existing',
+    base_model_number: 'MISSING',
+  });
+  const worksheet = xlsx.utils.aoa_to_sheet([
+    [], [], [],
+    ['Catalog Category', '', '', 'Imported Existing', '', 'IMPORTED', '', 'Default', 'IMPORTED-DEFAULT', 10],
+  ]);
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
+  const relativePath = 'imports/item-failure-rollback-test.xlsx';
+  const fullPath = `./uploads/${relativePath}`;
+  await Deno.mkdir('./uploads/imports', { recursive: true });
+  await Deno.writeFile(fullPath, new Uint8Array(xlsx.write(workbook, { type: 'array', bookType: 'xlsx' })));
+  getDb().query("CREATE TRIGGER fail_item_update BEFORE UPDATE ON items BEGIN SELECT RAISE(ABORT, 'forced item failure'); END");
+
+  try {
+    const result = await excelSyncService.syncCatalog(relativePath, selectedType.id);
+    assertEquals(result.success, false);
+    assertEquals(Boolean((await itemRepository.findById(importedItem.id))?.is_active), false);
+    assertEquals(Boolean((await itemRepository.findById(missingItem.id))?.is_active), true);
+  } finally {
+    getDb().query('DROP TRIGGER IF EXISTS fail_item_update');
+    await Deno.remove(fullPath).catch(() => {});
+  }
+});
+
+Deno.test('ExcelSyncService - caught variant persistence failure aborts and rolls back', async () => {
+  clearDatabase();
+  const selectedType = await itemTypeRepository.create({ name: 'Selected', abbreviation: 'SEL' });
+  const category = await categoryRepository.create({ name: 'Existing Category' });
+  const existingItem = await itemRepository.create({
+    category_id: category.id,
+    type_id: selectedType.id,
+    name: 'Existing',
+    base_model_number: 'EXISTING',
+  });
+  const worksheet = xlsx.utils.aoa_to_sheet([
+    [], [], [],
+    ['New Category', '', '', 'New Product', '', 'NEW', '', 'Default', 'NEW-DEFAULT', 10],
+  ]);
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
+  const relativePath = 'imports/variant-failure-rollback-test.xlsx';
+  const fullPath = `./uploads/${relativePath}`;
+  await Deno.mkdir('./uploads/imports', { recursive: true });
+  await Deno.writeFile(fullPath, new Uint8Array(xlsx.write(workbook, { type: 'array', bookType: 'xlsx' })));
+  getDb().query("CREATE TRIGGER fail_variant_insert BEFORE INSERT ON item_variants BEGIN SELECT RAISE(ABORT, 'forced variant failure'); END");
+
+  try {
+    const result = await excelSyncService.syncCatalog(relativePath, selectedType.id);
+    assertEquals(result.success, false);
+    assertEquals(await categoryRepository.findByName('New Category'), null);
+    assertEquals(await itemRepository.findByBaseModelNumber('NEW'), null);
+    assertEquals(Boolean((await itemRepository.findById(existingItem.id))?.is_active), true);
+    assertEquals(Boolean((await categoryRepository.findById(category.id))?.is_active), true);
+  } finally {
+    getDb().query('DROP TRIGGER IF EXISTS fail_variant_insert');
     await Deno.remove(fullPath).catch(() => {});
   }
 });
