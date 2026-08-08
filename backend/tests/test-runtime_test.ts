@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from '@std/assert';
+import { assertEquals, assertRejects, assertThrows } from '@std/assert';
 import { env } from '../src/config/env.ts';
 import { getDb } from '../src/config/database.ts';
 import {
@@ -9,15 +9,41 @@ import {
 } from './test-utils.ts';
 import { categoryRepository } from '../src/repositories/category.ts';
 import { DB } from 'sqlite';
+import {
+  cleanupTestUploadRoot,
+  createTestUploadRoot,
+  getNormalUploadRoot,
+} from './test-runtime-bootstrap.ts';
 
 await setupTestDatabase();
 
 Deno.test('test runtime uses tracked environment and an injected memory database', () => {
   assertEquals(env.NODE_ENV, 'test');
   assertEquals(env.DATABASE_URL, ':memory:');
-  assertEquals(env.UPLOAD_DIR, `${Deno.cwd()}/uploads`);
+  assertEquals(env.UPLOAD_DIR.startsWith('/tmp/snapflow-backend-tests-'), true);
+  assertEquals(env.UPLOAD_DIR.startsWith(getNormalUploadRoot()), false);
   assertTestDatabase();
   assertEquals(getDb().queryEntries<{ file: string }>('PRAGMA database_list')[0].file, '');
+});
+
+Deno.test('test upload roots are unique and cleanup preserves normal upload sentinel', async () => {
+  const normalRoot = getNormalUploadRoot();
+  const sentinelPath = `${normalRoot}/issue84-normal-upload-sentinel`;
+  const firstRoot = await createTestUploadRoot();
+  const secondRoot = await createTestUploadRoot();
+  await Deno.mkdir(normalRoot, { recursive: true });
+  await Deno.writeTextFile(sentinelPath, 'preserve-me');
+  await Deno.writeTextFile(`${firstRoot}/isolated-test-file`, 'temporary');
+
+  try {
+    assertEquals(firstRoot === secondRoot, false);
+    await cleanupTestUploadRoot(firstRoot);
+    assertEquals(await Deno.readTextFile(sentinelPath), 'preserve-me');
+    await assertRejects(() => Deno.stat(firstRoot), Deno.errors.NotFound);
+  } finally {
+    await cleanupTestUploadRoot(secondRoot).catch(() => {});
+    await Deno.remove(sentinelPath).catch(() => {});
+  }
 });
 
 Deno.test('test reset clears rows and sequence state deterministically', async () => {
@@ -116,20 +142,14 @@ Deno.test('Excel sync regression is equivalent in isolated and ordered execution
   const backendRoot = new URL('../', import.meta.url).pathname;
   const common = {
     cwd: backendRoot,
-    env: {
-      NODE_ENV: 'test',
-      DATABASE_URL: ':memory:',
-      UPLOAD_DIR: './uploads',
-      JWT_SECRET: 'test-secret-key-for-tests-32-chars',
-    },
   };
   const isolated = await new Deno.Command(Deno.execPath(), {
     ...common,
-    args: ['test', '--allow-all', 'tests/services/excel-sync_test.ts', '--filter', 'import only deactivates'],
+    args: ['task', 'test', 'tests/services/excel-sync_test.ts', '--filter', 'import only deactivates'],
   }).output();
   const ordered = await new Deno.Command(Deno.execPath(), {
     ...common,
-    args: ['test', '--allow-all', 'tests/services/excel-sync_test.ts'],
+    args: ['task', 'test', 'tests/services/excel-sync_test.ts'],
   }).output();
 
   assertEquals(isolated.success, true, new TextDecoder().decode(isolated.stderr));

@@ -7,9 +7,16 @@ import { itemRepository } from '../../src/repositories/item.ts';
 import { itemVariantRepository } from '../../src/repositories/item-variant.ts';
 import { itemTypeRepository } from '../../src/repositories/item-type.ts';
 import { getDb } from '../../src/config/database.ts';
+import { env } from '../../src/config/env.ts';
 
 // Setup test database before all tests
 await setupTestDatabase();
+
+function assertNoCommittedMutations(result: Awaited<ReturnType<typeof excelSyncService.syncCatalog>>): void {
+  for (const phase of Object.values(result.phases)) {
+    for (const value of Object.values(phase)) assertEquals(value, 0);
+  }
+}
 
 Deno.test("ExcelSyncService - syncCategories creates new categories", async () => {
   clearDatabase();
@@ -208,9 +215,9 @@ Deno.test('ExcelSyncService - import only deactivates missing items from the sel
   xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
   const workbookBytes = xlsx.write(workbook, { type: 'array', bookType: 'xlsx' });
   const relativePath = 'imports/product-type-scope-test.xlsx';
-  const fullPath = `./uploads/${relativePath}`;
+  const fullPath = `${env.UPLOAD_DIR}/${relativePath}`;
 
-  await Deno.mkdir('./uploads/imports', { recursive: true });
+  await Deno.mkdir(`${env.UPLOAD_DIR}/imports`, { recursive: true });
   await Deno.writeFile(fullPath, new Uint8Array(workbookBytes));
 
   try {
@@ -324,13 +331,14 @@ Deno.test('ExcelSyncService - invalid type rolls back without broadening scope',
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
   const relativePath = 'imports/invalid-type-scope-test.xlsx';
-  const fullPath = `./uploads/${relativePath}`;
-  await Deno.mkdir('./uploads/imports', { recursive: true });
+  const fullPath = `${env.UPLOAD_DIR}/${relativePath}`;
+  await Deno.mkdir(`${env.UPLOAD_DIR}/imports`, { recursive: true });
   await Deno.writeFile(fullPath, new Uint8Array(xlsx.write(workbook, { type: 'array', bookType: 'xlsx' })));
 
   try {
     const result = await excelSyncService.syncCatalog(relativePath, 999_999);
     assertEquals(result.success, false);
+    assertNoCommittedMutations(result);
     assertEquals(result.phases.items.deactivated, 0);
     assertEquals(await categoryRepository.findByName('New Category'), null);
     assertEquals(Boolean((await itemRepository.findById(protectedItem.id))?.is_active), true);
@@ -352,10 +360,10 @@ Deno.test('ExcelSyncService - empty or unreadable workbook leaves catalog unchan
     base_model_number: 'EXISTING',
   });
   const relativePath = 'imports/empty-scope-test.xlsx';
-  const fullPath = `./uploads/${relativePath}`;
+  const fullPath = `${env.UPLOAD_DIR}/${relativePath}`;
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([[], [], []]), 'Catalog');
-  await Deno.mkdir('./uploads/imports', { recursive: true });
+  await Deno.mkdir(`${env.UPLOAD_DIR}/imports`, { recursive: true });
   await Deno.writeFile(fullPath, new Uint8Array(xlsx.write(workbook, { type: 'array', bookType: 'xlsx' })));
 
   try {
@@ -363,6 +371,8 @@ Deno.test('ExcelSyncService - empty or unreadable workbook leaves catalog unchan
     const unreadableResult = await excelSyncService.syncCatalog('imports/does-not-exist.xlsx', selectedType.id);
     assertEquals(emptyResult.success, false);
     assertEquals(unreadableResult.success, false);
+    assertNoCommittedMutations(emptyResult);
+    assertNoCommittedMutations(unreadableResult);
     assertEquals(Boolean((await itemRepository.findById(existingItem.id))?.is_active), true);
     assertEquals(Boolean((await categoryRepository.findById(category.id))?.is_active), true);
   } finally {
@@ -388,13 +398,14 @@ Deno.test('ExcelSyncService - partially malformed workbook fails before cleanup'
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
   const relativePath = 'imports/partial-invalid-scope-test.xlsx';
-  const fullPath = `./uploads/${relativePath}`;
-  await Deno.mkdir('./uploads/imports', { recursive: true });
+  const fullPath = `${env.UPLOAD_DIR}/${relativePath}`;
+  await Deno.mkdir(`${env.UPLOAD_DIR}/imports`, { recursive: true });
   await Deno.writeFile(fullPath, new Uint8Array(xlsx.write(workbook, { type: 'array', bookType: 'xlsx' })));
 
   try {
     const result = await excelSyncService.syncCatalog(relativePath, selectedType.id);
     assertEquals(result.success, false);
+    assertNoCommittedMutations(result);
     assertEquals(result.phases.items.deactivated, 0);
     assertEquals(await categoryRepository.findByName('Valid Category'), null);
     assertEquals(Boolean((await itemRepository.findById(existingItem.id))?.is_active), true);
@@ -428,14 +439,15 @@ Deno.test('ExcelSyncService - caught item persistence failure aborts and rolls b
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
   const relativePath = 'imports/item-failure-rollback-test.xlsx';
-  const fullPath = `./uploads/${relativePath}`;
-  await Deno.mkdir('./uploads/imports', { recursive: true });
+  const fullPath = `${env.UPLOAD_DIR}/${relativePath}`;
+  await Deno.mkdir(`${env.UPLOAD_DIR}/imports`, { recursive: true });
   await Deno.writeFile(fullPath, new Uint8Array(xlsx.write(workbook, { type: 'array', bookType: 'xlsx' })));
   getDb().query("CREATE TRIGGER fail_item_update BEFORE UPDATE ON items BEGIN SELECT RAISE(ABORT, 'forced item failure'); END");
 
   try {
     const result = await excelSyncService.syncCatalog(relativePath, selectedType.id);
     assertEquals(result.success, false);
+    assertNoCommittedMutations(result);
     assertEquals(Boolean((await itemRepository.findById(importedItem.id))?.is_active), false);
     assertEquals(Boolean((await itemRepository.findById(missingItem.id))?.is_active), true);
   } finally {
@@ -461,14 +473,15 @@ Deno.test('ExcelSyncService - caught variant persistence failure aborts and roll
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
   const relativePath = 'imports/variant-failure-rollback-test.xlsx';
-  const fullPath = `./uploads/${relativePath}`;
-  await Deno.mkdir('./uploads/imports', { recursive: true });
+  const fullPath = `${env.UPLOAD_DIR}/${relativePath}`;
+  await Deno.mkdir(`${env.UPLOAD_DIR}/imports`, { recursive: true });
   await Deno.writeFile(fullPath, new Uint8Array(xlsx.write(workbook, { type: 'array', bookType: 'xlsx' })));
   getDb().query("CREATE TRIGGER fail_variant_insert BEFORE INSERT ON item_variants BEGIN SELECT RAISE(ABORT, 'forced variant failure'); END");
 
   try {
     const result = await excelSyncService.syncCatalog(relativePath, selectedType.id);
     assertEquals(result.success, false);
+    assertNoCommittedMutations(result);
     assertEquals(await categoryRepository.findByName('New Category'), null);
     assertEquals(await itemRepository.findByBaseModelNumber('NEW'), null);
     assertEquals(Boolean((await itemRepository.findById(existingItem.id))?.is_active), true);
@@ -497,8 +510,8 @@ Deno.test('ExcelSyncService - in-transaction failure rolls back catalog mutation
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, worksheet, 'Catalog');
   const relativePath = 'imports/rollback-scope-test.xlsx';
-  const fullPath = `./uploads/${relativePath}`;
-  await Deno.mkdir('./uploads/imports', { recursive: true });
+  const fullPath = `${env.UPLOAD_DIR}/${relativePath}`;
+  await Deno.mkdir(`${env.UPLOAD_DIR}/imports`, { recursive: true });
   await Deno.writeFile(fullPath, new Uint8Array(xlsx.write(workbook, { type: 'array', bookType: 'xlsx' })));
   getDb().query(`
     CREATE TRIGGER fail_sync_timestamp
@@ -511,6 +524,7 @@ Deno.test('ExcelSyncService - in-transaction failure rolls back catalog mutation
   try {
     const result = await excelSyncService.syncCatalog(relativePath, selectedType.id);
     assertEquals(result.success, false);
+    assertNoCommittedMutations(result);
     assertEquals(await categoryRepository.findByName('New Category'), null);
     assertEquals(await itemRepository.findByBaseModelNumber('NEW'), null);
     assertEquals(Boolean((await itemRepository.findById(existingItem.id))?.is_active), true);

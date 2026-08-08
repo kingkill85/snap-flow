@@ -44,7 +44,6 @@ jobs:
           NODE_ENV: test
           JWT_SECRET: test-secret-key-for-ci-only-32-chars-long
           DATABASE_URL: ':memory:'
-          UPLOAD_DIR: ./uploads
 
       - name: Upload test results
         if: failure()

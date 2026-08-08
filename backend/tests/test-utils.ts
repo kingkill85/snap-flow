@@ -4,7 +4,8 @@
 import Database, { getDb, hasTestDb, setTestDb } from '../src/config/database.ts';
 import { runMigrations } from '../src/scripts/migrate.ts';
 import { clearRateLimitStore } from '../src/middleware/rate-limit.ts';
-import { fileStorageService } from '../src/services/file-storage.ts';
+import { env } from '../src/config/env.ts';
+import { assertIsolatedTestUploadRoot } from './test-runtime-bootstrap.ts';
 
 let isTestDatabaseInitialized = false;
 
@@ -13,63 +14,11 @@ let isTestDatabaseInitialized = false;
  * Call this after tests that create files to prevent orphaned test files
  */
 export async function cleanupTestUploads(): Promise<void> {
-  try {
-    // Clean up test directories that tests create files in
-    const testDirs = [
-      'floorplans',
-      'items',
-      'test-source',
-      'test-dest',
-    ];
-    
-    for (const dir of testDirs) {
-      const dirPath = fileStorageService.getFilePath(dir);
-      try {
-        // Read directory contents
-        for await (const entry of Deno.readDir(dirPath)) {
-          if (entry.isFile) {
-            const filePath = `${dir}/${entry.name}`;
-            try {
-              await fileStorageService.deleteFile(filePath);
-            } catch {
-              // Ignore errors for individual files
-            }
-          }
-        }
-      } catch {
-        // Directory might not exist, which is fine
-      }
-    }
-    
-    // Clean up project BOM images
-    const projectsDir = fileStorageService.getFilePath('projects');
-    try {
-      for await (const projectEntry of Deno.readDir(projectsDir)) {
-        if (projectEntry.isDirectory) {
-          const bomImagesDir = `projects/${projectEntry.name}/bom-images`;
-          const fullPath = fileStorageService.getFilePath(bomImagesDir);
-          try {
-            for await (const fileEntry of Deno.readDir(fullPath)) {
-              if (fileEntry.isFile) {
-                const filePath = `${bomImagesDir}/${fileEntry.name}`;
-                try {
-                  await fileStorageService.deleteFile(filePath);
-                } catch {
-                  // Ignore errors for individual files
-                }
-              }
-            }
-          } catch {
-            // bom-images directory might not exist
-          }
-        }
-      }
-    } catch {
-      // projects directory might not exist
-    }
-  } catch (error) {
-    console.error('Error cleaning up test uploads:', error);
-  }
+  assertIsolatedTestUploadRoot(env.UPLOAD_DIR);
+  await Deno.remove(env.UPLOAD_DIR, { recursive: true }).catch((error) => {
+    if (!(error instanceof Deno.errors.NotFound)) throw error;
+  });
+  await Deno.mkdir(env.UPLOAD_DIR, { recursive: true });
 }
 
 /**

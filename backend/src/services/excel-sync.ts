@@ -58,6 +58,15 @@ export interface SyncResult {
   }>;
 }
 
+function emptySyncPhases(): SyncResult['phases'] {
+  return {
+    categories: { added: 0, activated: 0, deactivated: 0, total: 0 },
+    items: { added: 0, updated: 0, deactivated: 0, total: 0 },
+    variants: { added: 0, updated: 0, deactivated: 0, imagesExtracted: 0, total: 0 },
+    addons: { linked: 0, skipped: 0, notFound: 0, total: 0 },
+  };
+}
+
 export interface ExcelRowData {
   rowNumber: number;
   category: string;
@@ -112,12 +121,7 @@ export class ExcelSyncService {
   async syncCatalog(excelPath: string, typeId: number): Promise<SyncResult> {
     const result: SyncResult = {
       success: true,
-      phases: {
-        categories: { added: 0, activated: 0, deactivated: 0, total: 0 },
-        items: { added: 0, updated: 0, deactivated: 0, total: 0 },
-        variants: { added: 0, updated: 0, deactivated: 0, imagesExtracted: 0, total: 0 },
-        addons: { linked: 0, skipped: 0, notFound: 0, total: 0 },
-      },
+      phases: emptySyncPhases(),
       log: [],
       errors: [],
     };
@@ -173,6 +177,9 @@ export class ExcelSyncService {
 
     } catch (error) {
       result.success = false;
+      // A failed synchronization has no committed database effects. Discard
+      // optimistic in-transaction accounting after rollback/fatal failure.
+      result.phases = emptySyncPhases();
       const errorMsg = `Fatal error: ${error instanceof Error ? error.message : String(error)}`;
       this.log(result, `❌ ${errorMsg}`, 'error');
       result.errors.push({ row: 0, message: errorMsg });
