@@ -5,6 +5,7 @@ import json
 import pathlib
 import tempfile
 import threading
+from unittest import mock
 
 SPEC_SHA = "9fcf912d46afe5fadc40c9fcb7dae3f7ff59f96b"
 
@@ -255,6 +256,177 @@ class IndependentReviewCanaryTests(unittest.TestCase):
 
 
 class IndependentReviewEntrypointTests(unittest.TestCase):
+    def test_window_failure_keeps_generation_authority_and_immediate_retry_is_exactly_once(self):
+        from neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from neo_dev_webhook.tests.test_project_control import TARGET
+
+        class Executor:
+            def __init__(self):
+                self.windows = []
+                self.new_window_attempts = 0
+
+            def run(self, argv, *, timeout):
+                if argv[:2] == ("tmux", "list-windows"):
+                    return "".join(f"{window}\n" for window in self.windows)
+                if argv[:2] == ("tmux", "new-window"):
+                    self.new_window_attempts += 1
+                    if self.new_window_attempts == 1:
+                        raise RuntimeError("injected window creation failure")
+                    self.windows.append(argv[argv.index("-n") + 1])
+                    return ""
+                raise AssertionError(argv)
+
+        class Supervisor:
+            def __init__(self):
+                self.starts = 0
+
+            def start(self, operation, key, session_id=None, run_id=None):
+                self.starts += 1
+
+        key = "12345678-1234-4abc-8def-123456789abc"
+        implementer = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        review = migrate_fixture()
+        review.update(implementation_session_id=implementer, review_phase="awaiting_review")
+        store = InMemoryResolutionStore()
+        initial = store.bind(key, TARGET)
+        store.save(key, initial, WorkState(
+            TARGET, codex_session_id=implementer, phase="exited_resumable",
+            lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
+            base_sha="0" * 40, spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+            approval_at="2026-08-08T00:00:00Z", review_state=review,
+        ))
+        executor, supervisor = Executor(), Supervisor()
+        controller = Controller(Registry([TARGET]), store, executor, supervisor)
+
+        with self.assertRaisesRegex(RuntimeError, "injected window"):
+            controller.execute("review", TARGET.repository, TARGET.issue_number,
+                               key, valid_evidence())
+        failed = store.load(key)
+        self.assertIsNotNone(failed)
+        claim = failed.review_state["reviewer_launch_claim"]
+        self.assertEqual(claim["step"], "supervisor_started")
+
+        controller.execute("review", TARGET.repository, TARGET.issue_number,
+                           key, valid_evidence())
+
+        self.assertEqual(supervisor.starts, 1)
+        self.assertEqual(executor.new_window_attempts, 2)
+        self.assertEqual(executor.windows, ["issue-77-review-1"])
+
+    def test_stale_launching_lease_recovers_without_permanent_wedge(self):
+        from neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+
+        class Supervisor:
+            def __init__(self): self.starts = 0
+            def start(self, operation, key, session_id=None, run_id=None): self.starts += 1
+
+        key = "12345678-1234-4abc-8def-123456789abc"
+        run_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        review = migrate_fixture()
+        review.update(
+            review_phase="reviewer_starting", reviewer_run_id=run_id,
+            reviewed_sha="a" * 40, deterministic_evidence=valid_evidence(),
+            reviewer_launch_claim={
+                "token": "crashed-owner", "run_id": run_id, "generation": 1,
+                "lease_until": 0, "step": "launching",
+            },
+        )
+        store = InMemoryResolutionStore()
+        store.records[key] = WorkState(
+            TARGET, codex_session_id=review["implementation_session_id"],
+            phase="exited_resumable", lifecycle_state="independent_review",
+            lifecycle_updated_at="2026-08-08T00:00:00Z", base_sha="0" * 40,
+            spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+            approval_at="2026-08-08T00:00:00Z", review_state=review,
+        )
+        supervisor = Supervisor()
+        controller = Controller(Registry([TARGET]), store, FakeExecutor(["", ""]), supervisor)
+
+        controller.execute("review", TARGET.repository, TARGET.issue_number,
+                           key, valid_evidence())
+
+        self.assertEqual(supervisor.starts, 1)
+
+    def test_stale_post_supervisor_crash_boundary_resumes_at_window_step(self):
+        from neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+
+        class Supervisor:
+            def __init__(self): self.starts = 0
+            def start(self, operation, key, session_id=None, run_id=None): self.starts += 1
+
+        key = "12345678-1234-4abc-8def-123456789abc"
+        run_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        review = migrate_fixture()
+        review.update(
+            review_phase="reviewer_starting", reviewer_run_id=run_id,
+            reviewed_sha="a" * 40, deterministic_evidence=valid_evidence(),
+            reviewer_launch_claim={
+                "token": "crashed-owner", "run_id": run_id, "generation": 1,
+                "lease_until": 0, "step": "supervisor_started",
+            },
+        )
+        store = InMemoryResolutionStore()
+        store.records[key] = WorkState(
+            TARGET, codex_session_id=review["implementation_session_id"],
+            phase="exited_resumable", lifecycle_state="independent_review",
+            lifecycle_updated_at="2026-08-08T00:00:00Z", base_sha="0" * 40,
+            spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+            approval_at="2026-08-08T00:00:00Z", review_state=review,
+        )
+        supervisor = Supervisor()
+        controller = Controller(Registry([TARGET]), store, FakeExecutor(["", ""]), supervisor)
+
+        controller.execute("review", TARGET.repository, TARGET.issue_number,
+                           key, valid_evidence())
+
+        self.assertEqual(supervisor.starts, 0)
+
+    def test_crash_after_unrecorded_supervisor_start_reconciles_live_generation_socket(self):
+        from neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, RuntimeSupervisorLauncher, WorkState,
+        )
+        from neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+
+        key = "12345678-1234-4abc-8def-123456789abc"
+        run_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        review = migrate_fixture()
+        review.update(
+            review_phase="reviewer_starting", reviewer_run_id=run_id,
+            reviewed_sha="a" * 40, deterministic_evidence=valid_evidence(),
+            reviewer_launch_claim={
+                "token": "crashed-owner", "run_id": run_id, "generation": 1,
+                "lease_until": 0, "step": "launching",
+            },
+        )
+        store = InMemoryResolutionStore()
+        store.records[key] = WorkState(
+            TARGET, codex_session_id=review["implementation_session_id"],
+            phase="exited_resumable", lifecycle_state="independent_review",
+            lifecycle_updated_at="2026-08-08T00:00:00Z", base_sha="0" * 40,
+            spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+            approval_at="2026-08-08T00:00:00Z", review_state=review,
+        )
+        controller = Controller(
+            Registry([TARGET]), store, FakeExecutor(["", ""]), RuntimeSupervisorLauncher(),
+        )
+
+        with mock.patch("neo_dev_webhook.project_control.os.geteuid", return_value=0), \
+             mock.patch.object(RuntimeSupervisorLauncher, "_socket_is_live",
+                               return_value=True), \
+             mock.patch("neo_dev_webhook.project_control.subprocess.Popen") as popen:
+            controller.execute("review", TARGET.repository, TARGET.issue_number,
+                               key, valid_evidence())
+
+        popen.assert_not_called()
+
     def test_concurrent_review_retries_claim_one_durable_launch(self):
         from neo_dev_webhook.project_control import (
             Controller, FileResolutionStore, Registry, WorkState,

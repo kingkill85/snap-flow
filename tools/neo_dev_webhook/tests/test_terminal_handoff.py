@@ -80,9 +80,86 @@ class TerminalImplementationHandoffTest(unittest.TestCase):
 
         self.assertEqual(result.lifecycle_state, "independent_review")
         self.assertEqual(result.implementation_sha, IMPLEMENTATION)
+        self.assertEqual(result.implementation_handoff, HANDOFF)
         self.assertEqual(result.phase, "exited_resumable")
         execute.assert_any_call("review", TARGET.repository, 84, WORKFLOW,
                                 {"sha": IMPLEMENTATION})
+
+        duplicate = self.controller.complete_terminal(
+            WORKFLOW, 0, "correctable", True, dict(HANDOFF),
+        )
+        self.assertEqual(duplicate, result)
+
+    def test_immediate_complete_terminal_flow_persists_canonical_handoff_for_exact_replay_only(self):
+        from neo_dev_webhook.tests.test_independent_review import valid_evidence
+
+        class Executor:
+            def __init__(self): self.windows = []
+            def run(self, argv, *, timeout):
+                if argv[:2] == ("tmux", "list-windows"):
+                    return "".join(f"{window}\n" for window in self.windows)
+                if argv[:2] == ("tmux", "new-window"):
+                    self.windows.append(argv[argv.index("-n") + 1])
+                    return ""
+                raise AssertionError(argv)
+
+        def replace_spec(value):
+            if isinstance(value, dict):
+                return {key: replace_spec(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [replace_spec(item) for item in value]
+            return SPEC if value == "9fcf912d46afe5fadc40c9fcb7dae3f7ff59f96b" else value
+
+        executor = Executor()
+        controller = Controller(
+            Registry((TARGET,)), self.store, executor, github_collector=self.collector,
+        )
+        fresh = {"pr": {"number": 85, "headRefOid": IMPLEMENTATION}}
+        self.collector.collect_bound.return_value = fresh
+        deterministic = replace_spec(valid_evidence(
+            IMPLEMENTATION, worktree=TARGET.worktree, change="issue-84",
+        ))
+        transition = mock.Mock(verified=True, blocker=None, evidence={
+            "lifecycle_state": "independent_review",
+            "lifecycle_updated_at": "2026-08-08T01:00:00Z",
+            "implementation_sha": IMPLEMENTATION,
+            "review_state": {**self.store.load(WORKFLOW).review_state,
+                             "review_phase": "awaiting_review",
+                             "deterministic_evidence": deterministic},
+        })
+        with mock.patch("neo_dev_webhook.verification.validate_host_evidence"), \
+             mock.patch("neo_dev_webhook.verification.RepositoryGitHubVerifier.verify_next",
+                        return_value=transition):
+            advanced = controller.complete_terminal(
+                WORKFLOW, 0, "correctable", True, dict(HANDOFF),
+            )
+
+        self.assertEqual(advanced.lifecycle_state, "independent_review")
+        self.assertEqual(advanced.implementation_handoff, HANDOFF)
+        self.assertEqual(executor.windows, ["issue-84-review-1"])
+        self.assertEqual(
+            controller.complete_terminal(WORKFLOW, 0, "correctable", True, dict(HANDOFF)),
+            advanced,
+        )
+        invalid_replays = (
+            ({key: value for key, value in HANDOFF.items() if key != "pull_request_number"},
+             0, "correctable", True),
+            ({**HANDOFF, "approved_spec_sha": "b" * 40}, 0, "correctable", True),
+            ({**HANDOFF, "pull_request_number": 999}, 0, "correctable", True),
+            ({**HANDOFF, "implementation_sha": "b" * 40}, 0, "correctable", True),
+            ({**HANDOFF, "phase": "implementation_started"}, 0, "correctable", True),
+            (HANDOFF, 1, "correctable", True),
+            (HANDOFF, 0, "blocked", True),
+            (HANDOFF, 0, "correctable", False),
+        )
+        for handoff, exit_code, outcome, resumable in invalid_replays:
+            with self.subTest(handoff=handoff, exit_code=exit_code,
+                              outcome=outcome, resumable=resumable), \
+                    self.assertRaises(RuntimeError):
+                controller.complete_terminal(
+                    WORKFLOW, exit_code, outcome, resumable, handoff,
+                )
+            self.assertEqual(self.store.load(WORKFLOW), advanced)
 
     def test_duplicate_terminal_callback_is_idempotent(self):
         review = {**self.store.load(WORKFLOW).review_state,

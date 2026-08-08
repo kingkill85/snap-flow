@@ -272,6 +272,15 @@ class ProjectWorkerExecutor:
 
 
 class RuntimeSupervisorLauncher:
+    @staticmethod
+    def _socket_is_live(path: pathlib.Path) -> bool:
+        """Distinguish a bound supervisor socket from a stale filesystem entry."""
+        try:
+            entries = pathlib.Path("/proc/net/unix").read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return False
+        return any(line.split()[-1:] == [str(path)] for line in entries)
+
     def start(self, operation: str, idempotency_key: str,
               session_id: str | None = None, run_id: str | None = None) -> None:
         if os.geteuid() != 0:
@@ -282,6 +291,8 @@ class RuntimeSupervisorLauncher:
         if run_id is not None:
             argv.extend(("--review-run-id", run_id))
         path = pathlib.Path("/run/neo-dev-runtime") / f"{idempotency_key}.sock"
+        if operation == "review" and self._socket_is_live(path):
+            return
         path.unlink(missing_ok=True)
         process = subprocess.Popen(
             argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -903,10 +914,11 @@ class Controller:
         state = self.observe_terminal(
             idempotency_key, exit_code, semantic_outcome, resumable,
         )
+        persisted = replace(state, implementation_handoff=dict(implementation_handoff))
+        self.store.save(idempotency_key, state, persisted)
+        state = persisted
         if self.github_collector is None:
-            persisted = replace(state, implementation_handoff=dict(implementation_handoff))
-            self.store.save(idempotency_key, state, persisted)
-            return persisted
+            return state
         fresh = self.github_collector.collect_bound(
             state.target.repository, state.target.issue_number, state.target.branch,
             state.target.resolution_id, state.lifecycle_state, idempotency_key,
@@ -1141,8 +1153,8 @@ class Controller:
                 if not isinstance(run_id, str):
                     raise RuntimeError("independent reviewer run identity is missing")
                 # The persisted CAS lease, not tmux observation, owns launch authority.
-                # A handled launch failure releases it below; a controller crash leaves a
-                # bounded lease so a later retry can reclaim without a permanent wedge.
+                # The step is generation-owned: once a supervisor is confirmed, a later
+                # window failure/retry resumes at the window without starting another one.
                 now = time.time()
                 existing_claim = review_state.get("reviewer_launch_claim")
                 if (isinstance(existing_claim, dict)
@@ -1154,9 +1166,18 @@ class Controller:
                         operation, idempotency_key, current, "reviewer_starting",
                     )
                 claim_token = str(uuid.uuid4())
+                launch_step = (
+                    existing_claim.get("step")
+                    if (isinstance(existing_claim, dict)
+                        and existing_claim.get("run_id") == run_id
+                        and existing_claim.get("generation") == generation
+                        and existing_claim.get("step") in {"launching", "supervisor_started"})
+                    else "launching"
+                )
                 review_state["reviewer_launch_claim"] = {
                     "token": claim_token, "run_id": run_id, "generation": generation,
                     "lease_until": now + REVIEW_LAUNCH_LEASE_SECONDS,
+                    "step": launch_step,
                 }
                 claimed = replace(current, review_state=review_state)
                 try:
@@ -1170,10 +1191,27 @@ class Controller:
             else:
                 raise RuntimeError("independent reviewer launch claim contention")
             review_window = f"{state.target.window}-review-{generation}"
+            supervisor_confirmed = launch_step == "supervisor_started"
             try:
                 windows = self._windows(state.target)
                 if review_window not in windows:
-                    self._start_supervisor("review", idempotency_key, run_id=run_id)
+                    if not supervisor_confirmed:
+                        self._start_supervisor("review", idempotency_key, run_id=run_id)
+                        current = self.store.load(idempotency_key)
+                        if current is None:
+                            raise RuntimeError("independent reviewer launch state disappeared")
+                        claim = ((current.review_state or {}).get("reviewer_launch_claim")
+                                 if current is not None else None)
+                        if not isinstance(claim, dict) or claim.get("token") != claim_token:
+                            raise RuntimeError("independent reviewer launch authority was lost")
+                        review = dict(current.review_state or {})
+                        review["reviewer_launch_claim"] = {
+                            **claim, "step": "supervisor_started",
+                        }
+                        confirmed = replace(current, review_state=review)
+                        self.store.save(idempotency_key, current, confirmed)
+                        state = confirmed
+                        supervisor_confirmed = True
                     self.executor.run(
                         ("tmux", "new-window", "-d", "-t", state.target.session,
                          "-n", review_window, "-c", state.target.worktree,
@@ -1187,13 +1225,29 @@ class Controller:
                          if current is not None else None)
                 if isinstance(claim, dict) and claim.get("token") == claim_token:
                     review = dict(current.review_state or {})
-                    review.pop("reviewer_launch_claim", None)
+                    if supervisor_confirmed:
+                        review["reviewer_launch_claim"] = {
+                            **claim, "step": "supervisor_started", "lease_until": 0,
+                        }
+                    else:
+                        review.pop("reviewer_launch_claim", None)
                     try:
                         self.store.save(idempotency_key, current,
                                         replace(current, review_state=review))
                     except RuntimeError:
                         pass
                 raise
+            current = self.store.load(idempotency_key)
+            if current is None:
+                raise RuntimeError("independent reviewer launch state disappeared")
+            claim = ((current.review_state or {}).get("reviewer_launch_claim")
+                     if current is not None else None)
+            if isinstance(claim, dict) and claim.get("token") == claim_token:
+                review = dict(current.review_state or {})
+                review.pop("reviewer_launch_claim", None)
+                completed = replace(current, review_state=review)
+                self.store.save(idempotency_key, current, completed)
+                state = completed
             return self._result(operation, idempotency_key, state, "reviewer_starting")
         if evidence is not None:
             from .verification import validate_host_evidence
