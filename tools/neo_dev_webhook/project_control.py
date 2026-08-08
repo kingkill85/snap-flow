@@ -11,6 +11,7 @@ import tempfile
 import time
 import uuid
 from dataclasses import asdict, dataclass, replace
+from datetime import datetime, timezone
 from typing import Callable, Iterable, Protocol, Sequence
 
 VERSION = 1
@@ -494,9 +495,10 @@ class FileResolutionStore:
 
 class Controller:
     def __init__(self, registry: Registry, store: ResolutionStore, executor: ProcessExecutor,
-                 supervisor: RuntimeSupervisorLauncher | None = None):
+                 supervisor: RuntimeSupervisorLauncher | None = None, github_collector=None):
         self.registry, self.store, self.executor = registry, store, executor
         self.supervisor = supervisor
+        self.github_collector = github_collector
 
     @staticmethod
     def _result(operation: str, key: str, state: WorkState, status: str) -> dict:
@@ -509,6 +511,7 @@ class Controller:
                 "restart_count": state.restart_count,
                 "lifecycle_state": state.lifecycle_state,
                 "archive_sha": state.archive_sha,
+                "review_phase": ((state.review_state or {}).get("review_phase")),
             },
             "governed_identity": {"repository": state.target.repository,
                                   "issue_number": state.target.issue_number},
@@ -619,15 +622,31 @@ class Controller:
         return updated
 
     def record_independent_verdict(self, idempotency_key: str, current_head_sha: str,
-                                   verdict: dict, observed_at: str) -> WorkState:
+                                   verdict: dict, observed_at: str,
+                                   fresh_evidence: dict | None = None) -> WorkState:
         """Only an exact clean, provenance-bound verdict opens human acceptance."""
         from .independent_review import apply_verdict
         state = self.store.load(idempotency_key)
+        expected_state = state
         if (state is not None and state.lifecycle_state == "implementation_verified"
                 and state.review_state is not None
                 and state.review_state.get("review_verdict") == verdict
                 and state.implementation_sha == current_head_sha):
             return state
+        if (state is not None and state.review_state is not None
+                and state.review_state.get("review_phase") == "clean_pending_evidence"
+                and state.review_state.get("pending_clean_verdict") == verdict
+                and fresh_evidence is None):
+            return state
+        if (state is not None and state.review_state is not None
+                and state.review_state.get("review_phase") == "clean_pending_evidence"
+                and fresh_evidence is not None):
+            if state.review_state.get("pending_clean_verdict") != verdict:
+                raise RuntimeError("pending clean verdict provenance mismatch")
+            review = dict(state.review_state)
+            review["review_phase"] = "reviewing"
+            review.pop("pending_clean_verdict", None)
+            state = replace(state, review_state=review)
         if state is None or state.lifecycle_state != "independent_review" \
                 or state.review_state is None:
             raise RuntimeError("independent verdict conflicts with controller state")
@@ -636,6 +655,46 @@ class Controller:
         if state.review_state.get("approval_artifact_sha") != state.spec_sha:
             raise RuntimeError("approval artifact SHA conflicts with persisted controller state")
         if verdict.get("disposition") == "clean":
+            if fresh_evidence is not None:
+                fresh = fresh_evidence
+            elif self.github_collector is not None:
+                fresh = self.github_collector.collect_bound(
+                    state.target.repository, state.target.issue_number, state.target.branch,
+                    state.target.resolution_id, state.lifecycle_state, idempotency_key,
+                    (state.github_evidence or {}).get("current_wakeup"),
+                )
+            else:
+                apply_verdict(state.review_state, current_head_sha, verdict)
+                pending = dict(state.review_state)
+                pending["review_phase"] = "clean_pending_evidence"
+                pending["pending_clean_verdict"] = verdict
+                updated = replace(state, review_state=pending)
+                self.store.save(idempotency_key, state, updated)
+                return updated
+            from .verification import validate_host_evidence
+            validate_host_evidence(fresh, state, idempotency_key)
+            issue, pr, checks = fresh["issue"], fresh["pr"], fresh["checks"]
+            if issue.get("state") != "OPEN":
+                raise RuntimeError("governed Issue state is not open")
+            if pr.get("state") != "OPEN" or pr.get("isDraft") is not True:
+                raise RuntimeError("governed PR state is invalid")
+            if pr.get("headRefOid") != current_head_sha:
+                raise RuntimeError("fresh governed PR head does not match reviewed SHA")
+            if pr.get("headRefName") != state.target.branch:
+                raise RuntimeError("fresh governed PR branch binding is invalid")
+            if pr.get("baseRefName") != "main":
+                raise RuntimeError("fresh governed PR base binding is invalid")
+            body = pr.get("body")
+            if (not isinstance(body, str)
+                    or re.search(rf"(?:#|/issues/){state.target.issue_number}(?![0-9])", body) is None):
+                raise RuntimeError("fresh governed PR Issue binding is invalid")
+            if not checks or any(
+                item.get("head_sha") != current_head_sha or item.get("state") != "SUCCESS"
+                or type(item.get("id")) is not int or not isinstance(item.get("name"), str)
+                or item.get("status") != "completed" or item.get("conclusion") != "success"
+                for item in checks
+            ):
+                raise RuntimeError("fresh exact-SHA checks are invalid")
             from .independent_review import validate_review_evidence
             validate_review_evidence(
                 state.review_state.get("deterministic_evidence"),
@@ -652,7 +711,7 @@ class Controller:
             ).strip()
             if dirty:
                 raise RuntimeError("worktree changed or contains relevant untracked files")
-            pr_head = (state.github_evidence or {}).get("pr", {}).get("headRefOid")
+            pr_head = pr.get("headRefOid")
             remote = self.executor.run(
                 ("git", "-C", state.target.worktree, "ls-remote", "--heads", "origin",
                  f"refs/heads/{state.target.branch}"), timeout=20.0,
@@ -660,8 +719,25 @@ class Controller:
             remote_head = remote[0] if len(remote) == 2 else None
             if pr_head != observed_head or remote_head != observed_head:
                 raise RuntimeError("live PR head does not match reviewed SHA")
+            actual_changed = self.executor.run(
+                ("git", "-C", state.target.worktree, "diff", "--name-only",
+                 state.spec_sha or "", observed_head), timeout=20.0,
+            ).splitlines()
+            active_paths = self.executor.run(
+                ("git", "-C", state.target.worktree, "ls-files",
+                 "openspec/changes/issue-*/proposal.md"), timeout=20.0,
+            ).splitlines()
+            active = {path.split("/")[2] for path in active_paths
+                      if len(path.split("/")) == 4}
+            context = state.review_state.get("deterministic_evidence", {}).get("gate_context")
+            if (len(active) != 1 or context != {
+                    "changed_paths": actual_changed, "worktree": state.target.worktree,
+                    "change": next(iter(active))}):
+                raise RuntimeError("deterministic gate context is stale or mismatched")
         review_state = apply_verdict(state.review_state, current_head_sha, verdict)
         values = {"review_state": review_state}
+        if verdict.get("disposition") == "clean":
+            values["github_evidence"] = fresh
         if review_state["review_phase"] == "clean":
             values.update(lifecycle_state="implementation_verified",
                           lifecycle_updated_at=observed_at,
@@ -670,7 +746,7 @@ class Controller:
             self._preflight_inactive_pane(state.target)
             values.update(phase="resuming", terminal=None)
         updated = replace(state, **values)
-        self.store.save(idempotency_key, state, updated)
+        self.store.save(idempotency_key, expected_state, updated)
         if review_state["review_phase"] == "correction_required" and self.supervisor is not None:
             self._start_supervisor("resume", idempotency_key, state.codex_session_id)
             self.executor.run(
@@ -964,6 +1040,19 @@ class Controller:
             return self._result(operation, idempotency_key, state, "observed")
         if operation == "attest":
             if (state.lifecycle_state == "independent_review" and state.review_state is not None
+                    and state.review_state.get("review_phase") == "clean_pending_evidence"):
+                if evidence is None:
+                    raise RuntimeError("clean promotion requires fresh authenticated GitHub evidence")
+                verdict = state.review_state.get("pending_clean_verdict")
+                return self._result(
+                    operation, idempotency_key,
+                    self.record_independent_verdict(
+                        idempotency_key, state.implementation_sha or "", verdict,
+                        datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        fresh_evidence=evidence,
+                    ), "review_clean",
+                )
+            if (state.lifecycle_state == "independent_review" and state.review_state is not None
                     and state.review_state.get("review_phase") == "correction_required"):
                 if state.github_evidence is None:
                     raise RuntimeError("correction attestation requires GitHub evidence")
@@ -984,8 +1073,7 @@ class Controller:
                 from .deterministic_gates import run_gates
                 review["deterministic_evidence"] = run_gates(
                     self.executor, target, head, state.spec_sha or "",
-                    [{**item, "sha": head}
-                     for item in state.github_evidence.get("checks", [])],
+                    state.github_evidence.get("checks", []),
                 )
                 updated = replace(state, review_state=review)
                 self.store.save(idempotency_key, state, updated)

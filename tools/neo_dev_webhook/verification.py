@@ -135,16 +135,32 @@ class HostGitHubEvidenceCollector:
         prs = json.loads(self.executor.run((
             *gh, "pr", "list", "--repo", repository, "--head",
             branch, "--state", "all", "--json",
-            "number,state,isDraft,headRefOid,mergeCommit,reviewDecision",
+            "number,state,isDraft,headRefOid,headRefName,baseRefName,body,mergeCommit,reviewDecision",
         ), timeout=20.0))
         if not isinstance(prs, list) or len(prs) != 1:
             raise RuntimeError("expected exactly one governed PR")
         checks = []
         if expected_state != "label":
-            checks = json.loads(self.executor.run((
-                *gh, "pr", "checks", str(prs[0]["number"]), "--repo",
-                repository, "--json", "state",
+            head_sha = prs[0].get("headRefOid")
+            if not isinstance(head_sha, str) or re.fullmatch(r"[0-9a-f]{40}", head_sha) is None:
+                raise RuntimeError("governed PR head SHA is invalid")
+            response = json.loads(self.executor.run((
+                *gh, "api", f"repos/{repository}/commits/{head_sha}/check-runs",
             ), timeout=20.0))
+            raw_checks = response.get("check_runs") if isinstance(response, dict) else None
+            if not isinstance(raw_checks, list) or not raw_checks:
+                raise RuntimeError("exact-SHA check runs are absent")
+            checks = []
+            for item in raw_checks:
+                if (not isinstance(item, dict) or type(item.get("id")) is not int
+                        or item.get("head_sha") != head_sha
+                        or item.get("status") != "completed"
+                        or item.get("conclusion") != "success"
+                        or not isinstance(item.get("name"), str)):
+                    raise RuntimeError("check-run SHA/status provenance is invalid")
+                checks.append({"id": item["id"], "name": item["name"],
+                               "head_sha": item["head_sha"], "status": item["status"],
+                               "conclusion": item["conclusion"], "state": "SUCCESS"})
         return {
             "version": 2, "workflow_id": workflow_id, "repository": repository,
             "issue_number": issue_number, "resolution_id": resolution_id,
@@ -329,7 +345,7 @@ class RepositoryGitHubVerifier:
                 from .deterministic_gates import run_gates
                 review_state["deterministic_evidence"] = run_gates(
                     self.executor, target, head, state.spec_sha or "",
-                    [{**item, "sha": head} for item in self.github_evidence["checks"]],
+                    self.github_evidence["checks"],
                 )
                 evidence["implementation_sha"] = head
                 evidence["review_state"] = review_state

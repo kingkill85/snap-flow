@@ -18,6 +18,7 @@ from neo_dev_webhook.automation import (
     Receiver,
     Store,
     TaskRunner,
+    ProjectDispatcher,
     has_standalone_marker,
 )
 from neo_dev_webhook import server as server_module
@@ -124,6 +125,26 @@ class MarkerTests(unittest.TestCase):
 
 
 class AutomationTest(unittest.TestCase):
+    def test_review_dispatcher_collects_fresh_host_evidence_before_clean_promotion(self):
+        launch = mock.Mock(returncode=0, stdout=json.dumps({"execution": {
+            "lifecycle_state": "independent_review", "review_phase": "reviewer_starting"}}))
+        pending = mock.Mock(returncode=0, stdout=json.dumps({"execution": {
+            "lifecycle_state": "independent_review", "review_phase": "clean_pending_evidence"}}))
+        promoted = mock.Mock(returncode=0, stdout=json.dumps({"execution": {
+            "lifecycle_state": "implementation_verified", "review_phase": "clean"}}))
+        with mock.patch("neo_dev_webhook.automation.subprocess.run",
+                        side_effect=[launch, pending, promoted]) as run, \
+             mock.patch("neo_dev_webhook.automation.collect_host_evidence",
+                        return_value="fresh-evidence") as collect:
+            result = ProjectDispatcher(poll_interval=0, max_polls=1).review(
+                REPOSITORY, 13, TASK_KEY, {"sha": "a" * 40},
+            )
+        self.assertEqual(result["controller"]["execution"]["lifecycle_state"],
+                         "implementation_verified")
+        collect.assert_called_once_with("/opt/data/bin/neo-dev-project-control",
+                                        REPOSITORY, 13, TASK_KEY)
+        self.assertIn("fresh-evidence", run.call_args_list[-1].args[0])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.db = os.path.join(self.temp.name, "queue.sqlite")

@@ -31,14 +31,18 @@ def validated_worker_argv(argv: Sequence[str]) -> tuple[str, ...]:
 
 def _validated_gate(argv: Sequence[str]) -> tuple[str, ...]:
     from .deterministic_gates import REQUIRED_GATES
-    if (len(argv) != 4 or argv[2] not in REQUIRED_GATES
+    if (len(argv) != 7 or argv[2] not in REQUIRED_GATES
             or re.fullmatch(r"/workspace/[A-Za-z0-9._-]+-issue-[1-9][0-9]*", argv[1]) is None
-            or re.fullmatch(r"[0-9a-f]{40}", argv[3]) is None):
+            or re.fullmatch(r"[0-9a-f]{40}", argv[3]) is None
+            or re.fullmatch(r"[0-9a-f]{40}", argv[4]) is None
+            or re.fullmatch(r"issue-[A-Za-z0-9._-]+", argv[5]) is None
+            or re.fullmatch(r"(?:none|tools|backend|frontend)(?:,(?:tools|backend|frontend))*",
+                            argv[6]) is None):
         raise ValueError("deterministic gate request is invalid")
-    worktree, gate, approved = argv[1], argv[2], argv[3]
+    worktree, gate, approved, head, change, scope = argv[1:]
     return (SETPRIV, "--reuid=dev", "--regid=dev", "--init-groups",
             "--no-new-privs", "--", "python3", "-m",
-            "neo_dev_webhook.gate_exec", worktree, gate, approved)
+            "neo_dev_webhook.gate_exec", worktree, gate, approved, head, change, scope)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -642,8 +642,10 @@ class ProjectFinalizer:
 class ProjectDispatcher:
     """Consumer-only project dispatch; Kanban cards never receive this capability."""
 
-    def __init__(self, adapter="/opt/data/bin/neo-dev-project-control"):
+    def __init__(self, adapter="/opt/data/bin/neo-dev-project-control",
+                 poll_interval: float = 10.0, max_polls: int = 180):
         self.adapter = adapter
+        self.poll_interval, self.max_polls = poll_interval, max_polls
 
     def dispatch(self, operation: str, repository: str, issue_number: int,
                  idempotency_key: str, current_wakeup: dict | None = None) -> dict:
@@ -719,7 +721,31 @@ class ProjectDispatcher:
         controller = json.loads(result.stdout)
         if not isinstance(controller, dict):
             raise RuntimeError("controller review launch must return a JSON object")
-        return {"controller": controller}
+        for _ in range(self.max_polls):
+            status = subprocess.run(
+                [self.adapter, "status", "--repository", repository, "--issue-number",
+                 str(issue_number), "--idempotency-key", idempotency_key],
+                check=True, capture_output=True, text=True, timeout=90, shell=False,
+            )
+            controller = json.loads(status.stdout)
+            execution = controller.get("execution", {})
+            if execution.get("review_phase") == "clean_pending_evidence":
+                fresh = collect_host_evidence(
+                    self.adapter, repository, issue_number, idempotency_key,
+                )
+                promoted = subprocess.run(
+                    [self.adapter, "attest", "--repository", repository, "--issue-number",
+                     str(issue_number), "--idempotency-key", idempotency_key,
+                     "--evidence", fresh],
+                    check=True, capture_output=True, text=True, timeout=90, shell=False,
+                )
+                controller = json.loads(promoted.stdout)
+                return {"controller": controller}
+            if execution.get("review_phase") in {"needs_input", "correction_required"}:
+                return {"controller": controller}
+            if self.poll_interval:
+                time.sleep(self.poll_interval)
+        raise RuntimeError("independent review exceeded the existing runtime deadline")
 
 
 def collect_host_evidence(adapter: str, repository: str, issue_number: int,

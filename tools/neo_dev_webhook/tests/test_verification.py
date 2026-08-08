@@ -12,7 +12,9 @@ class EvidenceExecutor:
     def __init__(self, issue, pr, checks=None):
         self.issue = issue
         self.pr = pr
-        self.checks = [{"state": "SUCCESS"}] if checks is None else checks
+        self.checks = ([{"id": 42, "name": "controller", "head_sha": pr["headRefOid"],
+                         "status": "completed", "conclusion": "success", "state": "SUCCESS"}]
+                       if checks is None else checks)
         comments = issue.get("comments", [])
         latest = comments[-1] if comments else None
         self.current_wakeup = ({
@@ -26,7 +28,18 @@ class EvidenceExecutor:
     def run(self, argv, *, timeout):
         self.calls.append(tuple(argv))
         if argv[0] == "gate":
-            return f"{argv[2]} ok\n"
+            from neo_dev_webhook.deterministic_gates import expected_gate_commands
+            changed = subprocess.run(["git", "-C", argv[1], "diff", "--name-only",
+                                      argv[3], "HEAD"], check=True, capture_output=True,
+                                     text=True).stdout.splitlines()
+            active = next((pathlib.Path(argv[1]) / "openspec/changes").glob("issue-*"))
+            plan = expected_gate_commands(argv[2], changed, argv[1], active.name, argv[3])
+            return json.dumps({"gate": argv[2], "head_sha": self.pr["headRefOid"],
+                "approved_spec_sha": argv[3], "result": {}, "commands": [
+                    {**item, "exit_code": 0, "stdout_sha256": "0" * 64,
+                     "stderr_sha256": "1" * 64, "observed_at": "2026-08-08T00:00:00Z",
+                     "head_sha": self.pr["headRefOid"], "approved_spec_sha": argv[3]}
+                    for item in plan]})
         if argv[0] == "git":
             if "ls-remote" in argv:
                 return f'{self.pr["headRefOid"]}\t{argv[-1]}\n'
@@ -34,6 +47,8 @@ class EvidenceExecutor:
                                   timeout=timeout, shell=False).stdout
         if "issue" in argv and "view" in argv:
             return json.dumps(self.issue)
+        if "api" in argv and "check-runs" in argv[-1]:
+            return json.dumps({"check_runs": self.checks})
         if "pr" in argv and "list" in argv:
             return json.dumps([self.pr])
         if "pr" in argv and "checks" in argv:
@@ -42,6 +57,47 @@ class EvidenceExecutor:
 
 
 class VerificationTest(unittest.TestCase):
+    def test_host_collector_binds_immutable_check_runs_to_actual_head_sha(self):
+        head = "a" * 40
+        class HostExecutor:
+            def __init__(self): self.calls = []
+            def run(self, argv, *, timeout):
+                self.calls.append(tuple(argv))
+                if "issue" in argv:
+                    return json.dumps({"state": "OPEN", "comments": []})
+                if "list" in argv:
+                    return json.dumps([{"number": 9, "state": "OPEN", "isDraft": True,
+                                        "headRefOid": head, "headRefName": "feature/issue-13",
+                                        "baseRefName": "main", "body": "Closes #13"}])
+                if "api" in argv and "check-runs" in argv[-1]:
+                    return json.dumps({"check_runs": [{"id": 42, "name": "controller",
+                        "head_sha": "b" * 40, "status": "completed", "conclusion": "success"}]})
+                raise AssertionError(argv)
+        with self.assertRaisesRegex(RuntimeError, "check.*SHA"):
+            HostGitHubEvidenceCollector(HostExecutor()).collect_bound(
+                "kingkill85/snap-flow", 13, "feature/issue-13", "b" * 64,
+                "spec_approved", "12345678-1234-4abc-8def-123456789abc",
+            )
+
+    def test_host_collector_rejects_absent_pending_and_failed_check_runs(self):
+        head = "a" * 40
+        for check_runs in ([], [{"id": 1, "name": "ci", "head_sha": head,
+                                  "status": "in_progress", "conclusion": None}],
+                           [{"id": 1, "name": "ci", "head_sha": head,
+                             "status": "completed", "conclusion": "failure"}]):
+            class HostExecutor:
+                def run(self, argv, *, timeout):
+                    if "issue" in argv:
+                        return json.dumps({"state": "OPEN", "comments": []})
+                    if "list" in argv:
+                        return json.dumps([{"number": 9, "headRefOid": head}])
+                    return json.dumps({"check_runs": check_runs})
+            with self.subTest(check_runs=check_runs), self.assertRaisesRegex(RuntimeError, "check"):
+                HostGitHubEvidenceCollector(HostExecutor()).collect_bound(
+                    "kingkill85/snap-flow", 13, "feature/issue-13", "b" * 64,
+                    "spec_approved", "12345678-1234-4abc-8def-123456789abc",
+                )
+
     def test_accept_is_sha_bound_and_cancel_is_a_safe_terminal_transition(self):
         with tempfile.TemporaryDirectory() as directory:
             target, head = self.repository(pathlib.Path(directory))
@@ -112,7 +168,7 @@ class VerificationTest(unittest.TestCase):
 
             class ExactWakeupExecutor(EvidenceExecutor):
                 def run(self, argv, *, timeout):
-                    if "api" in argv:
+                    if "api" in argv and "issues/comments" in argv[-1]:
                         self.calls.append(tuple(argv))
                         return json.dumps(exact_comment)
                     return super().run(argv, timeout=timeout)

@@ -12,20 +12,30 @@ EXPECTED_PHASES = [
 
 
 def _evidence(sha: str) -> dict:
-    from .deterministic_gates import REQUIRED_GATES
-    gates = {name: {"status": "passed", "command": ["gate", name], "exit_code": 0,
-                    "output_sha256": "0" * 64, "head_sha": sha,
-                    "observed_at": "2026-08-08T00:00:00Z"}
-             for name in REQUIRED_GATES}
+    from .deterministic_gates import REQUIRED_GATES, expected_gate_commands
+    context = {"changed_paths": ["tools/neo_dev_webhook/project_control.py"],
+               "worktree": "/workspace/snap-flow-issue-6", "change": "issue-6"}
+    gates = {}
+    for name in REQUIRED_GATES:
+        plan = expected_gate_commands(name, context["changed_paths"], context["worktree"],
+                                      context["change"], "9" * 40)
+        gates[name] = {"status": "passed", "gate": name, "head_sha": sha,
+            "approved_spec_sha": "9" * 40, "result": {}, "commands": [
+                {**item, "exit_code": 0, "stdout_sha256": "0" * 64,
+                 "stderr_sha256": "1" * 64, "observed_at": "2026-08-08T00:00:00Z",
+                 "head_sha": sha, "approved_spec_sha": "9" * 40}
+                for item in plan]}
     return {
         "sha": sha, "approved_spec_sha": "9" * 40,
         "approval_artifact_sha": "9" * 40,
         "tests": {"focused": "passed", "full": "passed"},
         "lint": "passed", "typecheck": "passed", "build": "passed",
         "openspec": {"validate": "passed", "verify": "passed", "strict": True},
-        "checks": [{"sha": sha, "state": "SUCCESS"}],
+        "checks": [{"id": 42, "name": "controller", "head_sha": sha,
+                    "status": "completed", "conclusion": "success", "state": "SUCCESS"}],
         "approval_artifacts": {"immutable": True}, "secret_scan": {"passed": True},
         "gates": gates,
+        "gate_context": context,
         "worktree": {"correct": True, "clean": True, "synced": True,
                      "tracked_and_relevant_untracked_reviewed": True},
         "ui": {"required": False, "reason": "non-destructive controller fixture"},

@@ -513,3 +513,134 @@ gate remains authoritative. UI/Playwright evidence is grounded N/A because no
 Final staged audit: `SECRET_SCAN=PASS`, `PRIVATE_PATH_SCAN=PASS`,
 `SCOPE_SCAN=PASS`, `CHANGED_FILE_COUNT=17`, `654 insertions`, `50 deletions`.
 No `backend/`, `frontend/`, `openspec/`, Issue #6, or Issue #13 path changed.
+
+## Independent review correction cycle 3 (maximum)
+
+Reviewed SHA: `3e264baefccc42777e892821f6ab3aae45e51c11`.
+
+Reviewer provenance: fresh-context Codex thread
+`019fe07b-524c-7c32-bc6d-19f81f77e9bd`, review generation 3.
+
+Disposition: **BLOCKING**, fix/re-review cycle 3 of maximum 3.
+
+Findings: IR3-001 high security (manufactured check SHA provenance), IR3-002
+high spec-compliance (wrapper-only gate provenance), and IR3-003 medium
+correctness/blocking (cached GitHub PR metadata at clean promotion).
+
+### IR3-001 — immutable exact-SHA check-run provenance
+
+RED command:
+
+```text
+PYTHONPATH=tools python3 -m unittest tools.neo_dev_webhook.tests.test_verification.VerificationTest.test_host_collector_binds_immutable_check_runs_to_actual_head_sha
+```
+
+RED result: `FAILED (failures=1)` — the collector invoked `gh pr checks --json
+state`; the focused executor raised on that unauthenticated shape before any
+real `head_sha` could be checked.
+
+GREEN command: same command.
+
+GREEN result: `Ran 1 test ... OK`. The fixed host collector queries the exact
+commit check-runs API and persists immutable run id/name, actual `head_sha`,
+status, conclusion, and derived success state. Separate production tests reject
+absent, pending, failed, and other-SHA runs at review entry and clean promotion.
+
+### IR3-002 — complete fixed-command result provenance
+
+RED command:
+
+```text
+PYTHONPATH=tools python3 -m unittest tools.neo_dev_webhook.tests.test_deterministic_gates.DeterministicGateTests.test_nested_command_provenance_rejects_omission_substitution_duplicate_partial_and_sha
+```
+
+RED result: `ERROR: ImportError` — no structural nested-command provenance
+validator existed.
+
+GREEN command: same command.
+
+GREEN result: `Ran 1 test ... OK`. Every actual fixed gate command now records
+exact argv, validated cwd, exit code, bounded stdout/stderr SHA-256 digests,
+observation time, implementation SHA, and approved-spec SHA. The controller
+reconstructs the ordered plan and rejects omitted, substituted, duplicated,
+partial/failed, reordered, or SHA-mismatched results. Focused and full test
+plans are distinct and asserted unequal.
+
+### IR3-003 — fresh authenticated promotion evidence
+
+RED command:
+
+```text
+PYTHONPATH=tools python3 -m unittest tools.neo_dev_webhook.tests.test_independent_review.IndependentReviewSecurityTests.test_clean_promotion_uses_fresh_pr_issue_branch_base_and_checks
+```
+
+RED result: `ERROR: TypeError` — the production Controller had no injectable
+fresh GitHub collector and therefore could only use cached state.
+
+GREEN command: same command.
+
+GREEN result: `Ran 1 test ... OK`. A reviewer clean terminal persists only
+`clean_pending_evidence`; it cannot promote or render acceptance. The Hermes
+dispatcher polls within the existing 1800-second runtime deadline, collects a
+new authenticated host evidence document, and submits it to controller
+attestation. Immediately before promotion, the controller validates that fresh
+document, open Issue, exact governed Draft PR identity/state/head, head branch,
+`main` base, Issue link, and exact-SHA successful check runs, then rechecks local
+HEAD, all untracked files, remote head, actual changed paths, and the active
+change before revalidating every persisted command record.
+
+Host-boundary RED command:
+
+```text
+PYTHONPATH=tools python3 -m unittest tools.neo_dev_webhook.tests.test_automation.AutomationTest.test_review_dispatcher_collects_fresh_host_evidence_before_clean_promotion
+```
+
+RED result: `ERROR: TypeError` — the dispatcher had no bounded polling/fresh
+attestation path. GREEN result: `Ran 1 test ... OK`. This keeps GitHub
+credentials on Hermes; the remote runtime supervisor never receives them.
+
+### Cycle 3 verification
+
+Affected suites:
+
+```text
+PYTHONPATH=tools python3 -m unittest tools.neo_dev_webhook.tests.test_deterministic_gates tools.neo_dev_webhook.tests.test_verification tools.neo_dev_webhook.tests.test_independent_review
+```
+
+Result: `Ran 54 tests in 3.537s — OK`.
+
+Focused controller/runtime suites:
+
+```text
+PYTHONPATH=tools python3 -m unittest tools.neo_dev_webhook.tests.test_independent_review tools.neo_dev_webhook.tests.test_deterministic_gates tools.neo_dev_webhook.tests.test_verification tools.neo_dev_webhook.tests.test_deployment tools.neo_dev_webhook.tests.test_codex_runtime tools.neo_dev_webhook.tests.test_project_control tools.neo_dev_webhook.tests.test_live_privilege_topology tools.neo_dev_webhook.tests.test_automation
+```
+
+Result: `Ran 157 tests in 8.402s — OK`.
+
+Full controller suite:
+
+```text
+PYTHONPATH=tools python3 -m unittest discover -s tools/neo_dev_webhook/tests -p 'test_*.py'
+```
+
+Result: `Ran 205 tests in 12.587s — OK (skipped=1)`. The skip is the existing
+optional live integration test; argparse messages are expected negative tests.
+
+Additional commands, all exit 0:
+
+```text
+git diff --check
+python3 -m compileall -q tools/neo_dev_webhook
+bash -n tools/neo_dev_webhook/deploy/controller-install.sh tools/neo_dev_webhook/deploy/hermes-controller-install.sh
+python3 -m json.tool tools/neo_dev_webhook/controller/state-schema.v1.json
+python3 -m json.tool tools/neo_dev_webhook/controller/install-manifest.v1.json
+OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-77-enforce-container-boundary --strict
+PYTHONPATH=tools python3 -m neo_dev_webhook.independent_review_canary
+```
+
+OpenSpec reports the protected, unchanged Issue #77 change valid. UI/Playwright
+evidence is grounded N/A because this correction changes no `frontend/` path.
+
+Final staged audit: `SECRET_SCAN=PASS`, `PRIVATE_PATH_SCAN=PASS`,
+`SCOPE_SCAN=PASS`, `CHANGED_FILE_COUNT=14`, `814 insertions`, `138 deletions`.
+No `backend/`, `frontend/`, `openspec/`, Issue #6, or Issue #13 path changed.

@@ -1,18 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 
-from .deterministic_gates import REQUIRED_GATES
-from .gate_scan import scan
-
-
-def _run(command: list[str], cwd: str | None = None) -> None:
-    subprocess.run(command, cwd=cwd, check=True, timeout=1800, shell=False)
+from .deterministic_gates import REQUIRED_GATES, expected_gate_commands
+from .gate_scan import scan_paths
 
 
 def verify_openspec_status(value: object) -> None:
@@ -21,70 +19,63 @@ def verify_openspec_status(value: object) -> None:
         raise RuntimeError("OpenSpec status is incomplete")
 
 
-def execute(worktree: str, gate: str, approved: str) -> dict:
-    if gate not in REQUIRED_GATES or not re.fullmatch(r"[0-9a-f]{40}", approved):
+def _execute(command: dict, head_sha: str, approved_spec_sha: str) -> tuple[dict, str]:
+    result = subprocess.run(
+        command["argv"], cwd=command["cwd"], check=False, capture_output=True,
+        timeout=1800, shell=False,
+    )
+    record = {
+        "argv": command["argv"], "cwd": command["cwd"],
+        "exit_code": result.returncode,
+        "stdout_sha256": hashlib.sha256(result.stdout).hexdigest(),
+        "stderr_sha256": hashlib.sha256(result.stderr).hexdigest(),
+        "observed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "head_sha": head_sha, "approved_spec_sha": approved_spec_sha,
+    }
+    stdout = result.stdout[:1_000_000].decode(errors="replace")
+    if result.returncode != 0:
+        raise RuntimeError(json.dumps({"failed_command": record}, sort_keys=True))
+    return record, stdout
+
+
+def execute(worktree: str, gate: str, approved: str, head: str,
+            change: str, scope: str) -> dict:
+    if (gate not in REQUIRED_GATES or not re.fullmatch(r"[0-9a-f]{40}", approved)
+            or not re.fullmatch(r"[0-9a-f]{40}", head)
+            or not re.fullmatch(r"issue-[A-Za-z0-9._-]+", change)):
         raise ValueError("invalid deterministic gate")
     root = pathlib.Path(worktree).resolve()
     if not re.fullmatch(r"/workspace/[A-Za-z0-9._-]+-issue-[1-9][0-9]*", str(root)):
         raise ValueError("invalid registered worktree")
     os.chdir(root)
-    paths = subprocess.run(["git", "diff", "--name-only", approved, "HEAD"],
-                           check=True, capture_output=True, text=True, timeout=30).stdout.splitlines()
-    tools = any(path.startswith("tools/neo_dev_webhook/") for path in paths)
-    backend = any(path.startswith("backend/") for path in paths)
-    frontend = any(path.startswith("frontend/") for path in paths)
-    changes = sorted((root / "openspec/changes").glob("issue-*"))
-    active = [path.name for path in changes if (path / "proposal.md").exists()]
-    if len(active) != 1:
-        raise RuntimeError("exactly one OpenSpec change is required")
-    change = active[0]
-    commands: list[tuple[list[str], str | None]] = []
-    if gate in {"focused_tests", "full_tests"}:
-        if tools:
-            commands.append((["python3", "-m", "unittest", "discover", "-s",
-                              "tools/neo_dev_webhook/tests", "-p", "test_*.py"], None))
-        if backend:
-            commands.append((["deno", "task", "test"], "backend"))
-        if frontend:
-            commands.append((["npm", "run", "test:run"], "frontend"))
-    elif gate in {"lint", "typecheck", "build"}:
-        if tools:
-            commands.append((["python3", "-m", "compileall", "-q", "tools/neo_dev_webhook"], None))
-        if backend:
-            commands.append((["deno", "lint"] if gate == "lint" else
-                             ["deno", "check", "src/main.ts"], "backend"))
-        if frontend:
-            commands.append((["npm", "run", "lint"] if gate == "lint" else
-                             ["npm", "run", "build"], "frontend"))
-    elif gate == "openspec_validate":
-        commands.append((["npm", "exec", "--", "openspec", "validate", change, "--strict"], None))
-    elif gate == "openspec_verify":
-        result = subprocess.run(
-            ["npm", "exec", "--", "openspec", "status", "--change", change, "--json"],
-            check=True, capture_output=True, text=True, timeout=1800,
-        )
-        verify_openspec_status(json.loads(result.stdout))
-        return {"gate": gate, "commands_executed": 1, "changed_paths": len(paths)}
-    elif gate == "approval_immutability":
-        commands.append((["git", "diff", "--quiet", approved, "HEAD", "--",
-                          f"openspec/changes/{change}/proposal.md",
-                          f"openspec/changes/{change}/design.md",
-                          f"openspec/changes/{change}/tasks.md",
-                          f"openspec/changes/{change}/specs"], None))
-    elif gate in {"secret_scan", "private_scan", "ui_evidence"}:
+    scopes = scope.split(",")
+    if any(item not in {"none", "tools", "backend", "frontend"} for item in scopes):
+        raise ValueError("invalid deterministic gate scope")
+    changed = (["tools/neo_dev_webhook/controller.py"] if "tools" in scopes else []) + \
+        (["backend/src/main.ts"] if "backend" in scopes else []) + \
+        (["frontend/src/main.tsx"] if "frontend" in scopes else [])
+    plan = expected_gate_commands(gate, changed, str(root), change, approved)
+    records = []
+    outputs = []
+    for command in plan:
+        record, stdout = _execute(command, head, approved)
+        records.append(record)
+        outputs.append(stdout)
+    if gate == "openspec_verify":
+        verify_openspec_status(json.loads(outputs[-1]))
+    result = {}
+    if gate in {"secret_scan", "private_scan", "ui_evidence"}:
         mode = {"secret_scan": "secret", "private_scan": "private",
                 "ui_evidence": "ui"}[gate]
-        if gate == "ui_evidence" and frontend:
-            _run(["npm", "exec", "--", "playwright", "test"], "frontend")
-        return scan(mode, approved)
-    for command, cwd in commands:
-        _run(command, cwd)
-    return {"gate": gate, "commands_executed": len(commands), "changed_paths": len(paths)}
+        paths = sorted(set(outputs[-2].splitlines() + outputs[-1].splitlines()))
+        result = scan_paths(mode, paths)
+    return {"gate": gate, "head_sha": head, "approved_spec_sha": approved,
+            "commands": records, "result": result}
 
 
 def main(argv=None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if len(args) != 3:
+    if len(args) != 6:
         return 2
     try:
         print(json.dumps(execute(*args), sort_keys=True))

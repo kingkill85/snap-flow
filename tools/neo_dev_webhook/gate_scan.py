@@ -21,8 +21,7 @@ def reviewed_paths(approved: str) -> list[str]:
     return sorted(set(tracked + untracked))
 
 
-def scan(mode: str, approved: str) -> dict:
-    paths = reviewed_paths(approved)
+def scan_paths(mode: str, paths: list[str]) -> dict:
     if mode == "private":
         hits = [path for path in paths if PRIVATE_PATH.search(path)]
         if hits:
@@ -50,6 +49,10 @@ def scan(mode: str, approved: str) -> dict:
             raise RuntimeError("frontend change requires Playwright evidence and screenshots")
         return {"required": True, "browser": "playwright", "screenshots": screenshots}
     raise ValueError("unknown scan mode")
+
+
+def scan(mode: str, approved: str) -> dict:
+    return scan_paths(mode, reviewed_paths(approved))
 
 
 def main(argv=None) -> int:

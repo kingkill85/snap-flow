@@ -163,7 +163,8 @@ def validate_review_evidence(evidence: object, sha: str, approved_spec_sha: str)
 def _validate_evidence(evidence: object, sha: str, approved_spec_sha: object) -> None:
     required = {"sha", "approved_spec_sha", "approval_artifact_sha", "tests", "lint",
                 "typecheck", "build", "openspec", "checks",
-                "approval_artifacts", "secret_scan", "worktree", "ui", "gates"}
+                "approval_artifacts", "secret_scan", "worktree", "ui", "gates",
+                "gate_context"}
     if not isinstance(evidence, dict) or set(evidence) != required or evidence.get("sha") != sha:
         raise ValueError("deterministic review evidence is missing or stale")
     _validate_sha(approved_spec_sha)
@@ -171,17 +172,29 @@ def _validate_evidence(evidence: object, sha: str, approved_spec_sha: object) ->
         raise ValueError("approved spec SHA does not match controller authority")
     if evidence["approval_artifact_sha"] != approved_spec_sha:
         raise ValueError("approval artifact SHA does not match approved spec SHA")
-    from .deterministic_gates import REQUIRED_GATES
+    from .deterministic_gates import (
+        REQUIRED_GATES, expected_gate_commands, validate_gate_execution,
+    )
     gates = evidence["gates"]
     if not isinstance(gates, dict) or set(gates) != set(REQUIRED_GATES):
         raise ValueError("deterministic gate provenance is incomplete")
+    context = evidence["gate_context"]
+    if (not isinstance(context, dict) or set(context) != {
+            "changed_paths", "worktree", "change"}
+            or not isinstance(context["changed_paths"], list)
+            or not isinstance(context["worktree"], str)
+            or not isinstance(context["change"], str)):
+        raise ValueError("deterministic gate context is invalid")
     for name, record in gates.items():
-        if (not isinstance(record, dict) or record.get("status") != "passed"
-                or record.get("exit_code") != 0 or record.get("head_sha") != sha
-                or not isinstance(record.get("command"), list)
-                or not isinstance(record.get("output_sha256"), str)
-                or len(record["output_sha256"]) != 64
-                or not isinstance(record.get("observed_at"), str)):
+        expected = expected_gate_commands(
+            name, context["changed_paths"], context["worktree"], context["change"],
+            approved_spec_sha,
+        )
+        try:
+            validate_gate_execution(record, expected, sha, approved_spec_sha)
+        except ValueError as error:
+            raise ValueError(f"deterministic gate provenance is invalid: {name}") from error
+        if record.get("status") != "passed":
             raise ValueError(f"deterministic gate provenance is invalid: {name}")
     tests = evidence["tests"]
     if not isinstance(tests, dict) or tests.get("focused") != "passed" or tests.get("full") != "passed":
@@ -193,7 +206,10 @@ def _validate_evidence(evidence: object, sha: str, approved_spec_sha: object) ->
         raise ValueError("strict OpenSpec evidence is not successful")
     checks = evidence["checks"]
     if not isinstance(checks, list) or not checks or any(
-        not isinstance(item, dict) or item.get("sha") != sha or item.get("state") != "SUCCESS"
+        not isinstance(item, dict) or item.get("head_sha") != sha
+        or item.get("state") != "SUCCESS" or type(item.get("id")) is not int
+        or not isinstance(item.get("name"), str) or item.get("status") != "completed"
+        or item.get("conclusion") != "success"
         for item in checks
     ):
         raise ValueError("exact-SHA CI/check-runs are missing, pending, stale, or failed")
