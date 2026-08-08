@@ -26,15 +26,23 @@ from .project_control import (
 )
 from .runtime_supervisor import socket_path
 from .verification import PhaseVerifier, RepositoryGitHubVerifier
+from .operator_commands import worker_handoff_contract
 
 RUNTIME_VERSION = 1
 def initial_prompt(repository: str, issue_number: int) -> str:
-    return f"""You are the sole Codex worker for {repository} Issue #{issue_number} in the initial specification phase. Read the live GitHub Issue, repository AGENTS.md, openspec/config.yaml, and all applicable OpenSpec instructions before acting. Create ONLY the issue-scoped OpenSpec proposal, design, delta specifications, and tasks; create/update the Draft PR; commit and push those planning artifacts; and publish immutable GitHub blob links pinned to the resulting full 40-character commit SHA with the exact next command `/approve-spec <full-sha>`. Do not implement product or orchestration behavior, run deployment, merge, or bypass approval. Verify repository and GitHub artifacts directly. If a mandatory repository gate fails without any related product-code change, reproduce it in a fresh detached worktree at `origin/main`; when the same failure exists there, document the exact clean-main baseline exception in the Draft PR and continue the planning-only workflow without changing unrelated code. Heartbeats are liveness only and cannot count as progress or completion. Fail fast only when a prerequisite remains unverified or a concrete external blocker remains after the required autonomous checks. Approval/acceptance waits use `correctable` with `resumable: true`; `success` is reserved for verified merge-finalization. End with the required structured completion document."""
+    prompt = f"""You are the sole Codex worker for {repository} Issue #{issue_number} in the initial specification phase. Read the live GitHub Issue, repository AGENTS.md, openspec/config.yaml, and all applicable OpenSpec instructions before acting. Create ONLY the issue-scoped OpenSpec proposal, design, delta specifications, and tasks; create/update the Draft PR; commit and push those planning artifacts; and publish immutable GitHub blob links pinned to the resulting full 40-character commit SHA with the exact next command `/approve-spec <full-sha>`. Do not implement product or orchestration behavior, run deployment, merge, or bypass approval. Verify repository and GitHub artifacts directly. If a mandatory repository gate fails without any related product-code change, reproduce it in a fresh detached worktree at `origin/main`; when the same failure exists there, document the exact clean-main baseline exception in the Draft PR and continue the planning-only workflow without changing unrelated code. Heartbeats are liveness only and cannot count as progress or completion. Fail fast only when a prerequisite remains unverified or a concrete external blocker remains after the required autonomous checks. Approval/acceptance waits use `correctable` with `resumable: true`; `success` is reserved for verified merge-finalization. End with the required structured completion document."""
+    return prompt + "\n\n" + worker_handoff_contract("specification_ready")
 
 
 def continuation_prompt(repository: str, issue_number: int, lifecycle_state: str) -> str:
     if lifecycle_state == "label":
         return initial_prompt(repository, issue_number)
+    if lifecycle_state == "cancelled":
+        return (
+            f"The governed {repository} Issue #{issue_number} workflow is cancelled. "
+            "Make no repository or GitHub changes; do not merge, close, delete, or clean up. "
+            "Report the cancellation as a terminal controller handoff."
+        )
     phase_work = {
         "spec_approved": (
             "Implement only the approved Issue-scoped OpenSpec plan, run and verify the required "
@@ -57,13 +65,21 @@ def continuation_prompt(repository: str, issue_number: int, lifecycle_state: str
     }.get(lifecycle_state)
     if phase_work is None:
         raise RuntimeError("supervisor lifecycle state is invalid")
-    return (
+    prompt = (
         f"Continue the same governed {repository} Issue #{issue_number} workflow and same Codex "
         f"session from controller-owned lifecycle state `{lifecycle_state}`. {phase_work} Read and "
         "verify the live Issue, repository instructions, persisted artifacts, and GitHub state before "
         "acting. Work autonomously through this phase and fail fast only on one concrete external "
         "blocker. Heartbeats are liveness only and never progress. End with the required structured "
         "completion document."
+    )
+    handoff_state = {
+        "spec_approved": "implementation_verified",
+        "accepted": "accepted",
+        "archive_authorized": "blocked",
+    }.get(lifecycle_state)
+    return prompt if handoff_state is None else (
+        prompt + "\n\n" + worker_handoff_contract(handoff_state)
     )
 
 
@@ -328,7 +344,14 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
         if not authorization.verified or authorization.evidence is None:
             raise RuntimeError(authorization.blocker or "trusted lifecycle command is unavailable")
         lifecycle = controller.advance_lifecycle(idempotency_key, **authorization.evidence)
-    prompt = initial_prompt(target.repository, target.issue_number) if operation == "start" else (
+    if operation == "resume" and lifecycle.lifecycle_state == "cancelled":
+        prompt = (
+            f"The governed {target.repository} Issue #{target.issue_number} workflow is cancelled. "
+            "Make no repository or GitHub changes; do not merge, close, delete, or clean up. "
+            "Report the cancellation as a terminal controller handoff."
+        )
+    else:
+        prompt = initial_prompt(target.repository, target.issue_number) if operation == "start" else (
         f"Continue the same governed {target.repository} Issue #{target.issue_number} workflow and "
         f"same Codex session from controller-owned lifecycle state `{lifecycle.lifecycle_state}`. "
         "Read the live Issue command and artifacts, enforce only that current gate, "
@@ -339,7 +362,17 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
         "/merge first permits only sync/archive; controller-persisted archive SHA and successful checks "
         "must precede automatic same-command continuation for merge, closure, and cleanup. Heartbeats "
         "are liveness only and never progress."
-    )
+        )
+        if operation == "resume":
+            expected_handoff = {
+                "label": "specification_ready",
+                "spec_approved": "implementation_verified",
+                "accepted": "accepted",
+                "archive_authorized": "blocked",
+                "archive_ci_verified": "blocked",
+                "merge_authorized": "blocked",
+            }[lifecycle.lifecycle_state]
+            prompt += "\n\n" + worker_handoff_contract(expected_handoff)
     turn = server.request("turn/start", {
         "threadId": observed_session,
         "input": [{"type": "text", "text": prompt}],
@@ -449,6 +482,7 @@ def run_supervised_runtime(operation: str, idempotency_key: str,
         lifecycle_state = launch.get("lifecycle_state")
         if lifecycle_state not in {
             "label", "spec_approved", "accepted", "archive_authorized", "merge_authorized",
+            "cancelled",
         }:
             raise RuntimeError("supervisor lifecycle state is invalid")
         schema_path: pathlib.Path | None = None

@@ -38,6 +38,56 @@ class EvidenceExecutor:
 
 
 class VerificationTest(unittest.TestCase):
+    def test_accept_is_sha_bound_and_cancel_is_a_safe_terminal_transition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target, head = self.repository(pathlib.Path(directory))
+            common = dict(
+                lifecycle_updated_at="2026-08-07T00:00:01Z", base_sha=head,
+                spec_sha=head, implementation_sha=head,
+                approval_at="2026-08-06T00:00:00Z",
+            )
+            pr = {"number": 10, "state": "OPEN", "isDraft": True,
+                  "headRefOid": head, "mergeCommit": None}
+
+            for body, expected in (("/accept", False), (f"/accept {head}", True)):
+                issue = {"state": "OPEN", "labels": [], "comments": [{
+                    "body": body, "createdAt": "2026-08-07T00:00:02Z",
+                    "author": {"login": "kingkill85"},
+                }]}
+                transition = RepositoryGitHubVerifier(EvidenceExecutor(issue, pr)).authorize(
+                    target, WorkState(target, lifecycle_state="implementation_verified", **common),
+                )
+                self.assertEqual(transition.verified, expected)
+                if expected:
+                    self.assertEqual(transition.evidence["lifecycle_state"], "accepted")
+
+            issue = {"state": "OPEN", "labels": [], "comments": [{
+                "body": "/cancel", "createdAt": "2026-08-07T00:00:02Z",
+                "author": {"login": "kingkill85"},
+            }]}
+            transition = RepositoryGitHubVerifier(EvidenceExecutor(issue, pr)).authorize(
+                target, WorkState(target, lifecycle_state="implementation_verified", **common),
+            )
+            self.assertTrue(transition.verified, transition.blocker)
+            self.assertEqual(transition.evidence, {
+                "lifecycle_state": "cancelled",
+                "lifecycle_updated_at": "2026-08-07T00:00:02Z",
+            })
+
+            archive_state = WorkState(
+                target, lifecycle_state="archive_authorized",
+                lifecycle_updated_at="2026-08-07T00:00:01Z", base_sha=head,
+                spec_sha=head, implementation_sha=head, accepted_sha=head,
+                approval_at="2026-08-06T00:00:00Z",
+                accepted_at="2026-08-07T00:00:00Z",
+                merge_authorized_at="2026-08-07T00:00:01Z",
+            )
+            archive_cancel = RepositoryGitHubVerifier(EvidenceExecutor(issue, pr)).authorize(
+                target, archive_state,
+            )
+            self.assertTrue(archive_cancel.verified, archive_cancel.blocker)
+            self.assertEqual(archive_cancel.evidence["lifecycle_state"], "cancelled")
+
     def test_authorization_is_bound_to_exact_persisted_wakeup_comment(self):
         with tempfile.TemporaryDirectory() as directory:
             target, head = self.repository(pathlib.Path(directory))
@@ -197,7 +247,7 @@ class VerificationTest(unittest.TestCase):
             comments = [
                 {"body": "/merge", "createdAt": "2026-08-07T00:00:01Z",
                  "author": {"login": "kingkill85"}},
-                {"body": "/accept", "createdAt": "2026-08-07T00:00:02Z",
+                {"body": f"/accept {head}", "createdAt": "2026-08-07T00:00:02Z",
                  "author": {"login": "kingkill85"}},
             ]
             verifier = RepositoryGitHubVerifier(EvidenceExecutor(
@@ -232,7 +282,7 @@ class VerificationTest(unittest.TestCase):
             self.assertFalse(result.verified)
             trusted = EvidenceExecutor(
                 {"state": "CLOSED", "labels": [], "comments": [
-                    {"body": "/accept", "author": {"login": "kingkill85"}},
+                    {"body": f"/accept {head}", "author": {"login": "kingkill85"}},
                     {"body": "/merge", "author": {"login": "kingkill85"}},
                 ]}, pr,
             )
@@ -264,7 +314,7 @@ class VerificationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target, head = self.repository(pathlib.Path(directory), active=False)
             issue = {"state": "CLOSED", "labels": [], "comments": [
-                {"body": "/accept", "author": {"login": "kingkill85"}},
+                {"body": f"/accept {head}", "author": {"login": "kingkill85"}},
                 {"body": "/merge", "author": {"login": "kingkill85"}},
             ]}
             pr = {"number": 10, "state": "MERGED", "isDraft": False,
@@ -282,7 +332,7 @@ class VerificationTest(unittest.TestCase):
             target, head = self.repository(pathlib.Path(directory))
             verifier = RepositoryGitHubVerifier(EvidenceExecutor(
                 {"state": "OPEN", "labels": [{"name": "needs-approval"}], "comments": [
-                    {"body": "/accept", "createdAt": "2026-08-07T00:00:01Z",
+                    {"body": f"/accept {head}", "createdAt": "2026-08-07T00:00:01Z",
                      "author": {"login": "kingkill85"}},
                     {"body": "/merge", "createdAt": "2026-08-07T00:00:02Z",
                      "author": {"login": "kingkill85"}},
@@ -318,7 +368,7 @@ class VerificationTest(unittest.TestCase):
             )
             transition = RepositoryGitHubVerifier(EvidenceExecutor(
                 {"state": "OPEN", "labels": [], "comments": [{
-                    "body": "/accept", "createdAt": "2026-08-07T00:00:01Z",
+                    "body": f"/accept {head}", "createdAt": "2026-08-07T00:00:01Z",
                     "author": {"login": "kingkill85"},
                 }]},
                 {"number": 10, "state": "OPEN", "isDraft": True,

@@ -35,6 +35,7 @@ LIFECYCLE_STATES = (
     "label", "specification_ready", "spec_approved", "implementation_verified",
     "accepted", "archive_authorized", "archive_ci_verified", "merge_authorized",
     "merged_closed",
+    "cancelled",
 )
 
 
@@ -551,7 +552,11 @@ class Controller:
         fix_reopen = next_state == "spec_approved" and state.lifecycle_state in {
             "spec_approved", "implementation_verified", "accepted",
         }
-        if (next_index != current_index + 1 and not revision_reopen and not fix_reopen):
+        cancel = next_state == "cancelled" and state.lifecycle_state in {
+            "specification_ready", "spec_approved", "implementation_verified", "accepted",
+            "archive_authorized", "archive_ci_verified",
+        }
+        if (next_index != current_index + 1 and not revision_reopen and not fix_reopen and not cancel):
             raise RuntimeError("lifecycle transition skipped or repeated a governed gate")
         allowed = {
             "lifecycle_updated_at", "base_sha", "spec_sha", "implementation_sha", "accepted_sha",

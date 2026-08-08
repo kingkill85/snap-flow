@@ -5,7 +5,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from neo_dev_webhook.codex_runtime import AppServer, run_runtime, validate_completion
+from neo_dev_webhook.codex_runtime import (
+    AppServer, continuation_prompt, initial_prompt, run_runtime, validate_completion,
+)
 from neo_dev_webhook.project_control import (
     CODEX_RUNTIME_PATH,
     CODEX_WORKER_ARGV,
@@ -139,6 +141,30 @@ class FakeProcess:
 
 
 class CodexRuntimeTest(unittest.TestCase):
+    def test_live_prompt_paths_end_with_complete_state_specific_command_contracts(self):
+        spec = initial_prompt(REPOSITORY, 77)
+        self.assertEqual(spec.rsplit("## Available commands", 1)[1].count("`/"), 3)
+        self.assertIn("`/approve-spec <exact-full-spec-sha>`", spec)
+        self.assertTrue(spec.rstrip().endswith(
+            "`/cancel` — Stop this governed workflow without merging, closing, or deleting its worktree."
+        ))
+
+        implementation = continuation_prompt(REPOSITORY, 77, "spec_approved")
+        self.assertEqual(implementation.rsplit("## Available commands", 1)[1].count("`/"), 4)
+        self.assertIn("`/accept <exact-full-implementation-sha>`", implementation)
+        self.assertNotIn("`/merge`", implementation.rsplit("## Available commands", 1)[1])
+
+        merge = continuation_prompt(REPOSITORY, 77, "accepted")
+        section = merge.rsplit("## Available commands", 1)[1]
+        self.assertEqual(section.count("`/"), 4)
+        self.assertIn("`/merge`", section)
+        self.assertNotIn("`/accept", section)
+
+    def test_cancelled_continuation_is_terminal_and_has_no_commands(self):
+        prompt = continuation_prompt(REPOSITORY, 77, "cancelled")
+        self.assertIn("Make no repository or GitHub changes", prompt)
+        self.assertNotIn("Available commands", prompt)
+
     def files(self, root):
         registry_path = root / "registry.json"
         state_path = root / "state.json"

@@ -484,6 +484,29 @@ class ProjectControlTest(unittest.TestCase):
                 spec_sha="a" * 40,
             )
 
+    def test_controller_cancel_is_terminal_and_non_destructive(self):
+        store = InMemoryResolutionStore()
+        initial = store.bind(KEY, TARGET)
+        ready = WorkState(
+            TARGET, lifecycle_state="specification_ready",
+            lifecycle_updated_at="2026-08-07T00:00:00Z", base_sha="b" * 40,
+            spec_sha="a" * 40,
+        )
+        store.save(KEY, initial, ready)
+        controller = Controller(Registry((TARGET,)), store, FakeExecutor([]))
+        cancelled = controller.advance_lifecycle(
+            KEY, lifecycle_state="cancelled",
+            lifecycle_updated_at="2026-08-07T00:00:01Z",
+        )
+        self.assertEqual(cancelled.lifecycle_state, "cancelled")
+        self.assertEqual(cancelled.spec_sha, "a" * 40)
+        with self.assertRaisesRegex(RuntimeError, "skipped"):
+            controller.advance_lifecycle(
+                KEY, lifecycle_state="spec_approved",
+                lifecycle_updated_at="2026-08-07T00:00:02Z",
+                approval_at="2026-08-07T00:00:02Z",
+            )
+
     def test_archive_authorization_precedes_controller_archive_sha_and_merge_authorization(self):
         store = InMemoryResolutionStore()
         initial = store.bind(KEY, TARGET)

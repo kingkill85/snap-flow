@@ -52,7 +52,7 @@
       ]
     },
     "lifecycle_state": {
-      "enum": ["label", "specification_ready", "spec_approved", "implementation_verified", "accepted", "archive_authorized", "archive_ci_verified", "merge_authorized", "merged_closed"]
+      "enum": ["label", "specification_ready", "spec_approved", "implementation_verified", "accepted", "archive_authorized", "archive_ci_verified", "merge_authorized", "merged_closed", "cancelled"]
     },
     "lifecycle_updated_at": { "type": ["string", "null"] },
     "spec_sha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" },

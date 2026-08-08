@@ -9,13 +9,16 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .project_control import GovernedTarget, ProcessExecutor, WorkState
+from .operator_commands import (
+    ACCEPT_PATTERN, APPROVE_SPEC_PATTERN, FIX_PATTERN, REVISE_SPEC_PATTERN,
+    classify_command,
+)
 
-APPROVAL = re.compile(r"^/approve-spec ([0-9a-f]{40})$")
-REVISION = re.compile(r"^/revise-spec\s+\S(?:.*\S)?$", re.DOTALL)
-FIX = re.compile(r"^/fix\s+\S(?:.*\S)?$", re.DOTALL)
+APPROVAL = APPROVE_SPEC_PATTERN
+REVISION = REVISE_SPEC_PATTERN
+FIX = FIX_PATTERN
 AUTHORIZED_ACTOR_ID = 11455872
 AUTHORIZED_ACTOR_LOGIN = "kingkill85"
-COMMANDS = (APPROVAL, REVISION, FIX)
 
 
 @dataclass(frozen=True)
@@ -97,7 +100,7 @@ class HostGitHubEvidenceCollector:
                          and (APPROVAL.fullmatch(comment.get("body", "").strip())
                               or REVISION.fullmatch(comment.get("body", "").strip())
                               or FIX.fullmatch(comment.get("body", "").strip())
-                              or comment.get("body", "").strip() in {"/accept", "/merge"})],
+                              or classify_command(comment.get("body", "").strip()) is not None)],
         }
         verified_wakeup = None
         if current_wakeup is not None and current_wakeup.get("command") is not None:
@@ -112,8 +115,7 @@ class HostGitHubEvidenceCollector:
             ), timeout=20.0))
             expected_issue_url = f"https://api.github.com/repos/{repository}/issues/{issue_number}"
             command_is_valid = (
-                any(pattern.fullmatch(command.strip()) for pattern in COMMANDS)
-                or command.strip() in {"/accept", "/merge"}
+                classify_command(command.strip()) is not None
             )
             if (not isinstance(comment, dict) or comment.get("id") != comment_id
                     or comment.get("user", {}).get("id") != AUTHORIZED_ACTOR_ID
@@ -231,7 +233,13 @@ class RepositoryGitHubVerifier:
                 return LifecycleTransition(False, blocker="exact trusted wakeup is not current")
             revision = command if REVISION.fullmatch(command["body"].strip()) else None
             fix = command if FIX.fullmatch(command["body"].strip()) else None
-            if revision and state.lifecycle_state in {
+            if command["body"].strip() == "/cancel" and state.lifecycle_state in {
+                "specification_ready", "spec_approved", "implementation_verified", "accepted",
+                "archive_authorized", "archive_ci_verified",
+            }:
+                evidence = {"lifecycle_state": "cancelled",
+                            "lifecycle_updated_at": command["createdAt"]}
+            elif revision and state.lifecycle_state in {
                 "specification_ready", "spec_approved", "implementation_verified", "accepted",
             }:
                 evidence = {
@@ -255,8 +263,9 @@ class RepositoryGitHubVerifier:
                     evidence = {"lifecycle_state": "spec_approved", "approval_at": command["createdAt"],
                                 "lifecycle_updated_at": command["createdAt"]}
             elif state.lifecycle_state == "implementation_verified":
-                command = command if command["body"].strip() == "/accept" else None
-                if command and head == state.implementation_sha:
+                match = ACCEPT_PATTERN.fullmatch(command["body"].strip())
+                command = command if match else None
+                if command and match.group(1) == state.implementation_sha and head == state.implementation_sha:
                     evidence = {"lifecycle_state": "accepted", "accepted_sha": head,
                                 "accepted_at": command["createdAt"],
                                 "lifecycle_updated_at": command["createdAt"]}
@@ -387,7 +396,7 @@ class RepositoryGitHubVerifier:
                     if not checks or any(item.get("state") != "SUCCESS" for item in checks):
                         return VerificationResult(False, "review CI evidence is not successful")
             elif phase == "archive":
-                if "/accept" not in [body.strip() for body in comments]:
+                if not any(ACCEPT_PATTERN.fullmatch(body.strip()) for body in comments):
                     return VerificationResult(False, "archive requires trusted /accept")
                 if active:
                     return VerificationResult(False, "OpenSpec change is not archived")
@@ -396,9 +405,12 @@ class RepositoryGitHubVerifier:
                     return VerificationResult(False, "exact-SHA CI checks are not successful")
             elif phase == "merge-finalization":
                 stripped = [body.strip() for body in comments]
-                if "/accept" not in stripped or "/merge" not in stripped:
+                accept_indexes = [index for index, body in enumerate(stripped)
+                                  if ACCEPT_PATTERN.fullmatch(body)]
+                merge_indexes = [index for index, body in enumerate(stripped) if body == "/merge"]
+                if not accept_indexes or not merge_indexes:
                     return VerificationResult(False, "merge and acceptance authorizations are missing")
-                if stripped.index("/merge") < stripped.index("/accept"):
+                if merge_indexes[-1] < accept_indexes[-1]:
                     return VerificationResult(False, "merge authorization predates acceptance")
                 if active or pr.get("state") != "MERGED" or not pr.get("mergeCommit"):
                     return VerificationResult(False, "PR is not merged with archived OpenSpec state")

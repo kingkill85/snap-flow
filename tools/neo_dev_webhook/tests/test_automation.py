@@ -173,6 +173,17 @@ class AutomationTest(unittest.TestCase):
         claimed = self.store.claim()
         self.assertEqual(claimed["wakeups"][0]["command"], command)
 
+    def test_accept_requires_exact_full_implementation_sha_and_cancel_is_persisted(self):
+        commands = ["/accept " + "b" * 40, "/cancel", "/accept"]
+        for command in commands:
+            data = payload(event="issue_comment", body=command)
+            self.assertEqual(self.send(data, event="issue_comment"), (202, "accepted"))
+        claimed = self.store.claim()
+        self.assertEqual(
+            [wakeup["command"] for wakeup in claimed["wakeups"]],
+            [commands[0], commands[1], "finding"],
+        )
+
     def test_raw_byte_hmac_and_canonical_delivery_uuid(self):
         raw, headers = request("secret", payload())
         headers["X-Hub-Signature-256"] = hmac.new(b"secret", raw + b" ", hashlib.sha256).hexdigest()

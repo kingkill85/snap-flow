@@ -41,7 +41,7 @@ def supervise(operation: str, key: str, session_id: str | None, *,
         if session_id is None or state.codex_session_id != session_id:
             raise RuntimeError("supervisor resume identity conflicts with trusted state")
         if state.github_evidence is None or state.lifecycle_state not in {
-            "specification_ready", "spec_approved", "implementation_verified", "accepted",
+            "specification_ready", "spec_approved", "implementation_verified", "accepted", "cancelled",
             "archive_authorized", "archive_ci_verified", "merge_authorized",
         }:
             raise RuntimeError("resume lacks trusted lifecycle evidence")

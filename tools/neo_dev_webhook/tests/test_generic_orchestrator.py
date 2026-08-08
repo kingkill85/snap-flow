@@ -206,7 +206,7 @@ class GenericOrchestratorTest(unittest.TestCase):
         help_result = mock.Mock(stdout="title --body --max-runtime --workspace --idempotency-key")
         completed = mock.Mock(stdout='{"task_id":"same-task","durable":true}\n')
         work = {"issue_number": 13, "task_id": "same-task", "wakeups": [{
-            "event": "issue_comment", "action": "created", "command": "/accept",
+            "event": "issue_comment", "action": "created", "command": "/accept " + "b" * 40,
             "delivery_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         }]}
         with mock.patch("subprocess.run", side_effect=[help_result, completed]) as run:
@@ -281,7 +281,7 @@ class GenericOrchestratorTest(unittest.TestCase):
                 "command": None,
             }, {
                 "delivery_id": second_wakeup, "event": "issue_comment", "action": "created",
-                "command": "/accept",
+                "command": "/accept " + "b" * 40,
             }]}
             second = runner.create(second_work, KEY)
             replay = runner.create(second_work, KEY)
