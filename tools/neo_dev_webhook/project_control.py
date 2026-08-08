@@ -575,6 +575,7 @@ class Controller:
                 "phase": state.phase, "codex_session_id": state.codex_session_id,
                 "process_generation": state.process_generation,
                 "restart_count": state.restart_count,
+                "terminal": asdict(state.terminal) if state.terminal is not None else None,
                 "lifecycle_state": state.lifecycle_state,
                 "archive_sha": state.archive_sha,
                 "review_phase": ((state.review_state or {}).get("review_phase")),
