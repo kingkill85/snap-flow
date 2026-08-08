@@ -24,6 +24,19 @@ def validate_e2e_check(checks: list[dict], head_sha: str) -> dict:
         raise RuntimeError("dedicated GitHub E2E check is pending, stale, skipped, cancelled, or failed")
     if check.get("artifacts") != [f"cucumber-report-{head_sha}"]:
         raise RuntimeError("dedicated GitHub E2E report artifact is missing or stale")
+    attestation = check.get("artifact_attestation")
+    if not isinstance(attestation, dict):
+        raise RuntimeError("dedicated GitHub E2E artifact attestation is missing")
+    run, job = attestation.get("run"), attestation.get("job")
+    if not isinstance(run, dict) or not isinstance(job, dict):
+        raise RuntimeError("dedicated GitHub E2E artifact attestation is invalid")
+    from .verification import validate_e2e_artifact_attestation
+    try:
+        validate_e2e_artifact_attestation(
+            attestation, head_sha, run.get("id"), run.get("attempt"), job.get("id"),
+        )
+    except ValueError as error:
+        raise RuntimeError("dedicated GitHub E2E artifact attestation is invalid") from error
     return check
 
 FOCUSED_CONTROLLER_TESTS = (
@@ -188,7 +201,6 @@ def run_gates(executor, target, head_sha: str, approved_spec_sha: str,
             "github_check": dict(e2e_check),
             "artifacts": {
                 "cucumber_report": f"cucumber-report-{head_sha}",
-                "playwright_failures": f"playwright-failures-{head_sha}",
             },
         },
         "approval_artifacts": {"immutable": True}, "secret_scan": {"passed": True},

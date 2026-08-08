@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+from neo_dev_webhook.tests.test_deterministic_gates import artifact_attestation
+
 
 HEAD = "a" * 40
 
@@ -44,6 +46,7 @@ class CucumberE2EGateTests(unittest.TestCase):
             "status": "completed", "conclusion": "success", "state": "SUCCESS",
             "artifacts": ["cucumber-report-" + HEAD],
         }
+        valid["artifact_attestation"] = artifact_attestation(HEAD)
         self.assertEqual(validate_e2e_check([valid], HEAD)["id"], 77)
         mutations = [
             [],
@@ -86,10 +89,10 @@ class CucumberE2EGateTests(unittest.TestCase):
                 "id": 77, "name": "E2E (Cucumber + Playwright)",
                 "head_sha": HEAD, "status": "completed", "conclusion": "success",
                 "state": "SUCCESS", "artifacts": ["cucumber-report-" + HEAD],
+                "artifact_attestation": artifact_attestation(HEAD),
             },
             "artifacts": {
                 "cucumber_report": "cucumber-report-" + HEAD,
-                "playwright_failures": "playwright-failures-" + HEAD,
             },
         }
         validate_e2e_evidence(valid, HEAD)

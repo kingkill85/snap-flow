@@ -1,6 +1,9 @@
 import { setWorldConstructor, World, type IWorldOptions } from '@cucumber/cucumber';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import type { ChildProcess } from 'node:child_process';
+import { resolveRuntimeUrls } from './runtime-urls.ts';
+
+const runtimeUrls = resolveRuntimeUrls(process.env);
 
 export class SnapFlowWorld extends World {
   browser?: Browser;
@@ -8,8 +11,8 @@ export class SnapFlowWorld extends World {
   page?: Page;
   processes: ChildProcess[] = [];
   runtimeDirectory?: string;
-  baseUrl = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:4173';
-  apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:18000';
+  baseUrl = runtimeUrls.frontend;
+  apiUrl = runtimeUrls.backend;
 
   constructor(options: IWorldOptions) { super(options); }
 }

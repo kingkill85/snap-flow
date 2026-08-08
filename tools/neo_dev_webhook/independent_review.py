@@ -13,6 +13,7 @@ BLOCKING_CATEGORIES = frozenset({
 VERDICT_KEYS = frozenset({
     "reviewed_sha", "reviewer_session_id", "reviewer_run_id", "disposition", "findings",
 })
+VERDICT_OPTIONAL_KEYS = frozenset({"e2e_applicability"})
 FINDING_KEYS = frozenset({
     "fingerprint", "severity", "category", "summary", "blocking", "material_spec_change",
 })
@@ -50,7 +51,8 @@ def apply_verdict(state: dict[str, Any], current_head_sha: str,
             != state.get("approved_spec_sha")):
         raise ValueError("approval artifact SHA does not match approved spec SHA")
     _validate_sha(current_head_sha)
-    if not isinstance(verdict, dict) or set(verdict) != VERDICT_KEYS:
+    if (not isinstance(verdict, dict) or not VERDICT_KEYS.issubset(verdict)
+            or set(verdict) - VERDICT_KEYS - VERDICT_OPTIONAL_KEYS):
         raise ValueError("malformed independent review verdict")
     if (verdict["reviewed_sha"] != current_head_sha
             or verdict["reviewed_sha"] != state.get("reviewed_sha")):
@@ -67,6 +69,8 @@ def apply_verdict(state: dict[str, Any], current_head_sha: str,
         raise ValueError("clean verdict cannot contain findings")
     if verdict["disposition"] == "blocking" and not findings:
         raise ValueError("blocking verdict requires findings")
+    if verdict["disposition"] != "clean" and "e2e_applicability" in verdict:
+        raise ValueError("E2E inapplicability can only accompany a clean review")
 
     updated = dict(state)
     history = list(state.get("reviewer_history", []))
@@ -74,6 +78,19 @@ def apply_verdict(state: dict[str, Any], current_head_sha: str,
     updated.update(review_verdict=verdict, review_findings=findings,
                    reviewer_history=history)
     if verdict["disposition"] == "clean":
+        applicability = verdict.get("e2e_applicability")
+        if applicability is None:
+            evidence = state.get("deterministic_evidence", {})
+            if not isinstance(evidence, dict) or not isinstance(evidence.get("e2e"), dict):
+                raise ValueError("E2E-required review evidence is missing")
+            updated["e2e_applicability"] = {"required": True,
+                                             "reviewed_sha": current_head_sha}
+        else:
+            validate_persisted_e2e_applicability(
+                applicability, current_head_sha, state.get("reviewer_session_id"),
+                state.get("reviewer_run_id"), state.get("implementation_session_id"),
+            )
+            updated["e2e_applicability"] = dict(applicability)
         updated.update(review_phase="clean", review_disposition="independent review clean")
         return updated
     if any(item["material_spec_change"] for item in findings):
@@ -180,7 +197,6 @@ def validate_e2e_evidence(evidence: object, sha: str) -> None:
     artifacts = evidence.get("artifacts")
     expected = {
         "cucumber_report": f"cucumber-report-{sha}",
-        "playwright_failures": f"playwright-failures-{sha}",
     }
     if artifacts != expected:
         raise ValueError("E2E report and failure artifact evidence is missing")
@@ -193,6 +209,23 @@ def validate_e2e_applicability(value: object, sha: str) -> None:
     if (not isinstance(reason, str) or len(reason.strip()) < 20
             or value.get("reviewed_sha") != sha or value.get("reviewer_approved") is not True):
         raise ValueError("E2E inapplicability requires a specific persisted reviewer-approved reason")
+
+
+def validate_persisted_e2e_applicability(value: object, sha: str, reviewer_session_id: object,
+                                         reviewer_run_id: object,
+                                         implementation_session_id: object) -> None:
+    if not isinstance(value, dict) or value.get("required") is not False:
+        raise ValueError("E2E inapplicability evidence is absent or conflicting")
+    reason = value.get("reason")
+    generic = {"not needed", "n/a", "none", "not applicable"}
+    if (not isinstance(reason, str) or len(reason.strip()) < 20
+            or reason.strip().casefold() in generic):
+        raise ValueError("E2E inapplicability requires a specific reason")
+    if (value.get("reviewed_sha") != sha or value.get("reviewer_approved") is not True
+            or value.get("reviewer_session_id") != reviewer_session_id
+            or value.get("reviewer_run_id") != reviewer_run_id
+            or reviewer_session_id == implementation_session_id):
+        raise ValueError("E2E inapplicability is stale or not reviewer-approved independently")
 
 
 def _validate_evidence(evidence: object, sha: str, approved_spec_sha: object) -> None:
@@ -294,6 +327,7 @@ def migrate_review_state(record: dict[str, Any]) -> dict[str, Any]:
     migrated.setdefault("reviewer_session_id", None)
     migrated.setdefault("reviewer_run_id", None)
     migrated.setdefault("review_findings", [])
+    migrated.setdefault("e2e_applicability", None)
     migrated.setdefault("deterministic_evidence", None)
     migrated.setdefault("review_disposition", None)
     migrated.setdefault("reviewer_history", [])

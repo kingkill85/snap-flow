@@ -33,7 +33,8 @@ def _evidence(sha: str) -> dict:
         "openspec": {"validate": "passed", "verify": "passed", "strict": True},
         "checks": [{"id": 42, "name": "E2E (Cucumber + Playwright)", "head_sha": sha,
                     "status": "completed", "conclusion": "success", "state": "SUCCESS",
-                    "artifacts": [f"cucumber-report-{sha}"]}],
+                    "artifacts": [f"cucumber-report-{sha}"],
+                    "artifact_attestation": _artifact_attestation(sha)}],
         "e2e": {
             "head_sha": sha,
             "local": {"status": "passed", "command": "npm run e2e"},
@@ -41,9 +42,9 @@ def _evidence(sha: str) -> dict:
             "github_check": {"id": 42, "name": "E2E (Cucumber + Playwright)",
                              "head_sha": sha, "status": "completed",
                              "conclusion": "success", "state": "SUCCESS",
-                             "artifacts": [f"cucumber-report-{sha}"]},
-            "artifacts": {"cucumber_report": f"cucumber-report-{sha}",
-                          "playwright_failures": f"playwright-failures-{sha}"},
+                             "artifacts": [f"cucumber-report-{sha}"],
+                             "artifact_attestation": _artifact_attestation(sha)},
+            "artifacts": {"cucumber_report": f"cucumber-report-{sha}"},
         },
         "approval_artifacts": {"immutable": True}, "secret_scan": {"passed": True},
         "gates": gates,
@@ -52,6 +53,16 @@ def _evidence(sha: str) -> dict:
                      "tracked_and_relevant_untracked_reviewed": True},
         "ui": {"required": False, "reason": "non-destructive controller fixture"},
     }
+
+
+def _artifact_attestation(sha: str) -> dict:
+    return {"artifact": {"id": 501, "name": f"cucumber-report-{sha}",
+                         "digest": "sha256:" + "1" * 64, "expired": False},
+            "run": {"id": 701, "attempt": 2, "head_sha": sha},
+            "job": {"id": 801, "name": "E2E (Cucumber + Playwright)",
+                    "run_id": 701, "run_attempt": 2, "head_sha": sha},
+            "contents": {"tested_sha": sha, "cucumber_report_sha256": "2" * 64,
+                         "cucumber_report_documents": 1}, "failure_artifacts": []}
 
 
 def _verdict(sha: str, reviewer: str, run: str, *, clean: bool) -> dict:

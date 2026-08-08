@@ -29,6 +29,82 @@ def validate_mapping(specs: dict[str, str], mappings: dict[str, list[str]]) -> d
 
 
 REFERENCE = re.compile(r"^\s*#\s*openspec-scenario:\s*(\S+)\s*$", re.MULTILINE)
+SPEC_STEP = re.compile(r"^\s*-\s*\*\*(GIVEN|WHEN|THEN|AND|BUT)\*\*\s+(.+?)\s*$",
+                       re.IGNORECASE)
+FEATURE_STEP = re.compile(r"^\s*(Given|When|Then|And|But)\s+(.+?)\s*$", re.IGNORECASE)
+FEATURE_SCENARIO = re.compile(r"^\s*Scenario(?: Outline)?:\s*(.+?)\s*$", re.IGNORECASE)
+
+
+def _normalize_step(keyword: str, text: str) -> tuple[str, str]:
+    normalized = re.sub(r"\s+", " ", text.strip()).casefold()
+    return keyword.upper(), normalized
+
+
+def _spec_scenarios(specs: dict[str, str]) -> dict[str, list[tuple[str, str]]]:
+    parsed: dict[str, list[tuple[str, str]]] = {}
+    for path, content in specs.items():
+        current = None
+        for line in content.splitlines():
+            heading = re.match(r"^#### Scenario:\s*(.+?)\s*$", line)
+            if heading:
+                current = f"{path}#{slugify(heading.group(1))}"
+                if current in parsed:
+                    raise ValueError(f"duplicate OpenSpec scenario reference: {current}")
+                parsed[current] = []
+                continue
+            step = SPEC_STEP.match(line)
+            if step and current is not None:
+                parsed[current].append(_normalize_step(*step.groups()))
+    if any(not steps for steps in parsed.values()):
+        raise ValueError("OpenSpec scenario has no Given/When/Then steps")
+    return parsed
+
+
+def _feature_scenarios(features: dict[str, str]) -> dict[str, list[list[tuple[str, str]]]]:
+    result: dict[str, list[list[tuple[str, str]]]] = {}
+    for path, content in features.items():
+        pending: list[str] = []
+        active_refs: list[str] = []
+        steps: list[tuple[str, str]] | None = None
+        for line in content.splitlines():
+            reference = REFERENCE.match(line)
+            if reference:
+                pending.append(reference.group(1))
+                continue
+            if FEATURE_SCENARIO.match(line):
+                if len(pending) > 1:
+                    raise ValueError(f"reference must bind exactly one Gherkin scenario in {path}")
+                active_refs = list(pending)
+                pending = []
+                steps = []
+                for item in active_refs:
+                    result.setdefault(item, []).append(steps)
+                continue
+            step = FEATURE_STEP.match(line)
+            if step and steps is not None:
+                steps.append(_normalize_step(*step.groups()))
+        if pending:
+            raise ValueError(f"reference must bind exactly one Gherkin scenario in {path}")
+    return result
+
+
+def validate_structured_mapping(specs: dict[str, str], features: dict[str, str],
+                                require_all: bool = False) -> dict:
+    approved = _spec_scenarios(specs)
+    concrete = _feature_scenarios(features)
+    unknown = set(concrete) - set(approved)
+    if unknown:
+        raise ValueError(f"unknown OpenSpec scenario references: {sorted(unknown)}")
+    duplicates = [reference for reference, scenarios in concrete.items() if len(scenarios) != 1]
+    if duplicates:
+        raise ValueError(f"duplicate or ambiguous scenario references: {sorted(duplicates)}")
+    if require_all and set(approved) - set(concrete):
+        raise ValueError(f"missing OpenSpec scenario mappings: {sorted(set(approved) - set(concrete))}")
+    for reference, scenarios in concrete.items():
+        if scenarios[0] != approved[reference]:
+            raise ValueError(f"step mismatch for {reference}: changed, missing, reordered, duplicated, or unrelated step")
+    return {"status": "passed", "required": len(approved) if require_all else len(concrete),
+            "mapped": len(concrete)}
 
 
 def validate_feature_references(specs: dict[str, str], mappings: dict[str, list[str]],
@@ -60,9 +136,9 @@ def main() -> int:
              for path in root.glob(f"openspec/changes/{change_pattern}/specs/**/*.md")}
     if args.change and not specs:
         raise ValueError(f"no OpenSpec delta specs found for {args.change}")
-    features = {str(path.resolve().relative_to(root)): REFERENCE.findall(path.read_text())
+    features = {str(path.resolve().relative_to(root)): path.read_text()
                 for path in Path(args.features).glob("**/*.feature")}
-    result = validate_feature_references(specs, features, args.require_all_active)
+    result = validate_structured_mapping(specs, features, args.require_all_active)
     print(f"OpenSpec scenario traceability: {result['mapped']}/{result['required']} mapped")
     return 0
 
