@@ -67,6 +67,13 @@
       "mode": "0644"
     },
     {
+      "source": "../operator_commands.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/operator_commands.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
       "source": "../forced_command.py",
       "destination": "/usr/local/lib/neo_dev_webhook/forced_command.py",
       "owner": "root",

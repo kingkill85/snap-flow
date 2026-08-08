@@ -28,7 +28,7 @@ install_scope() {
   passwd -d neo-controller
   install -d -o root -g root -m 0755 /usr/local/lib/neo_dev_webhook /usr/local/lib/neo-dev-project-control /etc/neo-dev/project-control
   install -d -o neo-controller -g neo-controller -m 0700 /var/lib/neo-dev/project-control
-  install -o root -g root -m 0644 "$bundle/neo_dev_webhook/"{__init__,project_control,project_worker,codex_runtime,runtime_supervisor,verification,forced_command,independent_review,independent_review_canary,deterministic_gates,gate_exec,gate_scan}.py /usr/local/lib/neo_dev_webhook/
+  install -o root -g root -m 0644 "$bundle/neo_dev_webhook/"{__init__,project_control,project_worker,codex_runtime,runtime_supervisor,operator_commands,verification,forced_command,independent_review,independent_review_canary,deterministic_gates,gate_exec,gate_scan}.py /usr/local/lib/neo_dev_webhook/
   install -o root -g root -m 0644 "$bundle/controller/registry.v1.json" /etc/neo-dev/project-control/registry.json
   install -o root -g root -m 0644 "$bundle/controller/card-capability-policy.v1.json" /etc/neo-dev/project-control/card-capability-policy.json
   install -o root -g root -m 0644 "$bundle/controller/state-schema.v1.json" /etc/neo-dev/project-control/state-schema.json

@@ -22,11 +22,16 @@ class DeploymentTest(unittest.TestCase):
         root = pathlib.Path(__file__).parents[1]
         manifest = json.loads((root / "controller/install-manifest.v1.json").read_text())
         sources = {item["source"] for item in manifest["files"]}
-        for name in ("deterministic_gates.py", "gate_exec.py", "gate_scan.py"):
+        for name in (
+            "deterministic_gates.py",
+            "gate_exec.py",
+            "gate_scan.py",
+            "operator_commands.py",
+        ):
             self.assertIn(f"../{name}", sources)
         installers = (root / "deploy/controller-install.sh").read_text() + \
             (root / "deploy/hermes-controller-install.sh").read_text()
-        for name in ("deterministic_gates", "gate_exec", "gate_scan"):
+        for name in ("deterministic_gates", "gate_exec", "gate_scan", "operator_commands"):
             self.assertIn(name, installers)
 
     def test_exact_operator_pin_is_required_and_mismatch_rejected(self):
