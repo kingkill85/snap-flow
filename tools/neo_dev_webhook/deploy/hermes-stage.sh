@@ -55,7 +55,7 @@ install_scope() {
   HERMES_HOME="$data_root/profiles/dev" "$hermes_python" -c 'import json,sys; from hermes_cli.config import load_config; json.dump(load_config().get("plugins",{}).get("enabled",[]),sys.stdout)' >"$backup/plugins.enabled.before.json"
   (cd "$backup" && sha256sum resolved_toolsets.before.json plugins.enabled.before.json >config.before.sha256)
   install -d -m 0755 "$live_src/neo_dev_webhook" "$host_lib" "$host_bin"
-  install -m 0644 "$repo_root/tools/neo_dev_webhook/"{__init__,automation,consumer,server,remote_adapter,project_control,deployment,hermes_transition,verification}.py "$live_src/neo_dev_webhook/"
+  install -m 0644 "$repo_root/tools/neo_dev_webhook/"{__init__,automation,consumer,server,remote_adapter,project_control,deployment,hermes_transition,operator_commands,verification}.py "$live_src/neo_dev_webhook/"
   install -m 0644 "$repo_root/tools/neo_dev_webhook/"{__init__,remote_adapter,project_control,deployment}.py "$host_lib/"
   install -m 0755 "$repo_root/tools/neo_dev_webhook/controller/neo-dev-remote-project-control" "$host_bin/neo-dev-project-control"
   rm -f -- "$enforced" "$host_bin/snapflow-neo-dev-transition"
@@ -74,7 +74,7 @@ verify_scope() {
   test -x "$host_bin/neo-dev-project-control"
   test -f "$plugin/plugin.yaml" && test -f "$plugin/__init__.py"
   grep -Fq '<!-- snapflow-neo-dev-orchestrator:start -->' "$profile"
-  for file in __init__ automation consumer server remote_adapter project_control deployment hermes_transition verification; do
+  for file in __init__ automation consumer server remote_adapter project_control deployment hermes_transition operator_commands verification; do
     test "$(sha256sum "$repo_root/tools/neo_dev_webhook/$file.py" | cut -d' ' -f1)" = "$(sha256sum "$live_src/neo_dev_webhook/$file.py" | cut -d' ' -f1)"
   done
   test "$(sha256sum "$repo_root/tools/neo_dev_webhook/controller/neo-dev-remote-project-control" | cut -d' ' -f1)" = "$(sha256sum "$host_bin/neo-dev-project-control" | cut -d' ' -f1)"

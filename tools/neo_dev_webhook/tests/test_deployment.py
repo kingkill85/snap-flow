@@ -206,6 +206,13 @@ esac
             subprocess.run([str(script), "fixture-verify", str(stack)], check=True, env=env)
             subprocess.run([str(script), "fixture-activate", str(stack)], check=True, env=env)
 
+    def test_runtime_dependency_is_staged_in_both_deployment_scopes(self):
+        deploy = pathlib.Path(__file__).parents[1] / "deploy"
+        hermes_stage = (deploy / "hermes-stage.sh").read_text()
+        controller_stage = (deploy / "hermes-controller-install.sh").read_text()
+        self.assertIn("operator_commands", hermes_stage)
+        self.assertIn("operator_commands", controller_stage)
+
     def test_hermes_configuration_uses_tools_api_not_string_config_values(self):
         stage = (pathlib.Path(__file__).parents[1] / "deploy/hermes-stage.sh").read_text()
         self.assertIn('tools disable "$toolset" --platform cli', stage)
