@@ -57,6 +57,26 @@ class EvidenceExecutor:
 
 
 class VerificationTest(unittest.TestCase):
+    def test_host_collector_rejects_missing_or_ambiguous_governed_pr(self):
+        class HostExecutor:
+            def __init__(self, prs): self.prs = prs
+            def run(self, argv, *, timeout):
+                if "issue" in argv:
+                    return json.dumps({"state": "OPEN", "comments": []})
+                if "list" in argv:
+                    return json.dumps(self.prs)
+                raise AssertionError(argv)
+
+        pr = {"number": 85, "headRefOid": "e22d7580520c8e1ba63c811a3514169e02ceee0b",
+              "headRefName": "feature/issue-84"}
+        for prs in ([], [pr, {**pr, "number": 86}]):
+            with self.subTest(prs=prs), self.assertRaisesRegex(
+                    RuntimeError, "exactly one governed PR"):
+                HostGitHubEvidenceCollector(HostExecutor(prs)).collect_bound(
+                    "kingkill85/snap-flow", 84, "feature/issue-84", "b" * 64,
+                    "spec_approved", "ecfc6f5a-931b-11f1-9ca7-8a64afe8ca67",
+                )
+
     def test_host_collector_binds_immutable_check_runs_to_actual_head_sha(self):
         head = "a" * 40
         class HostExecutor:

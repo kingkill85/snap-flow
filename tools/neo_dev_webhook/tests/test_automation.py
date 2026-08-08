@@ -692,6 +692,31 @@ class AutomationTest(unittest.TestCase):
         self.assertFalse(consumer.run_one())
         dispatcher.review.assert_called_once()
 
+    def test_waiting_old_terminal_without_handoff_is_migrated_and_reviewed(self):
+        self.send(payload(issue={"number": 84, "state": "open",
+                                 "labels": [{"name": "neo-dev"}]}))
+        claimed = self.store.claim(now=10)
+        self.store.complete(claimed["id"], claimed["claim_token"],
+                            "implementation-worker", now=11)
+        workflow_id = self.store.get_active(REPOSITORY, 84)["idempotency_key"]
+        evidence = {"sha": "e22d7580520c8e1ba63c811a3514169e02ceee0b"}
+        dispatcher = mock.Mock()
+        dispatcher.status.return_value = {"controller": {"execution": {
+            "lifecycle_state": "spec_approved", "phase": "exited_resumable",
+            "terminal": {"exit_code": 0, "semantic_outcome": "correctable",
+                         "resumable": True},
+        }}}
+        dispatcher.attest.return_value = {"controller": {
+            "execution": {"lifecycle_state": "independent_review",
+                          "review_phase": "awaiting_review"},
+            "review_evidence": evidence,
+        }}
+        consumer = Consumer(self.store, FakeRunner(), self.github, dispatcher=dispatcher)
+
+        self.assertTrue(consumer.run_one())
+        dispatcher.attest.assert_called_once_with(REPOSITORY, 84, workflow_id)
+        dispatcher.review.assert_called_once_with(REPOSITORY, 84, workflow_id, evidence)
+
     def test_later_actionable_waiting_handoff_is_not_starved_by_oldest_issue(self):
         for issue in (1, 2):
             self.send(payload(issue={"number": issue, "state": "open",

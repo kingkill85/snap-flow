@@ -1,9 +1,11 @@
 import unittest
+from datetime import datetime, timezone
 from dataclasses import replace
 from unittest import mock
 
 from neo_dev_webhook.project_control import (
-    Controller, GovernedTarget, InMemoryResolutionStore, Registry, WorkState,
+    Controller, GovernedTarget, InMemoryResolutionStore, Registry, TerminalObservation,
+    WorkState,
 )
 
 
@@ -48,6 +50,138 @@ class TerminalImplementationHandoffTest(unittest.TestCase):
         self.controller = Controller(
             Registry((TARGET,)), self.store, mock.Mock(), github_collector=self.collector,
         )
+
+    def legacy_state(self):
+        current = self.store.load(WORKFLOW)
+        legacy = replace(
+            current, phase="exited_resumable",
+            terminal=TerminalObservation(0, "correctable", True),
+            implementation_handoff=None,
+        )
+        self.store.save(WORKFLOW, current, legacy)
+        return legacy
+
+    def legacy_evidence(self):
+        return {
+            "version": 2, "workflow_id": WORKFLOW,
+            "repository": TARGET.repository, "issue_number": 84,
+            "resolution_id": TARGET.resolution_id, "expected_state": "spec_approved",
+            "observed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "issue": {"state": "OPEN", "comments": []},
+            "pr": {"number": 85, "headRefName": "feature/issue-84",
+                   "headRefOid": IMPLEMENTATION},
+            "checks": [{"state": "SUCCESS", "head_sha": IMPLEMENTATION}],
+            "current_wakeup": None,
+        }
+
+    def test_old_issue_84_terminal_fixture_migrates_canonical_handoff_before_attest(self):
+        self.legacy_state()
+        evidence = self.legacy_evidence()
+        transition = mock.Mock(verified=True, blocker=None, evidence={
+            "lifecycle_state": "independent_review",
+            "lifecycle_updated_at": "2026-08-08T01:00:00Z",
+            "implementation_sha": IMPLEMENTATION,
+            "review_state": {**self.store.load(WORKFLOW).review_state,
+                             "review_phase": "awaiting_review"},
+        })
+        with mock.patch("neo_dev_webhook.verification.RepositoryGitHubVerifier.verify_next",
+                        return_value=transition):
+            result = self.controller.execute(
+                "attest", TARGET.repository, 84, WORKFLOW, evidence,
+            )
+
+        self.assertEqual(result["execution"]["lifecycle_state"], "independent_review")
+        self.assertEqual(self.store.load(WORKFLOW).implementation_handoff, HANDOFF)
+
+    def test_old_terminal_migration_rejects_wrong_governed_binding_and_stale_evidence(self):
+        from datetime import timedelta
+
+        mutations = {
+            "issue": lambda value: {**value, "issue_number": 83},
+            "branch": lambda value: {**value, "pr": {**value["pr"],
+                                                       "headRefName": "feature/issue-83"}},
+            "resolution": lambda value: {**value, "resolution_id": "0" * 64},
+            "stale": lambda value: {**value, "observed_at": (
+                datetime.now(timezone.utc) - timedelta(minutes=6)
+            ).isoformat().replace("+00:00", "Z")},
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                self.setUp(); self.legacy_state()
+                with self.assertRaises((ValueError, RuntimeError)):
+                    self.controller.execute(
+                        "attest", TARGET.repository, 84, WORKFLOW,
+                        mutate(self.legacy_evidence()),
+                    )
+                persisted = self.store.load(WORKFLOW)
+                self.assertIsNone(persisted.implementation_handoff)
+                self.assertIsNone(persisted.github_evidence)
+
+    def test_old_terminal_migration_rejects_missing_or_malformed_pr_and_head(self):
+        mutations = {
+            "missing_pr": lambda value: {**value, "pr": None},
+            "wrong_pr": lambda value: {**value, "pr": {**value["pr"], "number": 0}},
+            "wrong_head": lambda value: {**value, "pr": {**value["pr"],
+                                                            "headRefOid": "b" * 40}},
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                self.setUp(); self.legacy_state()
+                transition = mock.Mock(verified=True, blocker=None, evidence={
+                    "lifecycle_state": "independent_review",
+                    "implementation_sha": IMPLEMENTATION,
+                })
+                with mock.patch(
+                        "neo_dev_webhook.verification.RepositoryGitHubVerifier.verify_next",
+                        return_value=transition), self.assertRaises((ValueError, RuntimeError)):
+                    self.controller.execute(
+                        "attest", TARGET.repository, 84, WORKFLOW,
+                        mutate(self.legacy_evidence()),
+                    )
+                self.assertIsNone(self.store.load(WORKFLOW).implementation_handoff)
+
+    def test_old_terminal_migration_rejects_spec_checks_and_verifier_sha_before_persist(self):
+        for blocker, verifier_sha in (
+            ("approved spec SHA is unavailable", IMPLEMENTATION),
+            ("review CI evidence is not successful", IMPLEMENTATION),
+            (None, "b" * 40),
+        ):
+            with self.subTest(blocker=blocker, verifier_sha=verifier_sha):
+                self.setUp(); self.legacy_state()
+                transition = mock.Mock(
+                    verified=blocker is None, blocker=blocker,
+                    evidence={"lifecycle_state": "independent_review",
+                              "implementation_sha": verifier_sha},
+                )
+                with mock.patch(
+                        "neo_dev_webhook.verification.RepositoryGitHubVerifier.verify_next",
+                        return_value=transition), self.assertRaises(RuntimeError):
+                    self.controller.execute(
+                        "attest", TARGET.repository, 84, WORKFLOW,
+                        self.legacy_evidence(),
+                    )
+                persisted = self.store.load(WORKFLOW)
+                self.assertIsNone(persisted.implementation_handoff)
+                self.assertIsNone(persisted.github_evidence)
+
+    def test_duplicate_old_terminal_migration_callback_fails_closed_without_mutation(self):
+        self.legacy_state()
+        evidence = self.legacy_evidence()
+        transition = mock.Mock(verified=True, blocker=None, evidence={
+            "lifecycle_state": "independent_review",
+            "lifecycle_updated_at": "2026-08-08T01:00:00Z",
+            "implementation_sha": IMPLEMENTATION,
+            "review_state": {**self.store.load(WORKFLOW).review_state,
+                             "review_phase": "awaiting_review"},
+        })
+        with mock.patch("neo_dev_webhook.verification.RepositoryGitHubVerifier.verify_next",
+                        return_value=transition):
+            self.controller.execute("attest", TARGET.repository, 84, WORKFLOW, evidence)
+        migrated = self.store.load(WORKFLOW)
+
+        with self.assertRaises((ValueError, RuntimeError)):
+            self.controller.execute("attest", TARGET.repository, 84, WORKFLOW, evidence)
+        self.assertEqual(self.store.load(WORKFLOW), migrated)
 
     def test_correctable_resumable_terminal_persists_handoff_for_host_finalization(self):
         controller = Controller(Registry((TARGET,)), self.store, mock.Mock())

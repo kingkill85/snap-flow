@@ -29,6 +29,12 @@ def ownership_path(key: str) -> pathlib.Path:
     return SOCKET_ROOT / f"{key}.owner.json"
 
 
+def _write_ownership(path: pathlib.Path, document: dict) -> None:
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(document, sort_keys=True), encoding="utf-8")
+    os.replace(temporary, path)
+
+
 def supervise(operation: str, key: str, session_id: str | None, review_run_id: str | None = None, *,
               registry_path: pathlib.Path = CONTROLLER_REGISTRY_PATH,
               state_path: pathlib.Path = CONTROLLER_STATE_PATH) -> int:
@@ -89,17 +95,20 @@ def supervise(operation: str, key: str, session_id: str | None, review_run_id: s
         os.chown(path, dev.pw_uid, dev.pw_gid)
         os.chmod(path, 0o600)
         server.listen(1)
-        owner_path.write_text(json.dumps({
+        owner = {
             "pid": os.getpid(),
             "start_time": pathlib.Path("/proc/self/stat").read_text().split()[21],
             "operation": operation,
             "idempotency_key": key,
             "session_id": session_id,
             "review_run_id": review_run_id,
-        }, sort_keys=True), encoding="utf-8")
+            "connection_state": "listening",
+        }
+        _write_ownership(owner_path, owner)
         server.settimeout(30)
         connection, _ = server.accept()
         worker_attached = True
+        _write_ownership(owner_path, {**owner, "connection_state": "connected"})
         path.unlink(missing_ok=True)
         with connection:
             launch = {

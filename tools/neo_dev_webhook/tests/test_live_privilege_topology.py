@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 import socket
 import tempfile
@@ -10,7 +11,8 @@ from unittest import mock
 
 from neo_dev_webhook import project_worker, runtime_supervisor
 from neo_dev_webhook.project_control import (
-    FileResolutionStore, ISSUE_77_TARGET, ProjectWorkerExecutor, Registry,
+    Controller, FileResolutionStore, ISSUE_77_TARGET, ProjectWorkerExecutor, Registry,
+    RuntimeSupervisorLauncher,
 )
 
 KEY = "12345678-1234-4abc-8def-123456789abc"
@@ -18,6 +20,137 @@ SESSION = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 
 class LivePrivilegeTopologyTest(unittest.TestCase):
+    def test_supervisor_liveness_accepts_listening_and_connected_generation_only(self):
+        launcher = RuntimeSupervisorLauncher()
+        with tempfile.TemporaryDirectory() as directory:
+            owner_path = pathlib.Path(directory) / "owner.json"
+            start_time = pathlib.Path("/proc/self/stat").read_text().split()[21]
+            owner = {
+                "pid": os.getpid(), "start_time": start_time,
+                "operation": "review", "idempotency_key": KEY,
+                "session_id": None, "review_run_id": SESSION,
+                "connection_state": "listening",
+            }
+            owner_path.write_text(json.dumps(owner))
+            with mock.patch.object(launcher, "_ownership_path", return_value=owner_path), \
+                 mock.patch.object(launcher, "_socket_is_live", return_value=True):
+                self.assertTrue(launcher.is_live("review", KEY, run_id=SESSION))
+
+            owner_path.write_text(json.dumps({**owner, "connection_state": "connected"}))
+            with mock.patch.object(launcher, "_ownership_path", return_value=owner_path), \
+                 mock.patch.object(launcher, "_socket_is_live", return_value=False):
+                self.assertTrue(launcher.is_live("review", KEY, run_id=SESSION))
+
+            owner_path.write_text(json.dumps({**owner, "start_time": "0"}))
+            with mock.patch.object(launcher, "_ownership_path", return_value=owner_path), \
+                 mock.patch.object(launcher, "_socket_is_live", return_value=True):
+                self.assertFalse(launcher.is_live("review", KEY, run_id=SESSION))
+
+            owner_path.write_text(json.dumps({**owner, "review_run_id": KEY}))
+            with mock.patch.object(launcher, "_ownership_path", return_value=owner_path), \
+                 mock.patch.object(launcher, "_socket_is_live", return_value=True):
+                self.assertFalse(launcher.is_live("review", KEY, run_id=SESSION))
+
+    def test_connected_reviewer_survives_reconciliation_and_retry_without_duplicate(self):
+        from neo_dev_webhook.tests.test_independent_review import SPEC_SHA, valid_evidence
+
+        class Executor:
+            def __init__(self): self.windows, self.attempts = [], 0
+            def run(self, argv, *, timeout):
+                if argv[:2] == ("tmux", "list-windows"):
+                    return "".join(f"{item}\n" for item in self.windows)
+                if argv[:2] == ("tmux", "new-window"):
+                    self.attempts += 1
+                    if self.attempts == 1:
+                        raise RuntimeError("injected post-connect window failure")
+                    self.windows.append(argv[argv.index("-n") + 1])
+                    return ""
+                raise AssertionError(argv)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            registry_path = root / "registry.json"
+            registry_path.write_text(json.dumps({
+                "version": 1, "projects": [], "project_templates": [],
+                "targets": [ISSUE_77_TARGET.as_dict()],
+            }))
+            state_path = root / "state.json"
+            store = FileResolutionStore(state_path)
+            initial = store.bind(KEY, ISSUE_77_TARGET)
+            review = {
+                "implementation_session_id": KEY, "approved_spec_sha": SPEC_SHA,
+                "approval_artifact_sha": SPEC_SHA, "review_phase": "reviewer_starting",
+                "review_generation": 0, "fix_cycle": 0, "reviewed_sha": "a" * 40,
+                "reviewer_session_id": None, "reviewer_run_id": SESSION,
+                "deterministic_evidence": valid_evidence(),
+            }
+            store.save(KEY, initial, replace(
+                initial, codex_session_id=KEY, phase="exited_resumable",
+                lifecycle_state="independent_review", implementation_sha="a" * 40,
+                spec_sha=SPEC_SHA, base_sha="0" * 40,
+                approval_at="2026-08-08T00:00:00Z",
+                lifecycle_updated_at="2026-08-08T00:00:00Z", review_state=review,
+            ))
+            socket_root = root / "run"
+            errors = []
+            with mock.patch.object(runtime_supervisor, "SOCKET_ROOT", socket_root), \
+                 mock.patch("neo_dev_webhook.runtime_supervisor.os.geteuid", return_value=0), \
+                 mock.patch("neo_dev_webhook.runtime_supervisor.os.chown"), \
+                 mock.patch("neo_dev_webhook.runtime_supervisor.pwd.getpwnam", \
+                            return_value=mock.Mock(pw_uid=1000, pw_gid=1000)):
+                thread = threading.Thread(target=lambda: self._capture_supervisor(
+                    errors, registry_path, state_path,
+                ))
+                thread.start()
+                path = runtime_supervisor.socket_path(KEY)
+                for _ in range(100):
+                    if path.exists(): break
+                    time.sleep(0.01)
+                client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                client.connect(str(path))
+                stream = client.makefile("rwb", buffering=0)
+                self.assertEqual(json.loads(stream.readline())["review_run_id"], SESSION)
+                for _ in range(100):
+                    owner = json.loads(runtime_supervisor.ownership_path(KEY).read_text())
+                    if owner.get("connection_state") == "connected": break
+                    time.sleep(0.01)
+
+                launcher = RuntimeSupervisorLauncher()
+                starts = []
+                with mock.patch.object(launcher, "_ownership_path",
+                                       return_value=runtime_supervisor.ownership_path(KEY)), \
+                     mock.patch.object(launcher, "start", side_effect=lambda *args: starts.append(args)):
+                    executor = Executor()
+                    controller = Controller(Registry((ISSUE_77_TARGET,)), store,
+                                            executor, launcher)
+                    with self.assertRaisesRegex(RuntimeError, "post-connect"):
+                        controller.execute("review", ISSUE_77_TARGET.repository, 77, KEY,
+                                           valid_evidence())
+                    failed_claim = store.load(KEY).review_state["reviewer_launch_claim"]
+                    self.assertEqual((failed_claim["step"], failed_claim["lease_until"]),
+                                     ("supervisor_started", 0))
+                    controller.execute("review", ISSUE_77_TARGET.repository, 77, KEY,
+                                       valid_evidence())
+                    time.sleep(0.02)
+                    controller.execute("review", ISSUE_77_TARGET.repository, 77, KEY,
+                                       valid_evidence())
+                current = store.load(KEY)
+                self.assertNotIn("reviewer_launch_claim", current.review_state)
+                self.assertEqual((starts, executor.attempts, executor.windows),
+                                 ([], 2, ["issue-77-review-1"]))
+                stream.close(); client.close(); thread.join(3)
+            self.assertFalse(errors)
+
+    @staticmethod
+    def _capture_supervisor(errors, registry_path, state_path):
+        try:
+            runtime_supervisor.supervise(
+                "review", KEY, None, SESSION, registry_path=registry_path,
+                state_path=state_path,
+            )
+        except BaseException as error:
+            errors.append(error)
+
     def test_review_accept_timeout_cleans_owner_and_same_generation_can_restart(self):
         class TimeoutServer:
             def bind(self, path): pathlib.Path(path).touch()

@@ -300,9 +300,10 @@ class RuntimeSupervisorLauncher:
             and owner.get("session_id") == session_id
             and owner.get("review_run_id") == run_id
             and actual_start == start_time
-            and self._socket_is_live(
+            and owner.get("connection_state") in {"listening", "connected"}
+            and (owner.get("connection_state") == "connected" or self._socket_is_live(
                 pathlib.Path("/run/neo-dev-runtime") / f"{idempotency_key}.sock"
-            )
+            ))
         )
 
     def start(self, operation: str, idempotency_key: str,
@@ -1293,7 +1294,44 @@ class Controller:
         if evidence is not None:
             from .verification import validate_host_evidence
             validate_host_evidence(evidence, state, idempotency_key)
-            if (operation == "attest" and state.lifecycle_state == "spec_approved"
+            legacy_handoff = (
+                operation == "attest"
+                and state.lifecycle_state == "spec_approved"
+                and state.phase == "exited_resumable"
+                and state.implementation_handoff is None
+                and state.terminal == TerminalObservation(0, "correctable", True)
+            )
+            if legacy_handoff:
+                pr = evidence.get("pr") if isinstance(evidence, dict) else None
+                if (not isinstance(pr, dict)
+                        or type(pr.get("number")) is not int or pr["number"] <= 0
+                        or pr.get("headRefName") != state.target.branch
+                        or not isinstance(pr.get("headRefOid"), str)
+                        or re.fullmatch(r"[0-9a-f]{40}", pr["headRefOid"]) is None):
+                    raise RuntimeError("legacy implementation PR evidence is missing or ambiguous")
+                from .verification import RepositoryGitHubVerifier
+                with_evidence = replace(state, github_evidence=evidence)
+                migration = RepositoryGitHubVerifier(
+                    self.executor, evidence,
+                ).verify_next(state.target, with_evidence)
+                if (not migration.verified or migration.evidence is None
+                        or migration.evidence.get("lifecycle_state") != "independent_review"
+                        or migration.evidence.get("implementation_sha") != pr["headRefOid"]):
+                    raise RuntimeError(
+                        migration.blocker or "legacy implementation SHA verification failed",
+                    )
+                handoff = {
+                    "phase": "implementation_complete",
+                    "approved_spec_sha": state.spec_sha,
+                    "implementation_sha": pr["headRefOid"],
+                    "pull_request_number": pr["number"],
+                }
+                migrated = replace(
+                    state, github_evidence=evidence, implementation_handoff=handoff,
+                )
+                self.store.save(idempotency_key, state, migrated)
+                state = migrated
+            elif (operation == "attest" and state.lifecycle_state == "spec_approved"
                     and state.implementation_handoff is not None):
                 handoff = state.implementation_handoff
                 pr = evidence.get("pr") if isinstance(evidence, dict) else None
@@ -1303,9 +1341,10 @@ class Controller:
                     raise RuntimeError(
                         "fresh PR evidence conflicts with persisted implementation handoff",
                     )
-            updated = replace(state, github_evidence=evidence)
-            self.store.save(idempotency_key, state, updated)
-            state = updated
+            if not legacy_handoff:
+                updated = replace(state, github_evidence=evidence)
+                self.store.save(idempotency_key, state, updated)
+                state = updated
         target = state.target
         if operation == "status":
             return self._result(operation, idempotency_key, state, "observed")

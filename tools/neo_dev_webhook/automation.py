@@ -868,9 +868,19 @@ class Consumer:
                     controller = observed.get("controller", {})
                     execution = controller.get("execution", {})
                     lifecycle = execution.get("lifecycle_state")
+                    terminal = execution.get("terminal")
+                    canonical_handoff = isinstance(
+                        execution.get("implementation_handoff"), dict,
+                    )
+                    legacy_handoff = (
+                        execution.get("implementation_handoff") is None
+                        and terminal == {"exit_code": 0,
+                                         "semantic_outcome": "correctable",
+                                         "resumable": True}
+                    )
                     if (lifecycle == "spec_approved"
                             and execution.get("phase") == "exited_resumable"
-                            and isinstance(execution.get("implementation_handoff"), dict)):
+                            and (canonical_handoff or legacy_handoff)):
                         observed = self.dispatcher.attest(
                             waiting["repository"], waiting["issue_number"],
                             waiting["idempotency_key"],
