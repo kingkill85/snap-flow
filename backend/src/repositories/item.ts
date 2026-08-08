@@ -284,6 +284,27 @@ export class ItemRepository {
     return Promise.resolve(result[0] as unknown as Item);
   }
 
+  deactivateForType(id: number, typeId: number): Promise<Item | null> {
+    const result = getDb().queryEntries(`
+      UPDATE items
+      SET is_active = false
+      WHERE id = ? AND type_id = ?
+      RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
+    `, [id, typeId]);
+
+    if (result.length === 0) {
+      return Promise.resolve(null);
+    }
+
+    getDb().query(`
+      UPDATE item_variants
+      SET is_active = false
+      WHERE item_id = ?
+    `, [id]);
+
+    return Promise.resolve(result[0] as unknown as Item);
+  }
+
   activate(id: number): Promise<Item | null> {
     const result = getDb().queryEntries(`
       UPDATE items

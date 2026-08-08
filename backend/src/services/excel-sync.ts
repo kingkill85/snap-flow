@@ -2,10 +2,12 @@ import * as xlsx from 'xlsx';
 import { itemRepository } from '../repositories/item.ts';
 import { itemVariantRepository } from '../repositories/item-variant.ts';
 import { categoryRepository } from '../repositories/category.ts';
+import { itemTypeRepository } from '../repositories/item-type.ts';
 import { settingsRepository } from '../repositories/settings.ts';
 import { processImageSafe } from './image-processing.ts';
 import { env } from '../config/env.ts';
 import { getDb } from '../config/database.ts';
+import { validateMagicBytes } from '../utils/magic-bytes.ts';
 
 /**
  * Excel Catalog Sync Service
@@ -122,6 +124,13 @@ export class ExcelSyncService {
     };
 
     try {
+      const selectedType = Number.isInteger(typeId) && typeId > 0
+        ? await itemTypeRepository.findById(typeId)
+        : null;
+      if (!selectedType || !selectedType.is_active) {
+        throw new Error('Invalid or inactive product type');
+      }
+
       // Phase 0: Parse Excel
       this.log(result, '📖 Parsing Excel file...', 'parsing');
       const groupedItems = await this.parseAndGroupExcel(excelPath);
@@ -180,8 +189,15 @@ export class ExcelSyncService {
     
     // Read file as bytes for Deno compatibility
     const fileData = await Deno.readFile(fullPath);
+    if (!validateMagicBytes(fileData, 'excel')) {
+      throw new Error('Invalid Excel workbook');
+    }
+
     const workbook = xlsx.read(fileData, { type: 'buffer' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!sheet) {
+      throw new Error('Excel workbook contains no worksheets');
+    }
     
     // Convert to array starting at row 4 (0-indexed: row 3) to skip headers
     // Headers are in row 3 (1-indexed), data starts at row 4 (1-indexed)
@@ -594,9 +610,11 @@ export class ExcelSyncService {
     for (const [baseModel, item] of existingItemsMap) {
       if (!excelModelNumbers.has(baseModel) && item.is_active) {
         try {
-          await itemRepository.deactivate(item.id);
-          result.phases.items.deactivated++;
-          this.log(result, `  ✗ Deactivated item: ${item.name} (${baseModel})`, 'items');
+          const deactivated = await itemRepository.deactivateForType(item.id, typeId);
+          if (deactivated) {
+            result.phases.items.deactivated++;
+            this.log(result, `  ✗ Deactivated item: ${item.name} (${baseModel})`, 'items');
+          }
         } catch (_error) {
           result.errors.push({
             row: 0,

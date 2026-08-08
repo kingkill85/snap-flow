@@ -30,18 +30,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deno-
 
-      - name: Create .env file for tests
-        working-directory: ./backend
-        run: |
-          echo "JWT_SECRET=test-secret-key-for-ci-only-32-chars-long" > .env
-          echo "NODE_ENV=test" >> .env
-          echo "DATABASE_URL=:memory:" >> .env
-
       - name: Run backend tests
         working-directory: ./backend
         run: deno test --allow-all tests/
         env:
           NODE_ENV: test
+          DATABASE_URL: ':memory:'
           JWT_SECRET: test-secret-key-for-ci-only-32-chars-long
 
       - name: Upload test results

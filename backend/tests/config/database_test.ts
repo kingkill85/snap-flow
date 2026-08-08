@@ -13,6 +13,14 @@ Deno.test('Database - connection established', () => {
   assertEquals(result.length, 1);
 });
 
+Deno.test('Database - tests use an injected in-memory database', () => {
+  const databases = getDb().queryEntries<{ name: string; file: string }>(
+    'PRAGMA database_list',
+  );
+  const main = databases.find((database) => database.name === 'main');
+  assertEquals(main?.file, '');
+});
+
 Deno.test('Database - migrations table exists', () => {
   const result = getDb().queryEntries(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='migrations'"

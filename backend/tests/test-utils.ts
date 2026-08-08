@@ -82,6 +82,14 @@ export async function setupTestDatabase(): Promise<void> {
     
     // Set it as the global db instance
     setTestDb(memDb);
+
+    const databases = getDb().queryEntries<{ name: string; file: string }>(
+      'PRAGMA database_list',
+    );
+    const mainDatabase = databases.find((database) => database.name === 'main');
+    if (!mainDatabase || mainDatabase.file !== '') {
+      throw new Error('Tests must use the injected in-memory database');
+    }
     
     // Run migrations
     await runMigrations();
@@ -117,6 +125,9 @@ export function clearDatabase(): void {
       // Ignore errors (might be view or other non-deletable object)
     }
   }
+
+  // Keep generated identifiers deterministic across test orderings.
+  dbInstance.query('DELETE FROM sqlite_sequence');
   
   // Re-enable foreign key checks
   dbInstance.query('PRAGMA foreign_keys = ON');
