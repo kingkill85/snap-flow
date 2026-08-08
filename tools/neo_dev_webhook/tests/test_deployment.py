@@ -18,6 +18,17 @@ from neo_dev_webhook.automation import TaskRunner
 
 
 class DeploymentTest(unittest.TestCase):
+    def test_controller_bundle_installs_deterministic_gate_runtime(self):
+        root = pathlib.Path(__file__).parents[1]
+        manifest = json.loads((root / "controller/install-manifest.v1.json").read_text())
+        sources = {item["source"] for item in manifest["files"]}
+        for name in ("deterministic_gates.py", "gate_exec.py", "gate_scan.py"):
+            self.assertIn(f"../{name}", sources)
+        installers = (root / "deploy/controller-install.sh").read_text() + \
+            (root / "deploy/hermes-controller-install.sh").read_text()
+        for name in ("deterministic_gates", "gate_exec", "gate_scan"):
+            self.assertIn(name, installers)
+
     def test_exact_operator_pin_is_required_and_mismatch_rejected(self):
         key = base64.b64encode(b"operator-verified-key").decode()
         with tempfile.TemporaryDirectory() as directory:
@@ -99,7 +110,8 @@ class DeploymentTest(unittest.TestCase):
             runtime = root / "usr/local/lib"
             package = runtime / "neo_dev_webhook"
             package.mkdir(parents=True)
-            for name in ("__init__.py", "independent_review.py", "independent_review_canary.py"):
+            for name in ("__init__.py", "independent_review.py", "independent_review_canary.py",
+                         "deterministic_gates.py"):
                 (package / name).write_bytes((source / "neo_dev_webhook" / name).read_bytes())
             root.mkdir(exist_ok=True)
             (root / ".controller-scope-fixture").write_text("guard\n")

@@ -214,7 +214,12 @@ class IndependentReviewPersistenceTests(unittest.TestCase):
                             approval_at="2026-08-08T00:00:00Z",
                             review_state={**migrate_fixture(), "review_phase": "awaiting_review"})
         store.records[key] = initial
-        controller = Controller(Registry([TARGET]), store, FakeExecutor())
+        store.records[key] = __import__("dataclasses").replace(
+            initial, github_evidence={"pr": {"headRefOid": "a" * 40}},
+        )
+        controller = Controller(Registry([TARGET]), store, FakeExecutor([
+            "a" * 40 + "\n", "", "a" * 40 + f"\trefs/heads/{TARGET.branch}\n",
+        ]))
         controller.begin_independent_review(key, "a" * 40, reviewer_id(), "run-1", valid_evidence())
         state = controller.record_independent_verdict(key, "a" * 40, clean_verdict(),
                                                       "2026-08-08T00:01:00Z")
@@ -326,6 +331,8 @@ class IndependentReviewEntrypointTests(unittest.TestCase):
         argv = build_exec_argv("review", TARGET, None, pathlib.Path("/tmp/schema"), prompt)
         self.assertEqual(argv[:3], ("/usr/local/bin/codex", "exec", "--json"))
         self.assertNotIn("resume", argv)
+        self.assertIn(("--sandbox", "read-only"), tuple(zip(argv, argv[1:])))
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", argv)
         self.assertIn("fresh-context independent reviewer", prompt)
         self.assertIn("a" * 40, prompt)
         self.assertIn("9" * 40, prompt)
@@ -363,8 +370,11 @@ class IndependentReviewEntrypointTests(unittest.TestCase):
             lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
             base_sha="0" * 40, spec_sha=SPEC_SHA, implementation_sha="a" * 40,
             approval_at="2026-08-08T00:00:00Z", review_state=review,
+            github_evidence={"pr": {"headRefOid": "a" * 40}},
         )
-        controller = Controller(Registry([TARGET]), store, FakeExecutor())
+        controller = Controller(Registry([TARGET]), store, FakeExecutor([
+            "a" * 40 + "\n", "", "a" * 40 + f"\trefs/heads/{TARGET.branch}\n",
+        ]))
         active = controller.observe_reviewer_session(key, reviewer, run_id)
         self.assertEqual(active.review_state["review_phase"], "reviewing")
         verdict = clean_verdict(reviewer=reviewer, run=run_id)
@@ -394,8 +404,11 @@ class IndependentReviewEntrypointTests(unittest.TestCase):
             lifecycle_state="independent_review", lifecycle_updated_at="2026-08-08T00:00:00Z",
             base_sha="0" * 40, spec_sha=SPEC_SHA, implementation_sha="a" * 40,
             approval_at="2026-08-08T00:00:00Z", review_state=review,
+            github_evidence={"pr": {"headRefOid": "a" * 40}},
         )
-        controller = Controller(Registry([TARGET]), store, FakeExecutor())
+        controller = Controller(Registry([TARGET]), store, FakeExecutor([
+            "a" * 40 + "\n", "", "a" * 40 + f"\trefs/heads/{TARGET.branch}\n",
+        ]))
         verdict = clean_verdict(reviewer=reviewer, run=run_id)
         first = controller.record_independent_verdict(
             key, "a" * 40, verdict, "2026-08-08T00:01:00Z",
@@ -529,6 +542,69 @@ class IndependentReviewEntrypointTests(unittest.TestCase):
             self.assertEqual(result["review_evidence"]["sha"], fixed_sha)
 
 
+class IndependentReviewSecurityTests(unittest.TestCase):
+    def test_clean_promotion_rechecks_head_pr_and_clean_worktree(self):
+        from tools.neo_dev_webhook.project_control import (
+            Controller, InMemoryResolutionStore, Registry, WorkState,
+        )
+        from tools.neo_dev_webhook.tests.test_project_control import FakeExecutor, TARGET
+        key = "12345678-1234-4abc-8def-123456789abc"
+        reviewer = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        run_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        verdict = clean_verdict(reviewer=reviewer, run=run_id)
+        review = migrate_fixture()
+        review.update(review_phase="reviewing", reviewer_session_id=reviewer,
+                      reviewer_run_id=run_id, reviewed_sha="a" * 40,
+                      deterministic_evidence=valid_evidence())
+        for outputs, blocker in (
+            (["b" * 40 + "\n"], "HEAD"),
+            (["a" * 40 + "\n", "untracked.txt\n"], "worktree"),
+            (["a" * 40 + "\n", "", "b" * 40 + "\n"], "PR"),
+        ):
+            with self.subTest(blocker=blocker):
+                store = InMemoryResolutionStore()
+                store.records[key] = WorkState(
+                    TARGET, codex_session_id=review["implementation_session_id"],
+                    phase="exited_resumable", lifecycle_state="independent_review",
+                    lifecycle_updated_at="2026-08-08T00:00:00Z", base_sha="0" * 40,
+                    spec_sha=SPEC_SHA, implementation_sha="a" * 40,
+                    approval_at="2026-08-08T00:00:00Z", review_state=dict(review),
+                    github_evidence={"pr": {"headRefOid": "a" * 40}},
+                )
+                controller = Controller(Registry([TARGET]), store, FakeExecutor(outputs))
+                with self.assertRaisesRegex(RuntimeError, blocker):
+                    controller.record_independent_verdict(
+                        key, "a" * 40, verdict, "2026-08-08T00:01:00Z",
+                    )
+
+    def test_modified_approved_tasks_blocks_review_transition(self):
+        import subprocess
+        from tools.neo_dev_webhook.project_control import WorkState
+        from tools.neo_dev_webhook.tests.test_verification import EvidenceExecutor, VerificationTest
+        from tools.neo_dev_webhook.verification import RepositoryGitHubVerifier
+        with tempfile.TemporaryDirectory() as directory:
+            target, approved = VerificationTest().repository(pathlib.Path(directory))
+            change = next((pathlib.Path(target.worktree) / "openspec/changes").iterdir())
+            (change / "tasks.md").write_text("changed after approval\n")
+            subprocess.run(["git", "-C", target.worktree, "add", str(change / "tasks.md")], check=True)
+            subprocess.run(["git", "-C", target.worktree, "commit", "-m", "tamper tasks"],
+                           check=True, capture_output=True)
+            head = subprocess.run(["git", "-C", target.worktree, "rev-parse", "HEAD"],
+                                  check=True, capture_output=True, text=True).stdout.strip()
+            issue = {"state": "OPEN", "comments": [{"body": "/approve-spec " + approved,
+                                                       "author": {"login": "kingkill85"}}]}
+            pr = {"headRefOid": head, "isDraft": True}
+            transition = RepositoryGitHubVerifier(EvidenceExecutor(issue, pr), {
+                "issue": issue, "pr": pr, "checks": [{"state": "SUCCESS"}],
+                "current_wakeup": None,
+            }).verify_next(target, WorkState(
+                target, lifecycle_state="spec_approved", lifecycle_updated_at="x",
+                base_sha=approved, spec_sha=approved, approval_at="x",
+            ))
+            self.assertFalse(transition.verified)
+            self.assertIn("tasks", transition.blocker)
+
+
 def migrate_fixture():
     from tools.neo_dev_webhook.independent_review import migrate_review_state
     return migrate_review_state({
@@ -543,6 +619,11 @@ def reviewer_id():
 
 
 def valid_evidence(sha="a" * 40):
+    from tools.neo_dev_webhook.deterministic_gates import REQUIRED_GATES
+    gates = {name: {"status": "passed", "command": ["gate", name], "exit_code": 0,
+                    "output_sha256": "0" * 64, "head_sha": sha,
+                    "observed_at": "2026-08-08T00:00:00Z"}
+             for name in REQUIRED_GATES}
     return {
         "sha": sha,
         "approved_spec_sha": SPEC_SHA,
@@ -552,6 +633,7 @@ def valid_evidence(sha="a" * 40):
         "openspec": {"validate": "passed", "verify": "passed", "strict": True},
         "checks": [{"sha": sha, "state": "SUCCESS"}],
         "approval_artifacts": {"immutable": True},
+        "gates": gates,
         "secret_scan": {"passed": True},
         "worktree": {"correct": True, "clean": True, "synced": True,
                      "tracked_and_relevant_untracked_reviewed": True},

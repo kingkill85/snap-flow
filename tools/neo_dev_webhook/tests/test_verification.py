@@ -25,7 +25,11 @@ class EvidenceExecutor:
 
     def run(self, argv, *, timeout):
         self.calls.append(tuple(argv))
+        if argv[0] == "gate":
+            return f"{argv[2]} ok\n"
         if argv[0] == "git":
+            if "ls-remote" in argv:
+                return f'{self.pr["headRefOid"]}\t{argv[-1]}\n'
             return subprocess.run(argv, check=True, capture_output=True, text=True,
                                   timeout=timeout, shell=False).stdout
         if "issue" in argv and "view" in argv:

@@ -163,7 +163,7 @@ def validate_review_evidence(evidence: object, sha: str, approved_spec_sha: str)
 def _validate_evidence(evidence: object, sha: str, approved_spec_sha: object) -> None:
     required = {"sha", "approved_spec_sha", "approval_artifact_sha", "tests", "lint",
                 "typecheck", "build", "openspec", "checks",
-                "approval_artifacts", "secret_scan", "worktree", "ui"}
+                "approval_artifacts", "secret_scan", "worktree", "ui", "gates"}
     if not isinstance(evidence, dict) or set(evidence) != required or evidence.get("sha") != sha:
         raise ValueError("deterministic review evidence is missing or stale")
     _validate_sha(approved_spec_sha)
@@ -171,6 +171,18 @@ def _validate_evidence(evidence: object, sha: str, approved_spec_sha: object) ->
         raise ValueError("approved spec SHA does not match controller authority")
     if evidence["approval_artifact_sha"] != approved_spec_sha:
         raise ValueError("approval artifact SHA does not match approved spec SHA")
+    from .deterministic_gates import REQUIRED_GATES
+    gates = evidence["gates"]
+    if not isinstance(gates, dict) or set(gates) != set(REQUIRED_GATES):
+        raise ValueError("deterministic gate provenance is incomplete")
+    for name, record in gates.items():
+        if (not isinstance(record, dict) or record.get("status") != "passed"
+                or record.get("exit_code") != 0 or record.get("head_sha") != sha
+                or not isinstance(record.get("command"), list)
+                or not isinstance(record.get("output_sha256"), str)
+                or len(record["output_sha256"]) != 64
+                or not isinstance(record.get("observed_at"), str)):
+            raise ValueError(f"deterministic gate provenance is invalid: {name}")
     tests = evidence["tests"]
     if not isinstance(tests, dict) or tests.get("focused") != "passed" or tests.get("full") != "passed":
         raise ValueError("required tests are not successful")

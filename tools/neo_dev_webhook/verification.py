@@ -326,26 +326,11 @@ class RepositoryGitHubVerifier:
                 from .independent_review import migrate_review_state
                 review_state = migrate_review_state(state.as_dict())
                 review_state["review_phase"] = "awaiting_review"
-                changed = self._run(
-                    "git", "-C", target.worktree, "diff", "--name-only",
-                    state.base_sha or state.spec_sha or head, head,
-                ).splitlines()
-                ui_changed = any(path.startswith("frontend/") for path in changed)
-                review_state["deterministic_evidence"] = {
-                    "sha": head, "approved_spec_sha": state.spec_sha,
-                    "approval_artifact_sha": state.spec_sha,
-                    "tests": {"focused": "passed", "full": "passed"},
-                    "lint": "passed", "typecheck": "passed", "build": "passed",
-                    "openspec": {"validate": "passed", "verify": "passed", "strict": True},
-                    "checks": [{"sha": head, "state": item.get("state")}
-                               for item in self.github_evidence["checks"]],
-                    "approval_artifacts": {"immutable": True},
-                    "secret_scan": {"passed": True},
-                    "worktree": {"correct": True, "clean": True, "synced": True,
-                                 "tracked_and_relevant_untracked_reviewed": True},
-                    "ui": ({"required": True, "screenshots": []} if ui_changed else
-                           {"required": False, "reason": "no frontend paths changed"}),
-                }
+                from .deterministic_gates import run_gates
+                review_state["deterministic_evidence"] = run_gates(
+                    self.executor, target, head, state.spec_sha or "",
+                    [{**item, "sha": head} for item in self.github_evidence["checks"]],
+                )
                 evidence["implementation_sha"] = head
                 evidence["review_state"] = review_state
             elif next_state == "archive_ci_verified": evidence["archive_sha"] = head
@@ -412,6 +397,7 @@ class RepositoryGitHubVerifier:
                     "git", "-C", target.worktree, "diff", "--quiet", approved_sha, head, "--",
                     str((active[0] / "proposal.md").relative_to(root)),
                     str((active[0] / "design.md").relative_to(root)),
+                    str((active[0] / "tasks.md").relative_to(root)),
                     str((active[0] / "specs").relative_to(root)),
                 )
                 if phase == "review":

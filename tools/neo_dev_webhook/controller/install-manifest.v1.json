@@ -45,6 +45,21 @@
       "mode": "0644"
     },
     {
+      "source": "../deterministic_gates.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/deterministic_gates.py",
+      "owner": "root", "group": "root", "mode": "0644"
+    },
+    {
+      "source": "../gate_exec.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/gate_exec.py",
+      "owner": "root", "group": "root", "mode": "0644"
+    },
+    {
+      "source": "../gate_scan.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/gate_scan.py",
+      "owner": "root", "group": "root", "mode": "0644"
+    },
+    {
       "source": "../verification.py",
       "destination": "/usr/local/lib/neo_dev_webhook/verification.py",
       "owner": "root",

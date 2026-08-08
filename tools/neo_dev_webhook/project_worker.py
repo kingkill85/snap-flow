@@ -6,7 +6,7 @@ import re
 import sys
 from typing import Sequence
 
-ALLOWED_PROGRAMS = {"git", "tmux", "ps"}
+ALLOWED_PROGRAMS = {"git", "tmux", "ps", "gate"}
 SAFE_ARG = re.compile(r"[A-Za-z0-9_@%+=:,./{}#()\[\]\t -]{1,4096}")
 SETPRIV = "/usr/bin/setpriv"
 
@@ -18,6 +18,8 @@ def validated_worker_argv(argv: Sequence[str]) -> tuple[str, ...]:
         raise ValueError("project worker argv is not allowed")
     if any(not isinstance(arg, str) or SAFE_ARG.fullmatch(arg) is None for arg in argv):
         raise ValueError("project worker argv contains an unsafe argument")
+    if argv[0] == "gate":
+        return _validated_gate(argv)
     if argv[0] == "git" and any(
         arg == "-c" or arg.startswith("-c") or arg.startswith("--config-env")
         for arg in argv[1:]
@@ -25,6 +27,18 @@ def validated_worker_argv(argv: Sequence[str]) -> tuple[str, ...]:
         raise ValueError("project worker cannot override Git configuration")
     return (SETPRIV, "--reuid=dev", "--regid=dev", "--init-groups",
             "--no-new-privs", "--", *argv)
+
+
+def _validated_gate(argv: Sequence[str]) -> tuple[str, ...]:
+    from .deterministic_gates import REQUIRED_GATES
+    if (len(argv) != 4 or argv[2] not in REQUIRED_GATES
+            or re.fullmatch(r"/workspace/[A-Za-z0-9._-]+-issue-[1-9][0-9]*", argv[1]) is None
+            or re.fullmatch(r"[0-9a-f]{40}", argv[3]) is None):
+        raise ValueError("deterministic gate request is invalid")
+    worktree, gate, approved = argv[1], argv[2], argv[3]
+    return (SETPRIV, "--reuid=dev", "--regid=dev", "--init-groups",
+            "--no-new-privs", "--", "python3", "-m",
+            "neo_dev_webhook.gate_exec", worktree, gate, approved)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

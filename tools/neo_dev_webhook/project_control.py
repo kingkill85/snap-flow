@@ -633,6 +633,33 @@ class Controller:
             raise RuntimeError("independent verdict conflicts with controller state")
         if state.review_state.get("approved_spec_sha") != state.spec_sha:
             raise RuntimeError("approved spec SHA conflicts with persisted controller state")
+        if state.review_state.get("approval_artifact_sha") != state.spec_sha:
+            raise RuntimeError("approval artifact SHA conflicts with persisted controller state")
+        if verdict.get("disposition") == "clean":
+            from .independent_review import validate_review_evidence
+            validate_review_evidence(
+                state.review_state.get("deterministic_evidence"),
+                current_head_sha, state.spec_sha or "",
+            )
+            observed_head = self.executor.run(
+                ("git", "-C", state.target.worktree, "rev-parse", "HEAD"), timeout=20.0,
+            ).strip()
+            if observed_head != current_head_sha or observed_head != state.implementation_sha:
+                raise RuntimeError("reviewed SHA does not match current repository HEAD")
+            dirty = self.executor.run(
+                ("git", "-C", state.target.worktree, "status", "--porcelain",
+                 "--untracked-files=all"), timeout=20.0,
+            ).strip()
+            if dirty:
+                raise RuntimeError("worktree changed or contains relevant untracked files")
+            pr_head = (state.github_evidence or {}).get("pr", {}).get("headRefOid")
+            remote = self.executor.run(
+                ("git", "-C", state.target.worktree, "ls-remote", "--heads", "origin",
+                 f"refs/heads/{state.target.branch}"), timeout=20.0,
+            ).strip().split()
+            remote_head = remote[0] if len(remote) == 2 else None
+            if pr_head != observed_head or remote_head != observed_head:
+                raise RuntimeError("live PR head does not match reviewed SHA")
         review_state = apply_verdict(state.review_state, current_head_sha, verdict)
         values = {"review_state": review_state}
         if review_state["review_phase"] == "clean":
@@ -953,27 +980,13 @@ class Controller:
                 state = self.record_implementation_correction(
                     idempotency_key, head, state.codex_session_id or "",
                 )
-                changed = self.executor.run(
-                    ("git", "-C", target.worktree, "diff", "--name-only",
-                     state.base_sha or state.spec_sha or head, head), timeout=20.0,
-                ).splitlines()
                 review = dict(state.review_state or {})
-                review["deterministic_evidence"] = {
-                    "sha": head, "approved_spec_sha": state.spec_sha,
-                    "approval_artifact_sha": state.spec_sha,
-                    "tests": {"focused": "passed", "full": "passed"},
-                    "lint": "passed", "typecheck": "passed", "build": "passed",
-                    "openspec": {"validate": "passed", "verify": "passed", "strict": True},
-                    "checks": [{"sha": head, "state": item.get("state")}
-                               for item in state.github_evidence.get("checks", [])],
-                    "approval_artifacts": {"immutable": True},
-                    "secret_scan": {"passed": True},
-                    "worktree": {"correct": True, "clean": True, "synced": True,
-                                 "tracked_and_relevant_untracked_reviewed": True},
-                    "ui": ({"required": True, "screenshots": []}
-                           if any(path.startswith("frontend/") for path in changed)
-                           else {"required": False, "reason": "no frontend paths changed"}),
-                }
+                from .deterministic_gates import run_gates
+                review["deterministic_evidence"] = run_gates(
+                    self.executor, target, head, state.spec_sha or "",
+                    [{**item, "sha": head}
+                     for item in state.github_evidence.get("checks", [])],
+                )
                 updated = replace(state, review_state=review)
                 self.store.save(idempotency_key, state, updated)
                 return self._result(operation, idempotency_key, updated,

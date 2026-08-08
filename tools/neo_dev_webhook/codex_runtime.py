@@ -140,9 +140,11 @@ def build_exec_argv(operation: str, target: GovernedTarget, session_id: str | No
     if operation in {"start", "review"}:
         if session_id is not None:
             raise ValueError("fresh runtime cannot accept a session identity")
+        sandbox = (("--sandbox", "read-only") if operation == "review" else
+                   ("--dangerously-bypass-approvals-and-sandbox",))
         return (
             "/usr/local/bin/codex", "exec", "--json",
-            "--dangerously-bypass-approvals-and-sandbox",
+            *sandbox,
             "-C", target.worktree,
             "--output-schema", str(schema_path), prompt,
         )

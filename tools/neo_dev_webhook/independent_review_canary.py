@@ -12,6 +12,11 @@ EXPECTED_PHASES = [
 
 
 def _evidence(sha: str) -> dict:
+    from .deterministic_gates import REQUIRED_GATES
+    gates = {name: {"status": "passed", "command": ["gate", name], "exit_code": 0,
+                    "output_sha256": "0" * 64, "head_sha": sha,
+                    "observed_at": "2026-08-08T00:00:00Z"}
+             for name in REQUIRED_GATES}
     return {
         "sha": sha, "approved_spec_sha": "9" * 40,
         "approval_artifact_sha": "9" * 40,
@@ -20,6 +25,7 @@ def _evidence(sha: str) -> dict:
         "openspec": {"validate": "passed", "verify": "passed", "strict": True},
         "checks": [{"sha": sha, "state": "SUCCESS"}],
         "approval_artifacts": {"immutable": True}, "secret_scan": {"passed": True},
+        "gates": gates,
         "worktree": {"correct": True, "clean": True, "synced": True,
                      "tracked_and_relevant_untracked_reviewed": True},
         "ui": {"required": False, "reason": "non-destructive controller fixture"},
