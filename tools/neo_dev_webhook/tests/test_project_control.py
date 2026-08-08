@@ -516,6 +516,7 @@ class ProjectControlTest(unittest.TestCase):
             spec_sha="a" * 40, implementation_sha="c" * 40,
             accepted_sha="c" * 40, approval_at="2026-08-06T00:00:00Z",
             accepted_at="2026-08-07T00:00:00Z",
+            review_state={"review_phase": "clean", "reviewed_sha": "c" * 40},
         )
         store.save(KEY, initial, accepted)
         controller = Controller(Registry((TARGET,)), store, FakeExecutor([]))

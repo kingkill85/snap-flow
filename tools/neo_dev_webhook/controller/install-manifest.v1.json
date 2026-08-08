@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "verification": { "backup": true, "sha256": true },
   "files": [
     {
       "source": "neo-dev-project-control",
@@ -25,6 +26,20 @@
     {
       "source": "../__init__.py",
       "destination": "/usr/local/lib/neo_dev_webhook/__init__.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "../independent_review.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/independent_review.py",
+      "owner": "root",
+      "group": "root",
+      "mode": "0644"
+    },
+    {
+      "source": "../independent_review_canary.py",
+      "destination": "/usr/local/lib/neo_dev_webhook/independent_review_canary.py",
       "owner": "root",
       "group": "root",
       "mode": "0644"

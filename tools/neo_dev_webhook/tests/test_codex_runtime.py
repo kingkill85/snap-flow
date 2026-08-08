@@ -150,9 +150,9 @@ class CodexRuntimeTest(unittest.TestCase):
         ))
 
         implementation = continuation_prompt(REPOSITORY, 77, "spec_approved")
-        self.assertEqual(implementation.rsplit("## Available commands", 1)[1].count("`/"), 4)
-        self.assertIn("`/accept <exact-full-implementation-sha>`", implementation)
-        self.assertNotIn("`/merge`", implementation.rsplit("## Available commands", 1)[1])
+        self.assertNotIn("## Available commands", implementation)
+        self.assertIn("independent fresh-context reviewer", implementation)
+        self.assertNotIn("`/accept", implementation)
 
         merge = continuation_prompt(REPOSITORY, 77, "accepted")
         section = merge.rsplit("## Available commands", 1)[1]

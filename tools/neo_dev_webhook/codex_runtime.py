@@ -46,8 +46,10 @@ def continuation_prompt(repository: str, issue_number: int, lifecycle_state: str
     phase_work = {
         "spec_approved": (
             "Implement only the approved Issue-scoped OpenSpec plan, run and verify the required "
-            "tests, commit and push the implementation, and update the existing Draft PR. Do not "
-            "accept, archive, merge, close, deploy, or clean up the worktree."
+            "tests, commit and push the implementation, and update the existing Draft PR. Then stop: "
+            "the controller will run deterministic gates and create a separate independent "
+            "fresh-context reviewer session. Never review your own implementation or publish an "
+            "acceptance command. Do not accept, archive, merge, close, deploy, or clean up the worktree."
         ),
         "accepted": (
             "Acceptance is recorded. Make no repository changes and wait for the separate trusted "
@@ -74,7 +76,6 @@ def continuation_prompt(repository: str, issue_number: int, lifecycle_state: str
         "completion document."
     )
     handoff_state = {
-        "spec_approved": "implementation_verified",
         "accepted": "accepted",
         "archive_authorized": "blocked",
     }.get(lifecycle_state)
@@ -366,13 +367,14 @@ def _run_runtime(operation: str, idempotency_key: str, session_id: str | None, *
         if operation == "resume":
             expected_handoff = {
                 "label": "specification_ready",
-                "spec_approved": "implementation_verified",
+                "spec_approved": None,
                 "accepted": "accepted",
                 "archive_authorized": "blocked",
                 "archive_ci_verified": "blocked",
                 "merge_authorized": "blocked",
             }[lifecycle.lifecycle_state]
-            prompt += "\n\n" + worker_handoff_contract(expected_handoff)
+            if expected_handoff is not None:
+                prompt += "\n\n" + worker_handoff_contract(expected_handoff)
     turn = server.request("turn/start", {
         "threadId": observed_session,
         "input": [{"type": "text", "text": prompt}],

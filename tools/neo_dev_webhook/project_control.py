@@ -32,7 +32,7 @@ PHASES = frozenset({
 })
 SEMANTIC_OUTCOMES = frozenset({"success", "correctable", "blocked", "crashed", "invalid"})
 LIFECYCLE_STATES = (
-    "label", "specification_ready", "spec_approved", "implementation_verified",
+    "label", "specification_ready", "spec_approved", "independent_review", "implementation_verified",
     "accepted", "archive_authorized", "archive_ci_verified", "merge_authorized",
     "merged_closed",
     "cancelled",
@@ -127,6 +127,7 @@ class WorkState:
     accepted_at: str | None = None
     merge_authorized_at: str | None = None
     github_evidence: dict | None = None
+    review_state: dict | None = None
 
     def validate(self) -> None:
         self.target.validate()
@@ -160,6 +161,8 @@ class WorkState:
         requirements = {
             "specification_ready": (self.base_sha, self.spec_sha,),
             "spec_approved": (self.base_sha, self.spec_sha, self.approval_at),
+            "independent_review": (self.base_sha, self.spec_sha, self.implementation_sha,
+                                   self.approval_at, self.review_state),
             "implementation_verified": (self.base_sha, self.spec_sha, self.implementation_sha),
             "accepted": (self.base_sha, self.spec_sha, self.implementation_sha, self.accepted_sha,
                          self.accepted_at),
@@ -179,6 +182,16 @@ class WorkState:
             raise ValueError("governed lifecycle evidence is incomplete")
         if self.github_evidence is not None and not isinstance(self.github_evidence, dict):
             raise ValueError("invalid host GitHub evidence")
+        if self.review_state is not None and not isinstance(self.review_state, dict):
+            raise ValueError("invalid independent review state")
+        if self.lifecycle_state == "independent_review" and self.review_state is None:
+            raise ValueError("independent review lifecycle requires durable review state")
+        if self.lifecycle_state in {
+            "implementation_verified", "accepted", "archive_authorized", "archive_ci_verified",
+            "merge_authorized",
+        } and (self.review_state is None or self.review_state.get("review_phase") != "clean"
+               or self.review_state.get("reviewed_sha") != self.implementation_sha):
+            raise ValueError("human acceptance gates require exact-SHA clean independent review")
 
     def as_dict(self) -> dict:
         result = asdict(self)
@@ -415,6 +428,10 @@ class FileResolutionStore:
         try:
             terminal_data = record.get("terminal")
             terminal = TerminalObservation(**terminal_data) if terminal_data is not None else None
+            from .independent_review import migrate_review_state
+            review_state = record.get("review_state")
+            if review_state is None and record.get("lifecycle_state") == "spec_approved":
+                review_state = migrate_review_state(record)
             state = WorkState(
                 target=GovernedTarget(**record["target"]),
                 codex_session_id=record.get("codex_session_id"),
@@ -433,6 +450,7 @@ class FileResolutionStore:
                 accepted_at=record.get("accepted_at"),
                 merge_authorized_at=record.get("merge_authorized_at"),
                 github_evidence=record.get("github_evidence"),
+                review_state=review_state,
             )
         except TypeError as error:
             raise RuntimeError("invalid persisted resolution record") from error
@@ -535,6 +553,52 @@ class Controller:
         self.store.save(idempotency_key, state, updated)
         return updated
 
+    def begin_independent_review(self, idempotency_key: str, head_sha: str,
+                                 reviewer_session_id: str, reviewer_run_id: str,
+                                 evidence: dict) -> WorkState:
+        """Persist a fresh reviewer before its session is allowed to inspect the change."""
+        from .independent_review import begin_review
+        state = self.store.load(idempotency_key)
+        if state is None or state.lifecycle_state != "independent_review" \
+                or state.review_state is None or state.implementation_sha != head_sha:
+            raise RuntimeError("independent review start conflicts with controller state")
+        review_state = begin_review(state.review_state, head_sha, reviewer_session_id,
+                                    reviewer_run_id, evidence)
+        updated = replace(state, review_state=review_state)
+        self.store.save(idempotency_key, state, updated)
+        return updated
+
+    def record_independent_verdict(self, idempotency_key: str, current_head_sha: str,
+                                   verdict: dict, observed_at: str) -> WorkState:
+        """Only an exact clean, provenance-bound verdict opens human acceptance."""
+        from .independent_review import apply_verdict
+        state = self.store.load(idempotency_key)
+        if state is None or state.lifecycle_state != "independent_review" \
+                or state.review_state is None:
+            raise RuntimeError("independent verdict conflicts with controller state")
+        review_state = apply_verdict(state.review_state, current_head_sha, verdict)
+        values = {"review_state": review_state}
+        if review_state["review_phase"] == "clean":
+            values.update(lifecycle_state="implementation_verified",
+                          lifecycle_updated_at=observed_at,
+                          implementation_sha=current_head_sha)
+        updated = replace(state, **values)
+        self.store.save(idempotency_key, state, updated)
+        return updated
+
+    def record_implementation_correction(self, idempotency_key: str, new_head_sha: str,
+                                         implementation_session_id: str) -> WorkState:
+        from .independent_review import record_correction
+        state = self.store.load(idempotency_key)
+        if state is None or state.lifecycle_state != "independent_review" \
+                or state.review_state is None:
+            raise RuntimeError("implementation correction conflicts with controller state")
+        review_state = record_correction(state.review_state, new_head_sha,
+                                         implementation_session_id)
+        updated = replace(state, implementation_sha=new_head_sha, review_state=review_state)
+        self.store.save(idempotency_key, state, updated)
+        return updated
+
     def advance_lifecycle(self, idempotency_key: str, **evidence) -> WorkState:
         """Persist a verifier-produced legal lifecycle transition."""
         state = self.store.load(idempotency_key)
@@ -560,7 +624,7 @@ class Controller:
             raise RuntimeError("lifecycle transition skipped or repeated a governed gate")
         allowed = {
             "lifecycle_updated_at", "base_sha", "spec_sha", "implementation_sha", "accepted_sha",
-            "archive_sha", "approval_at", "accepted_at", "merge_authorized_at",
+            "archive_sha", "approval_at", "accepted_at", "merge_authorized_at", "review_state",
         }
         if set(evidence) - allowed:
             raise RuntimeError("verifier returned unsupported lifecycle evidence")

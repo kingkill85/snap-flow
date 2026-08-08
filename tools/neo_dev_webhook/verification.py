@@ -312,7 +312,7 @@ class RepositoryGitHubVerifier:
         try:
             head = self._run("git", "-C", target.worktree, "rev-parse", "HEAD")
             now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-            next_state = {"label": "specification_ready", "spec_approved": "implementation_verified",
+            next_state = {"label": "specification_ready", "spec_approved": "independent_review",
                           "archive_authorized": "archive_ci_verified",
                           "merge_authorized": "merged_closed"}[
                               state.lifecycle_state]
@@ -322,7 +322,12 @@ class RepositoryGitHubVerifier:
                 evidence["base_sha"] = self._run(
                     "git", "-C", target.worktree, "merge-base", "HEAD", "origin/main",
                 )
-            elif next_state == "implementation_verified": evidence["implementation_sha"] = head
+            elif next_state == "independent_review":
+                from .independent_review import migrate_review_state
+                review_state = migrate_review_state(state.as_dict())
+                review_state["review_phase"] = "awaiting_review"
+                evidence["implementation_sha"] = head
+                evidence["review_state"] = review_state
             elif next_state == "archive_ci_verified": evidence["archive_sha"] = head
             elif next_state == "merged_closed": evidence["archive_sha"] = head
             return LifecycleTransition(True, evidence)
