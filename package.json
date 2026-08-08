@@ -7,11 +7,20 @@
     "dev:backend": "cd backend && deno task dev",
     "dev:frontend": "cd frontend && npm run dev",
     "install:all": "npm install && cd frontend && npm install",
-    "build": "cd frontend && npm run build"
+    "build": "cd frontend && npm run build",
+    "e2e": "npm run e2e:traceability && NODE_OPTIONS=--import=tsx cucumber-js --config cucumber.mjs",
+    "e2e:traceability": "python3 -m tools.neo_dev_webhook.scenario_traceability --features e2e/features",
+    "e2e:install": "playwright install chromium",
+    "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json"
   },
   "devDependencies": {
+    "@cucumber/cucumber": "12.9.0",
     "@fission-ai/openspec": "1.8.0",
-    "concurrently": "^8.2.2"
+    "@playwright/test": "1.58.2",
+    "@types/node": "20.19.35",
+    "concurrently": "^8.2.2",
+    "tsx": "4.23.11",
+    "typescript": "5.9.3"
   },
   "dependencies": {
     "@radix-ui/react-tabs": "^1.1.13"

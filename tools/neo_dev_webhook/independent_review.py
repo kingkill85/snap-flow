@@ -160,11 +160,46 @@ def validate_review_evidence(evidence: object, sha: str, approved_spec_sha: str)
     _validate_evidence(evidence, sha, approved_spec_sha)
 
 
+def validate_e2e_evidence(evidence: object, sha: str) -> None:
+    if not isinstance(evidence, dict) or evidence.get("head_sha") != sha:
+        raise ValueError("E2E evidence is missing or stale")
+    local = evidence.get("local")
+    if local != {"status": "passed", "command": "npm run e2e"}:
+        raise ValueError("E2E local Cucumber execution is missing")
+    mapping = evidence.get("mapping")
+    if (not isinstance(mapping, dict) or mapping.get("status") != "passed"
+            or type(mapping.get("required")) is not int
+            or mapping.get("mapped") != mapping.get("required")):
+        raise ValueError("E2E OpenSpec scenario mapping is incomplete")
+    from .deterministic_gates import validate_e2e_check
+    check = evidence.get("github_check")
+    try:
+        validate_e2e_check([check] if isinstance(check, dict) else [], sha)
+    except RuntimeError as error:
+        raise ValueError("E2E GitHub check evidence is invalid") from error
+    artifacts = evidence.get("artifacts")
+    expected = {
+        "cucumber_report": f"cucumber-report-{sha}",
+        "playwright_failures": f"playwright-failures-{sha}",
+    }
+    if artifacts != expected:
+        raise ValueError("E2E report and failure artifact evidence is missing")
+
+
+def validate_e2e_applicability(value: object, sha: str) -> None:
+    if not isinstance(value, dict) or value.get("required") is not False:
+        raise ValueError("E2E inapplicability is invalid")
+    reason = value.get("reason")
+    if (not isinstance(reason, str) or len(reason.strip()) < 20
+            or value.get("reviewed_sha") != sha or value.get("reviewer_approved") is not True):
+        raise ValueError("E2E inapplicability requires a specific persisted reviewer-approved reason")
+
+
 def _validate_evidence(evidence: object, sha: str, approved_spec_sha: object) -> None:
     required = {"sha", "approved_spec_sha", "approval_artifact_sha", "tests", "lint",
                 "typecheck", "build", "openspec", "checks",
                 "approval_artifacts", "secret_scan", "worktree", "ui", "gates",
-                "gate_context"}
+                "gate_context", "e2e"}
     if not isinstance(evidence, dict) or set(evidence) != required or evidence.get("sha") != sha:
         raise ValueError("deterministic review evidence is missing or stale")
     _validate_sha(approved_spec_sha)
@@ -217,6 +252,7 @@ def _validate_evidence(evidence: object, sha: str, approved_spec_sha: object) ->
         raise ValueError("approval artifact immutability is not verified")
     if evidence["secret_scan"] != {"passed": True}:
         raise ValueError("secret/private-data scan is not successful")
+    validate_e2e_evidence(evidence["e2e"], sha)
     worktree = evidence["worktree"]
     if not isinstance(worktree, dict) or any(worktree.get(key) is not True for key in (
         "correct", "clean", "synced", "tracked_and_relevant_untracked_reviewed",

@@ -695,6 +695,8 @@ class Controller:
                 for item in checks
             ):
                 raise RuntimeError("fresh exact-SHA checks are invalid")
+            from .deterministic_gates import validate_e2e_check
+            validate_e2e_check(checks, current_head_sha)
             from .independent_review import validate_review_evidence
             validate_review_evidence(
                 state.review_state.get("deterministic_evidence"),

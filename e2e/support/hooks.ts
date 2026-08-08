@@ -1,0 +1,100 @@
+import { After, AfterAll, Before, BeforeAll, Status, setDefaultTimeout } from '@cucumber/cucumber';
+import { chromium } from '@playwright/test';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { spawn, type ChildProcess } from 'node:child_process';
+import type { SnapFlowWorld } from './world.ts';
+
+setDefaultTimeout(30_000);
+const root = resolve(import.meta.dirname, '../..');
+const results = join(root, 'e2e/results');
+let browser: Awaited<ReturnType<typeof chromium.launch>>;
+let runtimeDirectory = '';
+let processes: ChildProcess[] = [];
+
+async function waitUntilReady(url: string, child: ChildProcess, label: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  let lastError = 'not ready';
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(`${label} exited with ${child.exitCode}`);
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
+      if (response.ok) return;
+      lastError = `HTTP ${response.status}`;
+    } catch (error) { lastError = error instanceof Error ? error.message : String(error); }
+    await new Promise((done) => setTimeout(done, 200));
+  }
+  throw new Error(`${label} readiness timeout: ${lastError}`);
+}
+
+function start(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): ChildProcess {
+  const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32' });
+  child.stdout?.resume();
+  child.stderr?.resume();
+  return child;
+}
+
+async function stop(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.pid === undefined) return;
+  try { process.kill(process.platform === 'win32' ? child.pid : -child.pid, 'SIGTERM'); }
+  catch { return; }
+  await Promise.race([
+    new Promise<void>((done) => child.once('exit', () => done())),
+    new Promise<void>((done) => setTimeout(done, 5_000)),
+  ]);
+  if (child.exitCode === null) {
+    try { process.kill(process.platform === 'win32' ? child.pid : -child.pid, 'SIGKILL'); }
+    catch { /* already exited */ }
+  }
+}
+
+BeforeAll(async function () {
+  await mkdir(results, { recursive: true });
+  runtimeDirectory = await mkdtemp(join(tmpdir(), 'snapflow-e2e-'));
+  const backend = start('deno', ['run', '--allow-all', 'src/main.ts'], join(root, 'backend'), {
+    ...process.env, NODE_ENV: 'test', PORT: '18000',
+    DATABASE_URL: join(runtimeDirectory, 'e2e.sqlite'), UPLOAD_DIR: join(runtimeDirectory, 'uploads'),
+    CORS_ORIGIN: 'http://127.0.0.1:4173',
+    JWT_SECRET: 'e2e-local-ephemeral-key-not-a-production-secret-32',
+  });
+  processes.push(backend);
+  await waitUntilReady('http://127.0.0.1:18000/health', backend, 'backend');
+  const frontendEnvironment: NodeJS.ProcessEnv = { ...process.env,
+    VITE_API_URL: 'http://127.0.0.1:18000' };
+  delete frontendEnvironment.NODE_OPTIONS;
+  const frontend = start('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', '4173',
+    '--strictPort'], join(root, 'frontend'), frontendEnvironment);
+  processes.push(frontend);
+  await waitUntilReady('http://127.0.0.1:4173/login', frontend, 'frontend');
+  browser = await chromium.launch({ headless: true });
+});
+
+Before(async function (this: SnapFlowWorld, scenario) {
+  this.browser = browser;
+  this.processes = processes;
+  this.runtimeDirectory = runtimeDirectory;
+  this.context = await browser.newContext();
+  await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+  this.page = await this.context.newPage();
+  await this.page.addInitScript(() => window.localStorage.clear());
+  this.attach(`scenario=${scenario.pickle.name}`, 'text/plain');
+});
+
+After(async function (this: SnapFlowWorld, scenario) {
+  if (!this.context || !this.page) return;
+  const name = scenario.pickle.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  if (scenario.result?.status !== Status.PASSED) {
+    const image = await this.page.screenshot({ path: join(results, `${name}.png`), fullPage: true });
+    await this.attach(image, 'image/png');
+  }
+  await this.context.tracing.stop({ path: join(results, `${name}-trace.zip`) });
+  await this.context.close();
+});
+
+AfterAll(async function () {
+  await browser?.close();
+  await Promise.all(processes.reverse().map(stop));
+  if (runtimeDirectory) await rm(runtimeDirectory, { recursive: true, force: true });
+});

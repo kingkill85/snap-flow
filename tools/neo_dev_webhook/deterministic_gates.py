@@ -5,10 +5,24 @@ import re
 
 
 REQUIRED_GATES = (
-    "focused_tests", "full_tests", "lint", "typecheck", "build",
+    "focused_tests", "full_tests", "lint", "typecheck", "build", "e2e",
     "openspec_validate", "openspec_verify", "approval_immutability",
     "secret_scan", "private_scan", "ui_evidence",
 )
+
+E2E_CHECK_NAME = "E2E (Cucumber + Playwright)"
+
+
+def validate_e2e_check(checks: list[dict], head_sha: str) -> dict:
+    matches = [item for item in checks if item.get("name") == E2E_CHECK_NAME]
+    if len(matches) != 1:
+        raise RuntimeError("dedicated GitHub E2E check is missing or ambiguous")
+    check = matches[0]
+    if (check.get("head_sha") != head_sha or type(check.get("id")) is not int
+            or check.get("status") != "completed" or check.get("conclusion") != "success"
+            or check.get("state") != "SUCCESS"):
+        raise RuntimeError("dedicated GitHub E2E check is pending, stale, skipped, cancelled, or failed")
+    return check
 
 FOCUSED_CONTROLLER_TESTS = (
     "tools.neo_dev_webhook.tests.test_independent_review",
@@ -41,6 +55,12 @@ def expected_gate_commands(gate: str, changed: list[str], worktree: str,
                                 ("deno", "check", "src/main.ts"), f"{root}/backend")
         if frontend_changed: add(("npm", "run", "lint") if gate == "lint" else
                                  ("npm", "run", "build"), f"{root}/frontend")
+    elif gate == "e2e":
+        if backend_changed or frontend_changed:
+            add(("python3", "-m", "tools.neo_dev_webhook.scenario_traceability",
+                 "--features", "e2e/features", "--change", change,
+                 "--require-all-active"))
+        add(("npm", "run", "e2e"))
     elif gate == "openspec_validate":
         add(("npm", "exec", "--", "openspec", "validate", change, "--strict"))
     elif gate == "openspec_verify":
@@ -112,6 +132,7 @@ def run_gates(executor, target, head_sha: str, approved_spec_sha: str,
         for item in checks
     ):
         raise RuntimeError("exact-SHA CI gate failed")
+    e2e_check = validate_e2e_check(checks, head_sha)
     changed = executor.run(
         ("git", "-C", target.worktree, "diff", "--name-only", approved_spec_sha, head_sha),
         timeout=20.0,
@@ -157,6 +178,17 @@ def run_gates(executor, target, head_sha: str, approved_spec_sha: str,
         "lint": "passed", "typecheck": "passed", "build": "passed",
         "openspec": {"validate": "passed", "verify": "passed", "strict": True},
         "checks": [dict(item) for item in checks],
+        "e2e": {
+            "head_sha": head_sha,
+            "local": {"status": "passed", "command": "npm run e2e"},
+            "mapping": records["e2e"].get("result", {}).get(
+                "mapping", {"status": "passed", "required": 0, "mapped": 0}),
+            "github_check": dict(e2e_check),
+            "artifacts": {
+                "cucumber_report": f"cucumber-report-{head_sha}",
+                "playwright_failures": f"playwright-failures-{head_sha}",
+            },
+        },
         "approval_artifacts": {"immutable": True}, "secret_scan": {"passed": True},
         "worktree": {"correct": True, "clean": True, "synced": True,
                      "tracked_and_relevant_untracked_reviewed": True},

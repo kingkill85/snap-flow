@@ -111,7 +111,7 @@ class DeterministicGateTests(unittest.TestCase):
 
 
 def check_run(sha="a" * 40):
-    return {"id": 42, "name": "controller", "head_sha": sha,
+    return {"id": 42, "name": "E2E (Cucumber + Playwright)", "head_sha": sha,
             "status": "completed", "conclusion": "success", "state": "SUCCESS"}
 
 
