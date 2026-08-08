@@ -36,6 +36,7 @@ interface UsePlacementsReturn {
     rotation?: number;
   }, isFinal?: boolean) => Promise<Placement | undefined>;
   handlePlacementDelete: (id: number) => Promise<void>;
+  handleCleanSlate: () => Promise<number>;
   fetchPlacements: (floorplanId: number, signal?: AbortSignal) => Promise<void>;
   placementAddons: React.MutableRefObject<Map<number, number[]>>;
 }
@@ -180,12 +181,24 @@ export function usePlacements({
     onPlacementChanged?.();
   }, [activeFloorplan, fetchPlacements, setPlacementsVersion, onPlacementChanged]);
 
+  const handleCleanSlate = useCallback(async (): Promise<number> => {
+    if (!activeFloorplan) return 0;
+
+    const deletedCount = await placementService.clearFloorplan(activeFloorplan.id);
+    placementAddons.current.clear();
+    setPlacements([]);
+    setPlacementsVersion(prev => prev + 1);
+    onPlacementChanged?.();
+    return deletedCount;
+  }, [activeFloorplan, onPlacementChanged, setPlacementsVersion]);
+
   return {
     placements,
     setPlacements,
     handlePlacementCreate,
     handlePlacementUpdate,
     handlePlacementDelete,
+    handleCleanSlate,
     fetchPlacements,
     placementAddons,
   };

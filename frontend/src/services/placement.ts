@@ -62,6 +62,11 @@ export const placementService = {
     await api.delete(`/placements/${id}`, { signal });
   },
 
+  async clearFloorplan(floorplanId: number, signal?: AbortSignal): Promise<number> {
+    const response = await api.delete(`/placements/floorplan/${floorplanId}`, { signal });
+    return response.data.data.deleted_count;
+  },
+
   async switchVariant(id: number, variantId: number, signal?: AbortSignal): Promise<{ placement: Placement; bomEntry: import('./bom').BomEntry }> {
     const response = await api.put(`/placements/${id}/variant`, { variant_id: variantId }, { signal });
     return response.data.data;

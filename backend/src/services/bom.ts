@@ -7,7 +7,7 @@ import { variantAddonRepository } from '../repositories/variant-addon.ts';
 import { itemTypeRepository } from '../repositories/item-type.ts';
 import { fileStorageService } from './file-storage.ts';
 import { getDb } from '../config/database.ts';
-import type { ProjectBom, Item, ItemVariant } from '../models/index.ts';
+import type { Item, ItemVariant, ProjectBom } from '../models/index.ts';
 
 export interface BomGroup {
   mainEntry: ProjectBom;
@@ -45,13 +45,33 @@ export interface ChangeReport {
  * Handles business logic for BOM operations
  */
 export class BomService {
+  async clearFloorplanPlacements(floorplanId: number): Promise<number> {
+    const { deletedCount, imagePaths } = await placementRepository
+      .clearFloorplanItems(floorplanId);
+
+    for (const imagePath of imagePaths) {
+      try {
+        const remainingReferences = await bomEntryRepository.findByPicturePath(
+          imagePath,
+        );
+        if (remainingReferences.length === 0) {
+          await fileStorageService.deleteFile(imagePath);
+        }
+      } catch (error) {
+        console.error(`Failed to clean up image ${imagePath}:`, error);
+      }
+    }
+
+    return deletedCount;
+  }
+
   /**
    * Helper method to copy variant/addon image to project folder
    */
   private async copyImageToProject(
     projectId: number,
     bomEntryId: number,
-    sourceImagePath: string | null | undefined
+    sourceImagePath: string | null | undefined,
   ): Promise<string | null> {
     if (!sourceImagePath) {
       return null;
@@ -61,13 +81,13 @@ export class BomService {
       const fileName = sourceImagePath.split('/').pop() || 'image.jpg';
       const newFileName = `${bomEntryId}-${fileName}`;
       const destSubdir = `projects/${projectId}/bom-images`;
-      
+
       const newPath = await fileStorageService.copyFile(
         sourceImagePath,
         destSubdir,
-        newFileName
+        newFileName,
       );
-      
+
       return newPath;
     } catch (error) {
       console.error('Failed to copy image to project folder:', error);
@@ -83,15 +103,15 @@ export class BomService {
   async createBomEntry(
     projectId: number,
     floorplanId: number,
-    variantId: number
+    variantId: number,
   ): Promise<ProjectBom> {
     // Check if BOM entry already exists
     const existing = await bomEntryRepository.findByVariantAddons(
       floorplanId,
       variantId,
-      null
+      null,
     );
-    
+
     if (existing) {
       return existing;
     }
@@ -129,12 +149,12 @@ export class BomService {
     const copiedImagePath = await this.copyImageToProject(
       projectId,
       mainEntry.id,
-      variant.image_path
+      variant.image_path,
     );
-    
+
     if (copiedImagePath) {
       await bomEntryRepository.update(mainEntry.id, {
-        picture_path: copiedImagePath
+        picture_path: copiedImagePath,
       });
       mainEntry.picture_path = copiedImagePath;
     }
@@ -142,8 +162,8 @@ export class BomService {
     // Create required addon children (only active required addons)
     const allAddons = await variantAddonRepository.findByVariantId(variantId);
     console.log(`Found ${allAddons.length} addons for variant ${variantId}`);
-    const requiredAddons = allAddons.filter(addon => 
-      addon.is_required && 
+    const requiredAddons = allAddons.filter((addon) =>
+      addon.is_required &&
       addon.addon_variant?.is_active
     );
     console.log(`Found ${requiredAddons.length} active required addons`);
@@ -154,7 +174,9 @@ export class BomService {
         continue;
       }
 
-      const addonItem = await itemRepository.findById(addon.addon_variant.item_id);
+      const addonItem = await itemRepository.findById(
+        addon.addon_variant.item_id,
+      );
       if (!addonItem) {
         console.log(`  Skipping: no addonItem found`);
         continue;
@@ -182,12 +204,12 @@ export class BomService {
       const addonCopiedPath = await this.copyImageToProject(
         projectId,
         addonEntry.id,
-        addon.addon_variant.image_path
+        addon.addon_variant.image_path,
       );
 
       if (addonCopiedPath) {
         await bomEntryRepository.update(addonEntry.id, {
-          picture_path: addonCopiedPath
+          picture_path: addonCopiedPath,
         });
       }
 
@@ -203,7 +225,7 @@ export class BomService {
    */
   async switchVariant(
     bomEntryId: number,
-    newVariantId: number
+    newVariantId: number,
   ): Promise<ProjectBom> {
     const entry = await bomEntryRepository.findById(bomEntryId);
     if (!entry) {
@@ -228,7 +250,7 @@ export class BomService {
     const copiedImagePath = await this.copyImageToProject(
       entry.project_id,
       bomEntryId,
-      newVariant.image_path
+      newVariant.image_path,
     );
 
     // Update main entry with new variant and snapshots
@@ -253,15 +275,19 @@ export class BomService {
     }
 
     // Create new addon children for new variant (only active required addons)
-    const allAddons = await variantAddonRepository.findByVariantId(newVariantId);
-    const requiredAddons = allAddons.filter(addon => 
-      addon.is_required && 
+    const allAddons = await variantAddonRepository.findByVariantId(
+      newVariantId,
+    );
+    const requiredAddons = allAddons.filter((addon) =>
+      addon.is_required &&
       addon.addon_variant?.is_active
     );
     for (const addon of requiredAddons) {
       if (!addon.addon_variant) continue;
 
-      const addonItem = await itemRepository.findById(addon.addon_variant.item_id);
+      const addonItem = await itemRepository.findById(
+        addon.addon_variant.item_id,
+      );
       if (!addonItem) continue;
 
       // Look up addon item type name for snapshot
@@ -286,12 +312,12 @@ export class BomService {
       const addonCopiedPath = await this.copyImageToProject(
         entry.project_id,
         addonEntry.id,
-        addon.addon_variant.image_path
+        addon.addon_variant.image_path,
       );
 
       if (addonCopiedPath) {
         await bomEntryRepository.update(addonEntry.id, {
-          picture_path: addonCopiedPath
+          picture_path: addonCopiedPath,
         });
       }
     }
@@ -306,7 +332,7 @@ export class BomService {
   async recreateBomEntry(
     placementId: number,
     newVariantId: number,
-    selectedAddonIds: number[]
+    selectedAddonIds: number[],
   ): Promise<ProjectBom> {
     // Get placement details
     const placement = await placementRepository.findById(placementId);
@@ -358,12 +384,12 @@ export class BomService {
     const copiedImagePath = await this.copyImageToProject(
       floorplan.project_id,
       newMainEntry.id,
-      newVariant.image_path
+      newVariant.image_path,
     );
-    
+
     if (copiedImagePath) {
       await bomEntryRepository.update(newMainEntry.id, {
-        picture_path: copiedImagePath
+        picture_path: copiedImagePath,
       });
       newMainEntry.picture_path = copiedImagePath;
     }
@@ -398,12 +424,12 @@ export class BomService {
       const addonCopiedPath = await this.copyImageToProject(
         floorplan.project_id,
         addonEntry.id,
-        addonVariant.image_path
+        addonVariant.image_path,
       );
-      
+
       if (addonCopiedPath) {
         await bomEntryRepository.update(addonEntry.id, {
-          picture_path: addonCopiedPath
+          picture_path: addonCopiedPath,
         });
       }
     }
@@ -413,7 +439,9 @@ export class BomService {
 
     // Delete old BOM entry only if no other placements reference it
     if (oldBomId) {
-      const remainingPlacements = await placementRepository.findByBomId(oldBomId);
+      const remainingPlacements = await placementRepository.findByBomId(
+        oldBomId,
+      );
       if (remainingPlacements.length === 0) {
         await bomEntryRepository.delete(oldBomId);
       }
@@ -431,13 +459,13 @@ export class BomService {
     const allEntries = await bomEntryRepository.findByFloorplan(floorplanId);
 
     // Separate main entries and children
-    const mainEntries = allEntries.filter(e => e.parent_bom_id === null);
-    const childEntries = allEntries.filter(e => e.parent_bom_id !== null);
+    const mainEntries = allEntries.filter((e) => e.parent_bom_id === null);
+    const childEntries = allEntries.filter((e) => e.parent_bom_id !== null);
 
     // --- Batch fetch all needed data upfront (fixes N+1 queries) ---
 
     // Collect all unique BOM entry IDs (main entries only need placement counts)
-    const mainEntryIds = mainEntries.map(e => e.id);
+    const mainEntryIds = mainEntries.map((e) => e.id);
 
     // Collect all unique item IDs and variant IDs from all entries
     const allItemIds = new Set<number>();
@@ -453,7 +481,7 @@ export class BomService {
       const placeholders = mainEntryIds.map(() => '?').join(',');
       const countRows = getDb().queryEntries(
         `SELECT bom_id, COUNT(*) as count FROM placements WHERE bom_id IN (${placeholders}) GROUP BY bom_id`,
-        mainEntryIds
+        mainEntryIds,
       ) as unknown as Array<{ bom_id: number; count: number }>;
       for (const row of countRows) {
         placementCounts.set(row.bom_id, row.count);
@@ -469,7 +497,7 @@ export class BomService {
       const itemRows = getDb().queryEntries(
         `SELECT id, category_id, name, description, base_model_number, dimensions, created_at, is_active
          FROM items WHERE id IN (${placeholders})`,
-        itemIdList
+        itemIdList,
       ) as unknown as Item[];
       for (const row of itemRows) {
         row.is_active = Boolean(row.is_active);
@@ -485,7 +513,7 @@ export class BomService {
       const variantRows = getDb().queryEntries(
         `SELECT id, item_id, style_name, price, image_path, sort_order, created_at, is_active
          FROM item_variants WHERE id IN (${placeholders})`,
-        variantIdList
+        variantIdList,
       ) as unknown as ItemVariant[];
       for (const row of variantRows) {
         row.is_active = Boolean(row.is_active);
@@ -506,7 +534,7 @@ export class BomService {
 
     for (const mainEntry of mainEntries) {
       // Get children (addons) for this entry
-      const children = childEntries.filter(c => c.parent_bom_id === mainEntry.id);
+      const children = childEntries.filter((c) => c.parent_bom_id === mainEntry.id);
 
       // Get placement count (quantity) from pre-fetched map
       const quantity = placementCounts.get(mainEntry.id) ?? 0;
@@ -552,7 +580,9 @@ export class BomService {
 
       // Create a unique key based on variant + sorted addon variant IDs
       // This groups identical configurations together
-      const addonVariantIds = children.map(c => c.variant_id).sort().join(',');
+      const addonVariantIds = children.map((c) => c.variant_id).sort().join(
+        ',',
+      );
       const groupKey = `${mainEntry.variant_id}:${addonVariantIds}`;
 
       if (groupMap.has(groupKey)) {
@@ -573,29 +603,33 @@ export class BomService {
     }
 
     // Convert map to groups array
-    const groups: BomGroup[] = Array.from(groupMap.values()).map(({ mainEntry, children, quantity, bomEntryIds, isAvailable }) => {
-      const mainTotal = mainEntry.unit_price * quantity;
-      const childrenTotal = children.reduce((sum, child) => sum + child.unit_price, 0) * quantity;
-      const totalPrice = mainTotal + childrenTotal;
-      
-      return {
-        mainEntry,
-        children,
-        quantity,
-        totalPrice,
-        bomEntryIds,
-        isAvailable,
-      };
-    });
+    const groups: BomGroup[] = Array.from(groupMap.values()).map(
+      ({ mainEntry, children, quantity, bomEntryIds, isAvailable }) => {
+        const mainTotal = mainEntry.unit_price * quantity;
+        const childrenTotal = children.reduce((sum, child) => sum + child.unit_price, 0) * quantity;
+        const totalPrice = mainTotal + childrenTotal;
+
+        return {
+          mainEntry,
+          children,
+          quantity,
+          totalPrice,
+          bomEntryIds,
+          isAvailable,
+        };
+      },
+    );
 
     // Calculate floorplan total from groups (already includes main + children)
     const totalPrice = groups.reduce((sum, group) => sum + group.totalPrice, 0);
-    
+
     // Debug: log calculation details
     console.log(`Floorplan ${floorplanId} BOM calculation:`);
     groups.forEach((group, i) => {
-      console.log(`  Group ${i}: ${group.mainEntry.item_name} x${group.quantity} = $${group.totalPrice} (main: $${group.mainEntry.unit_price}, children: ${group.children.length})`);
-      group.children.forEach(child => {
+      console.log(
+        `  Group ${i}: ${group.mainEntry.item_name} x${group.quantity} = $${group.totalPrice} (main: $${group.mainEntry.unit_price}, children: ${group.children.length})`,
+      );
+      group.children.forEach((child) => {
         console.log(`    - ${child.item_name}: $${child.unit_price}`);
       });
     });
@@ -614,14 +648,14 @@ export class BomService {
   async getProjectTotal(projectId: number): Promise<{ totalPrice: number }> {
     // Get all floorplans for project
     const floorplans = await floorplanRepository.findByProject(projectId);
-    
+
     // Sum up totals from all floorplans
     let totalPrice = 0;
     for (const floorplan of floorplans) {
       const floorplanBom = await this.getBomForFloorplan(floorplan.id);
       totalPrice += floorplanBom.totalPrice;
     }
-    
+
     return { totalPrice };
   }
 
@@ -635,10 +669,10 @@ export class BomService {
     if (!entry) {
       return; // Already deleted or doesn't exist
     }
-    
+
     const children = await bomEntryRepository.findChildren(bomEntryId);
     const allEntries = [entry, ...children];
-    
+
     // Collect all picture paths that need cleanup
     const picturePathsToCheck: string[] = [];
     for (const e of allEntries) {
@@ -646,15 +680,17 @@ export class BomService {
         picturePathsToCheck.push(e.picture_path);
       }
     }
-    
+
     // Delete the BOM entries (this also cascades to placements)
     await bomEntryRepository.delete(bomEntryId);
-    
+
     // Clean up images that are no longer referenced
     for (const picturePath of picturePathsToCheck) {
       try {
         // Check if any other BOM entries still use this image
-        const otherEntries = await bomEntryRepository.findByPicturePath(picturePath);
+        const otherEntries = await bomEntryRepository.findByPicturePath(
+          picturePath,
+        );
         if (otherEntries.length === 0) {
           // Safe to delete the image file
           await fileStorageService.deleteFile(picturePath);
@@ -700,11 +736,11 @@ export class BomService {
       const copiedImagePath = await this.copyImageToProject(
         originalEntry.project_id,
         newMainEntry.id,
-        originalEntry.picture_path
+        originalEntry.picture_path,
       );
       if (copiedImagePath) {
         await bomEntryRepository.update(newMainEntry.id, {
-          picture_path: copiedImagePath
+          picture_path: copiedImagePath,
         });
         newMainEntry.picture_path = copiedImagePath;
       }
@@ -730,11 +766,11 @@ export class BomService {
         const copiedChildImagePath = await this.copyImageToProject(
           originalChild.project_id,
           newChildEntry.id,
-          originalChild.picture_path
+          originalChild.picture_path,
         );
         if (copiedChildImagePath) {
           await bomEntryRepository.update(newChildEntry.id, {
-            picture_path: copiedChildImagePath
+            picture_path: copiedChildImagePath,
           });
         }
       }
@@ -787,7 +823,11 @@ export class BomService {
 
         // Copy image to project folder (not raw catalog path)
         const newPicturePath = variant.image_path
-          ? await this.copyImageToProject(entry.project_id, entry.id, variant.image_path)
+          ? await this.copyImageToProject(
+            entry.project_id,
+            entry.id,
+            variant.image_path,
+          )
           : entry.picture_path;
 
         // Update snapshot

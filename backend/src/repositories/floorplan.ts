@@ -1,11 +1,31 @@
 import { getDb, withTransaction } from '../config/database.ts';
-import type { Floorplan, CreateFloorplanDTO, UpdateFloorplanDTO } from '../models/index.ts';
+import type { CreateFloorplanDTO, Floorplan, UpdateFloorplanDTO } from '../models/index.ts';
 
 /**
  * Floorplan Repository
  * Handles all database operations for floorplans
  */
 export class FloorplanRepository {
+  findAccessibleForCleanup(
+    id: number,
+    tenantId: number,
+  ): Promise<(Floorplan & { project_status: string }) | null> {
+    const result = getDb().queryEntries(
+      `
+      SELECT f.id, f.project_id, f.name, f.image_path, f.sort_order,
+             pg.status AS project_status
+      FROM floorplans f
+      JOIN projects p ON p.id = f.project_id
+      JOIN project_groups pg ON pg.id = p.project_group_id
+      WHERE f.id = ? AND p.tenant_id = ? AND pg.tenant_id = ?
+    `,
+      [id, tenantId, tenantId],
+    );
+    return Promise.resolve(
+      result.length > 0 ? (result[0] as unknown as Floorplan & { project_status: string }) : null,
+    );
+  }
+
   findAll(): Promise<Floorplan[]> {
     const result = getDb().queryEntries(`
       SELECT id, project_id, name, image_path, sort_order
@@ -16,39 +36,54 @@ export class FloorplanRepository {
   }
 
   findByProject(projectId: number): Promise<Floorplan[]> {
-    const result = getDb().queryEntries(`
+    const result = getDb().queryEntries(
+      `
       SELECT id, project_id, name, image_path, sort_order
       FROM floorplans
       WHERE project_id = ?
       ORDER BY sort_order ASC, id ASC
-    `, [projectId]);
+    `,
+      [projectId],
+    );
     return Promise.resolve(result as unknown as Floorplan[]);
   }
 
   findById(id: number): Promise<Floorplan | null> {
-    const result = getDb().queryEntries(`
+    const result = getDb().queryEntries(
+      `
       SELECT id, project_id, name, image_path, sort_order
       FROM floorplans
       WHERE id = ?
-    `, [id]);
-    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Floorplan) : null);
+    `,
+      [id],
+    );
+    return Promise.resolve(
+      result.length > 0 ? (result[0] as unknown as Floorplan) : null,
+    );
   }
 
   create(data: CreateFloorplanDTO): Promise<Floorplan> {
     // Get max sort_order for this project
-    const maxResult = getDb().queryEntries(`
+    const maxResult = getDb().queryEntries(
+      `
       SELECT MAX(sort_order) as max_order
       FROM floorplans
       WHERE project_id = ?
-    `, [data.project_id]);
-    const maxOrder = (maxResult[0] as { max_order: number | null }).max_order || 0;
+    `,
+      [data.project_id],
+    );
+    const maxOrder = (maxResult[0] as { max_order: number | null }).max_order ||
+      0;
     const sortOrder = data.sort_order ?? (maxOrder + 1);
 
-    const result = getDb().queryEntries(`
+    const result = getDb().queryEntries(
+      `
       INSERT INTO floorplans (project_id, name, image_path, sort_order)
       VALUES (?, ?, ?, ?)
       RETURNING id, project_id, name, image_path, sort_order
-    `, [data.project_id, data.name, data.image_path, sortOrder]);
+    `,
+      [data.project_id, data.name, data.image_path, sortOrder],
+    );
 
     return Promise.resolve(result[0] as unknown as Floorplan);
   }
@@ -76,26 +111,37 @@ export class FloorplanRepository {
 
     values.push(id);
 
-    const result = getDb().queryEntries(`
+    const result = getDb().queryEntries(
+      `
       UPDATE floorplans
       SET ${sets.join(', ')}
       WHERE id = ?
       RETURNING id, project_id, name, image_path, sort_order
-    `, values);
+    `,
+      values,
+    );
 
-    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Floorplan) : null);
+    return Promise.resolve(
+      result.length > 0 ? (result[0] as unknown as Floorplan) : null,
+    );
   }
 
   delete(id: number): Promise<void> {
     withTransaction(() => {
       // Delete placements that reference BOM entries for this floorplan
-      getDb().query(`
+      getDb().query(
+        `
         DELETE FROM placements
         WHERE bom_id IN (SELECT id FROM project_bom WHERE floorplan_id = ?)
-      `, [id]);
+      `,
+        [id],
+      );
 
       // Delete child BOM entries first (parent_bom_id references)
-      getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ? AND parent_bom_id IS NOT NULL`, [id]);
+      getDb().query(
+        `DELETE FROM project_bom WHERE floorplan_id = ? AND parent_bom_id IS NOT NULL`,
+        [id],
+      );
 
       // Then delete parent BOM entries
       getDb().query(`DELETE FROM project_bom WHERE floorplan_id = ?`, [id]);
@@ -109,11 +155,14 @@ export class FloorplanRepository {
   reorder(projectId: number, floorplanIds: number[]): Promise<void> {
     withTransaction(() => {
       for (let i = 0; i < floorplanIds.length; i++) {
-        getDb().query(`
+        getDb().query(
+          `
           UPDATE floorplans
           SET sort_order = ?
           WHERE id = ? AND project_id = ?
-        `, [i + 1, floorplanIds[i], projectId]);
+        `,
+          [i + 1, floorplanIds[i], projectId],
+        );
       }
     });
     return Promise.resolve();

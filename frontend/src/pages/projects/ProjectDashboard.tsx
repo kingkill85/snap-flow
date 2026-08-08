@@ -16,6 +16,7 @@ import type { ItemPaletteRef } from '@/components/configurator';
 import { DragOverlayContent } from '@/components/configurator/DragOverlayContent';
 import { FloorplanFormModal } from '@/components/floorplans/FloorplanFormModal';
 import { DeleteFloorplanDialog } from '@/components/floorplans/DeleteFloorplanDialog';
+import { CleanSlateDialog } from '@/components/floorplans/CleanSlateDialog';
 import { FloorplanTabs } from '@/components/floorplans/FloorplanTabs';
 import { InvoiceSettingsModal, SummaryTab } from '@/components/invoice';
 import type { FloorplanAreaData } from '@/services/invoice-docx';
@@ -75,8 +76,8 @@ const ProjectDashboard = () => {
     fetchFloorplanBom,
   } = useProjectData({ projectId });
 
-  // Users cannot edit at all (only admin/tenant_admin can edit)
-  const canEdit = user?.role !== 'user';
+  // Only administrators can edit active projects.
+  const canEdit = user?.role !== 'user' && projectGroup?.status === 'active';
 
   // BOM calculations
   const { floorplanTotals, projectTotal } = useBomCalculations(floorplans, floorplanBoms, items, categories);
@@ -86,6 +87,7 @@ const ProjectDashboard = () => {
   const [floorplanToEdit, setFloorplanToEdit] = useState<Floorplan | null>(null);
   const [showDeleteFloorplanModal, setShowDeleteFloorplanModal] = useState(false);
   const [floorplanToDelete, setFloorplanToDelete] = useState<Floorplan | null>(null);
+  const [showCleanSlateDialog, setShowCleanSlateDialog] = useState(false);
 
   // Invoice settings state
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -163,6 +165,7 @@ const ProjectDashboard = () => {
     handlePlacementCreate,
     handlePlacementUpdate,
     handlePlacementDelete,
+    handleCleanSlate,
     fetchPlacements,
     placementAddons,
   } = usePlacements({
@@ -703,6 +706,7 @@ const ProjectDashboard = () => {
                         onCanvasBoundsChange={setCanvasBounds}
                         hiddenTypeIds={hiddenTypeIds}
                         typeColorMap={typeColorMap}
+                        onCleanSlate={canEdit ? () => setShowCleanSlateDialog(true) : undefined}
                       />
                     </div>
                   </div>
@@ -879,6 +883,13 @@ const ProjectDashboard = () => {
         isOpen={showDeleteFloorplanModal}
         onClose={() => setShowDeleteFloorplanModal(false)}
         onConfirm={handleDeleteFloorplan}
+      />
+
+      <CleanSlateDialog
+        floorplanName={activeFloorplan?.name ?? ''}
+        isOpen={showCleanSlateDialog}
+        onClose={() => setShowCleanSlateDialog(false)}
+        onConfirm={async () => { await handleCleanSlate(); }}
       />
 
       {error && (

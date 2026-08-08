@@ -62,6 +62,7 @@ interface CanvasProps {
   onCanvasBoundsChange?: (bounds: { width: number; height: number }) => void;
   hiddenTypeIds?: Set<number>;
   typeColorMap?: Map<number, { color: string; name: string }>;
+  onCleanSlate?: () => void;
 }
 
 interface DraggablePlacementProps {
@@ -1110,6 +1111,7 @@ export function ConfiguratorCanvas({
   onCanvasBoundsChange,
   hiddenTypeIds,
   typeColorMap,
+  onCleanSlate,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -1694,6 +1696,22 @@ export function ConfiguratorCanvas({
         {/* Zoom Controls */}
         <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-50">
           <div className="bg-background/90 border rounded-lg shadow-lg p-2 flex flex-col gap-1">
+            {onCleanSlate && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  onClick={onCleanSlate}
+                  disabled={placements.length === 0}
+                  title="Clean Slate"
+                  aria-label="Clean Slate"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+                <div className="h-px bg-border my-1" />
+              </>
+            )}
             <Button
               variant="ghost"
               size="icon"
