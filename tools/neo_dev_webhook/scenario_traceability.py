@@ -35,6 +35,9 @@ FEATURE_STEP = re.compile(r"^\s*(Given|When|Then|And|But)\s+(.+?)\s*$", re.IGNOR
 FEATURE_SCENARIO = re.compile(r"^\s*Scenario(?: Outline)?:\s*(.+?)\s*$", re.IGNORECASE)
 FEATURE_BACKGROUND = re.compile(r"^\s*Background:\s*(.*?)\s*$", re.IGNORECASE)
 TAG_LINE = re.compile(r"^\s*(@\S+(?:\s+@\S+)*)\s*$")
+FEATURE_EXAMPLES = re.compile(r"^\s*Examples(?:\s*:[^\r\n]*)?$", re.IGNORECASE)
+FEATURE_DATA_TABLE = re.compile(r"^\s*\|.*\|\s*$")
+FEATURE_DOC_STRING = re.compile(r'^\s*(?:"""|```)')
 
 
 def _normalize_step(keyword: str, text: str) -> tuple[str, str]:
@@ -109,6 +112,15 @@ def _feature_scenarios(features: dict[str, str]) -> dict[str, list[list[tuple[st
                 for item in active_refs:
                     result.setdefault(item, []).append(steps)
                 continue
+            if FEATURE_EXAMPLES.match(line):
+                raise ValueError(
+                    f"Gherkin Examples are not represented in approved OpenSpec text: {path}")
+            if FEATURE_DATA_TABLE.match(line):
+                raise ValueError(
+                    f"Gherkin step data table is not represented in approved OpenSpec text: {path}")
+            if FEATURE_DOC_STRING.match(line):
+                raise ValueError(
+                    f"Gherkin step doc string is not represented in approved OpenSpec text: {path}")
             step = FEATURE_STEP.match(line)
             if step:
                 if in_background:
