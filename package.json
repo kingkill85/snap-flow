@@ -8,7 +8,8 @@
     "dev:frontend": "cd frontend && npm run dev",
     "install:all": "npm install && cd frontend && npm install",
     "build": "cd frontend && npm run build",
-    "e2e": "npm run e2e:traceability && NODE_OPTIONS=--import=tsx cucumber-js --config cucumber.mjs",
+    "e2e": "npm run e2e:traceability && npm run e2e:unit && NODE_OPTIONS=--import=tsx cucumber-js --config cucumber.mjs",
+    "e2e:unit": "node --import tsx --test e2e/tests/*.test.ts",
     "e2e:traceability": "python3 -m tools.neo_dev_webhook.scenario_traceability --features e2e/features",
     "e2e:install": "playwright install chromium",
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json"
