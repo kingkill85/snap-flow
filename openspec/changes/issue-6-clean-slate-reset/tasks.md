@@ -1,0 +1,34 @@
+## 1. Approval and RED Contract Tests
+
+- [ ] 1.1 Commit only the approved planning artifacts, publish immutable GitHub blob links pinned to that full 40-character commit SHA in the Issue #6/Draft PR workflow record, apply `needs-approval`, and obtain the authorized human's `/approve-spec <full-sha>` relayed through Neo before changing product or test code; stop and repeat this gate after any material artifact revision.
+- [ ] 1.2 RED: add focused backend repository/route tests for `DELETE /api/floorplans/:id/placements` covering the response count, complete item-placement and parent/child BOM cleanup, preservation of the floorplan/image/areas and other floorplans, empty/repeated calls, overlapping calls, and forced transaction rollback; run the focused Deno tests and record the expected failures before implementation.
+- [ ] 1.3 RED: add backend authorization/validation integration cases for missing or invalid authentication (`401`), `user` role (`403`), malformed/non-positive IDs (`400`), missing targets (`404`), cross-tenant concealment (`404`), global-admin access, and no mutation on every rejection; record the focused failing run.
+- [ ] 1.4 RED: add frontend component/hook tests with `authService` and API services mocked for role/empty/pending visibility, exact confirmation and preservation copy, cancel/dismiss without a request, single-submit locking, authoritative success refresh/clearing, failure reconciliation and retry, preference preservation, and a late response after switching floorplans; run the focused Vitest files and record expected failures.
+
+## 2. Transactional Backend GREEN
+
+- [ ] 2.1 Implement a tenant-aware floorplan lookup and a focused repository reset operation that counts and deletes only `type = 'item'` placements plus child-then-parent BOM rows for the same floorplan inside `withTransaction`, returning the authoritative `removed_count` and touching no files, areas, or unrelated records.
+- [ ] 2.2 Add the specifically ordered `DELETE /api/floorplans/:id/placements` route with strict positive-integer parsing, verified-token role/tenant authorization, fail-closed `400`/`401`/`403`/`404`/`500` responses, and the specified success envelope; do not change existing single-placement or floorplan-delete contracts.
+- [ ] 2.3 GREEN: run the focused backend tests from 1.2-1.3 until they pass, including deterministic rollback and concurrency assertions, then run `cd backend && deno task test` and `cd backend && deno lint`; fix every regression or leave the gate open under the repository's documented baseline-exception rules.
+
+## 3. Confirmed Frontend GREEN
+
+- [ ] 3.1 Add the typed frontend reset service and hook orchestration keyed to an explicit floorplan ID, without optimistic deletion; preserve project item memory and reconcile placements, BOM, and areas from the server on both success and ambiguous failure.
+- [ ] 3.2 Create an extracted accessible Clean Slate confirmation dialog with the snapshotted floorplan name, exact deleted/preserved-content warning, **Cancel** and destructive **Reset** actions/icons, pending/reconciliation locking, normalized error display, and retry behavior.
+- [ ] 3.3 Integrate the **Clean Slate** control into the active Floorplan view for editing roles only; disable it for loaded-empty/pending state and clear only the reset target's placement selection/edit/add-on cache while preventing late responses from overwriting a newly active floorplan.
+- [ ] 3.4 GREEN: run the focused frontend tests from 1.4 until they pass, then run `cd frontend && npm run test:run`, `cd frontend && npm run lint`, and `cd frontend && npm run build`; fix every regression or leave the gate open under the repository's documented baseline-exception rules.
+
+## 4. User-Visible Traceability and Real-Runtime Evidence
+
+- [ ] 4.1 RED: add an Issue #6-tagged Cucumber/Gherkin feature whose scenario names map to the Clean Slate spec and cover editor visibility, named warning/preserved content, cancellation with unchanged canvas/BOM, successful reset without page reload, and preservation of the floorplan image/areas; update traceability mappings/steps and record the expected `npm run e2e:traceability` or scenario failure before implementation is complete.
+- [ ] 4.2 GREEN: implement Playwright-backed steps using isolated fixtures against the real backend and Vite frontend started through the repository runtime, avoiding mocked product APIs; capture assertions for the visible canvas, BOM totals, modal accessibility/focus, and preserved floorplan/areas, then run `npm run typecheck:e2e`, `npm run e2e:traceability`, `npm run e2e:unit`, and `npm run e2e` successfully.
+- [ ] 4.3 Preserve failure evidence (screenshots and trace ZIPs) and the Cucumber JSON/HTML report as applicable; record the exact local `git rev-parse HEAD` tested and ensure every retained evidence reference is tied to that full 40-character SHA.
+
+## 5. Verification, Independent Review, and Exact-SHA CI
+
+- [ ] 5.1 Run `OPENSPEC_TELEMETRY=0 npm exec -- openspec validate issue-6-clean-slate-reset --type change --strict --no-interactive` and the `openspec-verify-change` workflow against the implementation; resolve every spec/design/task mismatch and rerun affected RED/GREEN gates after any fix.
+- [ ] 5.2 Obtain an independent code review focused on transaction boundaries, SQL floorplan isolation, Hono route ordering, fail-closed role/tenant authorization, error contracts, and late-response state safety; resolve all findings and rerun affected checks.
+- [ ] 5.3 Obtain a separate independent test review focused on scenario-to-requirement traceability, meaningful RED evidence, rollback/concurrency determinism, cross-tenant and cross-floorplan negative assertions, and mock-free real-runtime coverage; resolve all findings and rerun affected checks.
+- [ ] 5.4 Obtain an independent Playwright UI review against the real development runtime for destructive affordance clarity, warning accuracy, keyboard/focus behavior, disabled/pending/error states, responsive usability, and visible post-reset state; retain SHA-bound evidence and resolve findings.
+- [ ] 5.5 Push only after authorization and verify the required GitHub Actions `Run Tests` workflow is successful for the exact final 40-character PR head SHA: backend tests, frontend build/tests, E2E, and Test Summary must all be green; confirm the E2E checkout assertion and `cucumber-report-<sha>` artifact's `tested-sha.txt` equal that SHA, and never treat a run for another commit as evidence.
+- [ ] 5.6 Record final full-SHA immutable evidence links and review/test outcomes in the governed Issue #6/Draft PR record, request `/accept` only after all gates pass, and keep merge/release/deploy/secret/access/production-data operations unauthorized; after acceptance, sync delta specs and archive the change before separately requesting `/merge`.
