@@ -25,8 +25,6 @@ from neo_dev_webhook.manual_preview_stack import (
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
 DIGEST = "sha256:" + "a" * 64
-PROVENANCE = {"repository": "kingkill85/snap-flow", "sha": SHA, "digest": DIGEST,
-              "build_time": "2026-08-09T12:00:00Z", "run_id": 123}
 BASE_SHA = "89abcdef0123456789abcdef0123456789abcdef"
 REQUIRED_CHECKS = (
     "Backend Tests (Deno)", "Frontend Tests (Vitest)",
@@ -209,7 +207,7 @@ class FixedSlotContractTest(unittest.TestCase):
                             return_value={"repo_digests": [f"ghcr.io/kingkill85/snap-flow@{DIGEST}"],
                                           "revision": SHA, "image": "", "mounts": {}}), \
                  self.assertRaisesRegex(PreviewError, "reset failed:.*previous slot restored"):
-                reset_seed(PROVENANCE)
+                reset_seed(SHA, DIGEST)
             after = {str(path.relative_to(stack)): path.read_bytes()
                      for path in stack.rglob("*") if path.is_file()
                      and ".preview-backups" not in path.parts
@@ -217,7 +215,8 @@ class FixedSlotContractTest(unittest.TestCase):
             self.assertEqual(after, before)
             self.assertIn(mock.call(stack, "up", "-d", "--remove-orphans"),
                           compose.call_args_list)
-            # Rollback validates the sealed prior image identity without packet provenance.
+            verify.assert_called_once_with(SHA, DIGEST, scope=stack,
+                                           run_external=False)
 
     def test_preview_smoke_is_fixed_route_authenticated_and_exact_sha_bound(self):
         root = pathlib.Path(__file__).parents[3]
@@ -233,8 +232,7 @@ class FixedSlotContractTest(unittest.TestCase):
 
 class PacketTest(unittest.TestCase):
     def test_phone_packet_contains_verified_identity_and_only_legal_commands(self):
-        evidence = {"sha": SHA, "digest": DIGEST, "run_id": 123,
-                    "route": FIXED_ROUTE, "created_id": "123", "project_group_id": "456",
+        evidence = {"sha": SHA, "route": FIXED_ROUTE, "created_id": "123",
                     "reload_proven": True, "restart_proven": True,
                     "reset_repeatable": True,
                     "mobile_viewport": {"width": 390, "height": 844}}
@@ -245,7 +243,7 @@ class PacketTest(unittest.TestCase):
             "expected": "Project appears",
             "persistence": "Reload and confirm",
             "mobile": "Check at phone width",
-        }, PROVENANCE, evidence)
+        }, SHA, "2026-08-09T12:00:00Z", evidence)
         for value in (FIXED_ROUTE, SHA, "2026-08-09T12:00:00Z", "Sign in",
                       "Project appears", "123", "390x844",
                       "/fix <bounded feedback>", f"/accept {SHA}", "screenshot"):

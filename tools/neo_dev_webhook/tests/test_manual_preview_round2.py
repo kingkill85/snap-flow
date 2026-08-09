@@ -13,9 +13,6 @@ from neo_dev_webhook.manual_preview import PreviewError
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
 DIGEST = "sha256:" + "a" * 64
-PROVENANCE = {"repository": "kingkill85/snap-flow", "sha": SHA, "digest": DIGEST,
-              "build_time": "2026-08-09T12:00:00Z", "run_id": 123}
-DEPLOYMENT = {"sha": SHA, "digest": DIGEST, "run_id": 123}
 AUTH = {
     "SNAPFLOW_PREVIEW_MUTATION_AUTHORIZED": "OWNER_AUTHORIZED_MANUAL_PREVIEW",
     "PREVIEW_ADMIN_EMAIL": "preview@example.test",
@@ -74,7 +71,7 @@ class SealedSnapshotTest(unittest.TestCase):
                  mock.patch.object(stack_ops, "_resume_prior", side_effect=lambda *_: events.append("resume")), \
                  mock.patch.object(stack_ops, "_write_compose", side_effect=lambda *_: events.append("switch")):
                 with self.assertRaisesRegex(PreviewError, "truncated seal"):
-                    stack_ops.deploy(PROVENANCE)
+                    stack_ops.deploy(SHA, DIGEST)
             self.assertEqual(events, ["down", "resume"])
 
 
@@ -93,7 +90,7 @@ class SnapshotResumeTest(unittest.TestCase):
                          mock.patch.object(stack_ops, "_resume_prior",
                                            side_effect=lambda *_: events.append("resume")):
                         with mock.patch.dict(os.environ, AUTH, clear=False), self.assertRaises(PreviewError):
-                            if action == "reset": stack_ops.reset_seed(PROVENANCE)
+                            if action == "reset": stack_ops.reset_seed(SHA, DIGEST)
                             else: stack_ops.rollback("20260809T120000Z-1234567890123456789")
                     self.assertEqual(events, ["resume"])
                     self.assertEqual(prior["presence"][stack_ops.COMPOSE], occupied)
@@ -114,7 +111,7 @@ class ResetRepeatabilityTest(unittest.TestCase):
                  mock.patch.object(stack_ops, "_rollback_failed_action",
                                    return_value=PreviewError("prior restored")) as rollback:
                 with self.assertRaisesRegex(PreviewError, "prior restored"):
-                    stack_ops.reset_seed(PROVENANCE)
+                    stack_ops.reset_seed(SHA, DIGEST)
             rollback.assert_called_once()
 
     def test_one_reset_cycle_has_exact_clear_start_readiness_provision_baseline_order(self):
@@ -147,9 +144,8 @@ class ResetRepeatabilityTest(unittest.TestCase):
                                    return_value={"verifier_evidence": {}}), \
                  mock.patch.object(stack_ops, "_baseline_fingerprint",
                                    return_value={"baseline": 1}), \
-                 mock.patch.object(stack_ops, "verify", return_value={
-                     "health": "healthy", "deployment_evidence": DEPLOYMENT}):
-                result = stack_ops.reset_seed(PROVENANCE)
+                 mock.patch.object(stack_ops, "verify", return_value={"health": "healthy"}):
+                result = stack_ops.reset_seed(SHA, DIGEST)
             self.assertEqual(reset_once.call_count, 2)
             self.assertEqual(result["seed"], "repeatable")
 
@@ -177,10 +173,9 @@ class ReadOnlyVerifyTest(unittest.TestCase):
                  mock.patch.object(stack_ops, "_run_compose"), \
                  mock.patch.object(stack_ops, "_wait_healthy"), \
                  mock.patch.object(stack_ops, "_provision_preview_admin"), \
-                 mock.patch.object(stack_ops, "verify",
-                                   return_value={"deployment_evidence": DEPLOYMENT}), \
+                 mock.patch.object(stack_ops, "verify", return_value={}), \
                  mock.patch.object(stack_ops, "_exercise_persistence", side_effect=exercise):
-                stack_ops.deploy(PROVENANCE)
+                stack_ops.deploy(SHA, DIGEST)
             self.assertFalse(held["value"])
 
     @mock.patch.object(stack_ops, "preflight_fixed_route")
@@ -192,7 +187,6 @@ class ReadOnlyVerifyTest(unittest.TestCase):
             root = fixture_stack(pathlib.Path(directory))
             inspect.return_value = {
                 "repo_digests": [f"{stack_ops.IMAGE}@{DIGEST}"], "revision": SHA,
-                "run_id": 123,
                 "image": f"{stack_ops.IMAGE}@{DIGEST}",
                 "mounts": {"/app/backend/data": str((root / "state").resolve()),
                            "/app/backend/uploads": str((root / "uploads").resolve())},
@@ -202,7 +196,7 @@ class ReadOnlyVerifyTest(unittest.TestCase):
                  mock.patch.object(stack_ops, "_verify_route_auth_boundary"), \
                  mock.patch.object(stack_ops, "_run_smoke") as smoke, \
                  mock.patch.object(stack_ops, "_run_compose") as compose:
-                result = stack_ops.verify(PROVENANCE)
+                result = stack_ops.verify(SHA, DIGEST)
             smoke.assert_not_called(); compose.assert_not_called()
             self.assertNotIn("verifier_evidence", result)
 
@@ -221,8 +215,7 @@ class ReadOnlyVerifyTest(unittest.TestCase):
              mock.patch.object(stack_ops, "_cleanup_smoke_project",
                                side_effect=RuntimeError("DELETE failed")):
             with self.assertRaisesRegex(PreviewError, "second GET failed.*DELETE failed"):
-                stack_ops._exercise_persistence(
-                    pathlib.Path("/fixed"), PROVENANCE, DEPLOYMENT)
+                stack_ops._exercise_persistence(pathlib.Path("/fixed"), SHA)
 
 
 class ExhaustivePrDiscoveryTest(unittest.TestCase):

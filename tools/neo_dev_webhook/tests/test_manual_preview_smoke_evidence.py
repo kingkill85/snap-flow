@@ -10,10 +10,6 @@ SHA = "0123456789abcdef0123456789abcdef01234567"
 OTHER_SHA = "1123456789abcdef0123456789abcdef01234567"
 ROUTE = "https://snapflow-test.kingkill.org"
 VIEWPORT = {"width": 390, "height": 844}
-PROVENANCE = {"repository": "kingkill85/snap-flow", "sha": SHA,
-              "digest": "sha256:" + "a" * 64,
-              "build_time": "2026-08-09T12:00:00Z", "run_id": 123}
-DEPLOYMENT = {"sha": SHA, "digest": PROVENANCE["digest"], "run_id": 123}
 
 
 def create_output(**changes):
@@ -43,18 +39,18 @@ class ObservedSmokeEvidenceTest(unittest.TestCase):
              mock.patch.object(stack_ops, "_wait_healthy"), \
              mock.patch.object(stack_ops, "_cleanup_smoke_project") as cleanup:
             with self.assertRaises(PreviewError):
-                stack_ops._exercise_persistence(pathlib.Path("/fixed"), PROVENANCE, DEPLOYMENT)
+                stack_ops._exercise_persistence(pathlib.Path("/fixed"), SHA)
         cleanup.assert_called_once_with(SHA, "12", "34")
 
     def test_rejects_missing_malformed_wrong_type_or_changed_group_id(self):
         missing = create_output(); del missing["project_group_id"]
+        missing_later = persisted_output(); del missing_later["project_group_id"]
         cases = [
             (missing, persisted_output()),
             (create_output(project_group_id="bad"), persisted_output()),
             (create_output(project_group_id=34), persisted_output()),
             (create_output(), persisted_output(project_group_id="35")),
-            (create_output(), {k: v for k, v in persisted_output().items()
-                               if k != "project_group_id"}),
+            (create_output(), missing_later),
         ]
         for created, persisted in cases:
             with self.subTest(created=created, persisted=persisted), \
@@ -63,7 +59,7 @@ class ObservedSmokeEvidenceTest(unittest.TestCase):
                  mock.patch.object(stack_ops, "_wait_healthy"), \
                  mock.patch.object(stack_ops, "_cleanup_smoke_project"):
                 with self.assertRaises(PreviewError):
-                    stack_ops._exercise_persistence(pathlib.Path("/fixed"), PROVENANCE, DEPLOYMENT)
+                    stack_ops._exercise_persistence(pathlib.Path("/fixed"), SHA)
 
     def test_rejects_wrong_sha_from_each_smoke_phase(self):
         self.assert_exercise_rejected(create_output(sha=OTHER_SHA), persisted_output())
@@ -95,7 +91,7 @@ class ObservedSmokeEvidenceTest(unittest.TestCase):
                  mock.patch.object(stack_ops, "_wait_healthy"), \
                  mock.patch.object(stack_ops, "_cleanup_smoke_project"):
                 with self.assertRaises(PreviewError):
-                    stack_ops._exercise_persistence(pathlib.Path("/fixed"), PROVENANCE, DEPLOYMENT)
+                    stack_ops._exercise_persistence(pathlib.Path("/fixed"), SHA)
 
     def test_rejects_wrong_types_and_extra_or_ambiguous_phase_shape(self):
         cases = [
@@ -113,10 +109,9 @@ class ObservedSmokeEvidenceTest(unittest.TestCase):
                                side_effect=[create_output(), persisted_output()]), \
              mock.patch.object(stack_ops, "_run_compose"), \
              mock.patch.object(stack_ops, "_wait_healthy"):
-            result = stack_ops._exercise_persistence(pathlib.Path("/fixed"), PROVENANCE, DEPLOYMENT)
+            result = stack_ops._exercise_persistence(pathlib.Path("/fixed"), SHA)
         self.assertEqual(result["verifier_evidence"], {
-            "sha": SHA, "digest": PROVENANCE["digest"], "run_id": 123,
-            "route": ROUTE, "created_id": "12", "project_group_id": "34",
+            "sha": SHA, "route": ROUTE, "created_id": "12",
             "reload_proven": True, "restart_proven": True,
             "reset_repeatable": False, "mobile_viewport": VIEWPORT,
         })

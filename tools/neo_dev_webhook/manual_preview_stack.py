@@ -20,7 +20,7 @@ import uuid
 
 from neo_dev_webhook.manual_preview import (
     FIXED_ROUTE, FIXED_STACK, FULL_SHA, PreviewError, preflight_fixed_route,
-    validate_compose, resolve_image_provenance, validate_image_provenance,
+    validate_compose, resolve_image_digest,
 )
 
 AUTH_VALUE = "OWNER_AUTHORIZED_MANUAL_PREVIEW"
@@ -399,8 +399,6 @@ def _inspect_container() -> dict:
         "repo_digests": image.get("RepoDigests", []),
         "revision": image.get("Config", {}).get("Labels", {}).get(
             "org.opencontainers.image.revision"),
-        "run_id": int(image.get("Config", {}).get("Labels", {}).get(
-            "org.snapflow.preview.run-id", "0")),
         "image": container.get("Config", {}).get("Image", ""),
         "mounts": {mount.get("Destination"): mount.get("Source")
                    for mount in container.get("Mounts", [])},
@@ -481,28 +479,8 @@ def _verify_route_auth_boundary() -> None:
     raise PreviewError("fixed preview route exposed protected data without authentication")
 
 
-def _validate_deployment_evidence(provenance: dict, observations: dict) -> dict:
-    validate_image_provenance(provenance)
-    if (not isinstance(observations, dict)
-            or set(observations) != {"sha", "digest", "run_id"}
-            or observations.get("sha") != provenance["sha"]
-            or observations.get("digest") != provenance["digest"]
-            or observations.get("run_id") != provenance["run_id"]):
-        raise PreviewError("running deployment evidence does not match image provenance")
-    return observations
-
-
-def _verify_prior_identity(sha: str, digest: str) -> None:
-    inspected = _inspect_container()
-    if (inspected.get("revision") != sha
-            or f"{IMAGE}@{digest}" not in inspected.get("repo_digests", [])):
-        raise PreviewError("restored prior image identity does not match sealed backup")
-
-
-def verify(provenance: dict, *, scope: pathlib.Path | None = None,
+def verify(sha: str, digest: str, *, scope: pathlib.Path | None = None,
            run_external: bool = True) -> dict:
-    validate_image_provenance(provenance)
-    sha, digest = provenance["sha"], provenance["digest"]
     if not FULL_SHA.fullmatch(sha) or not DIGEST.fullmatch(digest):
         raise PreviewError("full SHA and sha256 image digest are required")
     stack = scope or assert_preview_scope()
@@ -510,18 +488,12 @@ def verify(provenance: dict, *, scope: pathlib.Path | None = None,
         validate_compose((stack / COMPOSE).read_text(), sha, digest)
     inspected = _inspect_container()
     expected_repo_digest = f"{IMAGE}@{digest}"
-    observed_repo_digest = next((value for value in inspected["repo_digests"]
-                                 if value == expected_repo_digest), None)
-    if observed_repo_digest is None:
+    if expected_repo_digest not in inspected["repo_digests"]:
         raise PreviewError("running image RepoDigest does not match deployment digest")
     if inspected["revision"] != sha:
         raise PreviewError("running OCI revision does not match requested SHA")
-    observations = {"sha": inspected["revision"],
-                    "digest": observed_repo_digest.removeprefix(f"{IMAGE}@"),
-                    "run_id": inspected.get("run_id")}
-    _validate_deployment_evidence(provenance, observations)
     if scope is not None and not run_external:
-        return {"provenance": provenance, "deployment_evidence": observations}
+        return {"sha": sha, "digest": digest}
     expected_mounts = {"/app/backend/data": str((stack / "state").resolve()),
                        "/app/backend/uploads": str((stack / "uploads").resolve())}
     if inspected["mounts"] != expected_mounts:
@@ -533,9 +505,8 @@ def verify(provenance: dict, *, scope: pathlib.Path | None = None,
         check=True, capture_output=True, text=True, timeout=30).stdout)
     if version.get("sha") != sha: raise PreviewError("running /version SHA does not match")
     preflight_fixed_route(); _verify_route_auth_boundary()
-    return {"stack": str(FIXED_STACK), "route": FIXED_ROUTE,
-            "provenance": provenance, "deployment_evidence": observations,
-            "health": "healthy"}
+    return {"stack": str(FIXED_STACK), "route": FIXED_ROUTE, "sha": sha,
+            "digest": digest, "health": "healthy"}
 
 
 def _cleanup_smoke_project(sha: str, created_id: str, project_group_id: str) -> None:
@@ -544,11 +515,8 @@ def _cleanup_smoke_project(sha: str, created_id: str, project_group_id: str) -> 
         "cleanup", sha, created_id, project_group_id)
 
 
-def _exercise_persistence(stack: pathlib.Path, provenance: dict,
-                          deployment_evidence: dict,
+def _exercise_persistence(stack: pathlib.Path, sha: str,
                           *, reset_repeatable: bool = False) -> dict:
-    _validate_deployment_evidence(provenance, deployment_evidence)
-    sha = provenance["sha"]
     created_id = None
     project_group_id = None
     try:
@@ -568,10 +536,7 @@ def _exercise_persistence(stack: pathlib.Path, provenance: dict,
             _run_smoke(sha, "verify-cleanup", created_id, project_group_id),
             "verify-cleanup", sha, created_id, project_group_id)
         evidence = {"sha": persisted["sha"], "route": persisted["route"],
-                    "digest": deployment_evidence["digest"],
-                    "run_id": deployment_evidence["run_id"],
                     "created_id": persisted["created_id"],
-                    "project_group_id": persisted["project_group_id"],
                     "reload_proven": created["reload_proven"],
                     "restart_proven": persisted["restart_proven"],
                     "reset_repeatable": reset_repeatable,
@@ -594,7 +559,8 @@ def _resume_or_prove_absent(stack: pathlib.Path, backup: pathlib.Path) -> None:
     if state["presence"][COMPOSE]:
         _run_compose(stack, "up", "-d", "--remove-orphans")
         _wait_healthy(stack)
-        _verify_prior_identity(state["identity"]["sha"], state["identity"]["digest"])
+        verify(state["identity"]["sha"], state["identity"]["digest"],
+               scope=stack, run_external=False)
     else:
         _remove_container()
 
@@ -618,7 +584,7 @@ def _resume_prior(stack: pathlib.Path, prior: dict) -> None:
         identity = prior["identity"]
         _run_compose(stack, "up", "-d", "--remove-orphans")
         _wait_healthy(stack)
-        _verify_prior_identity(identity["sha"], identity["digest"])
+        verify(identity["sha"], identity["digest"], scope=stack, run_external=False)
     else:
         _remove_container()
 
@@ -656,9 +622,7 @@ def _rollback_failed_action(stack: pathlib.Path, backup: pathlib.Path,
     return PreviewError(f"{action} failed: {original}{suffix}")
 
 
-def deploy(provenance: dict) -> dict:
-    validate_image_provenance(provenance)
-    sha, digest = provenance["sha"], provenance["digest"]
+def deploy(sha: str, digest: str) -> dict:
     _require_mutation_authority(); preflight_fixed_route()
     stack = assert_preview_scope()
     with _slot_lock(stack / LOCK):
@@ -671,18 +635,15 @@ def deploy(provenance: dict) -> dict:
             _run_compose(stack, "up", "-d", "--remove-orphans")
             _wait_healthy(stack)
             _provision_preview_admin(stack)
-            result = verify(provenance)
-            result.update(_exercise_persistence(
-                stack, provenance, result["deployment_evidence"]))
+            result = verify(sha, digest)
+            result.update(_exercise_persistence(stack, sha))
         except BaseException as original:
             raise _rollback_failed_action(stack, backup, original, "deploy") from original
         result["backup_id"] = backup.name
         return result
 
 
-def reset_seed(provenance: dict) -> dict:
-    validate_image_provenance(provenance)
-    sha, digest = provenance["sha"], provenance["digest"]
+def reset_seed(sha: str, digest: str) -> dict:
     _require_mutation_authority(); stack = assert_preview_scope()
     with _slot_lock(stack / LOCK):
         prior = _capture_prior(stack)
@@ -693,9 +654,8 @@ def reset_seed(provenance: dict) -> dict:
             second = _reset_once(stack)
             if first != second:
                 raise PreviewError("independent reset cycles produced different baselines")
-            result = verify(provenance)
-            result.update(_exercise_persistence(
-                stack, provenance, result["deployment_evidence"], reset_repeatable=True))
+            result = verify(sha, digest)
+            result.update(_exercise_persistence(stack, sha, reset_repeatable=True))
             final_baseline = _baseline_fingerprint(stack)
             if final_baseline != second:
                 raise PreviewError("persistence exercise did not leave the defined reset baseline")
@@ -743,9 +703,9 @@ def main() -> None:
     if args.action == "preflight":
         if not FULL_SHA.fullmatch(args.sha): raise PreviewError("full SHA required")
         preflight_fixed_route(); result = {"route": FIXED_ROUTE, "sha": args.sha, "reachable": True}
-    elif args.action == "verify": result = verify(resolve_image_provenance(args.image_run, args.sha))
-    elif args.action == "deploy": result = deploy(resolve_image_provenance(args.image_run, args.sha))
-    elif args.action == "reset-seed": result = reset_seed(resolve_image_provenance(args.image_run, args.sha))
+    elif args.action == "verify": result = verify(args.sha, resolve_image_digest(args.image_run, args.sha))
+    elif args.action == "deploy": result = deploy(args.sha, resolve_image_digest(args.image_run, args.sha))
+    elif args.action == "reset-seed": result = reset_seed(args.sha, resolve_image_digest(args.image_run, args.sha))
     else: result = rollback(args.backup_id)
     print(json.dumps(result, sort_keys=True))
 
