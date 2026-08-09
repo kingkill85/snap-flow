@@ -1,0 +1,26 @@
+services:
+  snapflow-test:
+    image: ghcr.io/kingkill85/snap-flow:sha-__FULL_SHA__
+    container_name: snapflow-test
+    environment:
+      - BUILD_SHA=__FULL_SHA__
+      - JWT_SECRET=${PREVIEW_JWT_SECRET:?required}
+      - ADMIN_EMAIL=${PREVIEW_ADMIN_EMAIL:?required}
+      - ADMIN_PASSWORD=${PREVIEW_ADMIN_PASSWORD:?required}
+      - DATABASE_URL=./data/database.sqlite
+      - UPLOAD_DIR=./uploads
+      - PUBLIC_BASE_URL=https://snapflow-test.kingkill.org
+    volumes:
+      - ./state:/app/backend/data
+      - ./uploads:/app/backend/uploads
+    networks:
+      - preview-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "deno", "eval", "const r=await fetch('http://localhost:8000/health');if(!r.ok)throw Error()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+networks:
+  preview-internal:
+    external: true

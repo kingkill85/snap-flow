@@ -1,0 +1,24 @@
+services:
+  snapflow-test:
+    image: ghcr.io/kingkill85/snap-flow:sha-0123456789abcdef0123456789abcdef01234567
+    container_name: snapflow-test
+    environment:
+      - BUILD_SHA=0123456789abcdef0123456789abcdef01234567
+      - JWT_SECRET=${PREVIEW_JWT_SECRET:?required}
+      - ADMIN_EMAIL=${PREVIEW_ADMIN_EMAIL:?required}
+      - ADMIN_PASSWORD=${PREVIEW_ADMIN_PASSWORD:?required}
+      - DATABASE_URL=./data/database.sqlite
+      - UPLOAD_DIR=./uploads
+    volumes:
+      - ./state:/app/backend/data
+      - ./uploads:/app/backend/uploads
+    networks:
+      - preview-internal
+    healthcheck:
+      test: ["CMD", "deno", "eval", "const r=await fetch('http://localhost:8000/health');if(!r.ok)throw Error()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+networks:
+  preview-internal:
+    external: true

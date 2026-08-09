@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from '@std/assert';
+import { assertEquals, assertExists, assertMatch } from '@std/assert';
 import { setupTestDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
 
@@ -13,6 +13,16 @@ Deno.test('Health endpoint - returns status ok', async () => {
   assertEquals(data.status, 'ok');
   assertEquals(data.version, '0.1.0');
   assertExists(data.timestamp);
+});
+
+Deno.test('Version endpoint - returns immutable full build identity', async () => {
+  const response = await testRequest('/version');
+  const data = await parseJSON(response);
+
+  assertEquals(response.status, 200);
+  assertMatch(data.sha, /^[0-9a-f]{40}$/);
+  assertExists(data.built_at);
+  assertEquals(data.sha.length, 40);
 });
 
 Deno.test('Root endpoint - returns API info', async () => {

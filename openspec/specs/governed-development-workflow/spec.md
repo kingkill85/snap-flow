@@ -73,6 +73,23 @@ Acceptance SHALL NOT authorize merge. Sync/archive SHALL precede a separate merg
 - **WHEN** `/accept` is recorded without a separate authorized `/merge`
 - **THEN** no merge or privileged operation is permitted
 
+### Requirement: Optional exact-SHA manual preview
+After required CI succeeds for the exact current Draft PR head and fresh explicit `CLEAN` independent-review evidence exists for that same SHA, Neo Dev MAY offer `/preview <full-40-char-sha>` before `/accept` only when the reviewed diff contains a runnable product/application implementation change. Planning/spec-only, documentation-only, tests/metadata-only, workflow/orchestration/control-plane-only, and build-identity-only diffs SHALL be ineligible. Preview SHALL remain distinct from acceptance, merge, release, and production deployment.
+
+The only preview target SHALL be the persistent stack `/mnt/marder/docker/dockge/stacks/snapflow-test` through exactly `https://snapflow-test.kingkill.org`. Tooling SHALL accept no alternate route, stack, slot, or shortened SHA; SHALL require the fixed private/internal route to already resolve and reach the authorized boundary; and SHALL NOT create DNS, ingress, public routes, or direct host-port exposure. Mutating deployment/reset/rollback actions SHALL be separate from read-only verification, explicitly authorized, preview-scoped, credential-safe, immutable-image-bound, and backed by sealed rollback evidence.
+
+#### Scenario: Ineligible planning-only PR
+- **WHEN** a managed PR contains only approved OpenSpec planning or control-plane infrastructure
+- **THEN** Neo Dev does not offer or execute preview
+
+#### Scenario: Fixed route is absent
+- **WHEN** `snapflow-test.kingkill.org` does not resolve or cannot reach the authorized boundary
+- **THEN** preview fails closed without deploying or inventing a route
+
+#### Scenario: Preview succeeds
+- **WHEN** the fixed slot runs and verification proves health, image/OCI revision, `/version`, authentication, isolated persistence, repeatable reset/seed, and the approved browser-ready flow
+- **THEN** Neo Dev emits a phone-friendly scenario packet with only `/fix <bounded feedback>` and `/accept <full-sha>` as legal next decisions
+
 ### Requirement: 2026-08-08 persistent Neo Dev self-bootstrap
 The repository SHALL record the authorized human's explicit 2026-08-08 one-time authorization for the persistent Neo Dev self-bootstrap directly on `main`, without weakening any later approval or privileged-operation gate.
 

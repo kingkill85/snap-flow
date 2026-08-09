@@ -1,5 +1,7 @@
 # SnapFlow
 
+Deployment documentation: [manual preview](docs/manual-preview-deployment.md).
+
 > Smart Home Automation Configurator & Proposal Generator
 
 A web application for smart home automation companies to create professional project proposals. Upload floorplans, drag-and-drop devices, and generate Excel proposals with itemized lists and pricing.

@@ -66,6 +66,16 @@ app.get('/health', (c: Context) => {
   });
 });
 
+const BUILD_SHA = Deno.env.get('BUILD_SHA') ?? '0000000000000000000000000000000000000000';
+const BUILD_TIME = Deno.env.get('BUILD_TIME') ?? 'development';
+
+if (!/^[0-9a-f]{40}$/.test(BUILD_SHA)) {
+  throw new Error('BUILD_SHA must be a full lowercase 40-character commit SHA');
+}
+
+// Public build provenance; contains no runtime credentials.
+app.get('/version', (c: Context) => c.json({ sha: BUILD_SHA, built_at: BUILD_TIME }));
+
 // API root endpoint (always returns JSON, even with frontend)
 app.get('/api', (c: Context) => {
   return c.json({ 
