@@ -14,11 +14,17 @@ Given('an existing Product Type and an authenticated administrator', async funct
 });
 
 When('the administrator creates a parameter with a valid name and order', async function (this: ZoningWorld) {
-  await this.page!.goto(`${this.baseUrl}/catalog/item-types`, { waitUntil: 'networkidle' });
+  await this.page!.goto(`${this.baseUrl}/catalog/item-types`, { waitUntil: 'domcontentloaded' });
+  await expect(this.page!).toHaveURL(`${this.baseUrl}/catalog/item-types`);
+  await expect(this.page!.getByRole('heading', { name: 'Product Type Management' })).toBeVisible();
   await this.page!.getByRole('button', { name: /Expand Issue 89 Lighting.*zoning parameters/ }).click();
   await this.page!.getByRole('button', { name: 'Create' }).click();
-  await this.page!.getByLabel('Name').fill('Relay zones');
-  await this.page!.getByRole('button', { name: 'Create' }).click();
+  const dialog = this.page!.getByRole('dialog', { name: 'Create Zoning Parameter' });
+  await dialog.getByLabel('Name').fill('Relay zones');
+  const responsePromise = this.page!.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/api/item-types/${this.itemTypeId}/zoning-parameters`));
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(201);
   await expect(this.page!.getByText('Relay zones')).toBeVisible();
 });
 

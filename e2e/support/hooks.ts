@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { SnapFlowWorld } from './world.ts';
+import { resolveRuntimeUrls } from './runtime-urls.ts';
 
 setDefaultTimeout(30_000);
 const root = resolve(import.meta.dirname, '../..');
 const results = join(root, 'e2e/results');
+const runtimeUrls = resolveRuntimeUrls(process.env);
 let browser: Awaited<ReturnType<typeof chromium.launch>>;
 let runtimeDirectory = '';
 let processes: ChildProcess[] = [];
@@ -53,22 +55,24 @@ async function stop(child: ChildProcess): Promise<void> {
 BeforeAll(async function () {
   await mkdir(results, { recursive: true });
   runtimeDirectory = await mkdtemp(join(tmpdir(), 'snapflow-e2e-'));
+  const backendPort = new URL(runtimeUrls.backend).port;
+  const frontendPort = new URL(runtimeUrls.frontend).port;
   const backend = start('deno', ['run', '--allow-all', 'src/main.ts'], join(root, 'backend'), {
-    ...process.env, NODE_ENV: 'test', PORT: '18000',
+    ...process.env, NODE_ENV: 'test', PORT: backendPort,
     DATABASE_URL: join(runtimeDirectory, 'e2e.sqlite'), UPLOAD_DIR: join(runtimeDirectory, 'uploads'),
-    CORS_ORIGIN: 'http://127.0.0.1:4173',
+    CORS_ORIGIN: runtimeUrls.frontend,
     JWT_SECRET: 'e2e-local-ephemeral-key-not-a-production-secret-32',
     E2E_ADMIN_PASSWORD: 'Issue89Admin!',
   });
   processes.push(backend);
-  await waitUntilReady('http://127.0.0.1:18000/health', backend, 'backend');
+  await waitUntilReady(`${runtimeUrls.backend}/health`, backend, 'backend');
   const frontendEnvironment: NodeJS.ProcessEnv = { ...process.env,
-    VITE_API_URL: 'http://127.0.0.1:18000' };
+    VITE_API_URL: `${runtimeUrls.backend}/api` };
   delete frontendEnvironment.NODE_OPTIONS;
-  const frontend = start('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', '4173',
+  const frontend = start('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', frontendPort,
     '--strictPort'], join(root, 'frontend'), frontendEnvironment);
   processes.push(frontend);
-  await waitUntilReady('http://127.0.0.1:4173/login', frontend, 'frontend');
+  await waitUntilReady(`${runtimeUrls.frontend}/login`, frontend, 'frontend');
   browser = await chromium.launch({ headless: true });
 });
 
@@ -79,7 +83,6 @@ Before(async function (this: SnapFlowWorld, scenario) {
   this.context = await browser.newContext();
   await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   this.page = await this.context.newPage();
-  await this.page.addInitScript(() => window.localStorage.clear());
   this.attach(`scenario=${scenario.pickle.name}`, 'text/plain');
 });
 
