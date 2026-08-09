@@ -202,7 +202,12 @@ class ReadOnlyVerifyTest(unittest.TestCase):
 
     def test_persistence_failure_preserves_original_and_cleanup_failure(self):
         with mock.patch.object(stack_ops, "_run_smoke",
-                               side_effect=[{"created_id": "12", "reload_proven": True},
+                               side_effect=[{
+                                   "phase": "create", "sha": SHA,
+                                   "route": stack_ops.FIXED_ROUTE,
+                                   "created_id": "12", "reload_proven": True,
+                                   "mobile_viewport": {"width": 390, "height": 844},
+                               },
                                             RuntimeError("second GET failed")]), \
              mock.patch.object(stack_ops, "_run_compose"), \
              mock.patch.object(stack_ops, "_wait_healthy"), \

@@ -12,8 +12,14 @@ try {
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL(`${route}/`);
 
-  // BuildVersion proves the authenticated layout is the requested image.
+  // BuildVersion and /version are observed rather than echoed from requested inputs.
   await page.getByText(expectedSha, { exact: true }).waitFor();
+  const versionResponse = await page.request.get(`${route}/version`);
+  if (!versionResponse.ok()) throw new Error('preview version endpoint was unavailable');
+  const observedSha = String((await versionResponse.json() as { sha?: unknown }).sha ?? '');
+  const observedRoute = new URL(page.url()).origin;
+  const observedViewport = page.viewportSize();
+  if (!observedViewport) throw new Error('preview viewport was unavailable');
   const token = await page.evaluate(() => localStorage.getItem('accessToken'));
   if (!token) throw new Error('authenticated preview token was not stored');
   const api = (path: string, init: RequestInit = {}) => page.evaluate(
@@ -37,25 +43,27 @@ try {
     if (!/^\d+$/.test(id)) throw new Error('preview project did not return an id');
     await page.reload({ waitUntil: 'networkidle' });
     await page.getByText(name, { exact: false }).first().waitFor();
-    console.log(JSON.stringify({ route, sha: expectedSha, created_id: id,
-      reload_proven: true, mobile_viewport: { width: 390, height: 844 } }));
+    console.log(JSON.stringify({ phase, route: observedRoute, sha: observedSha,
+      created_id: id, reload_proven: true, mobile_viewport: observedViewport }));
   } else if (phase === 'verify-cleanup') {
     const existing = await api(`/projects/${createdId}`);
     if (existing.status !== 200) throw new Error('preview project did not persist across restart');
-    const removed = await api(`/projects/${createdId}`, { method: 'DELETE' });
+    const observedId = String((existing.body as { data?: { id?: unknown } }).data?.id ?? '');
+    const removed = await api(`/projects/${observedId}`, { method: 'DELETE' });
     if (removed.status !== 200) throw new Error('preview project cleanup failed');
-    const absent = await api(`/projects/${createdId}`);
+    const absent = await api(`/projects/${observedId}`);
     if (absent.status !== 404) throw new Error('preview project cleanup was not repeatable');
-    console.log(JSON.stringify({ route, sha: expectedSha, created_id: createdId,
+    console.log(JSON.stringify({ phase, route: observedRoute, sha: observedSha,
+      created_id: observedId,
       restart_proven: true, cleanup_proven: true,
-      mobile_viewport: { width: 390, height: 844 } }));
+      mobile_viewport: observedViewport }));
   } else {
     const removed = await api(`/projects/${createdId}`, { method: 'DELETE' });
     if (removed.status !== 200 && removed.status !== 404) {
       throw new Error('preview project cleanup recovery failed');
     }
-    console.log(JSON.stringify({ route, sha: expectedSha, created_id: createdId,
-      cleanup_proven: true, mobile_viewport: { width: 390, height: 844 } }));
+    console.log(JSON.stringify({ phase, route: observedRoute, sha: observedSha,
+      created_id: createdId, cleanup_proven: true, mobile_viewport: observedViewport }));
   }
 } finally {
   await browser.close();

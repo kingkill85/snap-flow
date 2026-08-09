@@ -414,6 +414,42 @@ def _run_smoke(sha: str, phase: str, created_id: str | None = None) -> dict:
         raise PreviewError("preview browser smoke returned invalid evidence") from error
 
 
+_SMOKE_KEYS = {
+    "create": {"phase", "sha", "route", "created_id", "reload_proven",
+               "mobile_viewport"},
+    "verify-cleanup": {"phase", "sha", "route", "created_id",
+                       "restart_proven", "cleanup_proven", "mobile_viewport"},
+    "cleanup": {"phase", "sha", "route", "created_id", "cleanup_proven",
+                "mobile_viewport"},
+}
+
+
+def _validate_smoke_output(value: object, phase: str, requested_sha: str,
+                           expected_id: str | None = None) -> dict:
+    expected_keys = _SMOKE_KEYS.get(phase)
+    if expected_keys is None or not isinstance(value, dict) or set(value) != expected_keys:
+        raise PreviewError("preview browser smoke evidence has an invalid phase schema")
+    if (value["phase"] != phase or value["sha"] != requested_sha
+            or not isinstance(value["sha"], str)
+            or not FULL_SHA.fullmatch(value["sha"])
+            or value["route"] != FIXED_ROUTE
+            or type(value["route"]) is not str
+            or value["mobile_viewport"] != {"width": 390, "height": 844}
+            or not isinstance(value["mobile_viewport"], dict)
+            or set(value["mobile_viewport"]) != {"width", "height"}
+            or type(value["mobile_viewport"]["width"]) is not int
+            or type(value["mobile_viewport"]["height"]) is not int
+            or not isinstance(value["created_id"], str)
+            or not re.fullmatch(r"[1-9][0-9]*", value["created_id"])):
+        raise PreviewError("preview browser smoke evidence identity is invalid")
+    if expected_id is not None and value["created_id"] != expected_id:
+        raise PreviewError("preview browser smoke project identity changed between phases")
+    for key in expected_keys & {"reload_proven", "restart_proven", "cleanup_proven"}:
+        if type(value[key]) is not bool or value[key] is not True:
+            raise PreviewError("preview browser smoke proof is incomplete")
+    return value
+
+
 def _verify_route_auth_boundary() -> None:
     try:
         with urllib.request.urlopen(FIXED_ROUTE + "/login", timeout=5) as response:
@@ -463,29 +499,31 @@ def verify(sha: str, digest: str, *, scope: pathlib.Path | None = None,
 
 
 def _cleanup_smoke_project(sha: str, created_id: str) -> None:
-    evidence = _run_smoke(sha, "cleanup", created_id)
-    if evidence.get("cleanup_proven") is not True:
-        raise PreviewError("preview smoke cleanup evidence is incomplete")
+    _validate_smoke_output(_run_smoke(sha, "cleanup", created_id), "cleanup",
+                           sha, created_id)
 
 
 def _exercise_persistence(stack: pathlib.Path, sha: str,
                           *, reset_repeatable: bool = False) -> dict:
     created_id = None
     try:
-        created = _run_smoke(sha, "create")
-        created_id = created.get("created_id")
-        if not isinstance(created_id, str) or created.get("reload_proven") is not True:
-            raise PreviewError("smoke did not prove isolated data creation and reload")
+        raw_created = _run_smoke(sha, "create")
+        if (isinstance(raw_created, dict)
+                and isinstance(raw_created.get("created_id"), str)
+                and re.fullmatch(r"[1-9][0-9]*", raw_created["created_id"])):
+            created_id = raw_created["created_id"]
+        created = _validate_smoke_output(raw_created, "create", sha)
         _run_compose(stack, "restart")
         _wait_healthy(stack)
-        persisted = _run_smoke(sha, "verify-cleanup", created_id)
-        if (persisted.get("restart_proven") is not True
-                or persisted.get("cleanup_proven") is not True):
-            raise PreviewError("persistence browser evidence is incomplete")
-        evidence = {"sha": sha, "route": FIXED_ROUTE, "created_id": created_id,
-                    "reload_proven": True, "restart_proven": True,
+        persisted = _validate_smoke_output(
+            _run_smoke(sha, "verify-cleanup", created_id),
+            "verify-cleanup", sha, created_id)
+        evidence = {"sha": persisted["sha"], "route": persisted["route"],
+                    "created_id": persisted["created_id"],
+                    "reload_proven": created["reload_proven"],
+                    "restart_proven": persisted["restart_proven"],
                     "reset_repeatable": reset_repeatable,
-                    "mobile_viewport": {"width": 390, "height": 844}}
+                    "mobile_viewport": persisted["mobile_viewport"]}
         return {"verifier_evidence": evidence}
     except BaseException as original:
         if not isinstance(created_id, str):
