@@ -133,9 +133,29 @@ Deno.test("nested zoning parameter routes validate, authorize, order and preserv
   assertEquals((await parseJSON(validOrder)).data.map((row: { id: number }) => row.id), [fanId, relayId]);
   const otherType = await itemTypeRepository.create({ name: "HVAC", abbreviation: "HVC" });
   assertEquals((await testRequest(`/api/item-types/${otherType.id}/zoning-parameters/${relayId}`, { method: "PUT", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" }, body: JSON.stringify({ name: "Foreign" }) })).status, 404);
-  assertEquals((await testRequest(`/api/item-types/${type.id}/zoning-parameters/${fanId}`, { method: "DELETE", headers: { Authorization: `Bearer ${admin}` } })).status, 200);
-
   const db = getDb();
+  const dbParameterIds = () => db.queryEntries<{ id: number }>("SELECT id FROM item_type_zoning_parameters WHERE item_type_id=? ORDER BY sort_order,id", [type.id]).map((row) => row.id);
+  for (const invalidDelete of [
+    { body: JSON.stringify({ unknown: true }), contentType: "application/json" },
+    { body: "{", contentType: "application/json" },
+    { body: "[]", contentType: "application/json" },
+    { body: JSON.stringify("invalid"), contentType: "application/json" },
+    { body: "null", contentType: "application/json" },
+    { body: "{}", contentType: "text/plain" },
+  ]) {
+    const invalid = await testRequest(`/api/item-types/${type.id}/zoning-parameters/${fanId}`, { method: "DELETE", headers: { Authorization: `Bearer ${admin}`, "Content-Type": invalidDelete.contentType }, body: invalidDelete.body });
+    assertEquals(invalid.status, 400);
+    const invalidBody = await parseJSON(invalid);
+    assertEquals(invalidBody.error, "Invalid request body");
+    assertEquals(typeof invalidBody.details, "object");
+    assertEquals(dbParameterIds(), [fanId, relayId]);
+  }
+  assertEquals((await testRequest(`/api/item-types/${type.id}/zoning-parameters/${fanId}`, { method: "DELETE", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" }, body: "{}" })).status, 200);
+  assertEquals(dbParameterIds(), [relayId]);
+  const bodylessParameter = await parseJSON(await testRequest(`/api/item-types/${type.id}/zoning-parameters`, { method: "POST", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" }, body: JSON.stringify({ name: "Bodyless delete", sort_order: 2 }) }));
+  assertEquals((await testRequest(`/api/item-types/${type.id}/zoning-parameters/${bodylessParameter.data.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${admin}` } })).status, 200);
+  assertEquals(dbParameterIds(), [relayId]);
+
   db.query("INSERT INTO project_groups(customer_name, tenant_id) VALUES ('Customer',1)");
   const groupId = db.queryEntries<{ id: number }>("SELECT id FROM project_groups")[0].id;
   const projectId = db.queryEntries<{ id: number }>("INSERT INTO projects(project_group_id,version_name,tenant_id) VALUES (?,'v1',1) RETURNING id", [groupId])[0].id;

@@ -40,9 +40,20 @@ const parameterReorderSchema = z.object({
   ids: z.array(z.number().int().positive()),
 }).strict();
 const emptyParameterActionSchema = z.object({}).strict();
-const optionalEmptyParameterActionBody = async (c: Context, next: Next) => {
+const optionalStrictEmptyJsonBody = async (c: Context, next: Next) => {
   const rawBody = await c.req.raw.clone().text();
   if (!rawBody.trim()) return await next();
+  const contentType = c.req.header("content-type")?.split(";", 1)[0].trim()
+    .toLowerCase();
+  if (contentType !== "application/json") {
+    return c.json({
+      error: "Invalid request body",
+      details: {
+        field: "content-type",
+        message: "Expected application/json for a non-empty body",
+      },
+    }, 400);
+  }
   let body: unknown;
   try {
     body = JSON.parse(rawBody);
@@ -222,7 +233,7 @@ for (const action of ["activate", "deactivate"] as const) {
     `/:id/zoning-parameters/:parameterId/${action}`,
     authMiddleware,
     adminMiddleware,
-    optionalEmptyParameterActionBody,
+    optionalStrictEmptyJsonBody,
     (c) => {
       const id = positiveId(c.req.param("id"));
       const parameterId = positiveId(c.req.param("parameterId"));
@@ -247,6 +258,7 @@ itemTypeRoutes.delete(
   "/:id/zoning-parameters/:parameterId",
   authMiddleware,
   adminMiddleware,
+  optionalStrictEmptyJsonBody,
   (c) => {
     const id = positiveId(c.req.param("id"));
     const parameterId = positiveId(c.req.param("parameterId"));
