@@ -1,22 +1,36 @@
-import { Hono } from 'hono';
-import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
-import { itemRepository } from '../repositories/item.ts';
-import { itemVariantRepository } from '../repositories/item-variant.ts';
-import { variantAddonRepository } from '../repositories/variant-addon.ts';
-import { categoryRepository } from '../repositories/category.ts';
-import { bomEntryRepository } from '../repositories/bom-entry.ts';
-import { authMiddleware, adminMiddleware, optionalAuthMiddleware } from '../middleware/auth.ts';
-import { uploadMiddleware } from '../middleware/upload.ts';
-import { fileStorageService } from '../services/file-storage.ts';
-import type { CreateItemDTO, UpdateItemDTO, CreateItemVariantDTO, CreateVariantAddonDTO } from '../models/index.ts';
-import { excelImportService } from '../services/excel-import.ts';
-import { excelSyncService } from '../services/excel-sync.ts';
+import { Hono } from "hono";
+import { z } from "zod";
+import { zValidator } from "@hono/zod-validator";
+import { itemRepository } from "../repositories/item.ts";
+import { itemVariantRepository } from "../repositories/item-variant.ts";
+import { variantAddonRepository } from "../repositories/variant-addon.ts";
+import { categoryRepository } from "../repositories/category.ts";
+import { bomEntryRepository } from "../repositories/bom-entry.ts";
+import {
+  adminMiddleware,
+  authMiddleware,
+  optionalAuthMiddleware,
+} from "../middleware/auth.ts";
+import { uploadMiddleware } from "../middleware/upload.ts";
+import { fileStorageService } from "../services/file-storage.ts";
+import type {
+  CreateItemDTO,
+  CreateItemVariantDTO,
+  CreateVariantAddonDTO,
+  UpdateItemDTO,
+} from "../models/index.ts";
+import { excelImportService } from "../services/excel-import.ts";
+import { excelSyncService } from "../services/excel-sync.ts";
 
 // Extend Hono context types
-declare module 'hono' {
+declare module "hono" {
   interface ContextVariableMap {
-    uploadResult: { success: boolean; filePath?: string; error?: string; originalName?: string };
+    uploadResult: {
+      success: boolean;
+      filePath?: string;
+      error?: string;
+      originalName?: string;
+    };
     formData: FormData;
     userId: number;
     userEmail: string;
@@ -28,26 +42,32 @@ const itemRoutes = new Hono();
 
 // GET /items - List all items
 // Query params: category_id, search, page, limit, include_inactive (admin only)
-itemRoutes.get('/', optionalAuthMiddleware, async (c) => {
+itemRoutes.get("/", optionalAuthMiddleware, async (c) => {
   try {
-    const categoryId = c.req.query('category_id');
-    const typeId = c.req.query('type_id');
-    const search = c.req.query('search');
-    const page = parseInt(c.req.query('page') || '1', 10);
-    const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
+    const categoryId = c.req.query("category_id");
+    const typeId = c.req.query("type_id");
+    const search = c.req.query("search");
+    const page = parseInt(c.req.query("page") || "1", 10);
+    const limit = Math.min(parseInt(c.req.query("limit") || "20", 10), 100);
     // Only allow include_inactive for administrators
-    const includeInactive = c.req.query('include_inactive') === 'true' && c.get('userRole') === 'admin';
+    const includeInactive = c.req.query("include_inactive") === "true" &&
+      c.get("userRole") === "admin";
 
-    const filter: { category_id?: number | null; type_id?: number; search?: string; include_inactive?: boolean } = {};
-    
+    const filter: {
+      category_id?: number | null;
+      type_id?: number;
+      search?: string;
+      include_inactive?: boolean;
+    } = {};
+
     if (categoryId) {
-      if (categoryId === 'null') {
+      if (categoryId === "null") {
         filter.category_id = null;
       } else {
         filter.category_id = parseInt(categoryId, 10);
       }
     }
-    
+
     if (typeId) {
       filter.type_id = parseInt(typeId, 10);
     }
@@ -72,8 +92,8 @@ itemRoutes.get('/', optionalAuthMiddleware, async (c) => {
       },
     });
   } catch (error) {
-    console.error('List items error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    console.error("List items error:", error);
+    return c.json({ error: "Internal server error" }, 500);
   }
 });
 
@@ -82,22 +102,22 @@ itemRoutes.get('/', optionalAuthMiddleware, async (c) => {
 // ==========================================
 
 // GET /items/:id/variants/:variantId/addons - Get all add-ons for a variant
-itemRoutes.get('/:id/variants/:variantId/addons', async (c) => {
+itemRoutes.get("/:id/variants/:variantId/addons", async (c) => {
   try {
-    const itemId = parseInt(c.req.param('id'));
-    const variantId = parseInt(c.req.param('variantId'));
+    const itemId = parseInt(c.req.param("id"));
+    const variantId = parseInt(c.req.param("variantId"));
     if (isNaN(itemId) || isNaN(variantId)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+      return c.json({ error: "Invalid ID" }, 400);
     }
 
     const item = await itemRepository.findById(itemId);
     if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
+      return c.json({ error: "Item not found" }, 404);
     }
 
     const variant = await itemVariantRepository.findById(variantId);
     if (!variant || variant.item_id !== itemId) {
-      return c.json({ error: 'Variant not found' }, 404);
+      return c.json({ error: "Variant not found" }, 404);
     }
 
     const addons = await variantAddonRepository.findByVariantId(variantId);
@@ -106,100 +126,114 @@ itemRoutes.get('/:id/variants/:variantId/addons', async (c) => {
       data: addons,
     });
   } catch (error) {
-    console.error('Get variant addons error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    console.error("Get variant addons error:", error);
+    return c.json({ error: "Internal server error" }, 500);
   }
 });
 
 // POST /items/:id/variants/:variantId/addons - Add add-on to variant
-itemRoutes.post('/:id/variants/:variantId/addons', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const itemId = parseInt(c.req.param('id'));
-    const variantId = parseInt(c.req.param('variantId'));
-    if (isNaN(itemId) || isNaN(variantId)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+itemRoutes.post(
+  "/:id/variants/:variantId/addons",
+  authMiddleware,
+  adminMiddleware,
+  async (c) => {
+    try {
+      const itemId = parseInt(c.req.param("id"));
+      const variantId = parseInt(c.req.param("variantId"));
+      if (isNaN(itemId) || isNaN(variantId)) {
+        return c.json({ error: "Invalid ID" }, 400);
+      }
+      const { addon_variant_id, is_required } = await c.req.json();
+
+      if (!addon_variant_id) {
+        return c.json({ error: "addon_variant_id is required" }, 400);
+      }
+
+      const item = await itemRepository.findById(itemId);
+      if (!item) {
+        return c.json({ error: "Item not found" }, 404);
+      }
+
+      const variant = await itemVariantRepository.findById(variantId);
+      if (!variant || variant.item_id !== itemId) {
+        return c.json({ error: "Variant not found" }, 404);
+      }
+
+      // Prevent self-reference
+      if (variantId === parseInt(addon_variant_id)) {
+        return c.json({ error: "Variant cannot be an add-on of itself" }, 400);
+      }
+
+      // Check if addon already exists
+      const existingAddons = await variantAddonRepository.findByVariantId(
+        variantId,
+      );
+      const alreadyExists = existingAddons.some((a) =>
+        a.addon_variant_id === parseInt(addon_variant_id)
+      );
+      if (alreadyExists) {
+        return c.json({ error: "Add-on already exists for this variant" }, 409);
+      }
+
+      const createData: CreateVariantAddonDTO = {
+        variant_id: variantId,
+        addon_variant_id: parseInt(addon_variant_id),
+        is_required: is_required ?? true,
+      };
+
+      const addon = await variantAddonRepository.create(createData);
+
+      return c.json({
+        data: addon,
+        message: "Add-on added successfully",
+      }, 201);
+    } catch (error) {
+      console.error("Create variant addon error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-    const { addon_variant_id, is_required } = await c.req.json();
-
-    if (!addon_variant_id) {
-      return c.json({ error: 'addon_variant_id is required' }, 400);
-    }
-
-    const item = await itemRepository.findById(itemId);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const variant = await itemVariantRepository.findById(variantId);
-    if (!variant || variant.item_id !== itemId) {
-      return c.json({ error: 'Variant not found' }, 404);
-    }
-
-    // Prevent self-reference
-    if (variantId === parseInt(addon_variant_id)) {
-      return c.json({ error: 'Variant cannot be an add-on of itself' }, 400);
-    }
-
-    // Check if addon already exists
-    const existingAddons = await variantAddonRepository.findByVariantId(variantId);
-    const alreadyExists = existingAddons.some(a => a.addon_variant_id === parseInt(addon_variant_id));
-    if (alreadyExists) {
-      return c.json({ error: 'Add-on already exists for this variant' }, 409);
-    }
-
-    const createData: CreateVariantAddonDTO = {
-      variant_id: variantId,
-      addon_variant_id: parseInt(addon_variant_id),
-      is_required: is_required ?? true,
-    };
-
-    const addon = await variantAddonRepository.create(createData);
-
-    return c.json({
-      data: addon,
-      message: 'Add-on added successfully',
-    }, 201);
-  } catch (error) {
-    console.error('Create variant addon error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+  },
+);
 
 // DELETE /items/:id/variants/:variantId/addons/:addonId - Remove add-on from variant
-itemRoutes.delete('/:id/variants/:variantId/addons/:addonId', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const itemId = parseInt(c.req.param('id'));
-    const variantId = parseInt(c.req.param('variantId'));
-    const addonId = parseInt(c.req.param('addonId'));
-    if (isNaN(itemId) || isNaN(variantId) || isNaN(addonId)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+itemRoutes.delete(
+  "/:id/variants/:variantId/addons/:addonId",
+  authMiddleware,
+  adminMiddleware,
+  async (c) => {
+    try {
+      const itemId = parseInt(c.req.param("id"));
+      const variantId = parseInt(c.req.param("variantId"));
+      const addonId = parseInt(c.req.param("addonId"));
+      if (isNaN(itemId) || isNaN(variantId) || isNaN(addonId)) {
+        return c.json({ error: "Invalid ID" }, 400);
+      }
+
+      const item = await itemRepository.findById(itemId);
+      if (!item) {
+        return c.json({ error: "Item not found" }, 404);
+      }
+
+      const variant = await itemVariantRepository.findById(variantId);
+      if (!variant || variant.item_id !== itemId) {
+        return c.json({ error: "Variant not found" }, 404);
+      }
+
+      const addon = await variantAddonRepository.findById(addonId);
+      if (!addon || addon.variant_id !== variantId) {
+        return c.json({ error: "Add-on not found" }, 404);
+      }
+
+      await variantAddonRepository.delete(addonId);
+
+      return c.json({
+        message: "Add-on removed successfully",
+      });
+    } catch (error) {
+      console.error("Delete variant addon error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-
-    const item = await itemRepository.findById(itemId);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const variant = await itemVariantRepository.findById(variantId);
-    if (!variant || variant.item_id !== itemId) {
-      return c.json({ error: 'Variant not found' }, 404);
-    }
-
-    const addon = await variantAddonRepository.findById(addonId);
-    if (!addon || addon.variant_id !== variantId) {
-      return c.json({ error: 'Add-on not found' }, 404);
-    }
-
-    await variantAddonRepository.delete(addonId);
-
-    return c.json({
-      message: 'Add-on removed successfully',
-    });
-  } catch (error) {
-    console.error('Delete variant addon error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+  },
+);
 
 // ==========================================
 // BASIC CRUD ROUTES
@@ -207,70 +241,83 @@ itemRoutes.delete('/:id/variants/:variantId/addons/:addonId', authMiddleware, ad
 
 // GET /items/:id - Get single item with variants and add-ons
 // NOTE: This must be AFTER all more specific /:id/* routes
-itemRoutes.get('/:id', async (c) => {
+itemRoutes.get("/:id", async (c) => {
   try {
-    const id = parseInt(c.req.param('id'));
+    const id = parseInt(c.req.param("id"));
     if (isNaN(id)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+      return c.json({ error: "Invalid ID" }, 400);
     }
     const item = await itemRepository.findById(id, true); // Include relations
 
     if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
+      return c.json({ error: "Item not found" }, 404);
     }
 
     return c.json({
       data: item,
     });
   } catch (error) {
-    console.error('Get item error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    console.error("Get item error:", error);
+    return c.json({ error: "Internal server error" }, 500);
   }
 });
 
 // POST /items - Create new base item (without variants)
 itemRoutes.post(
-  '/',
+  "/",
   authMiddleware,
   adminMiddleware,
   async (c) => {
     try {
       const body = await c.req.json();
-      const { category_id, type_id, name, description, base_model_number, dimensions } = body;
+      const {
+        category_id,
+        type_id,
+        name,
+        description,
+        base_model_number,
+        dimensions,
+      } = body;
 
       // Validate required fields
       if (!category_id || !name || type_id === undefined || type_id === null) {
-        return c.json({ error: 'Missing required fields: category_id, type_id, name' }, 400);
+        return c.json({
+          error: "Missing required fields: category_id, type_id, name",
+        }, 400);
       }
 
       const categoryIdNum = parseInt(category_id);
       if (isNaN(categoryIdNum)) {
-        return c.json({ error: 'Invalid category_id' }, 400);
+        return c.json({ error: "Invalid category_id" }, 400);
       }
 
       // Validate category exists
       const category = await categoryRepository.findById(categoryIdNum);
       if (!category) {
-        return c.json({ error: 'Category not found' }, 400);
+        return c.json({ error: "Category not found" }, 400);
       }
 
       // Check for duplicate name
       const existingByName = await itemRepository.findByName(name);
       if (existingByName) {
-        return c.json({ error: 'An item with this name already exists' }, 400);
+        return c.json({ error: "An item with this name already exists" }, 400);
       }
 
       // Check for duplicate model number (if provided)
       if (base_model_number) {
-        const existingByModel = await itemRepository.findByBaseModelNumber(base_model_number);
+        const existingByModel = await itemRepository.findByBaseModelNumber(
+          base_model_number,
+        );
         if (existingByModel) {
-          return c.json({ error: 'An item with this model number already exists' }, 400);
+          return c.json({
+            error: "An item with this model number already exists",
+          }, 400);
         }
       }
 
       const typeIdNum = parseInt(type_id);
       if (isNaN(typeIdNum)) {
-        return c.json({ error: 'Invalid type_id' }, 400);
+        return c.json({ error: "Invalid type_id" }, 400);
       }
 
       const createData: CreateItemDTO = {
@@ -287,51 +334,61 @@ itemRoutes.post(
 
       return c.json({
         data: item,
-        message: 'Item created successfully',
+        message: "Item created successfully",
       }, 201);
     } catch (error) {
-      console.error('Create item error:', error);
-      return c.json({ error: 'Internal server error' }, 500);
+      console.error("Create item error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-  }
+  },
 );
 
 // PUT /items/:id - Update base item
 itemRoutes.put(
-  '/:id',
+  "/:id",
   authMiddleware,
   adminMiddleware,
   async (c) => {
     try {
-      const id = parseInt(c.req.param('id'));
+      const id = parseInt(c.req.param("id"));
       if (isNaN(id)) {
-        return c.json({ error: 'Invalid ID' }, 400);
+        return c.json({ error: "Invalid ID" }, 400);
       }
       const body = await c.req.json();
-      const { category_id, type_id, name, description, base_model_number, dimensions } = body;
+      const {
+        category_id,
+        type_id,
+        name,
+        description,
+        base_model_number,
+        dimensions,
+      } = body;
 
       const existingItem = await itemRepository.findById(id);
       if (!existingItem) {
-        return c.json({ error: 'Item not found' }, 404);
+        return c.json({ error: "Item not found" }, 404);
       }
 
       if (category_id !== undefined) {
         const categoryIdNum = parseInt(category_id);
         if (isNaN(categoryIdNum)) {
-          return c.json({ error: 'Invalid category_id' }, 400);
+          return c.json({ error: "Invalid category_id" }, 400);
         }
         const category = await categoryRepository.findById(categoryIdNum);
         if (!category) {
-          return c.json({ error: 'Category not found' }, 400);
+          return c.json({ error: "Category not found" }, 400);
         }
       }
 
       // Check if trying to activate item while category is inactive
       if (body.is_active === true) {
-        const category = await categoryRepository.findById(existingItem.category_id);
+        const category = await categoryRepository.findById(
+          existingItem.category_id,
+        );
         if (category && !category.is_active) {
-          return c.json({ 
-            error: 'Cannot activate item while its category is inactive. Please activate the category first.' 
+          return c.json({
+            error:
+              "Cannot activate item while its category is inactive. Please activate the category first.",
           }, 400);
         }
       }
@@ -340,24 +397,38 @@ itemRoutes.put(
       if (name !== undefined && name !== existingItem.name) {
         const existingByName = await itemRepository.findByName(name);
         if (existingByName && existingByName.id !== id) {
-          return c.json({ error: 'An item with this name already exists' }, 400);
+          return c.json(
+            { error: "An item with this name already exists" },
+            400,
+          );
         }
       }
 
       // Check for duplicate model number (if changing model number)
-      if (base_model_number !== undefined && base_model_number !== existingItem.base_model_number) {
-        const existingByModel = await itemRepository.findByBaseModelNumber(base_model_number);
+      if (
+        base_model_number !== undefined &&
+        base_model_number !== existingItem.base_model_number
+      ) {
+        const existingByModel = await itemRepository.findByBaseModelNumber(
+          base_model_number,
+        );
         if (existingByModel && existingByModel.id !== id) {
-          return c.json({ error: 'An item with this model number already exists' }, 400);
+          return c.json({
+            error: "An item with this model number already exists",
+          }, 400);
         }
       }
 
       const updateData: UpdateItemDTO = {};
-      if (category_id !== undefined) updateData.category_id = parseInt(category_id);
+      if (category_id !== undefined) {
+        updateData.category_id = parseInt(category_id);
+      }
       if (type_id !== undefined) updateData.type_id = parseInt(type_id);
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
-      if (base_model_number !== undefined) updateData.base_model_number = base_model_number;
+      if (base_model_number !== undefined) {
+        updateData.base_model_number = base_model_number;
+      }
       if (dimensions !== undefined) updateData.dimensions = dimensions;
       if (body.is_active !== undefined) updateData.is_active = body.is_active;
 
@@ -370,32 +441,33 @@ itemRoutes.put(
         await itemRepository.deactivate(id);
         return c.json({
           data: item,
-          message: 'Item deactivated successfully. All variants of this item have been deactivated.',
+          message:
+            "Item deactivated successfully. All variants of this item have been deactivated.",
         });
       }
 
       return c.json({
         data: item,
-        message: 'Item updated successfully',
+        message: "Item updated successfully",
       });
     } catch (error) {
-      console.error('Update item error:', error);
-      return c.json({ error: 'Internal server error' }, 500);
+      console.error("Update item error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-  }
+  },
 );
 
 // DELETE /items/:id - Delete item and all its variants
-itemRoutes.delete('/:id', authMiddleware, adminMiddleware, async (c) => {
+itemRoutes.delete("/:id", authMiddleware, adminMiddleware, async (c) => {
   try {
-    const id = parseInt(c.req.param('id'));
+    const id = parseInt(c.req.param("id"));
     if (isNaN(id)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+      return c.json({ error: "Invalid ID" }, 400);
     }
 
     const existingItem = await itemRepository.findById(id, true);
     if (!existingItem) {
-      return c.json({ error: 'Item not found' }, 404);
+      return c.json({ error: "Item not found" }, 404);
     }
 
     // Delete variant images first
@@ -410,11 +482,11 @@ itemRoutes.delete('/:id', authMiddleware, adminMiddleware, async (c) => {
     await itemRepository.delete(id);
 
     return c.json({
-      message: 'Item and all variants deleted successfully',
+      message: "Item and all variants deleted successfully",
     });
   } catch (error) {
-    console.error('Delete item error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    console.error("Delete item error:", error);
+    return c.json({ error: "Internal server error" }, 500);
   }
 });
 
@@ -424,76 +496,90 @@ itemRoutes.delete('/:id', authMiddleware, adminMiddleware, async (c) => {
 
 // GET /items/:id/variants - Get all variants for an item
 // Query param: include_inactive=true (admin only) to include inactive variants
-itemRoutes.get('/:id/variants', optionalAuthMiddleware, async (c) => {
+itemRoutes.get("/:id/variants", optionalAuthMiddleware, async (c) => {
   try {
-    const itemId = parseInt(c.req.param('id'));
+    const itemId = parseInt(c.req.param("id"));
     if (isNaN(itemId)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+      return c.json({ error: "Invalid ID" }, 400);
     }
-    const includeInactive = c.req.query('include_inactive') === 'true' && c.get('userRole') === 'admin';
-    
+    const includeInactive = c.req.query("include_inactive") === "true" &&
+      c.get("userRole") === "admin";
+
     const item = await itemRepository.findById(itemId);
     if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
+      return c.json({ error: "Item not found" }, 404);
     }
 
-    const variants = await itemVariantRepository.findByItemId(itemId, includeInactive);
+    const variants = await itemVariantRepository.findByItemId(
+      itemId,
+      includeInactive,
+    );
 
     return c.json({
       data: variants,
     });
   } catch (error) {
-    console.error('Get variants error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    console.error("Get variants error:", error);
+    return c.json({ error: "Internal server error" }, 500);
   }
 });
 
 // POST /items/:id/variants - Create new variant with image
 itemRoutes.post(
-  '/:id/variants',
+  "/:id/variants",
   authMiddleware,
   adminMiddleware,
-  uploadMiddleware('items', { maxImageWidth: 1200 }),
+  uploadMiddleware("items", { maxImageWidth: 1200 }),
   async (c) => {
     try {
-      const itemId = parseInt(c.req.param('id'));
+      const itemId = parseInt(c.req.param("id"));
       if (isNaN(itemId)) {
-        return c.json({ error: 'Invalid ID' }, 400);
+        return c.json({ error: "Invalid ID" }, 400);
       }
-      const uploadResult = c.get('uploadResult');
-      const formData = c.get('formData');
+      const uploadResult = c.get("uploadResult");
+      const formData = c.get("formData");
 
       const item = await itemRepository.findById(itemId);
       if (!item) {
         if (uploadResult?.success && uploadResult.filePath) {
           await fileStorageService.deleteFile(uploadResult.filePath);
         }
-        return c.json({ error: 'Item not found' }, 404);
+        return c.json({ error: "Item not found" }, 404);
       }
 
       if (!formData) {
-        return c.json({ error: 'No form data provided' }, 400);
+        return c.json({ error: "No form data provided" }, 400);
       }
 
-      const styleName = formData.get('style_name')?.toString();
-      const priceStr = formData.get('price')?.toString();
+      const styleName = formData.get("style_name")?.toString();
+      const priceStr = formData.get("price")?.toString();
       const price = priceStr ? parseFloat(priceStr) : NaN;
 
       if (!styleName || isNaN(price)) {
         if (uploadResult?.success && uploadResult.filePath) {
           await fileStorageService.deleteFile(uploadResult.filePath);
         }
-        return c.json({ error: 'Missing required fields: style_name, price' }, 400);
+        return c.json(
+          { error: "Missing required fields: style_name, price" },
+          400,
+        );
       }
 
       // Check for duplicate style name within the same item
-      const existingVariants = await itemVariantRepository.findByItemId(itemId, true);
-      const styleExists = existingVariants.some(v => v.style_name.toLowerCase() === styleName.toLowerCase());
+      const existingVariants = await itemVariantRepository.findByItemId(
+        itemId,
+        true,
+      );
+      const styleExists = existingVariants.some((v) =>
+        v.style_name.toLowerCase() === styleName.toLowerCase()
+      );
       if (styleExists) {
         if (uploadResult?.success && uploadResult.filePath) {
           await fileStorageService.deleteFile(uploadResult.filePath);
         }
-        return c.json({ error: 'A variant with this style name already exists for this item' }, 400);
+        return c.json({
+          error: "A variant with this style name already exists for this item",
+        }, 400);
       }
 
       const createData: CreateItemVariantDTO = {
@@ -512,37 +598,37 @@ itemRoutes.post(
 
       return c.json({
         data: variant,
-        message: 'Variant created successfully',
+        message: "Variant created successfully",
       }, 201);
     } catch (error) {
-      console.error('Create variant error:', error);
-      return c.json({ error: 'Internal server error' }, 500);
+      console.error("Create variant error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-  }
+  },
 );
 
 // PUT /items/:id/variants/:variantId - Update variant
 itemRoutes.put(
-  '/:id/variants/:variantId',
+  "/:id/variants/:variantId",
   authMiddleware,
   adminMiddleware,
-  uploadMiddleware('items', { maxImageWidth: 1200 }),
+  uploadMiddleware("items", { maxImageWidth: 1200 }),
   async (c) => {
     try {
-      const itemId = parseInt(c.req.param('id'));
-      const variantId = parseInt(c.req.param('variantId'));
+      const itemId = parseInt(c.req.param("id"));
+      const variantId = parseInt(c.req.param("variantId"));
       if (isNaN(itemId) || isNaN(variantId)) {
-        return c.json({ error: 'Invalid ID' }, 400);
+        return c.json({ error: "Invalid ID" }, 400);
       }
-      const uploadResult = c.get('uploadResult');
-      const formData = c.get('formData');
+      const uploadResult = c.get("uploadResult");
+      const formData = c.get("formData");
 
       const item = await itemRepository.findById(itemId);
       if (!item) {
         if (uploadResult?.success && uploadResult.filePath) {
           await fileStorageService.deleteFile(uploadResult.filePath);
         }
-        return c.json({ error: 'Item not found' }, 404);
+        return c.json({ error: "Item not found" }, 404);
       }
 
       const existingVariant = await itemVariantRepository.findById(variantId);
@@ -550,45 +636,60 @@ itemRoutes.put(
         if (uploadResult?.success && uploadResult.filePath) {
           await fileStorageService.deleteFile(uploadResult.filePath);
         }
-        return c.json({ error: 'Variant not found' }, 404);
+        return c.json({ error: "Variant not found" }, 404);
       }
 
       if (!formData) {
-        return c.json({ error: 'No form data provided' }, 400);
+        return c.json({ error: "No form data provided" }, 400);
       }
 
-      const styleName = formData.get('style_name')?.toString();
-      const priceStr = formData.get('price')?.toString();
+      const styleName = formData.get("style_name")?.toString();
+      const priceStr = formData.get("price")?.toString();
       const price = priceStr ? parseFloat(priceStr) : undefined;
-      const removeImage = formData.get('remove_image')?.toString() === 'true';
-      const isActiveStr = formData.get('is_active')?.toString();
-      const isActive = isActiveStr !== undefined ? isActiveStr === 'true' : undefined;
+      const removeImage = formData.get("remove_image")?.toString() === "true";
+      const isActiveStr = formData.get("is_active")?.toString();
+      const isActive = isActiveStr !== undefined
+        ? isActiveStr === "true"
+        : undefined;
 
       // Check if trying to activate variant while item is inactive
       if (isActive === true && !item.is_active) {
         if (uploadResult?.success && uploadResult.filePath) {
           await fileStorageService.deleteFile(uploadResult.filePath);
         }
-        return c.json({ 
-          error: 'Cannot activate variant while its item is inactive. Please activate the item first.' 
+        return c.json({
+          error:
+            "Cannot activate variant while its item is inactive. Please activate the item first.",
         }, 400);
       }
 
       // Check for duplicate style name when updating (if changing style name)
       if (styleName !== undefined && styleName !== existingVariant.style_name) {
-        const existingVariants = await itemVariantRepository.findByItemId(itemId, true);
-        const styleExists = existingVariants.some(v => 
-          v.id !== variantId && v.style_name.toLowerCase() === styleName.toLowerCase()
+        const existingVariants = await itemVariantRepository.findByItemId(
+          itemId,
+          true,
+        );
+        const styleExists = existingVariants.some((v) =>
+          v.id !== variantId &&
+          v.style_name.toLowerCase() === styleName.toLowerCase()
         );
         if (styleExists) {
           if (uploadResult?.success && uploadResult.filePath) {
             await fileStorageService.deleteFile(uploadResult.filePath);
           }
-          return c.json({ error: 'A variant with this style name already exists for this item' }, 400);
+          return c.json({
+            error:
+              "A variant with this style name already exists for this item",
+          }, 400);
         }
       }
 
-      const updateData: { style_name?: string; price?: number; image_path?: string | null; is_active?: boolean } = {};
+      const updateData: {
+        style_name?: string;
+        price?: number;
+        image_path?: string | null;
+        is_active?: boolean;
+      } = {};
       if (styleName !== undefined) updateData.style_name = styleName;
       if (price !== undefined) updateData.price = price;
       if (isActive !== undefined) updateData.is_active = isActive;
@@ -610,198 +711,232 @@ itemRoutes.put(
 
       return c.json({
         data: variant,
-        message: 'Variant updated successfully',
+        message: "Variant updated successfully",
       });
     } catch (error) {
-      console.error('Update variant error:', error);
-      return c.json({ error: 'Internal server error' }, 500);
+      console.error("Update variant error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-  }
+  },
 );
 
 // DELETE /items/:id/variants/:variantId - Delete variant
-itemRoutes.delete('/:id/variants/:variantId', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const itemId = parseInt(c.req.param('id'));
-    const variantId = parseInt(c.req.param('variantId'));
-    if (isNaN(itemId) || isNaN(variantId)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+itemRoutes.delete(
+  "/:id/variants/:variantId",
+  authMiddleware,
+  adminMiddleware,
+  async (c) => {
+    try {
+      const itemId = parseInt(c.req.param("id"));
+      const variantId = parseInt(c.req.param("variantId"));
+      if (isNaN(itemId) || isNaN(variantId)) {
+        return c.json({ error: "Invalid ID" }, 400);
+      }
+
+      const item = await itemRepository.findById(itemId);
+      if (!item) {
+        return c.json({ error: "Item not found" }, 404);
+      }
+
+      const existingVariant = await itemVariantRepository.findById(variantId);
+      if (!existingVariant || existingVariant.item_id !== itemId) {
+        return c.json({ error: "Variant not found" }, 404);
+      }
+
+      // Clear variant_id in project_bom to preserve BOM history
+      await bomEntryRepository.clearVariantId(variantId);
+
+      // Delete variant_addon relationships first (application-level cascade)
+      await variantAddonRepository.deleteByVariantId(variantId);
+      await variantAddonRepository.deleteByAddonVariantId(variantId);
+
+      if (existingVariant.image_path) {
+        await fileStorageService.deleteFile(existingVariant.image_path);
+      }
+
+      await itemVariantRepository.delete(variantId);
+
+      return c.json({
+        message: "Variant deleted successfully",
+      });
+    } catch (error) {
+      console.error("Delete variant error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-
-    const item = await itemRepository.findById(itemId);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const existingVariant = await itemVariantRepository.findById(variantId);
-    if (!existingVariant || existingVariant.item_id !== itemId) {
-      return c.json({ error: 'Variant not found' }, 404);
-    }
-
-    // Clear variant_id in project_bom to preserve BOM history
-    await bomEntryRepository.clearVariantId(variantId);
-
-    // Delete variant_addon relationships first (application-level cascade)
-    await variantAddonRepository.deleteByVariantId(variantId);
-    await variantAddonRepository.deleteByAddonVariantId(variantId);
-
-    if (existingVariant.image_path) {
-      await fileStorageService.deleteFile(existingVariant.image_path);
-    }
-
-    await itemVariantRepository.delete(variantId);
-
-    return c.json({
-      message: 'Variant deleted successfully',
-    });
-  } catch (error) {
-    console.error('Delete variant error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+  },
+);
 
 // PATCH /items/:id/variants/reorder - Reorder variants
-itemRoutes.patch('/:id/variants/reorder', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const itemId = parseInt(c.req.param('id'));
-    if (isNaN(itemId)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+itemRoutes.patch(
+  "/:id/variants/reorder",
+  authMiddleware,
+  adminMiddleware,
+  async (c) => {
+    try {
+      const itemId = parseInt(c.req.param("id"));
+      if (isNaN(itemId)) {
+        return c.json({ error: "Invalid ID" }, 400);
+      }
+      const { variant_ids } = await c.req.json();
+
+      if (!Array.isArray(variant_ids)) {
+        return c.json({ error: "variant_ids must be an array" }, 400);
+      }
+
+      const item = await itemRepository.findById(itemId);
+      if (!item) {
+        return c.json({ error: "Item not found" }, 404);
+      }
+
+      await itemVariantRepository.reorder(itemId, variant_ids);
+
+      return c.json({
+        message: "Variants reordered successfully",
+      });
+    } catch (error) {
+      console.error("Reorder variants error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-    const { variant_ids } = await c.req.json();
-
-    if (!Array.isArray(variant_ids)) {
-      return c.json({ error: 'variant_ids must be an array' }, 400);
-    }
-
-    const item = await itemRepository.findById(itemId);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    await itemVariantRepository.reorder(itemId, variant_ids);
-
-    return c.json({
-      message: 'Variants reordered successfully',
-    });
-  } catch (error) {
-    console.error('Reorder variants error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+  },
+);
 
 // PATCH /items/:id/deactivate - Deactivate item (admin only)
 // Cascades to all variants of this item
-itemRoutes.patch('/:id/deactivate', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const id = parseInt(c.req.param('id'));
-    if (isNaN(id)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+itemRoutes.patch(
+  "/:id/deactivate",
+  authMiddleware,
+  adminMiddleware,
+  async (c) => {
+    try {
+      const id = parseInt(c.req.param("id"));
+      if (isNaN(id)) {
+        return c.json({ error: "Invalid ID" }, 400);
+      }
+
+      const item = await itemRepository.findById(id);
+      if (!item) {
+        return c.json({ error: "Item not found" }, 404);
+      }
+
+      const deactivatedItem = await itemRepository.deactivate(id);
+
+      return c.json({
+        data: deactivatedItem,
+        message:
+          "Item deactivated successfully. All variants of this item have been deactivated.",
+      });
+    } catch (error) {
+      console.error("Deactivate item error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-
-    const item = await itemRepository.findById(id);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const deactivatedItem = await itemRepository.deactivate(id);
-
-    return c.json({
-      data: deactivatedItem,
-      message: 'Item deactivated successfully. All variants of this item have been deactivated.',
-    });
-  } catch (error) {
-    console.error('Deactivate item error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+  },
+);
 
 // PATCH /items/:id/activate - Activate item (admin only)
 // Note: Does NOT cascade - variants must be activated individually
-itemRoutes.patch('/:id/activate', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const id = parseInt(c.req.param('id'));
-    if (isNaN(id)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+itemRoutes.patch(
+  "/:id/activate",
+  authMiddleware,
+  adminMiddleware,
+  async (c) => {
+    try {
+      const id = parseInt(c.req.param("id"));
+      if (isNaN(id)) {
+        return c.json({ error: "Invalid ID" }, 400);
+      }
+
+      const item = await itemRepository.findById(id);
+      if (!item) {
+        return c.json({ error: "Item not found" }, 404);
+      }
+
+      const activatedItem = await itemRepository.activate(id);
+
+      return c.json({
+        data: activatedItem,
+        message:
+          "Item activated successfully. Note: Variants remain deactivated and must be activated individually.",
+      });
+    } catch (error) {
+      console.error("Activate item error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-
-    const item = await itemRepository.findById(id);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const activatedItem = await itemRepository.activate(id);
-
-    return c.json({
-      data: activatedItem,
-      message: 'Item activated successfully. Note: Variants remain deactivated and must be activated individually.',
-    });
-  } catch (error) {
-    console.error('Activate item error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+  },
+);
 
 // PATCH /items/:id/variants/:variantId/deactivate - Deactivate variant (admin only)
-itemRoutes.patch('/:id/variants/:variantId/deactivate', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const itemId = parseInt(c.req.param('id'));
-    const variantId = parseInt(c.req.param('variantId'));
-    if (isNaN(itemId) || isNaN(variantId)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+itemRoutes.patch(
+  "/:id/variants/:variantId/deactivate",
+  authMiddleware,
+  adminMiddleware,
+  async (c) => {
+    try {
+      const itemId = parseInt(c.req.param("id"));
+      const variantId = parseInt(c.req.param("variantId"));
+      if (isNaN(itemId) || isNaN(variantId)) {
+        return c.json({ error: "Invalid ID" }, 400);
+      }
+
+      const item = await itemRepository.findById(itemId);
+      if (!item) {
+        return c.json({ error: "Item not found" }, 404);
+      }
+
+      const variant = await itemVariantRepository.findById(variantId);
+      if (!variant || variant.item_id !== itemId) {
+        return c.json({ error: "Variant not found" }, 404);
+      }
+
+      const deactivatedVariant = await itemVariantRepository.deactivate(
+        variantId,
+      );
+
+      return c.json({
+        data: deactivatedVariant,
+        message: "Variant deactivated successfully.",
+      });
+    } catch (error) {
+      console.error("Deactivate variant error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-
-    const item = await itemRepository.findById(itemId);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const variant = await itemVariantRepository.findById(variantId);
-    if (!variant || variant.item_id !== itemId) {
-      return c.json({ error: 'Variant not found' }, 404);
-    }
-
-    const deactivatedVariant = await itemVariantRepository.deactivate(variantId);
-
-    return c.json({
-      data: deactivatedVariant,
-      message: 'Variant deactivated successfully.',
-    });
-  } catch (error) {
-    console.error('Deactivate variant error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+  },
+);
 
 // PATCH /items/:id/variants/:variantId/activate - Activate variant (admin only)
-itemRoutes.patch('/:id/variants/:variantId/activate', authMiddleware, adminMiddleware, async (c) => {
-  try {
-    const itemId = parseInt(c.req.param('id'));
-    const variantId = parseInt(c.req.param('variantId'));
-    if (isNaN(itemId) || isNaN(variantId)) {
-      return c.json({ error: 'Invalid ID' }, 400);
+itemRoutes.patch(
+  "/:id/variants/:variantId/activate",
+  authMiddleware,
+  adminMiddleware,
+  async (c) => {
+    try {
+      const itemId = parseInt(c.req.param("id"));
+      const variantId = parseInt(c.req.param("variantId"));
+      if (isNaN(itemId) || isNaN(variantId)) {
+        return c.json({ error: "Invalid ID" }, 400);
+      }
+
+      const item = await itemRepository.findById(itemId);
+      if (!item) {
+        return c.json({ error: "Item not found" }, 404);
+      }
+
+      const variant = await itemVariantRepository.findById(variantId);
+      if (!variant || variant.item_id !== itemId) {
+        return c.json({ error: "Variant not found" }, 404);
+      }
+
+      const activatedVariant = await itemVariantRepository.activate(variantId);
+
+      return c.json({
+        data: activatedVariant,
+        message: "Variant activated successfully.",
+      });
+    } catch (error) {
+      console.error("Activate variant error:", error);
+      return c.json({ error: "Internal server error" }, 500);
     }
-
-    const item = await itemRepository.findById(itemId);
-    if (!item) {
-      return c.json({ error: 'Item not found' }, 404);
-    }
-
-    const variant = await itemVariantRepository.findById(variantId);
-    if (!variant || variant.item_id !== itemId) {
-      return c.json({ error: 'Variant not found' }, 404);
-    }
-
-    const activatedVariant = await itemVariantRepository.activate(variantId);
-
-    return c.json({
-      data: activatedVariant,
-      message: 'Variant activated successfully.',
-    });
-  } catch (error) {
-    console.error('Activate variant error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+  },
+);
 
 // ==========================================
 // IMPORT ROUTES
@@ -825,7 +960,7 @@ const importPreviewItemSchema = z.object({
     found: z.boolean(),
   })),
   existingItemId: z.number().optional(),
-  action: z.enum(['create', 'update']),
+  action: z.enum(["create", "update"]),
 });
 
 const importPreviewSchema = z.object({
@@ -847,42 +982,58 @@ const importPreviewSchema = z.object({
 });
 
 // POST /items/import-preview - Preview Excel import
-itemRoutes.post('/import-preview', authMiddleware, adminMiddleware, uploadMiddleware('imports'), async (c) => {
-  try {
-    const uploadResult = c.get('uploadResult');
+itemRoutes.post(
+  "/import-preview",
+  authMiddleware,
+  adminMiddleware,
+  uploadMiddleware("imports"),
+  async (c) => {
+    try {
+      const uploadResult = c.get("uploadResult");
 
-    if (!uploadResult?.success || !uploadResult.filePath) {
-      return c.json({ error: 'No file uploaded' }, 400);
+      if (!uploadResult?.success || !uploadResult.filePath) {
+        return c.json({ error: "No file uploaded" }, 400);
+      }
+
+      const preview = await excelImportService.parseExcel(
+        uploadResult.filePath,
+      );
+
+      // Clean up uploaded file
+      await fileStorageService.deleteFile(uploadResult.filePath);
+
+      return c.json({
+        data: preview,
+      });
+    } catch (error) {
+      console.error("Import preview error:", error);
+      return c.json({ error: "Failed to parse Excel file" }, 500);
     }
-
-    const preview = await excelImportService.parseExcel(uploadResult.filePath);
-
-    // Clean up uploaded file
-    await fileStorageService.deleteFile(uploadResult.filePath);
-
-    return c.json({
-      data: preview,
-    });
-  } catch (error) {
-    console.error('Import preview error:', error);
-    return c.json({ error: 'Failed to parse Excel file' }, 500);
-  }
-});
+  },
+);
 
 // POST /items/import - Execute Excel import
-itemRoutes.post('/import', authMiddleware, adminMiddleware, zValidator('json', importPreviewSchema), async (c) => {
-  try {
-    const { preview } = c.req.valid('json');
-    const result = await excelImportService.executeImport(preview as Parameters<typeof excelImportService.executeImport>[0]);
+itemRoutes.post(
+  "/import",
+  authMiddleware,
+  adminMiddleware,
+  zValidator("json", importPreviewSchema),
+  async (c) => {
+    try {
+      const { preview } = c.req.valid("json");
+      const result = await excelImportService.executeImport(
+        preview as Parameters<typeof excelImportService.executeImport>[0],
+      );
 
-    return c.json({
-      data: result,
-    });
-  } catch (error) {
-    console.error('Import execution error:', error);
-    return c.json({ error: 'Failed to execute import' }, 500);
-  }
-});
+      return c.json({
+        data: result,
+      });
+    } catch (error) {
+      console.error("Import execution error:", error);
+      return c.json({ error: "Failed to execute import" }, 500);
+    }
+  },
+);
 
 // ==========================================
 // CATALOG SYNC ROUTES (with image extraction)
@@ -891,51 +1042,70 @@ itemRoutes.post('/import', authMiddleware, adminMiddleware, zValidator('json', i
 // POST /items/sync-catalog - Full catalog sync from Excel
 // This syncs categories, items, and variants with images
 // Items/variants not in Excel are deactivated (not deleted)
-itemRoutes.post('/sync-catalog', authMiddleware, adminMiddleware, uploadMiddleware('imports', {
-  fieldName: 'file',
-  skipValidation: true,
-}), async (c) => {
-  try {
-    const uploadResult = c.get('uploadResult');
+itemRoutes.post(
+  "/sync-catalog",
+  authMiddleware,
+  adminMiddleware,
+  uploadMiddleware("imports", {
+    fieldName: "file",
+    skipValidation: true,
+  }),
+  async (c) => {
+    try {
+      const uploadResult = c.get("uploadResult");
 
-    if (!uploadResult?.success || !uploadResult.filePath) {
-      return c.json({ error: uploadResult?.error || 'No file uploaded' }, 400);
-    }
+      if (!uploadResult?.success || !uploadResult.filePath) {
+        return c.json(
+          { error: uploadResult?.error || "No file uploaded" },
+          400,
+        );
+      }
 
-    // Validate type_id parameter
-    const typeIdParam = c.req.query('type_id');
-    if (!typeIdParam) {
+      // Validate type_id parameter
+      const typeIdParam = c.req.query("type_id");
+      if (!typeIdParam) {
+        await fileStorageService.deleteFile(uploadResult.filePath);
+        return c.json({ error: "type_id is required" }, 400);
+      }
+      if (!/^[1-9]\d*$/.test(typeIdParam)) {
+        await fileStorageService.deleteFile(uploadResult.filePath);
+        return c.json({ error: "Invalid type_id" }, 400);
+      }
+      const typeId = Number(typeIdParam);
+      if (!Number.isSafeInteger(typeId)) {
+        await fileStorageService.deleteFile(uploadResult.filePath);
+        return c.json({ error: "Invalid type_id" }, 400);
+      }
+
+      // Validate Excel file extension
+      const fileName = uploadResult.originalName || "";
+      const isExcelFile = fileName.toLowerCase().endsWith(".xlsx") ||
+        fileName.toLowerCase().endsWith(".xls");
+
+      if (!isExcelFile) {
+        await fileStorageService.deleteFile(uploadResult.filePath);
+        return c.json({
+          error: "Invalid file type. Only .xlsx and .xls files are allowed",
+        }, 400);
+      }
+
+      // Perform sync
+      const result = await excelSyncService.syncCatalog(
+        uploadResult.filePath,
+        typeId,
+      );
+
+      // Clean up uploaded file
       await fileStorageService.deleteFile(uploadResult.filePath);
-      return c.json({ error: 'type_id is required' }, 400);
+
+      return c.json({
+        data: result,
+      });
+    } catch (error) {
+      console.error("Catalog sync error:", error);
+      return c.json({ error: "Failed to sync catalog" }, 500);
     }
-    const typeId = parseInt(typeIdParam);
-    if (isNaN(typeId)) {
-      await fileStorageService.deleteFile(uploadResult.filePath);
-      return c.json({ error: 'Invalid type_id' }, 400);
-    }
-
-    // Validate Excel file extension
-    const fileName = uploadResult.originalName || '';
-    const isExcelFile = fileName.toLowerCase().endsWith('.xlsx') || fileName.toLowerCase().endsWith('.xls');
-
-    if (!isExcelFile) {
-      await fileStorageService.deleteFile(uploadResult.filePath);
-      return c.json({ error: 'Invalid file type. Only .xlsx and .xls files are allowed' }, 400);
-    }
-
-    // Perform sync
-    const result = await excelSyncService.syncCatalog(uploadResult.filePath, typeId);
-
-    // Clean up uploaded file
-    await fileStorageService.deleteFile(uploadResult.filePath);
-
-    return c.json({
-      data: result,
-    });
-  } catch (error) {
-    console.error('Catalog sync error:', error);
-    return c.json({ error: 'Failed to sync catalog' }, 500);
-  }
-});
+  },
+);
 
 export default itemRoutes;

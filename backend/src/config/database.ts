@@ -1,5 +1,5 @@
-import { DB } from 'sqlite';
-import { env } from './env.ts';
+import { DB } from "sqlite";
+import { env } from "./env.ts";
 
 /**
  * Database connection singleton
@@ -11,7 +11,7 @@ class Database {
     if (!Database.instance) {
       Database.instance = new DB(env.DATABASE_URL);
       // Enable foreign key constraints (required for CASCADE to work)
-      Database.instance.query('PRAGMA foreign_keys = ON');
+      Database.instance.query("PRAGMA foreign_keys = ON");
       console.log(`📦 Database connected: ${env.DATABASE_URL}`);
     }
     return Database.instance;
@@ -24,10 +24,10 @@ class Database {
     if (Database.instance) {
       Database.instance.close();
     }
-    Database.instance = new DB(':memory:');
+    Database.instance = new DB(":memory:");
     // Enable foreign key constraints (required for CASCADE to work)
-    Database.instance.query('PRAGMA foreign_keys = ON');
-    console.log('📦 Database connected: :memory:');
+    Database.instance.query("PRAGMA foreign_keys = ON");
+    console.log("📦 Database connected: :memory:");
     return Database.instance;
   }
 
@@ -35,7 +35,7 @@ class Database {
     if (Database.instance) {
       Database.instance.close();
       Database.instance = null;
-      console.log('📦 Database connection closed');
+      console.log("📦 Database connection closed");
     }
   }
 }
@@ -47,6 +47,10 @@ let testDb: DB | null = null;
 
 export function setTestDb(db: DB | null): void {
   testDb = db;
+}
+
+export function hasTestDb(): boolean {
+  return testDb !== null;
 }
 
 // Export the database instance - uses testDb if set, otherwise creates default
@@ -63,13 +67,13 @@ export function getDb(): DB {
  */
 export function withTransaction<T>(fn: () => T): T {
   const db = getDb();
-  db.query('BEGIN');
+  db.query("BEGIN");
   try {
     const result = fn();
-    db.query('COMMIT');
+    db.query("COMMIT");
     return result;
   } catch (error) {
-    db.query('ROLLBACK');
+    db.query("ROLLBACK");
     throw error;
   }
 }
@@ -78,15 +82,17 @@ export function withTransaction<T>(fn: () => T): T {
  * Execute an async function inside a database transaction.
  * Commits on success, rolls back on error.
  */
-export async function withTransactionAsync<T>(fn: () => Promise<T>): Promise<T> {
+export async function withTransactionAsync<T>(
+  fn: () => Promise<T>,
+): Promise<T> {
   const db = getDb();
-  db.query('BEGIN');
+  db.query("BEGIN");
   try {
     const result = await fn();
-    db.query('COMMIT');
+    db.query("COMMIT");
     return result;
   } catch (error) {
-    db.query('ROLLBACK');
+    db.query("ROLLBACK");
     throw error;
   }
 }

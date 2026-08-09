@@ -1,7 +1,7 @@
-import { getDb, withTransactionAsync } from '../config/database.ts';
-import type { Item, CreateItemDTO, UpdateItemDTO } from '../models/index.ts';
-import { itemVariantRepository } from './item-variant.ts';
-import { bomEntryRepository } from './bom-entry.ts';
+import { getDb, withTransactionAsync } from "../config/database.ts";
+import type { CreateItemDTO, Item, UpdateItemDTO } from "../models/index.ts";
+import { itemVariantRepository } from "./item-variant.ts";
+import { bomEntryRepository } from "./bom-entry.ts";
 
 export interface ItemFilter {
   category_id?: number | null;
@@ -28,48 +28,55 @@ export interface PaginatedItemsResult {
 export class ItemRepository {
   async findAll(
     filter?: ItemFilter & { include_inactive?: boolean },
-    pagination?: PaginationOptions
+    pagination?: PaginationOptions,
   ): Promise<PaginatedItemsResult> {
-    let whereClause = '';
+    let whereClause = "";
     const whereConditions: string[] = [];
     const values: (string | number | boolean)[] = [];
 
     // Filter by active status unless include_inactive is true
     if (!filter?.include_inactive) {
-      whereConditions.push('i.is_active = true');
+      whereConditions.push("i.is_active = true");
     }
 
     if (filter?.category_id !== undefined) {
       if (filter.category_id === null) {
-        whereConditions.push('i.category_id IS NULL');
+        whereConditions.push("i.category_id IS NULL");
       } else {
-        whereConditions.push('i.category_id = ?');
+        whereConditions.push("i.category_id = ?");
         values.push(filter.category_id);
       }
     }
 
     if (filter?.type_id !== undefined) {
-      whereConditions.push('i.type_id = ?');
+      whereConditions.push("i.type_id = ?");
       values.push(filter.type_id);
     }
 
     if (filter?.search) {
-      whereConditions.push('(i.name LIKE ? OR i.description LIKE ? OR i.base_model_number LIKE ?)');
+      whereConditions.push(
+        "(i.name LIKE ? OR i.description LIKE ? OR i.base_model_number LIKE ?)",
+      );
       const searchPattern = `%${filter.search}%`;
       values.push(searchPattern, searchPattern, searchPattern);
     }
 
     if (whereConditions.length > 0) {
-      whereClause = 'WHERE ' + whereConditions.join(' AND ');
+      whereClause = "WHERE " + whereConditions.join(" AND ");
     }
 
     // Get total count
-    const countResult = getDb().query(`SELECT COUNT(*) as total FROM items i LEFT JOIN item_types it ON i.type_id = it.id ${whereClause}`, values);
+    const countResult = getDb().query(
+      `SELECT COUNT(*) as total FROM items i LEFT JOIN item_types it ON i.type_id = it.id ${whereClause}`,
+      values,
+    );
     const total = countResult[0][0] as number;
 
     // Active-only catalog requests must not expose inactive variant images.
     // Admin inactive-inclusive requests may use an inactive variant as preview.
-    const previewVariantFilter = filter?.include_inactive ? '' : 'AND iv.is_active = true';
+    const previewVariantFilter = filter?.include_inactive
+      ? ""
+      : "AND iv.is_active = true";
 
     // Build query with first variant image
     let query = `
@@ -105,13 +112,13 @@ export class ItemRepository {
     values.push(limit, offset);
 
     const result = getDb().queryEntries(query, values);
-    
+
     // Load variants for each item
     const itemsWithVariants = await Promise.all(
       (result as unknown as Item[]).map(async (item) => {
         item.variants = await itemVariantRepository.findByItemId(item.id);
         return item;
-      })
+      }),
     );
 
     return {
@@ -122,14 +129,20 @@ export class ItemRepository {
     };
   }
 
-  async findById(id: number, includeRelations: boolean = false): Promise<Item | null> {
-    const result = getDb().queryEntries(`
+  async findById(
+    id: number,
+    includeRelations: boolean = false,
+  ): Promise<Item | null> {
+    const result = getDb().queryEntries(
+      `
       SELECT i.id, i.category_id, i.type_id, i.name, i.description, i.base_model_number, i.dimensions, i.created_at, i.is_active,
         it.name as type_name, it.abbreviation as type_abbreviation, it.color as type_color
       FROM items i
       LEFT JOIN item_types it ON i.type_id = it.id
       WHERE i.id = ?
-    `, [id]);
+    `,
+      [id],
+    );
 
     if (result.length === 0) {
       return null;
@@ -150,25 +163,35 @@ export class ItemRepository {
   }
 
   findByBaseModelNumber(baseModelNumber: string): Promise<Item | null> {
-    const result = getDb().queryEntries(`
+    const result = getDb().queryEntries(
+      `
       SELECT i.id, i.category_id, i.type_id, i.name, i.description, i.base_model_number, i.dimensions, i.created_at, i.is_active,
         it.name as type_name, it.abbreviation as type_abbreviation, it.color as type_color
       FROM items i
       LEFT JOIN item_types it ON i.type_id = it.id
       WHERE i.base_model_number = ?
-    `, [baseModelNumber]);
-    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
+    `,
+      [baseModelNumber],
+    );
+    return Promise.resolve(
+      result.length > 0 ? (result[0] as unknown as Item) : null,
+    );
   }
 
   findByName(name: string): Promise<Item | null> {
-    const result = getDb().queryEntries(`
+    const result = getDb().queryEntries(
+      `
       SELECT i.id, i.category_id, i.type_id, i.name, i.description, i.base_model_number, i.dimensions, i.created_at, i.is_active,
         it.name as type_name, it.abbreviation as type_abbreviation, it.color as type_color
       FROM items i
       LEFT JOIN item_types it ON i.type_id = it.id
       WHERE i.name = ?
-    `, [name]);
-    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
+    `,
+      [name],
+    );
+    return Promise.resolve(
+      result.length > 0 ? (result[0] as unknown as Item) : null,
+    );
   }
 
   findByCategory(categoryId: number, includeInactive = false): Promise<Item[]> {
@@ -195,19 +218,22 @@ export class ItemRepository {
 
   create(data: CreateItemDTO): Promise<Item> {
     const isActive = data.is_active ?? true;
-    const result = getDb().queryEntries(`
+    const result = getDb().queryEntries(
+      `
       INSERT INTO items (category_id, type_id, name, description, base_model_number, dimensions, is_active)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
-    `, [
-      data.category_id,
-      data.type_id,
-      data.name,
-      data.description || null,
-      data.base_model_number || null,
-      data.dimensions || null,
-      isActive,
-    ]);
+    `,
+      [
+        data.category_id,
+        data.type_id,
+        data.name,
+        data.description || null,
+        data.base_model_number || null,
+        data.dimensions || null,
+        isActive,
+      ],
+    );
 
     return Promise.resolve(result[0] as unknown as Item);
   }
@@ -217,31 +243,31 @@ export class ItemRepository {
     const values: (string | number | boolean | null)[] = [];
 
     if (data.category_id !== undefined) {
-      sets.push('category_id = ?');
+      sets.push("category_id = ?");
       values.push(data.category_id);
     }
     if (data.type_id !== undefined) {
-      sets.push('type_id = ?');
+      sets.push("type_id = ?");
       values.push(data.type_id);
     }
     if (data.name !== undefined) {
-      sets.push('name = ?');
+      sets.push("name = ?");
       values.push(data.name);
     }
     if (data.description !== undefined) {
-      sets.push('description = ?');
+      sets.push("description = ?");
       values.push(data.description);
     }
     if (data.base_model_number !== undefined) {
-      sets.push('base_model_number = ?');
+      sets.push("base_model_number = ?");
       values.push(data.base_model_number);
     }
     if (data.dimensions !== undefined) {
-      sets.push('dimensions = ?');
+      sets.push("dimensions = ?");
       values.push(data.dimensions);
     }
     if (data.is_active !== undefined) {
-      sets.push('is_active = ?');
+      sets.push("is_active = ?");
       values.push(data.is_active);
     }
 
@@ -251,48 +277,108 @@ export class ItemRepository {
 
     values.push(id);
 
-    const result = getDb().queryEntries(`
+    const result = getDb().queryEntries(
+      `
       UPDATE items
-      SET ${sets.join(', ')}
+      SET ${sets.join(", ")}
       WHERE id = ?
       RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
-    `, values);
+    `,
+      values,
+    );
 
-    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
+    return Promise.resolve(
+      result.length > 0 ? (result[0] as unknown as Item) : null,
+    );
   }
 
   deactivate(id: number): Promise<Item | null> {
     // Deactivate the item
-    const result = getDb().queryEntries(`
+    const result = getDb().queryEntries(
+      `
       UPDATE items
       SET is_active = false
       WHERE id = ?
       RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
-    `, [id]);
+    `,
+      [id],
+    );
 
     if (result.length === 0) {
       return Promise.resolve(null);
     }
 
     // Cascade: Deactivate all variants of this item
-    getDb().query(`
+    getDb().query(
+      `
       UPDATE item_variants
       SET is_active = false
       WHERE item_id = ?
-    `, [id]);
+    `,
+      [id],
+    );
 
     return Promise.resolve(result[0] as unknown as Item);
   }
 
+  deactivateMissingForType(
+    typeId: number,
+    importedBaseModelNumbers: string[],
+  ): Promise<Item[]> {
+    if (importedBaseModelNumbers.length === 0) {
+      throw new Error(
+        "Cannot deactivate missing products without a validated import set",
+      );
+    }
+
+    const values: (number | string)[] = [typeId];
+    const importedPredicate =
+      `AND (base_model_number IS NULL OR base_model_number NOT IN (${
+        importedBaseModelNumbers.map(() => "?").join(", ")
+      }))`;
+    values.push(...importedBaseModelNumbers);
+
+    const deactivated = getDb().queryEntries(
+      `
+      UPDATE items
+      SET is_active = false
+      WHERE type_id = ?
+        AND is_active = true
+        ${importedPredicate}
+      RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
+    `,
+      values,
+    ) as unknown as Item[];
+
+    if (deactivated.length > 0) {
+      const placeholders = deactivated.map(() => "?").join(", ");
+      getDb().query(
+        `
+        UPDATE item_variants
+        SET is_active = false
+        WHERE item_id IN (${placeholders})
+      `,
+        deactivated.map((item) => item.id),
+      );
+    }
+
+    return Promise.resolve(deactivated);
+  }
+
   activate(id: number): Promise<Item | null> {
-    const result = getDb().queryEntries(`
+    const result = getDb().queryEntries(
+      `
       UPDATE items
       SET is_active = true
       WHERE id = ?
       RETURNING id, category_id, type_id, name, description, base_model_number, dimensions, created_at, is_active
-    `, [id]);
+    `,
+      [id],
+    );
 
-    return Promise.resolve(result.length > 0 ? (result[0] as unknown as Item) : null);
+    return Promise.resolve(
+      result.length > 0 ? (result[0] as unknown as Item) : null,
+    );
   }
 
   async delete(id: number): Promise<void> {
@@ -313,7 +399,7 @@ export class ItemRepository {
     baseModelNumber: string,
     description?: string,
     dimensions?: string,
-    typeId?: number
+    typeId?: number,
   ): Promise<Item> {
     const existing = await this.findByBaseModelNumber(baseModelNumber);
     if (existing) {
@@ -337,7 +423,7 @@ export class ItemRepository {
 
   async updateByBaseModelNumber(
     baseModelNumber: string,
-    data: UpdateItemDTO
+    data: UpdateItemDTO,
   ): Promise<Item | null> {
     const item = await this.findByBaseModelNumber(baseModelNumber);
     if (!item) {

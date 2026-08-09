@@ -1,38 +1,49 @@
-import { assertEquals, assertExists } from '@std/assert';
-import { setupTestDatabase, clearDatabase } from '../test-utils.ts';
-import { testRequest, parseJSON } from '../test-client.ts';
-import { hashPassword } from '../../src/services/password.ts';
+import { assertEquals, assertExists } from "@std/assert";
+import * as xlsx from "xlsx";
+import { clearDatabase, setupTestDatabase } from "../test-utils.ts";
+import { parseJSON, testRequest } from "../test-client.ts";
+import { hashPassword } from "../../src/services/password.ts";
 
 // Setup test database before all tests
 await setupTestDatabase();
 
 // Import repositories after database is set up
-const { userRepository } = await import('../../src/repositories/user.ts');
-const { categoryRepository } = await import('../../src/repositories/category.ts');
-const { itemRepository } = await import('../../src/repositories/item.ts');
-const { itemVariantRepository } = await import('../../src/repositories/item-variant.ts');
-const { itemTypeRepository } = await import('../../src/repositories/item-type.ts');
-const { projectRepository } = await import('../../src/repositories/project.ts');
-const { floorplanRepository } = await import('../../src/repositories/floorplan.ts');
-const { bomEntryRepository } = await import('../../src/repositories/bom-entry.ts');
+const { userRepository } = await import("../../src/repositories/user.ts");
+const { categoryRepository } = await import(
+  "../../src/repositories/category.ts"
+);
+const { itemRepository } = await import("../../src/repositories/item.ts");
+const { itemVariantRepository } = await import(
+  "../../src/repositories/item-variant.ts"
+);
+const { itemTypeRepository } = await import(
+  "../../src/repositories/item-type.ts"
+);
+const { projectRepository } = await import("../../src/repositories/project.ts");
+const { floorplanRepository } = await import(
+  "../../src/repositories/floorplan.ts"
+);
+const { bomEntryRepository } = await import(
+  "../../src/repositories/bom-entry.ts"
+);
 
 async function getAdminToken(): Promise<string> {
   clearDatabase();
 
-  const passwordHash = hashPassword('admin123');
+  const passwordHash = hashPassword("admin123");
   await userRepository.create({
-    email: 'admin@example.com',
+    email: "admin@example.com",
     password_hash: passwordHash,
-    role: 'admin',
+    role: "admin",
     tenant_id: 1,
   });
 
-  const loginResponse = await testRequest('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const loginResponse = await testRequest("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      email: 'admin@example.com',
-      password: 'admin123',
+      email: "admin@example.com",
+      password: "admin123",
     }),
   });
 
@@ -44,35 +55,41 @@ async function getAdminToken(): Promise<string> {
 // 1. Items filtered by type_id
 // ==========================================
 
-Deno.test('GET /items?type_id=X - should only return items of that type', async () => {
+Deno.test("GET /items?type_id=X - should only return items of that type", async () => {
   const token = await getAdminToken();
 
-  const category = await categoryRepository.create({ name: 'Smart Home' });
-  const sensorType = await itemTypeRepository.create({ name: 'Sensor', abbreviation: 'SEN' });
-  const actuatorType = await itemTypeRepository.create({ name: 'Actuator', abbreviation: 'ACT' });
+  const category = await categoryRepository.create({ name: "Smart Home" });
+  const sensorType = await itemTypeRepository.create({
+    name: "Sensor",
+    abbreviation: "SEN",
+  });
+  const actuatorType = await itemTypeRepository.create({
+    name: "Actuator",
+    abbreviation: "ACT",
+  });
 
   await itemRepository.create({
     category_id: category.id,
-    name: 'Motion Sensor',
-    base_model_number: 'MS-100',
+    name: "Motion Sensor",
+    base_model_number: "MS-100",
     type_id: sensorType.id,
   });
   await itemRepository.create({
     category_id: category.id,
-    name: 'Temperature Sensor',
-    base_model_number: 'TS-100',
+    name: "Temperature Sensor",
+    base_model_number: "TS-100",
     type_id: sensorType.id,
   });
   await itemRepository.create({
     category_id: category.id,
-    name: 'Smart Relay',
-    base_model_number: 'SR-100',
+    name: "Smart Relay",
+    base_model_number: "SR-100",
     type_id: actuatorType.id,
   });
 
   // Filter by sensor type
   const response = await testRequest(`/api/items?type_id=${sensorType.id}`, {
-    headers: { 'Authorization': `Bearer ${token}` },
+    headers: { "Authorization": `Bearer ${token}` },
   });
   const data = await parseJSON(response);
 
@@ -83,33 +100,33 @@ Deno.test('GET /items?type_id=X - should only return items of that type', async 
 
   // Filter by actuator type
   const response2 = await testRequest(`/api/items?type_id=${actuatorType.id}`, {
-    headers: { 'Authorization': `Bearer ${token}` },
+    headers: { "Authorization": `Bearer ${token}` },
   });
   const data2 = await parseJSON(response2);
 
   assertEquals(response2.status, 200);
   assertEquals(data2.data.length, 1);
-  assertEquals(data2.data[0].name, 'Smart Relay');
+  assertEquals(data2.data[0].name, "Smart Relay");
 });
 
 // ==========================================
 // 2. Item create requires type_id
 // ==========================================
 
-Deno.test('POST /items - should return 400 without type_id', async () => {
+Deno.test("POST /items - should return 400 without type_id", async () => {
   const token = await getAdminToken();
 
-  const category = await categoryRepository.create({ name: 'Lighting' });
+  const category = await categoryRepository.create({ name: "Lighting" });
 
-  const response = await testRequest('/api/items', {
-    method: 'POST',
+  const response = await testRequest("/api/items", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       category_id: category.id,
-      name: 'Missing Type Item',
+      name: "Missing Type Item",
     }),
   });
 
@@ -117,29 +134,36 @@ Deno.test('POST /items - should return 400 without type_id', async () => {
 
   assertEquals(response.status, 400);
   assertExists(data.error);
-  assertEquals(data.error, 'Missing required fields: category_id, type_id, name');
+  assertEquals(
+    data.error,
+    "Missing required fields: category_id, type_id, name",
+  );
 });
 
 // ==========================================
 // 3. Item create with type_id
 // ==========================================
 
-Deno.test('POST /items - should succeed with type_id and return type info', async () => {
+Deno.test("POST /items - should succeed with type_id and return type info", async () => {
   const token = await getAdminToken();
 
-  const category = await categoryRepository.create({ name: 'Lighting' });
-  const itemType = await itemTypeRepository.create({ name: 'Zigbee', abbreviation: 'ZIG', color: '#00ff00' });
+  const category = await categoryRepository.create({ name: "Lighting" });
+  const itemType = await itemTypeRepository.create({
+    name: "Zigbee",
+    abbreviation: "ZIG",
+    color: "#00ff00",
+  });
 
-  const response = await testRequest('/api/items', {
-    method: 'POST',
+  const response = await testRequest("/api/items", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       category_id: category.id,
-      name: 'Zigbee Bulb',
-      base_model_number: 'ZB-100',
+      name: "Zigbee Bulb",
+      base_model_number: "ZB-100",
       type_id: itemType.id,
     }),
   });
@@ -148,26 +172,26 @@ Deno.test('POST /items - should succeed with type_id and return type info', asyn
 
   assertEquals(response.status, 201);
   assertExists(data.data);
-  assertEquals(data.data.name, 'Zigbee Bulb');
+  assertEquals(data.data.name, "Zigbee Bulb");
   assertEquals(data.data.type_id, itemType.id);
 
   // Verify type info is returned when fetching item
   const getResponse = await testRequest(`/api/items/${data.data.id}`, {
-    headers: { 'Authorization': `Bearer ${token}` },
+    headers: { "Authorization": `Bearer ${token}` },
   });
   const getData = await parseJSON(getResponse);
 
   assertEquals(getResponse.status, 200);
-  assertEquals(getData.data.type_name, 'Zigbee');
-  assertEquals(getData.data.type_abbreviation, 'ZIG');
-  assertEquals(getData.data.type_color, '#00ff00');
+  assertEquals(getData.data.type_name, "Zigbee");
+  assertEquals(getData.data.type_abbreviation, "ZIG");
+  assertEquals(getData.data.type_color, "#00ff00");
 });
 
 // ==========================================
 // 4. Excel sync requires type_id
 // ==========================================
 
-Deno.test('POST /items/sync-catalog - should return 400 without type_id', async () => {
+Deno.test("POST /items/sync-catalog - should return 400 without type_id", async () => {
   const token = await getAdminToken();
 
   // Build a minimal valid XLSX file (ZIP with PK magic bytes)
@@ -178,14 +202,16 @@ Deno.test('POST /items/sync-catalog - should return 400 without type_id', async 
   xlsxBytes.set(pkHeader, 0);
   xlsxBytes.set(padding, pkHeader.length);
 
-  const blob = new Blob([xlsxBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const blob = new Blob([xlsxBytes], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
   const formData = new FormData();
-  formData.append('file', blob, 'catalog.xlsx');
+  formData.append("file", blob, "catalog.xlsx");
 
-  const response = await testRequest('/api/items/sync-catalog', {
-    method: 'POST',
+  const response = await testRequest("/api/items/sync-catalog", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${token}`,
+      "Authorization": `Bearer ${token}`,
     },
     body: formData,
   });
@@ -193,30 +219,132 @@ Deno.test('POST /items/sync-catalog - should return 400 without type_id', async 
   const data = await parseJSON(response);
 
   assertEquals(response.status, 400);
-  assertEquals(data.error, 'type_id is required');
+  assertEquals(data.error, "type_id is required");
+});
+
+Deno.test("POST /items/sync-catalog - rejects non-canonical type_id without catalog mutation", async (t) => {
+  const token = await getAdminToken();
+  const category = await categoryRepository.create({
+    name: "Protected Category",
+  });
+  const itemType = await itemTypeRepository.create({
+    name: "Protected Type",
+    abbreviation: "PRT",
+  });
+  const protectedItem = await itemRepository.create({
+    category_id: category.id,
+    type_id: itemType.id,
+    name: "Protected Product",
+    base_model_number: "PROTECTED-1",
+  });
+
+  const worksheet = xlsx.utils.aoa_to_sheet([
+    [],
+    [],
+    [],
+    [
+      "Imported Category",
+      "",
+      "",
+      "Imported Product",
+      "",
+      "IMPORTED-1",
+      "",
+      "Default",
+      "IMPORTED-1-DEFAULT",
+      100,
+    ],
+  ]);
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, worksheet, "Catalog");
+  const workbookBytes = new Uint8Array(
+    xlsx.write(workbook, { type: "array", bookType: "xlsx" }),
+  );
+
+  const invalidTypeIds = [
+    ["suffix junk", "1junk"],
+    ["decimal", "1.0"],
+    ["plus sign", "%2B1"],
+    ["leading whitespace", "%201"],
+    ["zero", "0"],
+    ["negative", "-1"],
+    ["overflow", "9007199254740992"],
+  ] as const;
+
+  for (const [label, queryValue] of invalidTypeIds) {
+    await t.step(label, async () => {
+      const formData = new FormData();
+      formData.append(
+        "file",
+        new Blob([workbookBytes], {
+          type:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }),
+        "catalog.xlsx",
+      );
+
+      const response = await testRequest(
+        `/api/items/sync-catalog?type_id=${queryValue}`,
+        {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}` },
+          body: formData,
+        },
+      );
+      const data = await parseJSON(response);
+
+      assertEquals(response.status, 400);
+      assertEquals(data.error, "Invalid type_id");
+
+      const itemAfter = await itemRepository.findById(protectedItem.id);
+      const categoryAfter = await categoryRepository.findById(category.id);
+      const allItems = await itemRepository.findAll(
+        { include_inactive: true },
+        { page: 1, limit: 10 },
+      );
+      const allCategories = await categoryRepository.findAll(true);
+      assertEquals(Boolean(itemAfter?.is_active), true);
+      assertEquals(Boolean(categoryAfter?.is_active), true);
+      assertEquals(allItems.items.map((item) => item.base_model_number), [
+        "PROTECTED-1",
+      ]);
+      assertEquals(allCategories.map((candidate) => candidate.name), [
+        "Protected Category",
+      ]);
+    });
+  }
 });
 
 // ==========================================
 // 5. Project create gets default item types
 // ==========================================
 
-Deno.test('POST /projects - should auto-assign all active item types when none specified', async () => {
+Deno.test("POST /projects - should auto-assign all active item types when none specified", async () => {
   const token = await getAdminToken();
 
   // Create some item types
-  const type1 = await itemTypeRepository.create({ name: 'Zigbee', abbreviation: 'ZIG' });
-  const type2 = await itemTypeRepository.create({ name: 'Z-Wave', abbreviation: 'ZW' });
-  await itemTypeRepository.create({ name: 'Inactive', abbreviation: 'INA', is_active: false });
+  const type1 = await itemTypeRepository.create({
+    name: "Zigbee",
+    abbreviation: "ZIG",
+  });
+  const type2 = await itemTypeRepository.create({
+    name: "Z-Wave",
+    abbreviation: "ZW",
+  });
+  await itemTypeRepository.create({
+    name: "Inactive",
+    abbreviation: "INA",
+    is_active: false,
+  });
 
-  const response = await testRequest('/api/projects', {
-    method: 'POST',
+  const response = await testRequest("/api/projects", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
-     
-      customer_name: 'Test Customer',
+      customer_name: "Test Customer",
     }),
   });
 
@@ -234,23 +362,31 @@ Deno.test('POST /projects - should auto-assign all active item types when none s
 // 6. Project update item_type_ids
 // ==========================================
 
-Deno.test('PUT /projects/:id - should update item_type_ids in junction table', async () => {
+Deno.test("PUT /projects/:id - should update item_type_ids in junction table", async () => {
   const token = await getAdminToken();
 
-  const type1 = await itemTypeRepository.create({ name: 'Zigbee', abbreviation: 'ZIG' });
-  const type2 = await itemTypeRepository.create({ name: 'Z-Wave', abbreviation: 'ZW' });
-  const type3 = await itemTypeRepository.create({ name: 'WiFi', abbreviation: 'WF' });
+  const type1 = await itemTypeRepository.create({
+    name: "Zigbee",
+    abbreviation: "ZIG",
+  });
+  const type2 = await itemTypeRepository.create({
+    name: "Z-Wave",
+    abbreviation: "ZW",
+  });
+  const type3 = await itemTypeRepository.create({
+    name: "WiFi",
+    abbreviation: "WF",
+  });
 
   // Create project (gets all 3 types by default)
-  const createResponse = await testRequest('/api/projects', {
-    method: 'POST',
+  const createResponse = await testRequest("/api/projects", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
-     
-      customer_name: 'Test Customer',
+      customer_name: "Test Customer",
     }),
   });
 
@@ -260,10 +396,10 @@ Deno.test('PUT /projects/:id - should update item_type_ids in junction table', a
 
   // Update to only type1 and type3
   const updateResponse = await testRequest(`/api/projects/${projectId}`, {
-    method: 'PUT',
+    method: "PUT",
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       item_type_ids: [type1.id, type3.id],
@@ -284,46 +420,48 @@ Deno.test('PUT /projects/:id - should update item_type_ids in junction table', a
 // 7. BOM entry snapshots item_type_name
 // ==========================================
 
-Deno.test('POST /placements - BOM entry should snapshot item_type_name', async () => {
+Deno.test("POST /placements - BOM entry should snapshot item_type_name", async () => {
   const token = await getAdminToken();
 
   // Create item type
-  const itemType = await itemTypeRepository.create({ name: 'Zigbee', abbreviation: 'ZIG' });
+  const itemType = await itemTypeRepository.create({
+    name: "Zigbee",
+    abbreviation: "ZIG",
+  });
 
   // Create category and item
-  const category = await categoryRepository.create({ name: 'Sensors' });
+  const category = await categoryRepository.create({ name: "Sensors" });
   const item = await itemRepository.create({
     category_id: category.id,
-    name: 'Motion Sensor',
-    base_model_number: 'MS-100',
+    name: "Motion Sensor",
+    base_model_number: "MS-100",
     type_id: itemType.id,
   });
 
   // Create variant
   const variant = await itemVariantRepository.create({
     item_id: item.id,
-    style_name: 'White',
+    style_name: "White",
     price: 39.99,
   });
 
   // Create project and floorplan
   const project = await projectRepository.create({
-   
-    customer_name: 'BOM Customer',
+    customer_name: "BOM Customer",
     tenant_id: 1,
   });
   const floorplan = await floorplanRepository.create({
     project_id: project.id,
-    name: 'Ground Floor',
-    image_path: 'floorplans/test.jpg',
+    name: "Ground Floor",
+    image_path: "floorplans/test.jpg",
   });
 
   // Create placement (which creates BOM entry)
-  const response = await testRequest('/api/placements', {
-    method: 'POST',
+  const response = await testRequest("/api/placements", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       floorplan_id: floorplan.id,
@@ -344,7 +482,7 @@ Deno.test('POST /placements - BOM entry should snapshot item_type_name', async (
   const bomEntries = await bomEntryRepository.findByFloorplan(floorplan.id);
   assertEquals(bomEntries.length >= 1, true);
 
-  const mainEntry = bomEntries.find(e => e.item_name === 'Motion Sensor');
+  const mainEntry = bomEntries.find((e) => e.item_name === "Motion Sensor");
   assertExists(mainEntry);
-  assertEquals(mainEntry.item_type_name, 'Zigbee');
+  assertEquals(mainEntry.item_type_name, "Zigbee");
 });
