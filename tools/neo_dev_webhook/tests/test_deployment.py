@@ -12,7 +12,6 @@ from unittest import mock
 
 from neo_dev_webhook.deploy.verify_live_compose import verify
 from neo_dev_webhook.deploy.verify_hermes_contract import load_contract, verify as verify_hermes
-from neo_dev_webhook.consumer import build_parser as build_consumer_parser
 
 
 class DeploymentSourceTest(unittest.TestCase):
@@ -83,6 +82,15 @@ class DeploymentSourceTest(unittest.TestCase):
         retire = (root / "deploy/controller-retire.sh").read_text()
         self.assertIn("CONTROLLER_RETIRE_AUTHORIZED:-} == MICHAEL_APPROVED", retire)
         self.assertNotIn("CONTROLLER_RETIRE_AUTHORIZED:-} == YES", retire)
+
+    def test_server_requires_only_secret_and_task_runner(self):
+        root = pathlib.Path(__file__).parents[1]
+        server = (root / "server.py").read_text()
+        self.assertIn('os.environ.get("NEO_DEV_WEBHOOK_SECRET")', server)
+        self.assertIn('os.environ.get("NEO_DEV_TASK_RUNNER")', server)
+        self.assertNotIn("NEO_DEV_WEBHOOK_DB", server)
+        self.assertNotIn("Store", server)
+        self.assertNotIn("Consumer", server)
 
     def test_hermes_fixture_stage_and_rollback_are_byte_identical(self):
         script = pathlib.Path(__file__).parents[1] / "deploy/hermes-stage.sh"
@@ -250,7 +258,7 @@ class DeploymentSourceTest(unittest.TestCase):
             backup = result.stdout.strip()
             package = data / "services/snapflow-neo-dev-webhook/src/neo_dev_webhook"
             self.assertEqual({path.name for path in package.iterdir()},
-                             {"__init__.py", "automation.py", "consumer.py", "server.py"})
+                             {"__init__.py", "automation.py", "server.py"})
             self.assertFalse((data / "services/snapflow-neo-dev-webhook/src/unrelated.txt").exists())
             installed_profile = (data / "profiles/dev/SOUL.md").read_text()
             self.assertTrue(installed_profile.startswith("before-profile\n"))
@@ -421,13 +429,6 @@ class DeploymentSourceTest(unittest.TestCase):
         run.assert_not_called()
         query = connection.execute.call_args.args[0]
         self.assertNotIn("archived", query.lower())
-
-    def test_consumer_rejects_noncanonical_max_runtime(self):
-        parser = build_consumer_parser()
-        self.assertEqual(parser.parse_args(["db.sqlite", "--max-runtime", "2h"]).max_runtime,
-                         "2h")
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            parser.parse_args(["db.sqlite", "--max-runtime", "120m"])
 
     def test_pinned_hermes_contract_data_and_read_only_verifier(self):
         contract = load_contract()
@@ -773,12 +774,14 @@ class DeploymentSourceTest(unittest.TestCase):
             self.assertNotIn("CapabilityBroker", text)
             self.assertNotIn("one active task", text.lower())
 
-    def test_live_compose_commands_remain_bounded_to_receiver_and_consumer(self):
+    def test_live_compose_is_one_receiver_without_queue_contract(self):
         fixture = pathlib.Path(__file__).with_name("fixtures") / "live-compose.yaml"
         text = fixture.read_text()
         verify(text)
-        with self.assertRaisesRegex(ValueError, "consumer command drift"):
-            verify(text.replace("/var/lib/neo-dev/neo-dev.sqlite", "/tmp/new.sqlite"))
+        with self.assertRaisesRegex(ValueError, "exactly one receiver"):
+            verify(text + "  consumer:\n    command: retired\n")
+        with self.assertRaisesRegex(ValueError, "NEO_DEV_TASK_RUNNER"):
+            verify(text.replace("NEO_DEV_TASK_RUNNER", "RETIRED_RUNNER"))
 
 
 if __name__ == "__main__":

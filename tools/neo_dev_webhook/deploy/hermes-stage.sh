@@ -21,7 +21,7 @@ host_adapter=$data_root/bin/neo-dev-project-control
 host_transition=$data_root/bin/snapflow-neo-dev-transition
 host_lib=$data_root/lib/neo_dev_webhook
 backup_root=$data_root/backups/snapflow-neo-dev-webhook
-approved_files=(__init__.py automation.py consumer.py server.py)
+approved_files=(__init__.py automation.py server.py)
 transaction_backup=
 transaction_active=0
 

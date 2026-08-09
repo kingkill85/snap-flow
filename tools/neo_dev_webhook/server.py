@@ -8,7 +8,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from neo_dev_webhook.automation import PublicGitHubAdapter, Receiver, Store
+from neo_dev_webhook.automation import Receiver, TaskRunner
 
 
 class LimitedHeaderReader:
@@ -123,10 +123,10 @@ def main():
     parser.add_argument("--read-timeout", type=float, default=5.0)
     args = parser.parse_args()
     secret = os.environ.get("NEO_DEV_WEBHOOK_SECRET")
-    database = os.environ.get("NEO_DEV_WEBHOOK_DB")
-    if not secret or not database:
-        parser.error("NEO_DEV_WEBHOOK_SECRET and NEO_DEV_WEBHOOK_DB are required")
-    receiver = Receiver(secret, Store(database), PublicGitHubAdapter())
+    runner = os.environ.get("NEO_DEV_TASK_RUNNER")
+    if not secret or not runner:
+        parser.error("NEO_DEV_WEBHOOK_SECRET and NEO_DEV_TASK_RUNNER are required")
+    receiver = Receiver(secret, TaskRunner(runner))
 
     class Handler(HeaderLimitHandlerMixin, BaseHTTPRequestHandler):
         header_line_limit = receiver.limits.header_bytes
