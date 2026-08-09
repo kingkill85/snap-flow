@@ -53,6 +53,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+            type=raw,value=sha-${{ env.SOURCE_SHA }}
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
@@ -67,7 +68,10 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.created=${{ steps.source.outputs.build_time }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |

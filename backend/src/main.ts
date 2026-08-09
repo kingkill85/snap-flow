@@ -288,12 +288,14 @@ if (import.meta.main) {
   }
 
   // Seed admin user on first run
-  console.log('🌱 Checking for admin user...');
-  try {
-    const { seedAdmin } = await import('./scripts/seed-admin.ts');
-    seedAdmin();
-  } catch (error) {
-    console.error('❌ Failed to run seed script:', error);
+  if (Deno.env.get('SKIP_DEFAULT_ADMIN_SEED') !== 'true') {
+    console.log('🌱 Checking for admin user...');
+    try {
+      const { seedAdmin } = await import('./scripts/seed-admin.ts');
+      seedAdmin();
+    } catch (error) {
+      console.error('❌ Failed to run seed script:', error);
+    }
   }
 
   // Schedule periodic cleanup of expired refresh tokens and oauth codes

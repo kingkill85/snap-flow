@@ -24,6 +24,7 @@ from neo_dev_webhook.manual_preview_stack import (
 
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
+DIGEST = "sha256:" + "a" * 64
 BASE_SHA = "89abcdef0123456789abcdef0123456789abcdef"
 REQUIRED_CHECKS = (
     "Backend Tests (Deno)", "Frontend Tests (Vitest)",
@@ -87,7 +88,7 @@ class FixedSlotContractTest(unittest.TestCase):
 
     def test_fixed_compose_has_no_host_port_and_uses_preview_only_mounts(self):
         fixture = pathlib.Path(__file__).parent / "fixtures/manual-preview-compose.yaml"
-        result = validate_compose(fixture.read_text(), SHA)
+        result = validate_compose(fixture.read_text(), SHA, DIGEST)
         self.assertEqual(result["route"], FIXED_ROUTE)
         self.assertEqual(result["sha"], SHA)
 
@@ -113,10 +114,10 @@ class FixedSlotContractTest(unittest.TestCase):
 
     def test_cli_has_separate_read_only_and_explicit_mutation_actions(self):
         parser = build_parser()
-        self.assertEqual(parser.parse_args(["verify", SHA]).action, "verify")
-        self.assertEqual(parser.parse_args(["deploy", SHA]).action, "deploy")
-        for args in (["verify", SHA, "--route", "https://other"],
-                     ["deploy", SHA, "--stack", "other"]):
+        self.assertEqual(parser.parse_args(["verify", SHA, "123"]).action, "verify")
+        self.assertEqual(parser.parse_args(["deploy", SHA, "123"]).action, "deploy")
+        for args in (["verify", SHA, "123", "--route", "https://other"],
+                     ["deploy", SHA, "123", "--stack", "other"]):
             with self.subTest(args=args), self.assertRaises(SystemExit):
                 parser.parse_args(args)
 
@@ -176,6 +177,7 @@ class FixedSlotContractTest(unittest.TestCase):
 
     @mock.patch.dict("os.environ", {
         "SNAPFLOW_PREVIEW_MUTATION_AUTHORIZED": "OWNER_AUTHORIZED_MANUAL_PREVIEW",
+        "PREVIEW_ADMIN_EMAIL": "preview@example.test",
         "PREVIEW_ADMIN_PASSWORD": "correct-horse-battery-staple",
         "PREVIEW_JWT_SECRET": "0123456789abcdef0123456789abcdef",
     }, clear=False)
@@ -187,25 +189,34 @@ class FixedSlotContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             stack = pathlib.Path(directory)
             (stack / ".snapflow-preview-only").write_text("preview-only\n")
-            (stack / "compose.yaml").write_bytes(b"old-compose\x00")
+            from neo_dev_webhook.manual_preview_stack import render_compose
+            (stack / "compose.yaml").write_text(render_compose(SHA, DIGEST))
             (stack / ".env").write_bytes(b"old-env\x00")
             for name, value in (("state", b"old-db\x00"), ("uploads", b"old-upload\x00")):
                 (stack / name).mkdir()
                 (stack / name / "content.bin").write_bytes(value)
             before = {str(path.relative_to(stack)): path.read_bytes()
                       for path in stack.rglob("*") if path.is_file()
-                      and ".preview-backups" not in path.parts}
+                      and ".preview-backups" not in path.parts
+                      and path.name != ".preview-slot.lock"}
             scope.return_value = stack
-            compose.side_effect = [mock.Mock(), RuntimeError("injected up failure"), mock.Mock()]
-            with self.assertRaisesRegex(PreviewError, "reset failed; previous stack restored"):
-                reset_seed(SHA)
+            compose.side_effect = [mock.Mock(), RuntimeError("injected up failure"),
+                                   mock.Mock(), mock.Mock(), mock.Mock()]
+            with mock.patch("neo_dev_webhook.manual_preview_stack._wait_healthy"), \
+                 mock.patch("neo_dev_webhook.manual_preview_stack._inspect_container",
+                            return_value={"repo_digests": [f"ghcr.io/kingkill85/snap-flow@{DIGEST}"],
+                                          "revision": SHA, "image": "", "mounts": {}}), \
+                 self.assertRaisesRegex(PreviewError, "reset failed:.*previous slot restored"):
+                reset_seed(SHA, DIGEST)
             after = {str(path.relative_to(stack)): path.read_bytes()
                      for path in stack.rglob("*") if path.is_file()
-                     and ".preview-backups" not in path.parts}
+                     and ".preview-backups" not in path.parts
+                     and path.name != ".preview-slot.lock"}
             self.assertEqual(after, before)
-            self.assertEqual(compose.call_args_list[-1].args[1:],
-                             ("up", "-d", "--remove-orphans"))
-            verify.assert_not_called()
+            self.assertIn(mock.call(stack, "up", "-d", "--remove-orphans"),
+                          compose.call_args_list)
+            verify.assert_called_once_with(SHA, DIGEST, scope=stack,
+                                           run_external=False)
 
     def test_preview_smoke_is_fixed_route_authenticated_and_exact_sha_bound(self):
         root = pathlib.Path(__file__).parents[3]
@@ -221,6 +232,10 @@ class FixedSlotContractTest(unittest.TestCase):
 
 class PacketTest(unittest.TestCase):
     def test_phone_packet_contains_verified_identity_and_only_legal_commands(self):
+        evidence = {"sha": SHA, "route": FIXED_ROUTE, "created_id": "123",
+                    "reload_proven": True, "restart_proven": True,
+                    "reset_repeatable": True,
+                    "mobile_viewport": {"width": 390, "height": 844}}
         packet = render_packet({
             "title": "Create a project",
             "steps": ["Sign in", "Create the project"],
@@ -228,9 +243,9 @@ class PacketTest(unittest.TestCase):
             "expected": "Project appears",
             "persistence": "Reload and confirm",
             "mobile": "Check at phone width",
-        }, SHA, "2026-08-09T12:00:00Z")
+        }, SHA, "2026-08-09T12:00:00Z", evidence)
         for value in (FIXED_ROUTE, SHA, "2026-08-09T12:00:00Z", "Sign in",
-                      "Project appears", "Reload and confirm", "phone width",
+                      "Project appears", "123", "390x844",
                       "/fix <bounded feedback>", f"/accept {SHA}", "screenshot"):
             self.assertIn(value, packet)
         self.assertNotIn("/merge", packet)
@@ -261,11 +276,13 @@ class GateEvidenceTest(unittest.TestCase):
     def _checks(overrides=None):
         states = {name: ("completed", "success") for name in REQUIRED_CHECKS}
         states.update(overrides or {})
-        return {"check_runs": [
+        runs = [
             {"name": name, "status": status, "conclusion": conclusion,
+             "completed_at": "2026-08-09T10:30:00Z",
              "html_url": f"https://ci/{index}", "head_sha": SHA}
             for index, (name, (status, conclusion)) in enumerate(states.items())
-        ]}
+        ]
+        return {"total_count": len(runs), "check_runs": runs}
 
     def _clean_evidence(self, **overrides):
         report = tempfile.NamedTemporaryFile(mode="wb", delete=False)
@@ -293,12 +310,13 @@ class GateEvidenceTest(unittest.TestCase):
             {"name": "Unrelated", "status": "completed", "conclusion": "failure",
              "html_url": "https://ci/unrelated", "head_sha": SHA},
         ])
+        checks["total_count"] = len(checks["check_runs"])
         gh.side_effect = [self._issue(), [self._pr()], checks]
         result = validate_gate(
             91, f"/preview {SHA}", self._clean_evidence(),
             now=datetime(2026, 8, 9, 12, tzinfo=timezone.utc))
         self.assertEqual(result["sha"], SHA)
-        self.assertEqual(set(result["checks"]), set(REQUIRED_CHECKS))
+        self.assertEqual(set(result["checks"]["runs"]), set(REQUIRED_CHECKS))
 
     @mock.patch("neo_dev_webhook.manual_preview._gh_json")
     def test_rejects_missing_pending_and_failed_required_checks(self, gh):
@@ -311,7 +329,9 @@ class GateEvidenceTest(unittest.TestCase):
             checks["check_runs"] = [run for run in checks["check_runs"] if run["name"] != name]
             if value:
                 checks["check_runs"].append({"name": name, "status": value[0],
-                    "conclusion": value[1], "html_url": "https://ci/bad", "head_sha": SHA})
+                    "conclusion": value[1], "completed_at": "2026-08-09T10:30:00Z",
+                    "html_url": "https://ci/bad", "head_sha": SHA})
+            checks["total_count"] = len(checks["check_runs"])
             gh.side_effect = [self._issue(), [self._pr()], checks]
             with self.subTest(changes=changes), self.assertRaisesRegex(
                     PreviewError, "required exact-SHA checks"):
@@ -322,8 +342,10 @@ class GateEvidenceTest(unittest.TestCase):
         checks = self._checks()
         checks["check_runs"].append({
             "name": "Test Summary", "status": "completed", "conclusion": "failure",
+            "completed_at": "2026-08-09T10:30:00Z",
             "html_url": "https://ci/failed-duplicate", "head_sha": SHA,
         })
+        checks["total_count"] = len(checks["check_runs"])
         gh.side_effect = [self._issue(), [self._pr()], checks]
         with self.assertRaisesRegex(PreviewError, "required exact-SHA checks"):
             validate_gate(91, f"/preview {SHA}", self._clean_evidence())
@@ -355,6 +377,22 @@ class GateEvidenceTest(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(PreviewError):
                 validate_gate(91, f"/preview {SHA}", self._clean_evidence(**changes),
                               now=datetime(2026, 8, 9, 12, tzinfo=timezone.utc))
+
+    @mock.patch("neo_dev_webhook.manual_preview._gh_json")
+    def test_review_must_be_at_or_after_latest_required_completion(self, gh):
+        for reviewed_at, accepted in (
+                ("2026-08-09T10:29:59Z", False),
+                ("2026-08-09T10:30:00Z", True),
+                ("2026-08-09T10:30:01Z", True)):
+            gh.side_effect = [self._issue(), [self._pr()], self._checks()]
+            evidence = self._clean_evidence(reviewed_at=reviewed_at)
+            if accepted:
+                validate_gate(91, f"/preview {SHA}", evidence,
+                              now=datetime(2026, 8, 9, 12, tzinfo=timezone.utc))
+            else:
+                with self.assertRaisesRegex(PreviewError, "predates required check"):
+                    validate_gate(91, f"/preview {SHA}", evidence,
+                                  now=datetime(2026, 8, 9, 12, tzinfo=timezone.utc))
 
     @mock.patch("neo_dev_webhook.manual_preview._gh_json")
     def test_review_evidence_rejects_every_missing_field(self, gh):

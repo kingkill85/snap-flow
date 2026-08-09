@@ -1,12 +1,13 @@
 services:
   snapflow-test:
-    image: ghcr.io/kingkill85/snap-flow:sha-__FULL_SHA__
+    image: ghcr.io/kingkill85/snap-flow@__DIGEST__
     container_name: snapflow-test
     environment:
       - BUILD_SHA=__FULL_SHA__
       - JWT_SECRET=${PREVIEW_JWT_SECRET:?required}
       - ADMIN_EMAIL=${PREVIEW_ADMIN_EMAIL:?required}
       - ADMIN_PASSWORD=${PREVIEW_ADMIN_PASSWORD:?required}
+      - SKIP_DEFAULT_ADMIN_SEED=true
       - DATABASE_URL=./data/database.sqlite
       - UPLOAD_DIR=./uploads
       - PUBLIC_BASE_URL=https://snapflow-test.kingkill.org

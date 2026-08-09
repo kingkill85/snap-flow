@@ -61,6 +61,22 @@ jobs:
           REQUESTED_SHA: ${{ github.event.inputs.requested_sha }}
         run: docker buildx imagetools create --tag "$IMAGE:sha-$REQUESTED_SHA" "$IMAGE@$DIGEST"
       - name: Record immutable identity
+        env:
+          REQUESTED_SHA: ${{ github.event.inputs.requested_sha }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          BUILD_TIME: ${{ steps.build_time.outputs.value }}
         run: |
-          echo "SHA: ${{ github.event.inputs.requested_sha }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Digest: ${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+          jq -n --arg repository "${{ github.repository }}" --arg sha "$REQUESTED_SHA" \
+            --arg digest "$DIGEST" --arg build_time "$BUILD_TIME" \
+            --argjson run_id "${{ github.run_id }}" \
+            '{repository:$repository,sha:$sha,digest:$digest,build_time:$build_time,run_id:$run_id}' \
+            > manual-preview-image-evidence.json
+          echo "SHA: $REQUESTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Digest: $DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish authenticated deployment evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: manual-preview-image-${{ github.event.inputs.requested_sha }}
+          path: manual-preview-image-evidence.json
+          if-no-files-found: error
+          retention-days: 30

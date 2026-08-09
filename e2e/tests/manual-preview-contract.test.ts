@@ -11,6 +11,7 @@ test('manual preview smoke accepts only fixed route credentials and exact SHA', 
     PREVIEW_ADMIN_EMAIL: 'preview@example.test',
     PREVIEW_ADMIN_PASSWORD: 'preview-only-password',
     EXPECTED_SHA: SHA,
+    PREVIEW_SMOKE_PHASE: 'create',
     BASE_URL: 'https://attacker.example',
   });
   assert.equal(FIXED_PREVIEW_ROUTE, 'https://snapflow-test.kingkill.org');
@@ -19,13 +20,17 @@ test('manual preview smoke accepts only fixed route credentials and exact SHA', 
     email: 'preview@example.test',
     password: 'preview-only-password',
     expectedSha: SHA,
+    phase: 'create',
+    createdId: undefined,
   });
 });
 
 test('manual preview smoke rejects missing credentials and non-full SHA', () => {
   for (const environment of (
     [{ EXPECTED_SHA: SHA },
-     { PREVIEW_ADMIN_EMAIL: 'x', PREVIEW_ADMIN_PASSWORD: 'y', EXPECTED_SHA: 'short' }]
+     { PREVIEW_ADMIN_EMAIL: 'x', PREVIEW_ADMIN_PASSWORD: 'y', EXPECTED_SHA: 'short' },
+     { PREVIEW_ADMIN_EMAIL: 'x', PREVIEW_ADMIN_PASSWORD: 'y', EXPECTED_SHA: SHA,
+       PREVIEW_SMOKE_PHASE: 'verify-cleanup' }]
   )) {
     assert.throws(() => readPreviewSmokeContract(environment));
   }

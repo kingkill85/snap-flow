@@ -37,9 +37,8 @@ export function seedAdmin(): { created: boolean; password?: string } {
     console.log("       DEFAULT ADMIN USER CREATED       ");
     console.log("========================================");
     console.log("Email: admin@snapflow.com");
-    console.log("Password: " + adminPassword);
     console.log("========================================");
-    console.log("IMPORTANT: Change this password immediately after logging in!");
+    console.log("A one-time administrator credential was generated; its value is never logged.");
     console.log("");
 
     return { created: true, password: adminPassword };

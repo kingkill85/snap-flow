@@ -1,9 +1,10 @@
 services:
   snapflow-test:
-    image: ghcr.io/kingkill85/snap-flow:sha-0123456789abcdef0123456789abcdef01234567
+    image: ghcr.io/kingkill85/snap-flow@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     container_name: snapflow-test
     environment:
       - BUILD_SHA=0123456789abcdef0123456789abcdef01234567
+      - SKIP_DEFAULT_ADMIN_SEED=true
       - JWT_SECRET=${PREVIEW_JWT_SECRET:?required}
       - ADMIN_EMAIL=${PREVIEW_ADMIN_EMAIL:?required}
       - ADMIN_PASSWORD=${PREVIEW_ADMIN_PASSWORD:?required}
