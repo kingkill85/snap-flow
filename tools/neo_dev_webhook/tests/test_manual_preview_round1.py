@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from unittest import mock
 
 from neo_dev_webhook.manual_preview import (
-    PreviewError, _validate_checks, render_packet, resolve_image_digest,
+    PreviewError, _validate_checks, render_packet, resolve_image_provenance,
 )
 from neo_dev_webhook.manual_preview_stack import (
     COMPOSE, MARKER, _provision_preview_admin, _rollback_failed_action,
@@ -19,6 +19,8 @@ from neo_dev_webhook.manual_preview_stack import (
 
 SHA = "0123456789abcdef0123456789abcdef01234567"
 DIGEST = "sha256:" + "a" * 64
+PROVENANCE = {"repository": "kingkill85/snap-flow", "sha": SHA, "digest": DIGEST,
+              "build_time": "2026-08-09T12:00:00Z", "run_id": 123}
 BASE_SHA = "89abcdef0123456789abcdef0123456789abcdef"
 REQUIRED = (
     "Backend Tests (Deno)", "Frontend Tests (Vitest)",
@@ -68,7 +70,7 @@ class DigestContractTest(unittest.TestCase):
             }))
             return mock.Mock()
         run.side_effect = download
-        self.assertEqual(resolve_image_digest(123, SHA), DIGEST)
+        self.assertEqual(resolve_image_provenance(123, SHA), PROVENANCE)
 
     def test_compose_requires_authenticated_digest_not_tag(self):
         text = render_compose(SHA, DIGEST)
@@ -82,7 +84,7 @@ class DigestContractTest(unittest.TestCase):
             "ghcr.io/kingkill85/snap-flow@sha256:" + "b" * 64],
             "revision": SHA, "image": "ignored", "mounts": {}}
         with self.assertRaisesRegex(PreviewError, "digest"):
-            verify(SHA, DIGEST, scope=pathlib.Path("/safe-fixture"),
+            verify(PROVENANCE, scope=pathlib.Path("/safe-fixture"),
                    run_external=False)
 
 
@@ -138,12 +140,14 @@ class LockAndTransactionTest(unittest.TestCase):
                  mock.patch("neo_dev_webhook.manual_preview_stack._wait_healthy",
                             side_effect=lambda *_: events.append(("healthy",))), \
                  mock.patch("neo_dev_webhook.manual_preview_stack.verify",
-                            side_effect=lambda *_args, **_kw: events.append(("verify",)) or {}), \
+                            side_effect=lambda *_args, **_kw: events.append(("verify",)) or {
+                                "deployment_evidence": {
+                                    "sha": SHA, "digest": DIGEST, "run_id": 123}}), \
                  mock.patch("neo_dev_webhook.manual_preview_stack._exercise_persistence",
                             side_effect=lambda *_args, **_kw: events.append(("exercise",)) or {}), \
                  mock.patch("neo_dev_webhook.manual_preview_stack._slot_lock",
                             side_effect=lambda *_a, **_k: nullcontext()):
-                deploy(SHA, DIGEST)
+                deploy(PROVENANCE)
             self.assertEqual(events[:7], [
                 ("remove",), ("snapshot",), ("switch",),
                 ("compose", "pull"), ("compose", "up", "-d", "--remove-orphans"),
@@ -175,22 +179,23 @@ class PersistenceEvidenceTest(unittest.TestCase):
         root = pathlib.Path(__file__).parents[3]
         smoke = (root / "e2e/manual-preview-smoke.ts").read_text() + \
             (root / "e2e/support/manual-preview-contract.ts").read_text()
-        for value in ("PREVIEW_SMOKE_PHASE", "PREVIEW_SMOKE_ID", "created_id",
+        for value in ("PREVIEW_SMOKE_PHASE", "PREVIEW_SMOKE_ID",
+                      "PREVIEW_SMOKE_GROUP_ID", "created_id", "project_group_id",
                       "reload_proven", "restart_proven", "cleanup_proven"):
             self.assertIn(value, smoke)
 
     def test_packet_requires_structured_verified_persistence_and_mobile_evidence(self):
         scenario = {"title": "Preview project", "steps": ["Open Projects"],
                     "setup": "Preview account", "expected": "Project visible"}
-        evidence = {"sha": SHA, "route": "https://snapflow-test.kingkill.org",
-                    "created_id": "preview-smoke-123", "reload_proven": True,
+        evidence = {"sha": SHA, "digest": DIGEST, "run_id": 123,
+                    "route": "https://snapflow-test.kingkill.org",
+                    "created_id": "123", "project_group_id": "456", "reload_proven": True,
                     "restart_proven": True, "reset_repeatable": True,
                     "mobile_viewport": {"width": 390, "height": 844}}
-        packet = render_packet(scenario, SHA, "2026-08-09T12:00:00Z", evidence)
-        self.assertIn("preview-smoke-123", packet)
+        packet = render_packet(scenario, PROVENANCE, evidence)
+        self.assertIn("123", packet)
         with self.assertRaises(PreviewError):
-            render_packet(scenario, SHA, "2026-08-09T12:00:00Z",
-                          {**evidence, "restart_proven": False})
+            render_packet(scenario, PROVENANCE, {**evidence, "restart_proven": False})
 
 
 class CheckPaginationAndOrderingTest(unittest.TestCase):

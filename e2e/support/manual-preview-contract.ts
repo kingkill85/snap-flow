@@ -8,6 +8,7 @@ export function readPreviewSmokeContract(environment: Environment) {
   const expectedSha = environment.EXPECTED_SHA;
   const phase = environment.PREVIEW_SMOKE_PHASE;
   const createdId = environment.PREVIEW_SMOKE_ID;
+  const projectGroupId = environment.PREVIEW_SMOKE_GROUP_ID;
   if (!email || !password) {
     throw new Error('PREVIEW_ADMIN_EMAIL and PREVIEW_ADMIN_PASSWORD are required');
   }
@@ -17,8 +18,10 @@ export function readPreviewSmokeContract(environment: Environment) {
   if (phase !== 'create' && phase !== 'verify-cleanup' && phase !== 'cleanup') {
     throw new Error('PREVIEW_SMOKE_PHASE must be create, verify-cleanup, or cleanup');
   }
-  if (phase !== 'create' && !/^\d+$/.test(createdId || '')) {
-    throw new Error('PREVIEW_SMOKE_ID is required for verification cleanup');
+  if (phase !== 'create' && (!/^[1-9]\d*$/.test(createdId || '') ||
+      !/^[1-9]\d*$/.test(projectGroupId || ''))) {
+    throw new Error('PREVIEW_SMOKE_ID and PREVIEW_SMOKE_GROUP_ID are required for cleanup');
   }
-  return { route: FIXED_PREVIEW_ROUTE, email, password, expectedSha, phase, createdId };
+  return { route: FIXED_PREVIEW_ROUTE, email, password, expectedSha, phase,
+    createdId, projectGroupId };
 }

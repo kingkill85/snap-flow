@@ -578,6 +578,35 @@ Deno.test('Project Group - can delete empty group', async () => {
   assertEquals(groups.length, 0, 'project_group should be deleted');
 });
 
+Deno.test('Manual preview lifecycle - group deletion removes persisted version and group', async () => {
+  const token = await getAuthToken();
+  const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+  const createdResponse = await testRequest('/api/projects', {
+    method: 'POST', headers,
+    body: JSON.stringify({ customer_name: 'PREVIEW-SMOKE-INTEGRATION' }),
+  });
+  assertEquals(createdResponse.status, 201);
+  const created = (await parseJSON(createdResponse)).data;
+  assertEquals(typeof created.id, 'number');
+  assertEquals(typeof created.project_group_id, 'number');
+
+  // Independent reads model the smoke reload/restart boundary against persisted storage.
+  assertEquals((await testRequest(`/api/projects/${created.id}`, { headers })).status, 200);
+  assertEquals((await testRequest(`/api/project-groups/${created.project_group_id}`, { headers })).status, 200);
+
+  const deleted = await testRequest(`/api/project-groups/${created.project_group_id}`, {
+    method: 'DELETE', headers,
+  });
+  assertEquals(deleted.status, 200);
+  assertEquals((await testRequest(`/api/projects/${created.id}`, { headers })).status, 404);
+  assertEquals((await testRequest(`/api/project-groups/${created.project_group_id}`, { headers })).status, 404);
+
+  // Recovery cleanup is safe after normal cleanup and observes the group as absent.
+  assertEquals((await testRequest(`/api/project-groups/${created.project_group_id}`, {
+    method: 'DELETE', headers,
+  })).status, 404);
+});
+
 Deno.test('Project Group - cannot delete non-existent group', async () => {
   const token = await getAuthToken();
 

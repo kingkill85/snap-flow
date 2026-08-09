@@ -41,7 +41,23 @@ class PreviewError(RuntimeError):
     pass
 
 
-def resolve_image_digest(run_id: int, sha: str) -> str:
+PROVENANCE_KEYS = {"repository", "sha", "digest", "build_time", "run_id"}
+
+
+def validate_image_provenance(value: object) -> dict:
+    if (not isinstance(value, dict) or set(value) != PROVENANCE_KEYS
+            or value.get("repository") != REPOSITORY
+            or not isinstance(value.get("sha"), str)
+            or not FULL_SHA.fullmatch(value["sha"])
+            or not isinstance(value.get("digest"), str)
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", value["digest"]) is None
+            or type(value.get("run_id")) is not int or value["run_id"] <= 0):
+        raise PreviewError("image provenance has an invalid immutable schema")
+    _parse_utc(value["build_time"], "image build_time")
+    return value
+
+
+def resolve_image_provenance(run_id: int, sha: str) -> dict:
     """Download and bind GitHub-produced image evidence using authenticated gh."""
     if run_id <= 0 or not FULL_SHA.fullmatch(sha):
         raise PreviewError("valid workflow run and full SHA are required")
@@ -61,14 +77,10 @@ def resolve_image_digest(run_id: int, sha: str) -> str:
             evidence = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError) as error:
             raise PreviewError("authenticated image evidence is missing or invalid") from error
-    expected = {"repository", "sha", "digest", "build_time", "run_id"}
-    if (not isinstance(evidence, dict) or set(evidence) != expected
-            or evidence["repository"] != REPOSITORY or evidence["sha"] != sha
-            or evidence["run_id"] != run_id
-            or re.fullmatch(r"sha256:[0-9a-f]{64}", str(evidence["digest"])) is None):
+    validate_image_provenance(evidence)
+    if evidence["sha"] != sha or evidence["run_id"] != run_id:
         raise PreviewError("authenticated image evidence does not match requested SHA")
-    _parse_utc(evidence["build_time"], "image build_time")
-    return evidence["digest"]
+    return evidence
 
 
 @dataclasses.dataclass(frozen=True)
@@ -361,29 +373,35 @@ def validate_compose(text: str, sha: str, digest: str) -> dict:
     return {"route": FIXED_ROUTE, "sha": sha}
 
 
-def render_packet(scenario: dict, sha: str, build_time: str,
-                  verifier_evidence: dict) -> str:
-    if not FULL_SHA.fullmatch(sha):
-        raise PreviewError("packet SHA must be full length")
+def render_packet(scenario: dict, provenance: dict, verifier_evidence: dict) -> str:
+    validate_image_provenance(provenance)
+    sha = provenance["sha"]
     required = ("title", "steps", "setup", "expected")
     if any(not scenario.get(key) for key in required) or not isinstance(scenario["steps"], list):
         raise PreviewError("approved scenario is incomplete")
-    evidence_keys = {"sha", "route", "created_id", "reload_proven", "restart_proven",
+    evidence_keys = {"sha", "digest", "run_id", "route", "created_id",
+                     "project_group_id", "reload_proven", "restart_proven",
                      "reset_repeatable", "mobile_viewport"}
     if (not isinstance(verifier_evidence, dict) or set(verifier_evidence) != evidence_keys
             or verifier_evidence.get("sha") != sha
+            or verifier_evidence.get("digest") != provenance["digest"]
+            or verifier_evidence.get("run_id") != provenance["run_id"]
             or verifier_evidence.get("route") != FIXED_ROUTE
             or not all(verifier_evidence.get(key) is True for key in
                        ("reload_proven", "restart_proven", "reset_repeatable"))
             or verifier_evidence.get("mobile_viewport") != {"width": 390, "height": 844}
-            or not isinstance(verifier_evidence.get("created_id"), str)):
+            or not isinstance(verifier_evidence.get("created_id"), str)
+            or re.fullmatch(r"[1-9][0-9]*", verifier_evidence["created_id"]) is None
+            or not isinstance(verifier_evidence.get("project_group_id"), str)
+            or re.fullmatch(r"[1-9][0-9]*",
+                            verifier_evidence["project_group_id"]) is None):
         raise PreviewError("packet requires structured verified persistence and mobile evidence")
     steps = "\n".join(f"{index}. {step}" for index, step in enumerate(scenario["steps"], 1))
     return f"""# {scenario['title']}
 
 Verified URL: {FIXED_ROUTE}
 Full SHA: {sha}
-Build time: {build_time}
+Build time: {provenance['build_time']}
 
 Setup: {scenario['setup']}
 Navigation / steps:
@@ -408,8 +426,6 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--review-evidence", required=True, type=pathlib.Path)
     packet = actions.add_parser("packet")
     packet.add_argument("--scenario", required=True, type=pathlib.Path)
-    packet.add_argument("--sha", required=True)
-    packet.add_argument("--build-time", required=True)
     return parser
 
 
@@ -428,7 +444,11 @@ def main() -> None:
         verifier_evidence = json.loads(evidence_path.read_text())
     except (OSError, json.JSONDecodeError) as error:
         raise PreviewError("structured verifier evidence is missing") from error
-    print(render_packet(scenario, args.sha, args.build_time, verifier_evidence), end="")
+    if (not isinstance(verifier_evidence, dict)
+            or set(verifier_evidence) != {"provenance", "verifier_evidence"}):
+        raise PreviewError("verified deployment evidence is incomplete")
+    print(render_packet(scenario, verifier_evidence["provenance"],
+                        verifier_evidence["verifier_evidence"]), end="")
 
 
 if __name__ == "__main__":

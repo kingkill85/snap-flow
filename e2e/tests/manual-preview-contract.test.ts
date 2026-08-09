@@ -22,6 +22,7 @@ test('manual preview smoke accepts only fixed route credentials and exact SHA', 
     expectedSha: SHA,
     phase: 'create',
     createdId: undefined,
+    projectGroupId: undefined,
   });
 });
 
@@ -44,5 +45,15 @@ test('cleanup phase requires a numeric preview-only project id', () => {
     PREVIEW_SMOKE_PHASE: 'cleanup',
   };
   assert.throws(() => readPreviewSmokeContract(base));
-  assert.equal(readPreviewSmokeContract({ ...base, PREVIEW_SMOKE_ID: '42' }).createdId, '42');
+  assert.throws(() => readPreviewSmokeContract({ ...base, PREVIEW_SMOKE_ID: '42' }));
+  const contract = readPreviewSmokeContract({
+    ...base, PREVIEW_SMOKE_ID: '42', PREVIEW_SMOKE_GROUP_ID: '84',
+  });
+  assert.equal(contract.createdId, '42');
+  assert.equal(contract.projectGroupId, '84');
+  for (const [createdId, projectGroupId] of [['x', '84'], ['42', 'x'], ['42', '']]) {
+    assert.throws(() => readPreviewSmokeContract({
+      ...base, PREVIEW_SMOKE_ID: createdId, PREVIEW_SMOKE_GROUP_ID: projectGroupId,
+    }));
+  }
 });

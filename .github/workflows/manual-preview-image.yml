@@ -53,6 +53,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.event.inputs.requested_sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.created=${{ steps.build_time.outputs.value }}
+            org.snapflow.preview.run-id=${{ github.run_id }}
           outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
       - name: Attach immutable full-SHA tag to pushed digest
         env:
