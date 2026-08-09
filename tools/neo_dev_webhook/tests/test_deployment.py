@@ -66,7 +66,8 @@ class DeploymentSourceTest(unittest.TestCase):
             "/accept <implementation-sha>", "sync delta specs", "archive the change",
             "final exact-SHA CI", "separate `/merge`", "/revise-spec", "/fix",
             "/cancel", "byte-frozen", "Record progress", "release, deployment",
-            "secrets/access", "destructive cleanup",
+            "secrets/access", "destructive cleanup", "at most two unsuccessful",
+            "non_convergent", "kanban_complete", "reconcile-phase.py", "kanban_block",
         ):
             self.assertIn(required, profile)
         self.assertIn("no transition-only tool", profile)
@@ -112,6 +113,10 @@ class DeploymentSourceTest(unittest.TestCase):
             self.assertEqual(helper.read_bytes(),
                              (script.parent / "task.py").read_bytes())
             self.assertTrue(os.access(helper, os.X_OK))
+            phase_helper = data / "scripts/neo-dev/reconcile-phase.py"
+            self.assertEqual(phase_helper.read_bytes(),
+                             (script.parent / "reconcile_phase.py").read_bytes())
+            self.assertTrue(os.access(phase_helper, os.X_OK))
             subprocess.run([str(script), "verify"], check=True, env=env)
             subprocess.run([str(script), "rollback", backup], check=True, env=env)
             self.assertFalse(live.exists())
@@ -153,6 +158,7 @@ class DeploymentSourceTest(unittest.TestCase):
             self.assertEqual(profile.read_bytes(), before)
             self.assertFalse((data / "services/snapflow-neo-dev-webhook/src").exists())
             self.assertFalse((data / "scripts/neo-dev/task.py").exists())
+            self.assertFalse((data / "scripts/neo-dev/reconcile-phase.py").exists())
 
             result = subprocess.run(
                 [str(script), "install"],
