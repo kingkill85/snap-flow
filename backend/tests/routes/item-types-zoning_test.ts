@@ -143,6 +143,17 @@ Deno.test("nested zoning parameter routes validate, authorize, order and preserv
   const areaId = db.queryEntries<{ id: number }>("INSERT INTO placements(floorplan_id,type,x,y,width,height) VALUES (?,'area',0,0,10,10) RETURNING id", [floorplanId])[0].id;
   db.query("INSERT INTO area_properties(placement_id,name) VALUES (?,'Room')", [areaId]);
   db.query("INSERT INTO area_zoning_values(area_placement_id,parameter_id,value) VALUES (?,?,2)", [areaId, relayId]);
+
+  for (const [action, expectedActive] of [["deactivate", 1], ["activate", 0]] as const) {
+    if (action === "activate") assertEquals((await testRequest(`/api/item-types/${type.id}/zoning-parameters/${relayId}/deactivate`, { method: "PATCH", headers: { Authorization: `Bearer ${admin}` } })).status, 200);
+    const invalidAction = await testRequest(`/api/item-types/${type.id}/zoning-parameters/${relayId}/${action}`, { method: "PATCH", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" }, body: JSON.stringify({ unexpected: true }) });
+    assertEquals(invalidAction.status, 400);
+    assertEquals(typeof (await parseJSON(invalidAction)).details, "object");
+    assertEquals(db.queryEntries<{ is_active: number }>("SELECT is_active FROM item_type_zoning_parameters WHERE id=?", [relayId])[0].is_active, expectedActive);
+    assertEquals(db.queryEntries<{ value: number }>("SELECT value FROM area_zoning_values WHERE area_placement_id=? AND parameter_id=?", [areaId, relayId])[0].value, 2);
+  }
+  assertEquals((await testRequest(`/api/item-types/${type.id}/zoning-parameters/${relayId}/activate`, { method: "PATCH", headers: { Authorization: `Bearer ${admin}` } })).status, 200);
+
   const conflict = await testRequest(`/api/item-types/${type.id}/zoning-parameters/${relayId}`, { method: "DELETE", headers: { Authorization: `Bearer ${admin}` } });
   assertEquals(conflict.status, 409);
   assertEquals((await parseJSON(conflict)).code, "PARAMETER_IN_USE");

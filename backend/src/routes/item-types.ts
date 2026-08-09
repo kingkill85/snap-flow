@@ -1,4 +1,4 @@
-import { type Context, Hono } from "hono";
+import { type Context, Hono, type Next } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { adminMiddleware, authMiddleware } from "../middleware/auth.ts";
@@ -39,6 +39,28 @@ const parameterUpdateSchema = parameterSchema.partial().refine((value) =>
 const parameterReorderSchema = z.object({
   ids: z.array(z.number().int().positive()),
 }).strict();
+const emptyParameterActionSchema = z.object({}).strict();
+const optionalEmptyParameterActionBody = async (c: Context, next: Next) => {
+  const rawBody = await c.req.raw.clone().text();
+  if (!rawBody.trim()) return await next();
+  let body: unknown;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    return c.json({
+      error: "Invalid request body",
+      details: { field: "body", message: "Expected valid JSON" },
+    }, 400);
+  }
+  const result = emptyParameterActionSchema.safeParse(body);
+  if (!result.success) {
+    return c.json({
+      error: "Invalid request body",
+      details: result.error.flatten(),
+    }, 400);
+  }
+  return await next();
+};
 const positiveId = (value: string) => {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
@@ -200,6 +222,7 @@ for (const action of ["activate", "deactivate"] as const) {
     `/:id/zoning-parameters/:parameterId/${action}`,
     authMiddleware,
     adminMiddleware,
+    optionalEmptyParameterActionBody,
     (c) => {
       const id = positiveId(c.req.param("id"));
       const parameterId = positiveId(c.req.param("parameterId"));
