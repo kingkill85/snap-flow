@@ -68,6 +68,7 @@ class DeploymentSourceTest(unittest.TestCase):
             "/cancel", "byte-frozen", "Record progress", "release, deployment",
             "secrets/access", "destructive cleanup", "at most two unsuccessful",
             "non_convergent", "kanban_complete", "reconcile-phase.py", "kanban_block",
+            "normal human-wait", "without recursively reconciling",
         ):
             self.assertIn(required, profile)
         self.assertIn("no transition-only tool", profile)

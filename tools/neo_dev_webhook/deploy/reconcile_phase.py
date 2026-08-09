@@ -6,6 +6,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import urllib.parse
 from collections.abc import Callable, Sequence
 
 REPOSITORY = "kingkill85/snap-flow"
@@ -44,20 +45,33 @@ def _run_gh(gh_executable: str, arguments: Sequence[str], *, runner: Runner,
     return result.stdout
 
 
-def _fetch_labels(gh_executable: str, issue: int, *, runner: Runner) -> list[str]:
+def _fetch_issue(gh_executable: str, issue: int, *, runner: Runner) -> list[str]:
     output = _run_gh(
         gh_executable,
-        ["api", f"repos/{REPOSITORY}/issues/{issue}", "--jq", "[.labels[].name]"],
+        ["api", f"repos/{REPOSITORY}/issues/{issue}"],
         runner=runner,
     )
     try:
-        labels = json.loads(output)
+        data = json.loads(output)
     except json.JSONDecodeError as error:
-        raise ReconciliationError("gh returned invalid label JSON") from error
-    if not isinstance(labels, list) or not all(isinstance(label, str) for label in labels):
+        raise ReconciliationError("gh returned invalid Issue JSON") from error
+    if not isinstance(data, dict):
+        raise ReconciliationError("gh returned an invalid Issue")
+    if data.get("state") != "open":
+        raise ReconciliationError("Issue is not open")
+    if "pull_request" in data:
+        raise ReconciliationError("target is a pull request")
+    raw_labels = data.get("labels")
+    if not isinstance(raw_labels, list) or not all(
+        isinstance(label, dict) and isinstance(label.get("name"), str)
+        for label in raw_labels
+    ):
         raise ReconciliationError("gh returned an invalid label list")
+    labels = [label["name"] for label in raw_labels]
     if len(labels) != len(set(labels)):
         raise ReconciliationError("GitHub returned duplicate labels")
+    if "neo-dev" not in labels:
+        raise ReconciliationError("Issue is not eligible: neo-dev label is absent")
     return labels
 
 
@@ -74,21 +88,28 @@ def reconcile_phase(*, repository: str, issue: int, phase: str,
         raise ReconciliationError("gh executable must be an absolute path")
 
     expected = PHASE_TO_LABEL[phase]
-    current = _fetch_labels(gh_executable, issue, runner=runner)
-    desired = [label for label in current if label not in PHASE_LABELS]
-    desired.append(expected)
-    if current != desired:
+    current = _fetch_issue(gh_executable, issue, runner=runner)
+    current_phases = set(current) & PHASE_LABELS
+    if expected not in current_phases:
         _run_gh(
             gh_executable,
-            ["api", "--method", "PATCH", f"repos/{REPOSITORY}/issues/{issue}",
+            ["api", "--method", "POST", f"repos/{REPOSITORY}/issues/{issue}/labels",
              "--input", "-"],
             runner=runner,
-            input_text=json.dumps({"labels": desired}, separators=(",", ":")),
+            input_text=json.dumps({"labels": [expected]}, separators=(",", ":")),
+        )
+    for stale in sorted(current_phases - {expected}):
+        encoded_label = urllib.parse.quote(stale, safe="")
+        _run_gh(
+            gh_executable,
+            ["api", "--method", "DELETE",
+             f"repos/{REPOSITORY}/issues/{issue}/labels/{encoded_label}"],
+            runner=runner,
         )
 
-    verified = _fetch_labels(gh_executable, issue, runner=runner)
+    verified = _fetch_issue(gh_executable, issue, runner=runner)
     verified_phases = sorted(set(verified) & PHASE_LABELS)
-    if verified_phases != [expected] or set(verified) != set(desired):
+    if verified_phases != [expected]:
         raise ReconciliationError("GitHub phase-label verification failed")
     return {"issue": issue, "phase": phase, "phase_label": expected,
             "repository": REPOSITORY, "status": "synchronized"}
