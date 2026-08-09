@@ -44,9 +44,12 @@ def assert_preview_scope(path: pathlib.Path = FIXED_STACK) -> pathlib.Path:
     if resolved != expected or not (resolved / MARKER).is_file():
         raise PreviewError("target is not the marked fixed preview-only stack")
     for child in ("state", "uploads"):
-        candidate = (resolved / child).resolve()
-        if candidate.parent != resolved or candidate.is_symlink():
+        raw_candidate = resolved / child
+        candidate = raw_candidate.resolve()
+        if candidate.parent != resolved or raw_candidate.is_symlink():
             raise PreviewError("preview state path escapes or aliases fixed stack")
+        if raw_candidate.exists() and any(path.is_symlink() for path in raw_candidate.rglob("*")):
+            raise PreviewError("preview state contains a forbidden symlink")
     return resolved
 
 
@@ -70,6 +73,10 @@ def _backup(stack: pathlib.Path) -> pathlib.Path:
     backup_id = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + f"-{time.time_ns()}"
     target = stack / ".preview-backups" / backup_id
     target.mkdir(parents=True, mode=0o700)
+    presence = {name: (stack / name).exists()
+                for name in (COMPOSE, ".env", "state", "uploads")}
+    (target / "BACKUP_STATE.json").write_text(
+        json.dumps(presence, sort_keys=True) + "\n")
     for name in (COMPOSE, ".env"):
         source = stack / name
         if source.exists():
@@ -88,10 +95,54 @@ def _backup(stack: pathlib.Path) -> pathlib.Path:
 
 
 def _verify_backup(target: pathlib.Path) -> None:
-    manifest = json.loads((target / "SHA256.json").read_text())
-    if not manifest or any(hashlib.sha256((target / name).read_bytes()).hexdigest() != digest
-                           for name, digest in manifest.items()):
+    try:
+        manifest = json.loads((target / "SHA256.json").read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise PreviewError("sealed backup verification failed") from error
+    paths = list(target.rglob("*"))
+    if any(path.is_symlink() for path in paths):
         raise PreviewError("sealed backup verification failed")
+    actual = {str(path.relative_to(target)) for path in paths
+              if path.is_file() and path.name != "SHA256.json"}
+    if (not manifest or set(manifest) != actual
+            or any(hashlib.sha256((target / name).read_bytes()).hexdigest() != digest
+                   for name, digest in manifest.items())):
+        raise PreviewError("sealed backup verification failed")
+
+
+def _restore_backup(stack: pathlib.Path, backup: pathlib.Path) -> None:
+    _verify_backup(backup)
+    try:
+        presence = json.loads((backup / "BACKUP_STATE.json").read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise PreviewError("sealed backup state is invalid") from error
+    expected_presence = {COMPOSE, ".env", "state", "uploads"}
+    if set(presence) != expected_presence or any(type(value) is not bool
+                                                  for value in presence.values()):
+        raise PreviewError("sealed backup state is invalid")
+    for name in (COMPOSE, ".env"):
+        target = stack / name
+        source = backup / name
+        if presence[name]:
+            if not source.exists():
+                raise PreviewError("sealed backup presence does not match content")
+            shutil.copy2(source, target)
+        else:
+            if source.exists():
+                raise PreviewError("sealed backup presence does not match content")
+            if target.exists():
+                target.unlink()
+    for name in ("state", "uploads"):
+        target = stack / name
+        if target.exists():
+            shutil.rmtree(target)
+        source = backup / name
+        if presence[name]:
+            if not source.exists():
+                raise PreviewError("sealed backup presence does not match content")
+            shutil.copytree(source, target)
+        elif source.exists():
+            raise PreviewError("sealed backup presence does not match content")
 
 
 def _verify_route_contract() -> None:
@@ -153,6 +204,11 @@ def verify(sha: str) -> dict:
         check=True, capture_output=True, text=True, timeout=30).stdout)
     if version.get("sha") != sha:
         raise PreviewError("running /version SHA does not match")
+    subprocess.run(
+        ["npm", "run", "e2e:preview-smoke"], check=True, capture_output=True,
+        text=True, timeout=120, cwd=pathlib.Path(__file__).parents[2],
+        env={**os.environ, "EXPECTED_SHA": sha},
+    )
     return {"stack": str(FIXED_STACK), "route": FIXED_ROUTE, "sha": sha,
             "image": image, "revision": revision, "health": "healthy"}
 
@@ -171,9 +227,8 @@ def deploy(sha: str) -> dict:
         _run_compose(stack, "up", "-d", "--remove-orphans")
         result = verify(sha)
     except BaseException:
-        _verify_backup(backup)
-        if (backup / COMPOSE).exists():
-            shutil.copy2(backup / COMPOSE, stack / COMPOSE)
+        _restore_backup(stack, backup)
+        if (stack / COMPOSE).exists():
             _run_compose(stack, "up", "-d", "--remove-orphans")
         raise
     result["backup_id"] = backup.name
@@ -184,28 +239,39 @@ def reset_seed(sha: str) -> dict:
     _require_mutation_authority()
     stack = assert_preview_scope()
     backup = _backup(stack)
-    _run_compose(stack, "down")
-    for name in ("state", "uploads"):
-        target = stack / name
-        if target.exists():
-            shutil.rmtree(target)
-        target.mkdir(mode=0o700)
-    (stack / "state" / MARKER).write_text("preview-only\n")
-    _run_compose(stack, "up", "-d")
-    seed_program = (
-        "import {userRepository} from './src/repositories/user.ts';"
-        "import {hashPassword} from './src/services/password.ts';"
-        "const email=Deno.env.get('ADMIN_EMAIL');const password=Deno.env.get('ADMIN_PASSWORD');"
-        "if(!email||!password)throw Error('preview credentials missing');"
-        "const current=await userRepository.findByEmail(email);const password_hash=hashPassword(password);"
-        "if(current)await userRepository.update(current.id,{password_hash,role:'admin'});"
-        "else await userRepository.create({email,password_hash,full_name:'Preview Administrator',role:'admin'});"
-        "console.log('preview seed complete');"
-    )
-    for _ in range(2):
-        _run_compose(stack, "exec", "-T", "snapflow-test", "deno", "eval",
-                     "--allow-env", "--allow-read", "--allow-write", seed_program)
-    result = verify(sha)
+    try:
+        _run_compose(stack, "down")
+        for name in ("state", "uploads"):
+            target = stack / name
+            if target.exists():
+                shutil.rmtree(target)
+            target.mkdir(mode=0o700)
+        (stack / "state" / MARKER).write_text("preview-only\n")
+        _run_compose(stack, "up", "-d")
+        seed_program = (
+            "import {userRepository} from './src/repositories/user.ts';"
+            "import {hashPassword} from './src/services/password.ts';"
+            "const email=Deno.env.get('ADMIN_EMAIL');const password=Deno.env.get('ADMIN_PASSWORD');"
+            "if(!email||!password)throw Error('preview credentials missing');"
+            "const current=await userRepository.findByEmail(email);const password_hash=hashPassword(password);"
+            "if(current)await userRepository.update(current.id,{password_hash,role:'admin'});"
+            "else await userRepository.create({email,password_hash,full_name:'Preview Administrator',role:'admin'});"
+            "console.log('preview seed complete');"
+        )
+        for _ in range(2):
+            _run_compose(stack, "exec", "-T", "snapflow-test", "deno", "eval",
+                         "--allow-env", "--allow-read", "--allow-write", seed_program)
+        result = verify(sha)
+    except BaseException as reset_error:
+        try:
+            _restore_backup(stack, backup)
+            if (stack / COMPOSE).exists():
+                _run_compose(stack, "up", "-d", "--remove-orphans")
+        except BaseException as rollback_error:
+            raise PreviewError(
+                f"reset failed and rollback failed: {rollback_error}"
+            ) from reset_error
+        raise PreviewError("reset failed; previous stack restored") from reset_error
     result["backup_id"] = backup.name
     result["seed"] = "completed"
     return result
@@ -217,18 +283,7 @@ def rollback(backup_id: str) -> dict:
     if not __import__("re").fullmatch(r"[0-9]{8}T[0-9]{6}Z-[0-9]{19}", backup_id):
         raise PreviewError("invalid backup identifier")
     backup = stack / ".preview-backups" / backup_id
-    _verify_backup(backup)
-    shutil.copy2(backup / COMPOSE, stack / COMPOSE)
-    if (backup / ".env").exists():
-        shutil.copy2(backup / ".env", stack / ".env")
-    for name in ("state", "uploads"):
-        target = stack / name
-        if target.exists():
-            shutil.rmtree(target)
-        if (backup / name).exists():
-            shutil.copytree(backup / name, target)
-        else:
-            target.mkdir(mode=0o700)
+    _restore_backup(stack, backup)
     _run_compose(stack, "up", "-d", "--remove-orphans")
     return {"stack": str(stack), "restored_backup": backup_id}
 

@@ -11,6 +11,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   build:
@@ -25,6 +26,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 1
+
+      - name: Verify exact source commit
+        id: source
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$SOURCE_SHA"
+          echo "build_time=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -60,8 +71,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            BUILD_SHA=${{ github.event.workflow_run.head_sha || github.sha }}
-            BUILD_TIME=${{ github.event.workflow_run.updated_at || github.event.head_commit.timestamp }}
+            BUILD_SHA=${{ env.SOURCE_SHA }}
+            BUILD_TIME=${{ steps.source.outputs.build_time }}
 
       - name: Image digest
         run: echo "Image pushed to ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
