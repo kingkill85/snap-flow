@@ -3,7 +3,6 @@ import argparse
 import http.client
 import json
 import os
-import socket
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -83,29 +82,10 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
             self._admission.release()
             raise
 
-    @staticmethod
-    def _expire_request(request):
-        try:
-            request.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
-        try:
-            request.close()
-        except OSError:
-            pass
-
     def process_request_thread(self, request, client_address):
-        deadline = threading.Timer(
-            self._read_timeout,
-            self._expire_request,
-            args=(request,),
-        )
-        deadline.daemon = True
-        deadline.start()
         try:
             super().process_request_thread(request, client_address)
         finally:
-            deadline.cancel()
             self._admission.release()
 
     def handle_error(self, request, client_address):

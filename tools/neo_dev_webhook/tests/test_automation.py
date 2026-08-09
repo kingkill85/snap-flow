@@ -250,6 +250,32 @@ class BoundedServerTest(unittest.TestCase):
             server.server_close()
             thread.join(timeout=1)
 
+    def test_completed_body_allows_handler_work_beyond_read_timeout(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                self.rfile.read(length)
+                time.sleep(0.15)
+                self.send_response(204)
+                self.end_headers()
+
+            def log_message(self, _format, *_args):
+                return
+
+        server = BoundedThreadingHTTPServer(("127.0.0.1", 0), Handler,
+                                            concurrency_limit=1, read_timeout=0.05)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = http.client.HTTPConnection(*server.server_address, timeout=1)
+        try:
+            connection.request("POST", "/", body=b"complete")
+            self.assertEqual(connection.getresponse().status, 204)
+        finally:
+            connection.close()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=1)
+
 
 class CanonicalContractTest(unittest.TestCase):
     def test_canonical_specs_describe_direct_handoff_and_frozen_artifacts(self):

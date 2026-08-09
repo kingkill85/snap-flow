@@ -8,17 +8,23 @@ COMMAND = "exec python3 -m neo_dev_webhook.server --host 0.0.0.0 --port 8787"
 
 
 def verify(text: str) -> None:
-    services = re.findall(r"(?m)^  ([a-zA-Z0-9_-]+):$", text)
+    services_match = re.search(r"(?ms)^services:\s*\n(.*?)(?=^[^\s#][^\n]*:\s*(?:#.*)?$|\Z)", text)
+    if services_match is None:
+        raise ValueError("live compose services block missing")
+    services_text = services_match.group(1)
+    services = re.findall(r"(?m)^  ([a-zA-Z0-9_-]+):\s*$", services_text)
     if services != ["receiver"]:
         raise ValueError("live compose must define exactly one receiver service")
-    match = re.search(r"(?ms)^  receiver:\n(.*)\Z", text)
+    match = re.search(r"(?ms)^  receiver:\s*\n(.*)\Z", services_text)
     if match is None or COMMAND not in match.group(1):
         raise ValueError("live compose receiver command drift")
+    receiver = match.group(1)
     for required in ("/srv/webhook", "/opt/data", "/etc/passwd", "/etc/group",
-                     "NEO_DEV_WEBHOOK_SECRET", "NEO_DEV_TASK_RUNNER"):
-        if required not in match.group(1):
+                     "env_file: ./webhook.env",
+                     "NEO_DEV_TASK_RUNNER: /opt/data/scripts/neo-dev/task.py"):
+        if required not in receiver:
             raise ValueError(f"live compose receiver contract drift: {required}")
-    for forbidden in ("consumer", "/var/lib/neo-dev", "NEO_DEV_WEBHOOK_DB"):
+    for forbidden in ("/var/lib/neo-dev", "NEO_DEV_WEBHOOK_DB"):
         if forbidden in text:
             raise ValueError(f"retired queue contract remains: {forbidden}")
 

@@ -92,6 +92,15 @@ class DeploymentSourceTest(unittest.TestCase):
         self.assertNotIn("Store", server)
         self.assertNotIn("Consumer", server)
 
+    def test_activation_seals_old_compose_and_recreates_restored_services(self):
+        root = pathlib.Path(__file__).parents[1]
+        activation = (root / "deploy/dockge-activate.sh").read_text()
+        self.assertIn("compose.next.yaml", activation)
+        self.assertIn('cp -a "$compose" "$backup_root/$stamp/compose.yaml"', activation)
+        self.assertIn('cp -a "$candidate" "$compose"', activation)
+        self.assertGreaterEqual(activation.count("up -d --remove-orphans"), 2)
+        self.assertNotIn("--force-recreate receiver consumer", activation)
+
     def test_hermes_fixture_stage_and_rollback_are_byte_identical(self):
         script = pathlib.Path(__file__).parents[1] / "deploy/hermes-stage.sh"
         with tempfile.TemporaryDirectory() as directory:
@@ -779,9 +788,12 @@ class DeploymentSourceTest(unittest.TestCase):
         text = fixture.read_text()
         verify(text)
         with self.assertRaisesRegex(ValueError, "exactly one receiver"):
-            verify(text + "  consumer:\n    command: retired\n")
+            verify(text.replace("\nnetworks:",
+                                "\n  consumer:\n    command: retired\nnetworks:"))
         with self.assertRaisesRegex(ValueError, "NEO_DEV_TASK_RUNNER"):
             verify(text.replace("NEO_DEV_TASK_RUNNER", "RETIRED_RUNNER"))
+        with self.assertRaisesRegex(ValueError, "webhook.env"):
+            verify(text.replace("./webhook.env", "./different.env"))
 
 
 if __name__ == "__main__":
