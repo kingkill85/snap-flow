@@ -1,7 +1,5 @@
 # SnapFlow
 
-Deployment documentation: [manual preview](docs/manual-preview-deployment.md).
-
 > Smart Home Automation Configurator & Proposal Generator
 
 A web application for smart home automation companies to create professional project proposals. Upload floorplans, drag-and-drop devices, and generate Excel proposals with itemized lists and pricing.
@@ -179,9 +177,8 @@ docker run -d \
   -v snapflow_uploads:/app/backend/uploads \
   ghcr.io/kingkill85/snap-flow:latest
 
-# Supply explicit first-start administrator credentials
-export ADMIN_EMAIL='owner@example.com'
-export ADMIN_PASSWORD='replace-with-a-unique-password-of-16-or-more-characters'
+# View logs to get admin password
+docker logs -f snapflow
 ```
 
 ### 📋 First Run Setup
@@ -191,17 +188,25 @@ export ADMIN_PASSWORD='replace-with-a-unique-password-of-16-or-more-characters'
 - **API:** http://localhost:8000/api
 - **Health Check:** http://localhost:8000/health
 
-**First-start administrator:**
+**Default Admin Credentials (Auto-Generated):**
 
-On first run, an administrator is created only when `ADMIN_EMAIL` and a non-default `ADMIN_PASSWORD` of at least 16 characters are explicitly supplied to the container. Credentials are never printed to logs. If either value is absent or invalid, startup skips administrator creation and logs a non-secret instruction; set both values and restart.
+On first run, an admin user is automatically created. Check the logs for the password:
 
 ```bash
-docker run -e ADMIN_EMAIL='owner@example.com' \
-  -e ADMIN_PASSWORD='replace-with-a-unique-password-of-16-or-more-characters' \
-  ghcr.io/kingkill85/snap-flow:latest
+docker logs snapflow | grep -A 5 "DEFAULT ADMIN USER CREATED"
 ```
 
-Use a secret manager or protected runtime environment for these values. Do not place them in the image or commit them to compose files.
+You will see:
+```
+========================================
+       DEFAULT ADMIN USER CREATED       
+========================================
+Email: admin@snapflow.com
+Password: XXXXXXXXXXXX  ← This is your temporary password
+========================================
+```
+
+**⚠️ Important:** Change the default admin password immediately after first login!
 
 ### 🛠️ Docker Compose Configuration
 
@@ -221,8 +226,6 @@ services:
       - NODE_ENV=production
       - PORT=8000
       - JWT_SECRET=${JWT_SECRET:-}
-      - ADMIN_EMAIL=${ADMIN_EMAIL:?set ADMIN_EMAIL for first-start setup}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?set a unique password of at least 16 characters}
       - DATABASE_URL=./data/database.sqlite
       - UPLOAD_DIR=./uploads
       - CORS_ORIGIN=http://localhost:8000

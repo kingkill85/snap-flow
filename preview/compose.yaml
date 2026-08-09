@@ -1,0 +1,35 @@
+services:
+  snapflow:
+    image: ${SNAPFLOW_IMAGE:?Set SNAPFLOW_IMAGE in .env}
+    container_name: snapflow-test
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "8000"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      DATABASE_URL: ./data/database.sqlite
+      UPLOAD_DIR: ./uploads
+      CORS_ORIGIN: https://snapflow-test.kingkill.org
+      PUBLIC_BASE_URL: https://snapflow-test.kingkill.org
+    volumes:
+      - /mnt/marder/docker/snapflow-test/data:/app/backend/data
+      - /mnt/marder/docker/snapflow-test/uploads:/app/backend/uploads
+    networks:
+      - proxy
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: proxy
+      traefik.http.routers.snapflow-test.entrypoints: https
+      traefik.http.routers.snapflow-test.rule: Host(`snapflow-test.kingkill.org`)
+      traefik.http.routers.snapflow-test.tls: "true"
+      traefik.http.services.snapflow-test.loadbalancer.server.port: "8000"
+    healthcheck:
+      test: ["CMD", "deno", "eval", "const r=await fetch('http://localhost:8000/health');if(!r.ok)Deno.exit(1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+networks:
+  proxy:
+    external: true

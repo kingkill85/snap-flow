@@ -1,4 +1,4 @@
-import { assertEquals, assertExists, assertMatch } from '@std/assert';
+import { assertEquals, assertExists } from '@std/assert';
 import { setupTestDatabase } from '../test-utils.ts';
 import { testRequest, parseJSON } from '../test-client.ts';
 
@@ -15,14 +15,14 @@ Deno.test('Health endpoint - returns status ok', async () => {
   assertExists(data.timestamp);
 });
 
-Deno.test('Version endpoint - returns immutable full build identity', async () => {
+Deno.test('Version endpoint - returns the immutable build SHA', async () => {
+  const sha = '0123456789abcdef0123456789abcdef01234567';
+  Deno.env.set('SNAPFLOW_BUILD_SHA', sha);
   const response = await testRequest('/version');
   const data = await parseJSON(response);
 
   assertEquals(response.status, 200);
-  assertMatch(data.sha, /^[0-9a-f]{40}$/);
-  assertExists(data.built_at);
-  assertEquals(data.sha.length, 40);
+  assertEquals(data.commit, sha);
 });
 
 Deno.test('Root endpoint - returns API info', async () => {

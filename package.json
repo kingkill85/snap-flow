@@ -12,7 +12,6 @@
     "e2e:unit": "node --import tsx --test e2e/tests/*.test.ts",
     "e2e:traceability": "python3 -m tools.neo_dev_webhook.scenario_traceability --features e2e/features",
     "e2e:install": "playwright install chromium",
-    "e2e:preview-smoke": "node --import tsx e2e/manual-preview-smoke.ts",
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json"
   },
   "devDependencies": {

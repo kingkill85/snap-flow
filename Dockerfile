@@ -2,9 +2,6 @@
 # Stage 1: Build frontend
 FROM docker.io/library/node:20-alpine AS frontend-builder
 
-ARG BUILD_SHA=0000000000000000000000000000000000000000
-ARG BUILD_TIME=unknown
-
 WORKDIR /app/frontend
 
 # Copy frontend package files
@@ -24,6 +21,10 @@ FROM docker.io/denoland/deno:alpine
 
 WORKDIR /app
 
+ARG BUILD_SHA=unknown
+ENV SNAPFLOW_BUILD_SHA=$BUILD_SHA
+LABEL org.opencontainers.image.revision=$BUILD_SHA
+
 # Install required packages including Python and build tools for bcrypt
 RUN apk add --no-cache openssl python3 make g++
 
@@ -36,14 +37,11 @@ COPY backend/ ./backend/
 # Copy built frontend from builder
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-ARG BUILD_SHA=0000000000000000000000000000000000000000
-ARG BUILD_TIME=unknown
-ENV BUILD_SHA=$BUILD_SHA
-ENV BUILD_TIME=$BUILD_TIME
-ENV NODE_ENV=production
-ENV PORT=8000
-ENV DATABASE_URL=./data/database.sqlite
-ENV UPLOAD_DIR=./uploads
+# Accept JWT_SECRET as build argument
+ARG JWT_SECRET
+
+# Create production environment file
+RUN printf 'NODE_ENV=production\nPORT=8000\nJWT_SECRET=%s\nDATABASE_URL=./data/database.sqlite\nUPLOAD_DIR=./uploads\nCORS_ORIGIN=*\n' "$JWT_SECRET" > ./backend/.env
 
 # Set working directory to backend
 WORKDIR /app/backend

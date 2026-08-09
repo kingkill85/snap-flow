@@ -1,7 +1,7 @@
 import { getDb } from "../config/database.ts";
 import { hashPassword } from "../services/password.ts";
 
-export function seedAdmin(): { created: boolean } {
+export function seedAdmin(): { created: boolean; password?: string } {
   const db = getDb();
 
   try {
@@ -13,33 +13,36 @@ export function seedAdmin(): { created: boolean } {
       return { created: false };
     }
 
-    const adminEmail = Deno.env.get("ADMIN_EMAIL")?.trim() || "";
-    const adminPassword = Deno.env.get("ADMIN_PASSWORD") || "";
-    const forbidden = new Set(["admin", "admin123", "password", "changeme"]);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail) || adminPassword.length < 16
-      || forbidden.has(adminPassword.toLowerCase())) {
-      console.log(
-        "No administrator created. Set valid ADMIN_EMAIL and ADMIN_PASSWORD (minimum 16 characters), then restart.",
-      );
-      return { created: false };
-    }
+    // Generate a secure random password
+    const generatePassword = () => {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+      let password = "";
+      for (let i = 0; i < 12; i++) {
+        password += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return password;
+    };
+
+    const adminPassword = generatePassword();
     const passwordHash = hashPassword(adminPassword);
 
     // Create admin user
     db.query(
       `INSERT INTO users (email, password_hash, role, full_name, created_at) VALUES (?, ?, ?, ?, ?)`,
-      [adminEmail, passwordHash, "admin", "Administrator", new Date().toISOString()]
+      ["admin@snapflow.com", passwordHash, "admin", "Administrator", new Date().toISOString()]
     );
 
     console.log("");
     console.log("========================================");
-    console.log("       EXPLICIT ADMIN USER CREATED      ");
+    console.log("       DEFAULT ADMIN USER CREATED       ");
     console.log("========================================");
-    console.log("Administrator created from explicit startup credentials.");
+    console.log("Email: admin@snapflow.com");
+    console.log("Password: " + adminPassword);
     console.log("========================================");
+    console.log("IMPORTANT: Change this password immediately after logging in!");
     console.log("");
 
-    return { created: true };
+    return { created: true, password: adminPassword };
   } catch (error) {
     console.error("Error in seedAdmin:", error);
     throw error;

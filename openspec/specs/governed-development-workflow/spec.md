@@ -73,27 +73,6 @@ Acceptance SHALL NOT authorize merge. Sync/archive SHALL precede a separate merg
 - **WHEN** `/accept` is recorded without a separate authorized `/merge`
 - **THEN** no merge or privileged operation is permitted
 
-### Requirement: Optional exact-SHA manual preview
-After required CI succeeds for the exact current Draft PR head and fresh explicit `CLEAN` independent-review evidence exists for that same SHA, Neo Dev MAY offer `/preview <full-40-char-sha>` before `/accept` only when the reviewed diff contains a runnable product/application implementation change. Planning/spec-only, documentation-only, tests/metadata-only, workflow/orchestration/control-plane-only, and build-identity-only diffs SHALL be ineligible. Preview SHALL remain distinct from acceptance, merge, release, and production deployment.
-
-The gate SHALL verify an open `neo-dev` Issue and exactly one open managed Draft PR with an exact closing/reference token for that Issue by exhaustively traversing the open-PR connection before fetching the sole candidate’s full details/files. It SHALL retrieve every check-run page for the exact head SHA without relying on branch protection and require every run named `Backend Tests (Deno)`, `Frontend Tests (Vitest)`, `E2E (Cucumber + Playwright)`, or `Test Summary` to be completed successfully with a strict completion time, with at least one run for every name. External review evidence SHALL use strict UTC time no earlier than the latest required check completion, SHALL reject future or stale time, and SHALL bind the PR/base/head, distinct implementation and reviewer sessions/logins, detached checkout, `CLEAN` verdict, and verified external report SHA-256 with no missing or extra fields.
-
-The only preview target SHALL be the persistent stack `/mnt/marder/docker/dockge/stacks/snapflow-test` through exactly `https://snapflow-test.kingkill.org`. Tooling SHALL accept no alternate route, stack, slot, or shortened SHA; SHALL require the fixed private/internal route to already resolve and reach the authorized boundary; and SHALL NOT create DNS, ingress, public routes, or direct host-port exposure. Mutating deployment/reset/rollback actions SHALL be separate from read-only verification, explicitly authorized, serialized by one no-follow exclusive slot lock, preview-scoped, and credential-safe. Deployment SHALL consume authenticated workflow evidence binding the requested SHA to an immutable image digest, use that digest in compose, and prove the running RepoDigest. Every mutation SHALL snapshot only while quiesced into a same-filesystem temporary directory, fsync and verify exact schema/presence/identity/no-symlink/digests before atomic publication, quiesce a failed attempt before restoration, and either verify the restored prior stack or prove the attempted container absent. Snapshot failure SHALL resume and verify the unchanged prior stack or prove prior absence.
-
-Pre-deploy route preflight SHALL prove fixed-host DNS and TLS/reverse-proxy response without requiring a healthy application, permitting a first-slot bootstrap only after the route exists. Standalone verification SHALL be strictly read-only. Mutating browser persistence/restart/cleanup evidence SHALL run only inside an explicitly authorized locked deploy/reset transaction, with cleanup attempted on every failure and snapshot recovery preserving original and cleanup failures. Reset SHALL execute two complete non-recursive clear/start/readiness/provision/baseline cycles, require equal independent fingerprints, and leave the defined baseline. After health/migrations readiness, deploy and reset SHALL idempotently provision the explicit preview-only account without logging its password or creating an unrelated default admin. Packet persistence/mobile claims SHALL come only from structured verifier evidence.
-
-#### Scenario: Ineligible planning-only PR
-- **WHEN** a managed PR contains only approved OpenSpec planning or control-plane infrastructure
-- **THEN** Neo Dev does not offer or execute preview
-
-#### Scenario: Fixed route is absent
-- **WHEN** `snapflow-test.kingkill.org` does not resolve or cannot reach the authorized boundary
-- **THEN** preview fails closed without deploying or inventing a route
-
-#### Scenario: Preview succeeds
-- **WHEN** the fixed slot runs and verification proves health, image/OCI revision, `/version`, authentication, isolated persistence, repeatable reset/seed, and the approved browser-ready flow
-- **THEN** Neo Dev emits a phone-friendly scenario packet with only `/fix <bounded feedback>` and `/accept <full-sha>` as legal next decisions
-
 ### Requirement: 2026-08-08 persistent Neo Dev self-bootstrap
 The repository SHALL record the authorized human's explicit 2026-08-08 one-time authorization for the persistent Neo Dev self-bootstrap directly on `main`, without weakening any later approval or privileged-operation gate.
 

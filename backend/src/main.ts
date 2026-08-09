@@ -66,15 +66,9 @@ app.get('/health', (c: Context) => {
   });
 });
 
-const BUILD_SHA = Deno.env.get('BUILD_SHA') ?? '0000000000000000000000000000000000000000';
-const BUILD_TIME = Deno.env.get('BUILD_TIME') ?? 'development';
-
-if (!/^[0-9a-f]{40}$/.test(BUILD_SHA)) {
-  throw new Error('BUILD_SHA must be a full lowercase 40-character commit SHA');
-}
-
-// Public build provenance; contains no runtime credentials.
-app.get('/version', (c: Context) => c.json({ sha: BUILD_SHA, built_at: BUILD_TIME }));
+app.get('/version', (c: Context) => {
+  return c.json({ commit: Deno.env.get('SNAPFLOW_BUILD_SHA') ?? 'unknown' });
+});
 
 // API root endpoint (always returns JSON, even with frontend)
 app.get('/api', (c: Context) => {
@@ -288,14 +282,12 @@ if (import.meta.main) {
   }
 
   // Seed admin user on first run
-  if (Deno.env.get('SKIP_DEFAULT_ADMIN_SEED') !== 'true') {
-    console.log('🌱 Checking for admin user...');
-    try {
-      const { seedAdmin } = await import('./scripts/seed-admin.ts');
-      seedAdmin();
-    } catch (error) {
-      console.error('❌ Failed to run seed script:', error);
-    }
+  console.log('🌱 Checking for admin user...');
+  try {
+    const { seedAdmin } = await import('./scripts/seed-admin.ts');
+    seedAdmin();
+  } catch (error) {
+    console.error('❌ Failed to run seed script:', error);
   }
 
   // Schedule periodic cleanup of expired refresh tokens and oauth codes

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       requested_sha:
-        description: Full reviewed 40-character commit SHA
+        description: Full 40-character commit SHA to build
         required: true
         type: string
 
@@ -13,70 +13,39 @@ permissions:
   packages: write
 
 jobs:
-  exact-sha-image:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Require invocation from the default branch
+      - name: Validate requested SHA
         env:
-          INVOCATION_REF: ${{ github.ref_name }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          REQUESTED_SHA: ${{ github.event.inputs.requested_sha }}
+          REQUESTED_SHA: ${{ inputs.requested_sha }}
         run: |
-          test "$INVOCATION_REF" = "$DEFAULT_BRANCH"
-          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
-      - name: Checkout exact requested commit
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
+
+      - name: Checkout exact SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.requested_sha }}
-          fetch-depth: 1
-      - name: Verify exact commit
+          ref: ${{ inputs.requested_sha }}
+
+      - name: Verify exact checkout
         env:
-          REQUESTED_SHA: ${{ github.event.inputs.requested_sha }}
+          REQUESTED_SHA: ${{ inputs.requested_sha }}
         run: test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"
+
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: build_time
-        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-      - name: Build and push content-addressed image
-        id: build
+          password: ${{ secrets.CR_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Build and push immutable preview image
         uses: docker/build-push-action@v6
         with:
           context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:sha-${{ inputs.requested_sha }}
           build-args: |
-            BUILD_SHA=${{ github.event.inputs.requested_sha }}
-            BUILD_TIME=${{ steps.build_time.outputs.value }}
-          labels: |
-            org.opencontainers.image.revision=${{ github.event.inputs.requested_sha }}
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.created=${{ steps.build_time.outputs.value }}
-          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
-      - name: Attach immutable full-SHA tag to pushed digest
-        env:
-          IMAGE: ghcr.io/${{ github.repository }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-          REQUESTED_SHA: ${{ github.event.inputs.requested_sha }}
-        run: docker buildx imagetools create --tag "$IMAGE:sha-$REQUESTED_SHA" "$IMAGE@$DIGEST"
-      - name: Record immutable identity
-        env:
-          REQUESTED_SHA: ${{ github.event.inputs.requested_sha }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-          BUILD_TIME: ${{ steps.build_time.outputs.value }}
-        run: |
-          jq -n --arg repository "${{ github.repository }}" --arg sha "$REQUESTED_SHA" \
-            --arg digest "$DIGEST" --arg build_time "$BUILD_TIME" \
-            --argjson run_id "${{ github.run_id }}" \
-            '{repository:$repository,sha:$sha,digest:$digest,build_time:$build_time,run_id:$run_id}' \
-            > manual-preview-image-evidence.json
-          echo "SHA: $REQUESTED_SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "Digest: $DIGEST" >> "$GITHUB_STEP_SUMMARY"
-      - name: Publish authenticated deployment evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: manual-preview-image-${{ github.event.inputs.requested_sha }}
-          path: manual-preview-image-evidence.json
-          if-no-files-found: error
-          retention-days: 30
+            BUILD_SHA=${{ inputs.requested_sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

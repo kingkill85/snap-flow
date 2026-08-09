@@ -69,10 +69,6 @@ class DeploymentSourceTest(unittest.TestCase):
             "secrets/access", "destructive cleanup", "at most two unsuccessful",
             "non_convergent", "kanban_complete", "reconcile-phase.py", "kanban_block",
             "normal human-wait", "without recursively reconciling",
-            "/preview <full-40-char-sha>", "optional", "CLEAN independent review",
-            "/mnt/marder/docker/dockge/stacks/snapflow-test",
-            "https://snapflow-test.kingkill.org", "runnable product implementation",
-            "never implies acceptance", "must already resolve",
         ):
             self.assertIn(required, profile)
         self.assertIn("no transition-only tool", profile)

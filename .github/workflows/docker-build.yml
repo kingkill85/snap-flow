@@ -11,7 +11,6 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   build:
@@ -26,16 +25,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ env.SOURCE_SHA }}
-          fetch-depth: 1
-
-      - name: Verify exact source commit
-        id: source
-        run: |
-          ACTUAL_SHA="$(git rev-parse HEAD)"
-          test "$ACTUAL_SHA" = "$SOURCE_SHA"
-          echo "build_time=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -53,7 +42,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=sha-${{ env.SOURCE_SHA }}
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
@@ -62,21 +50,23 @@ jobs:
             type=sha,prefix={{branch}}-
             latest
 
+      - name: Generate JWT_SECRET
+        id: jwt
+        run: |
+          JWT_SECRET=$(openssl rand -base64 32)
+          echo "JWT_SECRET=$JWT_SECRET" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: |
-            ${{ steps.meta.outputs.labels }}
-            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
-            org.opencontainers.image.created=${{ steps.source.outputs.build_time }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            BUILD_SHA=${{ env.SOURCE_SHA }}
-            BUILD_TIME=${{ steps.source.outputs.build_time }}
+            JWT_SECRET=${{ steps.jwt.outputs.JWT_SECRET }}
 
       - name: Image digest
         run: echo "Image pushed to ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
