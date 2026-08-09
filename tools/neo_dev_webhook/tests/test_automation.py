@@ -221,6 +221,7 @@ class BoundedServerTest(unittest.TestCase):
             def do_POST(self):
                 length = int(self.headers.get("Content-Length", "0"))
                 self.rfile.read(length)
+                self.server.finish_read_phase(self.request)
                 self.send_response(204)
                 self.end_headers()
 
@@ -250,11 +251,52 @@ class BoundedServerTest(unittest.TestCase):
             server.server_close()
             thread.join(timeout=1)
 
+    def test_slow_trickle_cannot_extend_absolute_read_deadline(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0"))
+                self.rfile.read(length)
+                self.server.finish_read_phase(self.request)
+                self.send_response(204)
+                self.end_headers()
+
+            def log_message(self, _format, *_args):
+                return
+
+        server = BoundedThreadingHTTPServer(("127.0.0.1", 0), Handler,
+                                            concurrency_limit=1, read_timeout=0.12)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host, port = server.server_address
+        trickle = socket.create_connection((host, port), timeout=1)
+        try:
+            trickle.sendall(
+                b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\n"
+            )
+            for _ in range(6):
+                time.sleep(0.04)
+                try:
+                    trickle.sendall(b"x")
+                except OSError:
+                    break
+            trickle.settimeout(0.5)
+            self.assertEqual(trickle.recv(1), b"")
+            healthy = http.client.HTTPConnection(host, port, timeout=1)
+            healthy.request("POST", "/", body=b"")
+            self.assertEqual(healthy.getresponse().status, 204)
+            healthy.close()
+        finally:
+            trickle.close()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=1)
+
     def test_completed_body_allows_handler_work_beyond_read_timeout(self):
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 length = int(self.headers.get("Content-Length", "0"))
                 self.rfile.read(length)
+                self.server.finish_read_phase(self.request)
                 time.sleep(0.15)
                 self.send_response(204)
                 self.end_headers()

@@ -91,6 +91,8 @@ class DeploymentSourceTest(unittest.TestCase):
         self.assertNotIn("NEO_DEV_WEBHOOK_DB", server)
         self.assertNotIn("Store", server)
         self.assertNotIn("Consumer", server)
+        sample = (root / ".env.example").read_text()
+        self.assertNotIn("NEO_DEV_WEBHOOK_DB", sample)
 
     def test_activation_seals_old_compose_and_recreates_restored_services(self):
         root = pathlib.Path(__file__).parents[1]
@@ -794,6 +796,14 @@ class DeploymentSourceTest(unittest.TestCase):
             verify(text.replace("NEO_DEV_TASK_RUNNER", "RETIRED_RUNNER"))
         with self.assertRaisesRegex(ValueError, "webhook.env"):
             verify(text.replace("./webhook.env", "./different.env"))
+        with self.assertRaisesRegex(ValueError, "writable"):
+            verify(text.replace("/mnt/marder/docker/hermes/data:/opt/data",
+                                "/mnt/marder/docker/hermes/data:/opt/data:ro"))
+        with self.assertRaisesRegex(ValueError, "/srv/webhook:ro"):
+            verify(text.replace("/srv/webhook:ro", "/srv/webhook"))
+        with self.assertRaisesRegex(ValueError, "/srv/webhook:ro"):
+            verify(text.replace("/mnt/marder/docker/hermes/data/services/",
+                                "/opt/data/services/"))
 
 
 if __name__ == "__main__":

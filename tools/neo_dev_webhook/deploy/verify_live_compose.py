@@ -19,11 +19,17 @@ def verify(text: str) -> None:
     if match is None or COMMAND not in match.group(1):
         raise ValueError("live compose receiver command drift")
     receiver = match.group(1)
-    for required in ("/srv/webhook", "/opt/data", "/etc/passwd", "/etc/group",
+    for required in ("/mnt/marder/docker/hermes/data/services/"
+                     "snapflow-neo-dev-webhook/src:/srv/webhook:ro",
+                     "./passwd:/etc/passwd:ro", "./group:/etc/group:ro",
                      "env_file: ./webhook.env",
                      "NEO_DEV_TASK_RUNNER: /opt/data/scripts/neo-dev/task.py"):
         if required not in receiver:
             raise ValueError(f"live compose receiver contract drift: {required}")
+    if re.search(
+        r"(?m)^\s*-\s+/mnt/marder/docker/hermes/data:/opt/data\s*$", receiver
+    ) is None:
+        raise ValueError("live compose receiver requires writable exact /opt/data mount")
     for forbidden in ("/var/lib/neo-dev", "NEO_DEV_WEBHOOK_DB"):
         if forbidden in text:
             raise ValueError(f"retired queue contract remains: {forbidden}")

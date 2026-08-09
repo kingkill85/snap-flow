@@ -3,6 +3,7 @@ import argparse
 import http.client
 import json
 import os
+import socket
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -62,7 +63,32 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
             raise ValueError("read_timeout must be positive")
         self._admission = threading.BoundedSemaphore(concurrency_limit)
         self._read_timeout = read_timeout
+        self._read_timers = {}
+        self._read_timers_lock = threading.Lock()
         super().__init__(server_address, handler_class)
+
+    def _take_read_timer(self, request):
+        with self._read_timers_lock:
+            return self._read_timers.pop(request, None)
+
+    def _expire_read_phase(self, request):
+        if self._take_read_timer(request) is None:
+            return
+        try:
+            request.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            request.close()
+        except OSError:
+            pass
+
+    def finish_read_phase(self, request):
+        timer = self._take_read_timer(request)
+        if timer is None:
+            raise TimeoutError("absolute request read deadline expired")
+        timer.cancel()
+        request.settimeout(None)
 
     def process_request(self, request, client_address):
         request.settimeout(self._read_timeout)
@@ -76,9 +102,17 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
                 pass
             self.shutdown_request(request)
             return
+        timer = threading.Timer(self._read_timeout, self._expire_read_phase, args=(request,))
+        timer.daemon = True
+        with self._read_timers_lock:
+            self._read_timers[request] = timer
+        timer.start()
         try:
             super().process_request(request, client_address)
         except BaseException:
+            timer = self._take_read_timer(request)
+            if timer is not None:
+                timer.cancel()
             self._admission.release()
             raise
 
@@ -86,6 +120,9 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
         try:
             super().process_request_thread(request, client_address)
         finally:
+            timer = self._take_read_timer(request)
+            if timer is not None:
+                timer.cancel()
             self._admission.release()
 
     def handle_error(self, request, client_address):
@@ -122,7 +159,12 @@ def main():
             if length < 0 or length > receiver.limits.body_bytes:
                 self.send_error(413)
                 return
-            status, result = receiver.handle(dict(self.headers), self.rfile.read(length))
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                self.close_connection = True
+                return
+            self.server.finish_read_phase(self.request)
+            status, result = receiver.handle(dict(self.headers), raw)
             body = json.dumps({"status": result}).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
