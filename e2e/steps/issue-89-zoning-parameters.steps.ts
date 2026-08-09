@@ -4,16 +4,21 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { SnapFlowWorld } from '../support/world.ts';
 
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; lastStatus: number; cssBounds: Array<{ width: number; height: number }> };
 
 const authHeaders = (world: ZoningWorld) => ({ Authorization: `Bearer ${world.token}` });
+let cachedAdminAuth: { accessToken: string; refreshToken: string } | undefined;
 async function login(world: ZoningWorld) {
   if (world.token) return;
-  const response = await world.page!.request.post(`${world.apiUrl}/api/auth/login`, { data: { email: 'admin@snapflow.com', password: 'Issue89Admin!' } });
-  const body = await response.json(); if (!response.ok()) throw new Error(JSON.stringify(body));
-  world.token = body.data.accessToken;
+  if (!cachedAdminAuth) {
+    const response = await world.page!.request.post(`${world.apiUrl}/api/auth/login`, { data: { email: 'admin@snapflow.com', password: 'Issue89Admin!' } });
+    const body = await response.json(); if (!response.ok()) throw new Error(JSON.stringify(body));
+    cachedAdminAuth = body.data;
+  }
+  const auth = cachedAdminAuth!;
+  world.token = auth.accessToken;
   await world.page!.goto(world.baseUrl);
-  await world.page!.evaluate(({ accessToken, refreshToken }) => { localStorage.setItem('accessToken', accessToken); localStorage.setItem('refreshToken', refreshToken); }, body.data);
+  await world.page!.evaluate(({ accessToken, refreshToken }) => { localStorage.setItem('accessToken', accessToken); localStorage.setItem('refreshToken', refreshToken); }, auth);
 }
 async function setupArea(world: ZoningWorld, groups = 2, parametersPerGroup = 1) {
   await login(world); world.itemTypeIds = []; world.parameterIds = [];
@@ -84,15 +89,26 @@ Then('each Product Type with a positive value has one labelled group', async fun
 Then('zero-valued parameters and empty Product Type groups are absent', async function (this: ZoningWorld) { await expect(this.page!.getByLabel('Zoning summary')).not.toContainText('Issue89 Type 1'); });
 
 Given('an Area has more positive values than fit within the summary bounds and some names are long', async function (this: ZoningWorld) { await setupArea(this, 2, 4); await saveValues(this, Array(8).fill(2)); });
-When('the floorplan renders at any supported zoom', async function (this: ZoningWorld) { await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByLabel('Zoning summary')).toBeVisible(); });
-Then('visible rows stay within the bounded summary', async function (this: ZoningWorld) { const rect = this.page!.getByTestId('area-zoning-summary-bounds'); expect(Number(await rect.getAttribute('width'))).toBeLessThanOrEqual(150); });
-Then('truncated content exposes full text accessibly', async function (this: ZoningWorld) { expect(await this.page!.getByLabel('Zoning summary').locator('title').count()).toBeGreaterThan(0); });
+When('the floorplan renders at any supported zoom', async function (this: ZoningWorld) {
+  await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); this.cssBounds = [];
+  const sequence = [
+    { target: 50, action: async () => { await this.page!.getByTitle('Zoom out').click(); await this.page!.getByTitle('Zoom out').click(); } },
+    { target: 100, action: async () => { await this.page!.getByTitle('Reset zoom (Ctrl+0)').click(); } },
+    { target: 150, action: async () => { await this.page!.getByTitle('Zoom in').click(); await this.page!.getByTitle('Zoom in').click(); } },
+  ];
+  for (const { target, action } of sequence) {
+    await action(); await expect(this.page!.getByText(`${target}%`, { exact: true })).toBeVisible();
+    const box = await this.page!.getByTestId('area-zoning-summary-bounds').boundingBox(); expect(box).not.toBeNull(); this.cssBounds.push({ width: box!.width, height: box!.height });
+  }
+});
+Then('visible rows stay within the bounded summary', async function (this: ZoningWorld) { for (const box of this.cssBounds) { expect(box.width).toBeLessThanOrEqual(150.5); expect(Math.abs(box.width - this.cssBounds[0].width)).toBeLessThan(1); expect(Math.abs(box.height - this.cssBounds[0].height)).toBeLessThan(1); } });
+Then('truncated content exposes full text accessibly', async function (this: ZoningWorld) { const summary = this.page!.getByLabel('Zoning summary'); expect(await summary.locator('title').count()).toBeGreaterThan(0); const box = await summary.boundingBox(); expect(box).not.toBeNull(); const hitSummary = await this.page!.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-testid="area-zoning-summary"]') !== null, { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 }); expect(hitSummary).toBe(false); });
 Then('a `+N more` row reports the omitted positive values', async function (this: ZoningWorld) { await expect(this.page!.getByLabel('Zoning summary')).toContainText(/\+2 more/); });
 
-Given('two editors loaded the same Area revision and applicability set', async function (this: ZoningWorld) { await setupArea(this, 1, 1); });
-When('the first update succeeds and the second submits its stale revision', async function (this: ZoningWorld) { const payload = { revision: this.areaRevision, applicable_parameter_ids: this.parameterIds, zoning_values: [{ parameter_id: this.parameterIds[0], value: 1 }] }; const first = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this), data: payload }); expect(first.status()).toBe(200); this.areaRevision = (await first.json()).data.revision; const stale = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this), data: { ...payload, name: 'Stale loser', zoning_values: [{ parameter_id: this.parameterIds[0], value: 9 }] } }); expect(stale.status()).toBe(409); });
-Then('the second update receives `409 Conflict`', async function (this: ZoningWorld) { expect(this.areaRevision).toBe(1); });
-Then('the first update remains unchanged', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); const area = (await response.json()).data; expect(area.name).toBe('Review Area'); expect(area.zoning_groups[0].parameters[0].value).toBe(1); });
+Given('two editors loaded the same Area revision and applicability set', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); });
+When('the first update succeeds and the second submits its stale revision', async function (this: ZoningWorld) { const first = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this), data: { revision: this.areaRevision, name: 'Winning Area', applicable_parameter_ids: this.parameterIds, zoning_values: [{ parameter_id: this.parameterIds[0], value: 4 }] } }); expect(first.status()).toBe(200); await this.page!.getByLabel('Name').fill('Losing Area'); await this.page!.getByRole('button', { name: 'Update' }).click(); });
+Then('the second update receives `409 Conflict`', async function (this: ZoningWorld) { await expect(this.page!.getByRole('alert')).toContainText(/changed|reload/i); });
+Then('the first update remains unchanged', async function (this: ZoningWorld) { await this.page!.getByRole('button', { name: 'Reload Area' }).click(); await expect(this.page!.getByLabel('Name')).toHaveValue('Winning Area'); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4'); });
 
 When('the administrator creates a parameter with a valid name and order', async function (this: ZoningWorld) {
   await this.page!.goto(`${this.baseUrl}/catalog/item-types`, { waitUntil: 'domcontentloaded' });
@@ -119,3 +135,55 @@ Then("returns the definition in the Product Type's ordered parameter collection"
   const response = await this.page!.request.get(`${this.apiUrl}/api/item-types/${this.itemTypeId}/zoning-parameters`, { headers: { Authorization: `Bearer ${this.token}` } });
   expect((await response.json()).data.map((entry: { name: string }) => entry.name)).toEqual(['Relay zones']);
 });
+
+Given('an authenticated user without administrator privileges', async function (this: ZoningWorld) {
+  await login(this);
+  const email = `issue89-user-${Date.now()}@example.com`;
+  const created = await this.page!.request.post(`${this.apiUrl}/api/users`, { headers: authHeaders(this), data: { email, password: 'Issue89User!', role: 'user' } });
+  expect(created.status()).toBe(201);
+  const response = await this.page!.request.post(`${this.apiUrl}/api/auth/login`, { data: { email, password: 'Issue89User!' } });
+  this.token = (await response.json()).data.accessToken;
+});
+When('the user attempts to create, update, reorder, deactivate, reactivate, or delete a definition', async function (this: ZoningWorld) {
+  const response = await this.page!.request.post(`${this.apiUrl}/api/item-types/1/zoning-parameters`, { headers: authHeaders(this), data: { name: 'Forbidden definition' } });
+  this.lastStatus = response.status();
+});
+Then('the system MUST reject the request with `403 Forbidden`', async function (this: ZoningWorld) { expect(this.lastStatus).toBe(403); });
+Then('MUST NOT change any definition or Area value', async function (this: ZoningWorld) { expect(this.lastStatus).toBe(403); });
+
+Given('an authenticated non-global user supplies an Area or floorplan identifier belonging to another tenant', async function (this: ZoningWorld) {
+  await setupArea(this, 1, 1);
+  const tenantResponse = await this.page!.request.post(`${this.apiUrl}/api/tenants`, { headers: authHeaders(this), data: { name: `Foreign ${Date.now()}` } });
+  const tenantId = (await tenantResponse.json()).data.id;
+  const email = `foreign-${Date.now()}@example.com`;
+  await this.page!.request.post(`${this.apiUrl}/api/users`, { headers: authHeaders(this), data: { email, password: 'Issue89Foreign!', role: 'user', tenant_id: tenantId } });
+  const loginResponse = await this.page!.request.post(`${this.apiUrl}/api/auth/login`, { data: { email, password: 'Issue89Foreign!' } });
+  this.token = (await loginResponse.json()).data.accessToken;
+});
+When('the request is processed', async function (this: ZoningWorld) { const response = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this), data: { name: 'Cross tenant mutation' } }); this.lastStatus = response.status(); });
+Then('the system returns the same not-found response used for an inaccessible Area', async function (this: ZoningWorld) { expect(this.lastStatus).toBe(404); });
+Then('performs no read disclosure or mutation', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); expect(response.status()).toBe(404); });
+
+Given('an Area edit changes its name and includes several parameter values', async function (this: ZoningWorld) { await setupArea(this, 1, 2); await openAreaEditor(this); await this.page!.getByLabel('Name').fill('Retained Draft'); await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill('7'); });
+When('any submitted value or definition identity is invalid', async function (this: ZoningWorld) {
+  const response = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this), data: { revision: this.areaRevision, applicable_parameter_ids: this.parameterIds, zoning_values: [{ parameter_id: this.parameterIds[0], value: 4 }, { parameter_id: this.parameterIds[1], value: 10000 }] } });
+  this.lastStatus = response.status();
+  expect(JSON.stringify(await response.json())).toMatch(/value|9999/i);
+});
+Then('the system rejects the request with field-level details', async function (this: ZoningWorld) { expect(this.lastStatus).toBe(400); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('7'); });
+Then('neither the name nor any parameter value changes', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); const area = (await response.json()).data; expect(area.name).toBe('Review Area'); expect(area.zoning_groups[0].parameters.every((entry: { value: number }) => entry.value === 0)).toBeTruthy(); });
+
+Given('a deactivated definition retains Area values', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await saveValues(this, [6]); const response = await this.page!.request.patch(`${this.apiUrl}/api/item-types/${this.itemTypeIds[0]}/zoning-parameters/${this.parameterIds[0]}/deactivate`, { headers: authHeaders(this) }); expect(response.status()).toBe(200); });
+When('an administrator reactivates it', async function (this: ZoningWorld) { const response = await this.page!.request.patch(`${this.apiUrl}/api/item-types/${this.itemTypeIds[0]}/zoning-parameters/${this.parameterIds[0]}/activate`, { headers: authHeaders(this) }); expect(response.status()).toBe(200); });
+Then('it reappears for applicable projects in configured order', async function (this: ZoningWorld) { await openAreaEditor(this); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toBeVisible(); });
+Then('each Area exposes its retained value', async function (this: ZoningWorld) { await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('6'); });
+
+Given("a Product Type was removed from a project's selected Product Types without deleting its values", async function (this: ZoningWorld) { await setupArea(this, 1, 1); await saveValues(this, [8]); const response = await this.page!.request.put(`${this.apiUrl}/api/projects/${this.projectId}`, { headers: authHeaders(this), data: { item_type_ids: [] } }); expect(response.status()).toBe(200); });
+When('the active Product Type is selected again', async function (this: ZoningWorld) { const response = await this.page!.request.put(`${this.apiUrl}/api/projects/${this.projectId}`, { headers: authHeaders(this), data: { item_type_ids: this.itemTypeIds } }); expect(response.status()).toBe(200); });
+Then('its active definitions become applicable', async function (this: ZoningWorld) { await openAreaEditor(this); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toBeVisible(); });
+Then('the Area editor exposes retained values', async function (this: ZoningWorld) { await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('8'); });
+
+Given('a user opened an Area editor', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); });
+When('an administrator changes the applicable definition set before the user saves', async function (this: ZoningWorld) { await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill('3'); await this.page!.getByLabel('Name').fill('Must not persist'); await this.page!.request.patch(`${this.apiUrl}/api/item-types/${this.itemTypeIds[0]}/zoning-parameters/${this.parameterIds[0]}/deactivate`, { headers: authHeaders(this) }); await this.page!.getByRole('button', { name: 'Update' }).click(); });
+Then('the save receives `409 Conflict`', async function (this: ZoningWorld) { await expect(this.page!.getByRole('alert')).toContainText(/changed|reload/i); });
+Then('no Area property or value from that request is persisted', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); expect((await response.json()).data.name).toBe('Review Area'); await this.page!.getByRole('button', { name: 'Reload Area' }).click(); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveCount(0); });

@@ -59,6 +59,8 @@ app.use(cors({
 
 // Health check endpoint (public, no /api prefix)
 app.get('/health', (c: Context) => {
+  const runId = Deno.env.get('E2E_RUN_ID');
+  if (runId) c.header('X-SnapFlow-E2E-Run', runId);
   return c.json({ 
     status: 'ok',
     timestamp: new Date().toISOString(),

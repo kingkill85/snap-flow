@@ -67,7 +67,7 @@ export function applyMigration(name: string, sql: string): Promise<void> {
   }
 }
 
-export async function runMigrations(): Promise<void> {
+export async function runMigrations(throughMigration?: string): Promise<void> {
   await setupMigrations();
 
   const appliedMigrations = await getAppliedMigrations();
@@ -1150,6 +1150,7 @@ export async function runMigrations(): Promise<void> {
         `⏭️  Skipping migration: ${migration.name} (already applied)`,
       );
     }
+    if (migration.name === throughMigration) break;
   }
 
   console.log("✅ Migrations complete");

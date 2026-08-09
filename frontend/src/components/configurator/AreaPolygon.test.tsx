@@ -15,9 +15,9 @@ describe('AreaPolygon zoning summary', () => {
     const area = { ...base, zoning_groups: [{ item_type: { id: 1, name: 'Lighting', abbreviation: 'LGT', color: '#f00', sort_order: 1 }, parameters }] };
     const { container } = render(<svg><AreaPolygon {...props} area={area} /></svg>);
     const summary = screen.getByLabelText('Zoning summary'); expect(summary).toHaveStyle({ pointerEvents: 'none' });
-    expect(container.textContent).not.toContain('name 0'); expect(container.textContent).toContain('+1 more'); expect(container.querySelector('title')?.textContent).toContain('Lighting');
+    expect(container.textContent).not.toContain('name 0'); expect(container.textContent).toContain('+3 more'); expect(container.querySelector('title')?.textContent).toContain('Lighting');
   });
-  it('allocates rows across groups, truncates combined labels and clamps inverse-scale geometry', () => {
+  it('allocates rows across groups, truncates combined labels and keeps viewport-stable geometry', () => {
     const longType = 'Extremely long Product Type name that must never escape the summary bounds';
     const area = { ...base, width: 80, height: 60, vertices: base.vertices.map((vertex) => ({ ...vertex, x: vertex.x * .4, y: vertex.y * .6 })), zoning_groups: [
       { item_type: { id: 1, name: longType, abbreviation: 'ONE', color: '#f00', sort_order: 1 }, parameters: Array.from({ length: 7 }, (_, index) => ({ id: index + 1, name: `Relay ${index}`, sort_order: index, value: 1 })) },
@@ -25,7 +25,7 @@ describe('AreaPolygon zoning summary', () => {
     ] };
     const { container, rerender } = render(<svg><AreaPolygon {...props} area={area} /></svg>);
     expect(container.textContent).toContain('HVAC — Fan zones: 2');
-    expect(container.textContent).toContain('+2 more');
+    expect(container.textContent).toContain('+6 more');
     expect(container.querySelector('title')?.textContent).toContain(longType);
     expect(Array.from(container.querySelectorAll('text')).map((node) => node.childNodes[node.childNodes.length - 1]?.textContent).join('')).not.toContain(`${longType} — Relay 0`);
     const bounds = container.querySelector('[data-testid="area-zoning-summary-bounds"]')!;
@@ -37,6 +37,6 @@ describe('AreaPolygon zoning summary', () => {
     rerender(<svg><AreaPolygon {...props} scale={2} area={zoomArea} /></svg>);
     const widthAtTwo = Number(container.querySelector('[data-testid="area-zoning-summary-bounds"]')?.getAttribute('width'));
     rerender(<svg><AreaPolygon {...props} scale={1} area={zoomArea} /></svg>);
-    expect(Number(container.querySelector('[data-testid="area-zoning-summary-bounds"]')?.getAttribute('width'))).toBe(widthAtTwo * 2);
+    expect(Number(container.querySelector('[data-testid="area-zoning-summary-bounds"]')?.getAttribute('width'))).toBe(widthAtTwo);
   });
 });

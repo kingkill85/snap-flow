@@ -57,6 +57,48 @@ Feature: Generic Product Type zoning parameters
     And truncated content exposes full text accessibly
     And a `+N more` row reports the omitted positive values
 
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/product-type-zoning-parameters/spec.md#non-administrator-attempts-configuration
+  Scenario: Non-administrator authorization is enforced
+    Given an authenticated user without administrator privileges
+    When the user attempts to create, update, reorder, deactivate, reactivate, or delete a definition
+    Then the system MUST reject the request with `403 Forbidden`
+    And MUST NOT change any definition or Area value
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#cross-tenant-area-request
+  Scenario: Cross-tenant Area is non-disclosing
+    Given an authenticated non-global user supplies an Area or floorplan identifier belonging to another tenant
+    When the request is processed
+    Then the system returns the same not-found response used for an inaccessible Area
+    And performs no read disclosure or mutation
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#reject-one-invalid-value-without-partial-save
+  Scenario: Invalid value is rejected atomically
+    Given an Area edit changes its name and includes several parameter values
+    When any submitted value or definition identity is invalid
+    Then the system rejects the request with field-level details
+    And neither the name nor any parameter value changes
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/product-type-zoning-parameters/spec.md#reactivate-a-definition
+  Scenario: Deactivate and reactivate retains values
+    Given a deactivated definition retains Area values
+    When an administrator reactivates it
+    Then it reappears for applicable projects in configured order
+    And each Area exposes its retained value
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/product-type-zoning-parameters/spec.md#product-type-is-selected-again-for-a-project
+  Scenario: Project Product Type reselection retains values
+    Given a Product Type was removed from a project's selected Product Types without deleting its values
+    When the active Product Type is selected again
+    Then its active definitions become applicable
+    And the Area editor exposes retained values
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#definition-changes-while-editor-is-open
+  Scenario: Applicability conflict has visible recovery
+    Given a user opened an Area editor
+    When an administrator changes the applicable definition set before the user saves
+    Then the save receives `409 Conflict`
+    And no Area property or value from that request is persisted
+
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#concurrent-area-edit-wins-once
   Scenario: Stale revision recovery
     Given two editors loaded the same Area revision and applicability set

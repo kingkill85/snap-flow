@@ -14,6 +14,12 @@ test('Issue 89 real-runtime feature retains the approved representative acceptan
     'Positive-only grouped summary persists after reload',
     'Summary overflow remains bounded and accessible',
     'Stale revision recovery',
+    'Non-administrator authorization is enforced',
+    'Cross-tenant Area is non-disclosing',
+    'Invalid value is rejected atomically',
+    'Deactivate and reactivate retains values',
+    'Project Product Type reselection retains values',
+    'Applicability conflict has visible recovery',
   ];
   for (const scenario of required) assert.match(feature, new RegExp(`Scenario: ${scenario.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.equal((feature.match(/openspec-scenario:/g) ?? []).length, required.length);
