@@ -6,7 +6,7 @@
   "tasks": {
     "dev": "deno run --allow-all --watch src/main.ts",
     "start": "deno run --allow-all src/main.ts",
-    "test": "deno test --allow-all",
+    "test": "deno run --allow-all tests/run-tests.ts",
     "migrate": "deno run --allow-all src/scripts/migrate.ts",
     "install": "echo 'No install needed - using Deno-native dependencies'"
   },
