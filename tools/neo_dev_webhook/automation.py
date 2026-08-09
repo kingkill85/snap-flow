@@ -4,11 +4,9 @@ import hashlib
 import hmac
 import json
 import os
-import sqlite3
 import subprocess
 import threading
 import time
-import urllib.request
 import uuid
 from dataclasses import dataclass
 from typing import Mapping
@@ -39,219 +37,12 @@ class Limits:
     label_chars: int = 100
 
 
-def retry_database_lock(operation, *, attempts=60, delay=0.05):
-    for attempt in range(attempts):
-        try:
-            return operation()
-        except sqlite3.OperationalError as error:
-            if "locked" not in str(error).lower() or attempt + 1 >= attempts:
-                raise
-            time.sleep(delay)
-
-
-class Store:
-    """Durable delivery inbox. Every accepted delivery owns exactly one wakeup."""
-
-    def __init__(self, path: str):
-        if not path or path == ":memory:":
-            raise ValueError("a durable filesystem database path is required")
-        self.db = sqlite3.connect(path, isolation_level=None, check_same_thread=False, timeout=30)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("PRAGMA busy_timeout=30000")
-        self.lock = threading.Lock()
-        retry_database_lock(lambda: self.db.execute("PRAGMA journal_mode=WAL"))
-        retry_database_lock(lambda: self.db.execute("PRAGMA synchronous=FULL"))
-        retry_database_lock(lambda: self.db.execute("PRAGMA foreign_keys=ON"))
-        retry_database_lock(lambda: self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS deliveries(
-              delivery_id TEXT PRIMARY KEY, received_at REAL NOT NULL);
-            CREATE TABLE IF NOT EXISTS kanban_wakeups(
-              id INTEGER PRIMARY KEY,
-              delivery_id TEXT NOT NULL UNIQUE REFERENCES deliveries(delivery_id),
-              repository TEXT NOT NULL,
-              issue_number INTEGER NOT NULL,
-              event TEXT NOT NULL,
-              action TEXT NOT NULL,
-              comment_id INTEGER,
-              status TEXT NOT NULL DEFAULT 'queued',
-              attempts INTEGER NOT NULL DEFAULT 0,
-              lease_until REAL,
-              claim_token TEXT,
-              task_id TEXT,
-              last_error TEXT,
-              created_at REAL NOT NULL,
-              updated_at REAL NOT NULL);
-            CREATE INDEX IF NOT EXISTS queued_kanban_wakeups
-              ON kanban_wakeups(status, id);
-        """))
-        self._migrate_legacy_wakeups()
-
-    def _migrate_legacy_wakeups(self) -> None:
-        """Retain old queue identity without authorizing the retired workflow to run."""
-        tables = {row["name"] for row in self.db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )}
-        if not {"active_work", "wakeups"}.issubset(tables):
-            return
-
-        def migrate():
-            self.db.execute("BEGIN IMMEDIATE")
-            try:
-                self.db.execute("""
-                    INSERT OR IGNORE INTO kanban_wakeups(
-                      delivery_id,repository,issue_number,event,action,comment_id,status,
-                      attempts,lease_until,claim_token,task_id,last_error,created_at,updated_at)
-                    SELECT wakeup.delivery_id,work.repository,work.issue_number,
-                           wakeup.event,wakeup.action,wakeup.comment_id,'blocked_legacy',
-                           0,NULL,NULL,NULL,
-                           'retired controller workflow requires separately authorized disposition',
-                           wakeup.created_at,wakeup.created_at
-                    FROM wakeups AS wakeup
-                    JOIN active_work AS work ON work.id=wakeup.work_id
-                """)
-                self.db.execute("COMMIT")
-            except BaseException:
-                self.db.execute("ROLLBACK")
-                raise
-
-        retry_database_lock(migrate)
-
-    def close(self):
-        self.db.close()
-
-    def count(self, table: str) -> int:
-        if table not in {"deliveries", "kanban_wakeups"}:
-            raise ValueError("invalid table")
-        return self.db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-
-    def accept(self, record: dict) -> str:
-        with self.lock:
-            self.db.execute("BEGIN IMMEDIATE")
-            try:
-                now = time.time()
-                try:
-                    self.db.execute(
-                        "INSERT INTO deliveries(delivery_id,received_at) VALUES (?,?)",
-                        (record["delivery_id"], now),
-                    )
-                except sqlite3.IntegrityError:
-                    self.db.execute("COMMIT")
-                    return "duplicate"
-                self.db.execute(
-                    "INSERT INTO kanban_wakeups("
-                    "delivery_id,repository,issue_number,event,action,comment_id,created_at,updated_at"
-                    ") VALUES (?,?,?,?,?,?,?,?)",
-                    (record["delivery_id"], record["repository"], record["issue_number"],
-                     record["event"], record["action"], record.get("comment_id"), now, now),
-                )
-                self.db.execute("COMMIT")
-                return "accepted"
-            except BaseException:
-                self.db.execute("ROLLBACK")
-                raise
-
-    def claim(self, now: float | None = None, lease_seconds: int = 300,
-              max_attempts: int = 5):
-        if max_attempts < 1:
-            raise ValueError("max_attempts must be positive")
-        now = time.time() if now is None else now
-        with self.lock:
-            self.db.execute("BEGIN IMMEDIATE")
-            try:
-                self.db.execute(
-                    "UPDATE kanban_wakeups SET status='dead',lease_until=NULL,claim_token=NULL,"
-                    "last_error='maximum attempts exhausted during lease recovery',updated_at=? "
-                    "WHERE attempts>=? AND (status='queued' OR "
-                    "(status='processing' AND lease_until<=?))",
-                    (now, max_attempts, now),
-                )
-                row = self.db.execute(
-                    "SELECT * FROM kanban_wakeups WHERE attempts<? AND "
-                    "(status='queued' OR (status='processing' AND lease_until<=?)) "
-                    "ORDER BY id LIMIT 1", (max_attempts, now),
-                ).fetchone()
-                if row is None:
-                    self.db.execute("COMMIT")
-                    return None
-                token = str(uuid.uuid4())
-                changed = self.db.execute(
-                    "UPDATE kanban_wakeups SET status='processing',attempts=attempts+1,"
-                    "lease_until=?,claim_token=?,updated_at=? WHERE id=? AND "
-                    "(status='queued' OR (status='processing' AND lease_until<=?))",
-                    (now + lease_seconds, token, now, row["id"], now),
-                ).rowcount
-                if changed != 1:
-                    raise RuntimeError("wakeup claim race")
-                result = dict(self.db.execute(
-                    "SELECT * FROM kanban_wakeups WHERE id=?", (row["id"],),
-                ).fetchone())
-                self.db.execute("COMMIT")
-                return result
-            except BaseException:
-                self.db.execute("ROLLBACK")
-                raise
-
-    def complete(self, wakeup_id: int, claim_token: str, task_id: str,
-                 now: float | None = None):
-        now = time.time() if now is None else now
-        with self.lock:
-            changed = self.db.execute(
-                "UPDATE kanban_wakeups SET status='created',task_id=?,attempts=0,"
-                "lease_until=NULL,claim_token=NULL,last_error=NULL,updated_at=? "
-                "WHERE id=? AND status='processing' AND claim_token=?",
-                (task_id, now, wakeup_id, claim_token),
-            ).rowcount
-            if changed != 1:
-                raise RuntimeError("wakeup claim is no longer owned")
-
-    def fail(self, wakeup_id: int, claim_token: str, error: str, max_attempts: int,
-             now: float | None = None):
-        now = time.time() if now is None else now
-        with self.lock:
-            row = self.db.execute(
-                "SELECT attempts FROM kanban_wakeups WHERE id=? AND status='processing' "
-                "AND claim_token=?", (wakeup_id, claim_token),
-            ).fetchone()
-            if row is None:
-                raise RuntimeError("wakeup claim is no longer owned")
-            status = "dead" if row["attempts"] >= max_attempts else "queued"
-            self.db.execute(
-                "UPDATE kanban_wakeups SET status=?,lease_until=NULL,claim_token=NULL,"
-                "last_error=?,updated_at=? WHERE id=? AND claim_token=?",
-                (status, error[:1000], now, wakeup_id, claim_token),
-            )
-
-    def list_wakeups(self):
-        return [dict(row) for row in self.db.execute(
-            "SELECT * FROM kanban_wakeups ORDER BY id"
-        )]
-
-
-class PublicGitHubAdapter:
-    """Fail-closed public API adapter. Intentionally sends no Authorization header."""
-
-    def revalidate(self, repository: str, issue_number: int):
-        url = f"https://api.github.com/repos/{repository}/issues/{issue_number}"
-        request = urllib.request.Request(url, headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "snapflow-neo-dev-webhook",
-        })
-        with urllib.request.urlopen(request, timeout=10) as response:
-            data = json.load(response)
-        return {
-            "open": data.get("state") == "open",
-            "labels": [item.get("name") for item in data.get("labels", [])
-                       if isinstance(item, dict)],
-            "is_pr": "pull_request" in data,
-        }
-
-
 class Receiver:
-    def __init__(self, secret, store, github, *, limits=Limits(), rate_limit=60,
+    def __init__(self, secret, runner, *, limits=Limits(), rate_limit=60,
                  concurrency_limit=8):
         if not secret:
             raise ValueError("webhook secret is required")
-        self.secret, self.store, self.github, self.limits = secret.encode(), store, github, limits
+        self.secret, self.runner, self.limits = secret.encode(), runner, limits
         self.rate_limit, self.timestamps = rate_limit, []
         self.semaphore = threading.BoundedSemaphore(concurrency_limit) if concurrency_limit > 0 else None
         self.rate_lock = threading.Lock()
@@ -313,7 +104,7 @@ class Receiver:
                     return 429, "rate_limited"
                 self.timestamps.append(now)
             try:
-                status = self.store.accept({
+                self.runner.create({
                     "delivery_id": delivery,
                     "event": event,
                     "action": action,
@@ -321,9 +112,9 @@ class Receiver:
                     "issue_number": issue["number"],
                     "comment_id": data.get("comment", {}).get("id"),
                 })
-            except sqlite3.Error:
-                return 503, "persistence_unavailable"
-            return (202 if status == "accepted" else 200), status
+            except Exception:
+                return 503, "handoff_unavailable"
+            return 202, "accepted"
         except (KeyError, TypeError, ValueError):
             return 400, "invalid_payload"
         finally:
@@ -414,26 +205,3 @@ Route this wakeup to the `{ORCHESTRATOR_SKILL}` skill. Read `{PROJECT_CONTEXT}` 
                 or not isinstance(task_id, str) or not task_id.strip()):
             raise RuntimeError("task.py did not confirm durable task creation")
         return task_id.strip()
-
-
-class Consumer:
-    def __init__(self, store: Store, runner: TaskRunner, github: PublicGitHubAdapter,
-                 lease_seconds: int = 300, max_attempts: int = 5):
-        self.store, self.runner, self.github = store, runner, github
-        self.lease_seconds, self.max_attempts = lease_seconds, max_attempts
-
-    def run_one(self, now=None) -> bool:
-        wakeup = self.store.claim(now, self.lease_seconds, self.max_attempts)
-        if wakeup is None:
-            return False
-        try:
-            live = self.github.revalidate(wakeup["repository"], wakeup["issue_number"])
-            if not live.get("open") or live.get("is_pr") or "neo-dev" not in live.get("labels", []):
-                raise RuntimeError("GitHub issue is no longer eligible")
-            task_id = self.runner.create(wakeup)
-            self.store.complete(wakeup["id"], wakeup["claim_token"], task_id, now)
-            return True
-        except Exception as error:
-            self.store.fail(wakeup["id"], wakeup["claim_token"], str(error),
-                            self.max_attempts, now)
-            return False

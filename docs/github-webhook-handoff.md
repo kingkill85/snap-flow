@@ -22,6 +22,8 @@ The body contains only repository, Issue, event/action, delivery ID, optional co
 
 Neo Dev uses its normal persistent profile tool surface to fetch live state, decide the governed next action, supervise the sole resumable Codex implementation worker and fresh reviewers, and record progress in Kanban. The deployment-managed profile source is `tools/neo_dev_webhook/deploy/profile.managed-block.md`.
 
+Before publishing or recording every Issue-facing gate or terminal status transition, Neo Dev runs the deployed `reconcile-phase.py` helper with explicit repository, Issue, and internal phase. This includes `kanban_complete` and normal human-wait `kanban_block` tasks such as spec approval and acceptance waits. The helper accepts only open, non-PR Issues carrying `neo-dev` in `kingkill85/snap-flow`, uses `/home/dev/bin/gh` by default, adds/removes only known phase labels, re-fetches the Issue, and emits compact JSON only when the exact phase-label state is proven. A nonzero or unverifiable result invokes `kanban_block` once with the sync error, without recursively reconciling that failure block; the Issue-facing transition is not published and the gate/task is not successful. Review findings are bundled and adjudicated per round; two unsuccessful correction rounds end as `non_convergent`/`blocked` rather than continuing indefinitely.
+
 Run the processes privately:
 
 ```bash

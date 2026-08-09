@@ -14,13 +14,14 @@ fi
 live_src=$data_root/services/snapflow-neo-dev-webhook/src
 profile=$data_root/profiles/dev/SOUL.md
 task_helper=$data_root/scripts/neo-dev/task.py
+phase_helper=$data_root/scripts/neo-dev/reconcile-phase.py
 plugin=$data_root/profiles/dev/plugins/snapflow_neo_dev_transition
 enforcement=$data_root/profiles/dev/.snapflow-neo-dev-tools.enforced
 host_adapter=$data_root/bin/neo-dev-project-control
 host_transition=$data_root/bin/snapflow-neo-dev-transition
 host_lib=$data_root/lib/neo_dev_webhook
 backup_root=$data_root/backups/snapflow-neo-dev-webhook
-approved_files=(__init__.py automation.py consumer.py server.py)
+approved_files=(__init__.py automation.py server.py)
 transaction_backup=
 transaction_active=0
 
@@ -38,6 +39,7 @@ scope_paths() {
     live-src "$live_src" \
     profile "$profile" \
     task-helper "$task_helper" \
+    phase-helper "$phase_helper" \
     transition-plugin "$plugin" \
     enforcement-marker "$enforcement" \
     host-adapter "$host_adapter" \
@@ -114,6 +116,7 @@ install_scope() {
     install -m 0644 "$repo_root/tools/neo_dev_webhook/$file" "$live_src/neo_dev_webhook/$file"
   done
   install -m 0755 "$repo_root/tools/neo_dev_webhook/deploy/task.py" "$task_helper"
+  install -m 0755 "$repo_root/tools/neo_dev_webhook/deploy/reconcile_phase.py" "$phase_helper"
 
   touch "$profile"
   sed -i '/<!-- snapflow-neo-dev-orchestrator:start -->/,/<!-- snapflow-neo-dev-orchestrator:end -->/d' "$profile"
@@ -150,6 +153,8 @@ verify_scope() {
   done
   cmp -s "$repo_root/tools/neo_dev_webhook/deploy/task.py" "$task_helper" || return 1
   test -x "$task_helper" || return 1
+  cmp -s "$repo_root/tools/neo_dev_webhook/deploy/reconcile_phase.py" "$phase_helper" || return 1
+  test -x "$phase_helper" || return 1
   expected_block=$(mktemp) || return 1
   trap 'rm -f "$expected_block"' RETURN
   sed -n '/<!-- snapflow-neo-dev-orchestrator:start -->/,/<!-- snapflow-neo-dev-orchestrator:end -->/p' \

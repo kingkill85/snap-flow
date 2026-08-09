@@ -30,6 +30,24 @@ Eligibility SHALL use `neo-dev`; `needs-input`, `needs-approval`, `in-progress`,
 - **WHEN** `neo-dev` is removed
 - **THEN** every phase label is removed
 
+### Requirement: Fail-closed phase reconciliation
+Before publishing or recording every Issue-facing gate or terminal status transition, including `kanban_complete` and normal human-wait `kanban_block`, Neo Dev SHALL map its internal phase to the linked Issue. Reconciliation SHALL reject closed Issues, pull requests, Issues without `neo-dev`, and repositories other than `kingkill85/snap-flow`; add the expected phase label and remove each other known phase label through label-scoped operations that never rewrite non-phase labels; re-fetch GitHub; and prove the exact expected phase among phase labels. Current mappings SHALL be `awaiting_input` to `needs-input`; `awaiting_spec_approval`, `awaiting_privileged_approval`, and `awaiting_merge_approval` to `needs-approval`; `implementation_in_progress` to `in-progress`; `ready_for_review` to `ready-for-review`; and `blocked` or `non_convergent` to `blocked`.
+
+#### Scenario: Human decision wait
+- **WHEN** Neo Dev is about to publish or record a spec-approval, acceptance, privileged, or merge wait through `kanban_block`
+- **THEN** it reconciles and verifies the corresponding Issue phase before recording the wait
+
+#### Scenario: Synchronization cannot be proven
+- **WHEN** label mutation or re-fetch verification fails
+- **THEN** Neo Dev invokes `kanban_block` once with the sync error without recursively reconciling that failure block, SHALL NOT publish the Issue-facing transition, and SHALL NOT claim gate or task success
+
+### Requirement: Bounded review convergence
+Neo Dev SHALL bundle and adjudicate independent review findings before each correction round. No more than two unsuccessful correction-and-review rounds SHALL be attempted for one implementation; failure to converge after the second SHALL transition the task to `non_convergent`, reconcile the Issue to `blocked`, and record the unresolved findings.
+
+#### Scenario: Second correction round remains unclean
+- **WHEN** fresh review after the second correction round still has required findings
+- **THEN** Neo Dev blocks as non-convergent instead of starting another correction round
+
 ### Requirement: Evidence-backed completion
 Tasks SHALL remain incomplete until concrete implementation or command/review evidence exists. Apply, verification, relevant suites, independent code/test review, and UI review when UI changes SHALL precede acceptance.
 
