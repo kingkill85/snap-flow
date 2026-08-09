@@ -1,12 +1,16 @@
 name: Build exact-SHA preview image
 
 on:
+  pull_request:
   workflow_dispatch:
     inputs:
       requested_sha:
         description: Full 40-character commit SHA to build
         required: true
         type: string
+
+env:
+  REQUESTED_SHA: ${{ inputs.requested_sha || github.event.pull_request.head.sha }}
 
 permissions:
   contents: read
@@ -17,19 +21,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate requested SHA
-        env:
-          REQUESTED_SHA: ${{ inputs.requested_sha }}
         run: |
           [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
 
       - name: Checkout exact SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.requested_sha }}
+          ref: ${{ env.REQUESTED_SHA }}
 
       - name: Verify exact checkout
-        env:
-          REQUESTED_SHA: ${{ inputs.requested_sha }}
         run: test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"
 
       - uses: docker/setup-buildx-action@v3
@@ -44,8 +44,8 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}:sha-${{ inputs.requested_sha }}
+          tags: ghcr.io/${{ github.repository }}:sha-${{ env.REQUESTED_SHA }}
           build-args: |
-            BUILD_SHA=${{ inputs.requested_sha }}
+            BUILD_SHA=${{ env.REQUESTED_SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
