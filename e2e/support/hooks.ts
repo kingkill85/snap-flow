@@ -58,6 +58,7 @@ BeforeAll(async function () {
     DATABASE_URL: join(runtimeDirectory, 'e2e.sqlite'), UPLOAD_DIR: join(runtimeDirectory, 'uploads'),
     CORS_ORIGIN: 'http://127.0.0.1:4173',
     JWT_SECRET: 'e2e-local-ephemeral-key-not-a-production-secret-32',
+    E2E_ADMIN_PASSWORD: 'Issue89Admin!',
   });
   processes.push(backend);
   await waitUntilReady('http://127.0.0.1:18000/health', backend, 'backend');

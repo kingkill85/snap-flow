@@ -6,7 +6,9 @@ export function seedAdmin(): { created: boolean; password?: string } {
 
   try {
     // Check if admin user already exists
-    const existingAdmin = db.query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+    const existingAdmin = db.query(
+      "SELECT id FROM users WHERE role = 'admin' LIMIT 1",
+    );
 
     if (existingAdmin.length > 0) {
       console.log("Admin user already exists, skipping seed");
@@ -15,7 +17,8 @@ export function seedAdmin(): { created: boolean; password?: string } {
 
     // Generate a secure random password
     const generatePassword = () => {
-      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+      const chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
       let password = "";
       for (let i = 0; i < 12; i++) {
         password += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -23,13 +26,20 @@ export function seedAdmin(): { created: boolean; password?: string } {
       return password;
     };
 
-    const adminPassword = generatePassword();
+    const adminPassword = Deno.env.get("E2E_ADMIN_PASSWORD") ??
+      generatePassword();
     const passwordHash = hashPassword(adminPassword);
 
     // Create admin user
     db.query(
       `INSERT INTO users (email, password_hash, role, full_name, created_at) VALUES (?, ?, ?, ?, ?)`,
-      ["admin@snapflow.com", passwordHash, "admin", "Administrator", new Date().toISOString()]
+      [
+        "admin@snapflow.com",
+        passwordHash,
+        "admin",
+        "Administrator",
+        new Date().toISOString(),
+      ],
     );
 
     console.log("");
@@ -39,7 +49,9 @@ export function seedAdmin(): { created: boolean; password?: string } {
     console.log("Email: admin@snapflow.com");
     console.log("Password: " + adminPassword);
     console.log("========================================");
-    console.log("IMPORTANT: Change this password immediately after logging in!");
+    console.log(
+      "IMPORTANT: Change this password immediately after logging in!",
+    );
     console.log("");
 
     return { created: true, password: adminPassword };
