@@ -14,6 +14,8 @@ import shutil
 import stat
 import subprocess
 import time
+import urllib.error
+import urllib.request
 import uuid
 
 from neo_dev_webhook.manual_preview import (
@@ -184,24 +186,69 @@ def _backup(stack: pathlib.Path) -> pathlib.Path:
     mode = _lstat_kind(backup_root)
     if mode is None:
         os.mkdir(backup_root, 0o700)
+        _fsync_directory(stack)
     elif not stat.S_ISDIR(mode):
         raise PreviewError("preview backup path is unsafe")
     backup_id = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + f"-{time.time_ns()}"
     target = backup_root / backup_id
-    os.mkdir(target, 0o700)
-    names = (COMPOSE, ".env", "state", "uploads")
-    presence = {name: _lstat_kind(stack / name) is not None for name in names}
-    identity = _compose_identity(stack / COMPOSE) if presence[COMPOSE] else None
-    state = {"presence": presence, "identity": identity}
-    _atomic_write(target / "BACKUP_STATE.json", json.dumps(state, sort_keys=True) + "\n")
-    for name in (COMPOSE, ".env"):
-        if presence[name]: _atomic_write(target / name, _read_regular(stack / name).decode())
-    for name in ("state", "uploads"):
-        if presence[name]: shutil.copytree(stack / name, target / name, symlinks=True)
-    manifest = {str(item.relative_to(target)): hashlib.sha256(item.read_bytes()).hexdigest()
-                for item in target.rglob("*") if item.is_file()}
-    _atomic_write(target / "SHA256.json", json.dumps(manifest, sort_keys=True) + "\n")
-    return target
+    temporary = backup_root / f".incomplete-{uuid.uuid4().hex}"
+    os.mkdir(temporary, 0o700)
+    published = False
+    try:
+        names = (COMPOSE, ".env", "state", "uploads")
+        presence = {name: _lstat_kind(stack / name) is not None for name in names}
+        identity = _compose_identity(stack / COMPOSE) if presence[COMPOSE] else None
+        state = {"presence": presence, "identity": identity}
+        _atomic_write(temporary / "BACKUP_STATE.json",
+                      json.dumps(state, sort_keys=True) + "\n")
+        for name in (COMPOSE, ".env"):
+            if presence[name]:
+                _atomic_write(temporary / name, _read_regular(stack / name).decode())
+        for name in ("state", "uploads"):
+            if presence[name]:
+                shutil.copytree(stack / name, temporary / name, symlinks=True)
+        manifest = {
+            str(item.relative_to(temporary)): hashlib.sha256(_read_regular(item)).hexdigest()
+            for item in temporary.rglob("*") if item.is_file() and not item.is_symlink()
+        }
+        _atomic_write(temporary / "SHA256.json", json.dumps(manifest, sort_keys=True) + "\n")
+        _fsync_tree(temporary)
+        _verify_backup(temporary)
+        os.replace(temporary, target)
+        published = True
+        _fsync_directory(backup_root)
+        _verify_backup(target)
+        return target
+    except BaseException:
+        if _lstat_kind(temporary) is not None:
+            shutil.rmtree(temporary)
+        if published and _lstat_kind(target) is not None:
+            shutil.rmtree(target)
+        raise
+
+
+def _fsync_directory(path: pathlib.Path) -> None:
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                 | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _fsync_tree(path: pathlib.Path) -> None:
+    for item in path.rglob("*"):
+        if item.is_file() and not item.is_symlink():
+            fd = os.open(item, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+    directories = sorted((item for item in path.rglob("*") if item.is_dir()),
+                         key=lambda value: len(value.parts), reverse=True)
+    for directory in directories:
+        _fsync_directory(directory)
+    _fsync_directory(path)
 
 
 def _verify_backup(target: pathlib.Path) -> None:
@@ -216,11 +263,34 @@ def _verify_backup(target: pathlib.Path) -> None:
         raise PreviewError("sealed backup verification failed") from error
     actual = {str(path.relative_to(target)) for path in paths
               if path.is_file() and path.name != "SHA256.json"}
-    if (not manifest or set(manifest) != actual or any(
+    if (not isinstance(manifest, dict) or not manifest
+            or any(not isinstance(name, str)
+                   or re.fullmatch(r"[0-9a-f]{64}", str(digest)) is None
+                   for name, digest in manifest.items())
+            or set(manifest) != actual or any(
             ".." in pathlib.PurePosixPath(name).parts
             or hashlib.sha256((target / name).read_bytes()).hexdigest() != digest
             for name, digest in manifest.items())):
         raise PreviewError("sealed backup verification failed")
+    try:
+        state = json.loads(_read_regular(target / "BACKUP_STATE.json"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PreviewError("sealed backup verification failed") from error
+    names = {COMPOSE, ".env", "state", "uploads"}
+    if (not isinstance(state, dict) or set(state) != {"presence", "identity"}
+            or not isinstance(state["presence"], dict)
+            or set(state["presence"]) != names
+            or any(type(value) is not bool for value in state["presence"].values())
+            or state["presence"][COMPOSE] != isinstance(state["identity"], dict)):
+        raise PreviewError("sealed backup verification failed")
+    if isinstance(state["identity"], dict) and (
+            set(state["identity"]) != {"sha", "digest"}
+            or FULL_SHA.fullmatch(str(state["identity"].get("sha", ""))) is None
+            or DIGEST.fullmatch(str(state["identity"].get("digest", ""))) is None):
+        raise PreviewError("sealed backup verification failed")
+    for name in names:
+        if (_lstat_kind(target / name) is not None) != state["presence"][name]:
+            raise PreviewError("sealed backup verification failed")
 
 
 def _restore_backup(stack: pathlib.Path, backup: pathlib.Path) -> dict:
@@ -344,6 +414,24 @@ def _run_smoke(sha: str, phase: str, created_id: str | None = None) -> dict:
         raise PreviewError("preview browser smoke returned invalid evidence") from error
 
 
+def _verify_route_auth_boundary() -> None:
+    try:
+        with urllib.request.urlopen(FIXED_ROUTE + "/login", timeout=5) as response:
+            if response.status != 200:
+                raise PreviewError("fixed preview login route is unavailable")
+    except (urllib.error.URLError, urllib.error.HTTPError) as error:
+        raise PreviewError("fixed preview login route is unavailable") from error
+    try:
+        urllib.request.urlopen(FIXED_ROUTE + "/api/projects", timeout=5)
+    except urllib.error.HTTPError as error:
+        if error.code in {401, 403}:
+            return
+        raise PreviewError("fixed preview authentication boundary is invalid") from error
+    except urllib.error.URLError as error:
+        raise PreviewError("fixed preview authentication boundary is unreachable") from error
+    raise PreviewError("fixed preview route exposed protected data without authentication")
+
+
 def verify(sha: str, digest: str, *, scope: pathlib.Path | None = None,
            run_external: bool = True) -> dict:
     if not FULL_SHA.fullmatch(sha) or not DIGEST.fullmatch(digest):
@@ -369,26 +457,46 @@ def verify(sha: str, digest: str, *, scope: pathlib.Path | None = None,
          "console.log(await (await fetch('http://localhost:8000/version')).text())"],
         check=True, capture_output=True, text=True, timeout=30).stdout)
     if version.get("sha") != sha: raise PreviewError("running /version SHA does not match")
-    preflight_fixed_route()
-    created = _run_smoke(sha, "create")
-    created_id = created.get("created_id")
-    if not isinstance(created_id, str): raise PreviewError("smoke did not create isolated data")
-    _run_compose(stack, "restart")
-    _wait_healthy(stack)
-    persisted = _run_smoke(sha, "verify-cleanup", created_id)
-    baseline_one = _baseline_fingerprint(stack)
-    baseline_two = _baseline_fingerprint(stack)
-    evidence = {"sha": sha, "route": FIXED_ROUTE, "created_id": created_id,
-                "reload_proven": created.get("reload_proven") is True,
-                "restart_proven": persisted.get("restart_proven") is True,
-                "reset_repeatable": (persisted.get("cleanup_proven") is True
-                                     and baseline_one == baseline_two),
-                "mobile_viewport": {"width": 390, "height": 844}}
-    if not all(evidence[key] is True for key in
-               ("reload_proven", "restart_proven", "reset_repeatable")):
-        raise PreviewError("persistence browser evidence is incomplete")
+    preflight_fixed_route(); _verify_route_auth_boundary()
     return {"stack": str(FIXED_STACK), "route": FIXED_ROUTE, "sha": sha,
-            "digest": digest, "health": "healthy", "verifier_evidence": evidence}
+            "digest": digest, "health": "healthy"}
+
+
+def _cleanup_smoke_project(sha: str, created_id: str) -> None:
+    evidence = _run_smoke(sha, "cleanup", created_id)
+    if evidence.get("cleanup_proven") is not True:
+        raise PreviewError("preview smoke cleanup evidence is incomplete")
+
+
+def _exercise_persistence(stack: pathlib.Path, sha: str,
+                          *, reset_repeatable: bool = False) -> dict:
+    created_id = None
+    try:
+        created = _run_smoke(sha, "create")
+        created_id = created.get("created_id")
+        if not isinstance(created_id, str) or created.get("reload_proven") is not True:
+            raise PreviewError("smoke did not prove isolated data creation and reload")
+        _run_compose(stack, "restart")
+        _wait_healthy(stack)
+        persisted = _run_smoke(sha, "verify-cleanup", created_id)
+        if (persisted.get("restart_proven") is not True
+                or persisted.get("cleanup_proven") is not True):
+            raise PreviewError("persistence browser evidence is incomplete")
+        evidence = {"sha": sha, "route": FIXED_ROUTE, "created_id": created_id,
+                    "reload_proven": True, "restart_proven": True,
+                    "reset_repeatable": reset_repeatable,
+                    "mobile_viewport": {"width": 390, "height": 844}}
+        return {"verifier_evidence": evidence}
+    except BaseException as original:
+        if not isinstance(created_id, str):
+            raise PreviewError(f"persistence exercise failed: {original}") from original
+        try:
+            _cleanup_smoke_project(sha, created_id)
+        except BaseException as cleanup:
+            raise PreviewError(
+                f"persistence exercise failed: {original}; cleanup failed: {cleanup}"
+            ) from original
+        raise PreviewError(f"persistence exercise failed; cleanup completed: {original}") from original
 
 
 def _resume_or_prove_absent(stack: pathlib.Path, backup: pathlib.Path) -> None:
@@ -407,6 +515,36 @@ def _quiesce(stack: pathlib.Path) -> None:
         _run_compose(stack, "down")
     else:
         _remove_container()
+
+
+def _capture_prior(stack: pathlib.Path) -> dict:
+    names = (COMPOSE, ".env", "state", "uploads")
+    presence = {name: _lstat_kind(stack / name) is not None for name in names}
+    return {"presence": presence,
+            "identity": _compose_identity(stack / COMPOSE) if presence[COMPOSE] else None}
+
+
+def _resume_prior(stack: pathlib.Path, prior: dict) -> None:
+    if prior["presence"][COMPOSE]:
+        identity = prior["identity"]
+        _run_compose(stack, "up", "-d", "--remove-orphans")
+        _wait_healthy(stack)
+        verify(identity["sha"], identity["digest"], scope=stack, run_external=False)
+    else:
+        _remove_container()
+
+
+def _snapshot_or_resume(stack: pathlib.Path, prior: dict, action: str) -> pathlib.Path:
+    try:
+        return _backup(stack)
+    except BaseException as original:
+        try:
+            _resume_prior(stack, prior)
+        except BaseException as resume:
+            raise PreviewError(
+                f"{action} snapshot failed: {original}; prior-slot resume failed: {resume}"
+            ) from original
+        raise PreviewError(f"{action} snapshot failed; prior slot resumed: {original}") from original
 
 
 def _rollback_failed_action(stack: pathlib.Path, backup: pathlib.Path,
@@ -433,21 +571,9 @@ def deploy(sha: str, digest: str) -> dict:
     _require_mutation_authority(); preflight_fixed_route()
     stack = assert_preview_scope()
     with _slot_lock(stack / LOCK):
-        had_compose = _lstat_kind(stack / COMPOSE) is not None
+        prior = _capture_prior(stack)
         _quiesce(stack)
-        try:
-            backup = _backup(stack)
-        except BaseException as error:
-            if had_compose:
-                try:
-                    identity = _compose_identity(stack / COMPOSE)
-                    _run_compose(stack, "up", "-d", "--remove-orphans")
-                    _wait_healthy(stack)
-                    verify(identity["sha"], identity["digest"], scope=stack,
-                           run_external=False)
-                except BaseException as resume:
-                    raise PreviewError(f"snapshot failed: {error}; resume failed: {resume}") from error
-            raise
+        backup = _snapshot_or_resume(stack, prior, "deploy")
         try:
             _write_compose(stack, sha, digest)
             _run_compose(stack, "pull")
@@ -455,6 +581,7 @@ def deploy(sha: str, digest: str) -> dict:
             _wait_healthy(stack)
             _provision_preview_admin(stack)
             result = verify(sha, digest)
+            result.update(_exercise_persistence(stack, sha))
         except BaseException as original:
             raise _rollback_failed_action(stack, backup, original, "deploy") from original
         result["backup_id"] = backup.name
@@ -464,20 +591,19 @@ def deploy(sha: str, digest: str) -> dict:
 def reset_seed(sha: str, digest: str) -> dict:
     _require_mutation_authority(); stack = assert_preview_scope()
     with _slot_lock(stack / LOCK):
+        prior = _capture_prior(stack)
         _quiesce(stack)
-        backup = _backup(stack)
+        backup = _snapshot_or_resume(stack, prior, "reset")
         try:
-            for name in ("state", "uploads"):
-                target = stack / name
-                mode = _lstat_kind(target)
-                if mode is not None and not stat.S_ISDIR(mode):
-                    raise PreviewError("reset target is not an ordinary preview directory")
-                if mode is not None: shutil.rmtree(target)
-                target.mkdir(mode=0o700)
-            _run_compose(stack, "up", "-d")
-            _wait_healthy(stack)
-            _provision_preview_admin(stack); _provision_preview_admin(stack)
+            first = _reset_once(stack)
+            second = _reset_once(stack)
+            if first != second:
+                raise PreviewError("independent reset cycles produced different baselines")
             result = verify(sha, digest)
+            result.update(_exercise_persistence(stack, sha, reset_repeatable=True))
+            final_baseline = _baseline_fingerprint(stack)
+            if final_baseline != second:
+                raise PreviewError("persistence exercise did not leave the defined reset baseline")
         except BaseException as original:
             raise _rollback_failed_action(stack, backup, original, "reset") from original
         result["backup_id"] = backup.name
@@ -485,13 +611,30 @@ def reset_seed(sha: str, digest: str) -> dict:
         return result
 
 
+def _reset_once(stack: pathlib.Path) -> dict:
+    _quiesce(stack)
+    for name in ("state", "uploads"):
+        target = stack / name
+        mode = _lstat_kind(target)
+        if mode is not None and not stat.S_ISDIR(mode):
+            raise PreviewError("reset target is not an ordinary preview directory")
+        if mode is not None:
+            shutil.rmtree(target)
+        target.mkdir(mode=0o700)
+    _run_compose(stack, "up", "-d")
+    _wait_healthy(stack)
+    _provision_preview_admin(stack)
+    return _baseline_fingerprint(stack)
+
+
 def rollback(backup_id: str) -> dict:
     _require_mutation_authority(); stack = assert_preview_scope()
     if not re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[0-9]{19}", backup_id):
         raise PreviewError("invalid backup identifier")
     with _slot_lock(stack / LOCK):
+        prior = _capture_prior(stack)
         _quiesce(stack)
-        current = _backup(stack)
+        current = _snapshot_or_resume(stack, prior, "rollback")
         backup = stack / BACKUPS / backup_id
         try:
             _resume_or_prove_absent(stack, backup)

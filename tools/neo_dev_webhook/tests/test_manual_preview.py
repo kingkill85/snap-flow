@@ -267,10 +267,22 @@ class GateEvidenceTest(unittest.TestCase):
     def _pr(body="Closes #91"):
         return {
             "number": 92, "body": body, "isDraft": True, "headRefOid": SHA,
+            "state": "OPEN",
             "baseRefOid": BASE_SHA, "mergeable": "MERGEABLE",
             "updatedAt": "2026-08-09T10:00:00Z", "author": {"login": "writer"},
             "files": [{"path": "backend/src/routes/items.ts"}],
         }
+
+    @staticmethod
+    def _graph(prs):
+        return {"data": {"repository": {"pullRequests": {
+            "nodes": [{"number": pr["number"], "body": pr["body"]} for pr in prs],
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+        }}}}
+
+    @staticmethod
+    def _file_pages(pr):
+        return [[{"filename": item["path"]} for item in pr["files"]]]
 
     @staticmethod
     def _checks(overrides=None):
@@ -311,7 +323,9 @@ class GateEvidenceTest(unittest.TestCase):
              "html_url": "https://ci/unrelated", "head_sha": SHA},
         ])
         checks["total_count"] = len(checks["check_runs"])
-        gh.side_effect = [self._issue(), [self._pr()], checks]
+        pr = self._pr()
+        gh.side_effect = [self._issue(), self._graph([pr]), pr,
+                          self._file_pages(pr), checks]
         result = validate_gate(
             91, f"/preview {SHA}", self._clean_evidence(),
             now=datetime(2026, 8, 9, 12, tzinfo=timezone.utc))
@@ -332,7 +346,9 @@ class GateEvidenceTest(unittest.TestCase):
                     "conclusion": value[1], "completed_at": "2026-08-09T10:30:00Z",
                     "html_url": "https://ci/bad", "head_sha": SHA})
             checks["total_count"] = len(checks["check_runs"])
-            gh.side_effect = [self._issue(), [self._pr()], checks]
+            pr = self._pr()
+            gh.side_effect = [self._issue(), self._graph([pr]), pr,
+                              self._file_pages(pr), checks]
             with self.subTest(changes=changes), self.assertRaisesRegex(
                     PreviewError, "required exact-SHA checks"):
                 validate_gate(91, f"/preview {SHA}", self._clean_evidence())
@@ -346,7 +362,9 @@ class GateEvidenceTest(unittest.TestCase):
             "html_url": "https://ci/failed-duplicate", "head_sha": SHA,
         })
         checks["total_count"] = len(checks["check_runs"])
-        gh.side_effect = [self._issue(), [self._pr()], checks]
+        pr = self._pr()
+        gh.side_effect = [self._issue(), self._graph([pr]), pr,
+                          self._file_pages(pr), checks]
         with self.assertRaisesRegex(PreviewError, "required exact-SHA checks"):
             validate_gate(91, f"/preview {SHA}", self._clean_evidence())
 
@@ -356,7 +374,8 @@ class GateEvidenceTest(unittest.TestCase):
                                   "labels": [{"name": "neo-dev"}]}, [self._pr()]),
                                  (self._issue(), [self._pr("Closes #191")]),
                                  (self._issue(), [self._pr(), self._pr("Refs #91")])):
-            gh.side_effect = [issue_data, prs]
+            gh.side_effect = ([issue_data] if issue_data.get("state") == "CLOSED"
+                              else [issue_data, self._graph(prs)])
             with self.assertRaises(PreviewError):
                 validate_gate(91, f"/preview {SHA}", self._clean_evidence())
 
@@ -373,7 +392,9 @@ class GateEvidenceTest(unittest.TestCase):
             {"extra": "field"},
         )
         for changes in cases:
-            gh.side_effect = [self._issue(), [self._pr()], self._checks()]
+            pr = self._pr()
+            gh.side_effect = [self._issue(), self._graph([pr]), pr,
+                              self._file_pages(pr), self._checks()]
             with self.subTest(changes=changes), self.assertRaises(PreviewError):
                 validate_gate(91, f"/preview {SHA}", self._clean_evidence(**changes),
                               now=datetime(2026, 8, 9, 12, tzinfo=timezone.utc))
@@ -384,7 +405,9 @@ class GateEvidenceTest(unittest.TestCase):
                 ("2026-08-09T10:29:59Z", False),
                 ("2026-08-09T10:30:00Z", True),
                 ("2026-08-09T10:30:01Z", True)):
-            gh.side_effect = [self._issue(), [self._pr()], self._checks()]
+            pr = self._pr()
+            gh.side_effect = [self._issue(), self._graph([pr]), pr,
+                              self._file_pages(pr), self._checks()]
             evidence = self._clean_evidence(reviewed_at=reviewed_at)
             if accepted:
                 validate_gate(91, f"/preview {SHA}", evidence,
@@ -402,7 +425,9 @@ class GateEvidenceTest(unittest.TestCase):
             incomplete = dict(complete)
             incomplete.pop(missing)
             path = self._evidence(incomplete)
-            gh.side_effect = [self._issue(), [self._pr()], self._checks()]
+            pr = self._pr()
+            gh.side_effect = [self._issue(), self._graph([pr]), pr,
+                              self._file_pages(pr), self._checks()]
             with self.subTest(missing=missing), self.assertRaisesRegex(
                     PreviewError, "fields are missing"):
                 validate_gate(91, f"/preview {SHA}", path)

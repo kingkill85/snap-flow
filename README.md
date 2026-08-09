@@ -179,8 +179,9 @@ docker run -d \
   -v snapflow_uploads:/app/backend/uploads \
   ghcr.io/kingkill85/snap-flow:latest
 
-# View logs to get admin password
-docker logs -f snapflow
+# Supply explicit first-start administrator credentials
+export ADMIN_EMAIL='owner@example.com'
+export ADMIN_PASSWORD='replace-with-a-unique-password-of-16-or-more-characters'
 ```
 
 ### 📋 First Run Setup
@@ -190,25 +191,17 @@ docker logs -f snapflow
 - **API:** http://localhost:8000/api
 - **Health Check:** http://localhost:8000/health
 
-**Default Admin Credentials (Auto-Generated):**
+**First-start administrator:**
 
-On first run, an admin user is automatically created. Check the logs for the password:
+On first run, an administrator is created only when `ADMIN_EMAIL` and a non-default `ADMIN_PASSWORD` of at least 16 characters are explicitly supplied to the container. Credentials are never printed to logs. If either value is absent or invalid, startup skips administrator creation and logs a non-secret instruction; set both values and restart.
 
 ```bash
-docker logs snapflow | grep -A 5 "DEFAULT ADMIN USER CREATED"
+docker run -e ADMIN_EMAIL='owner@example.com' \
+  -e ADMIN_PASSWORD='replace-with-a-unique-password-of-16-or-more-characters' \
+  ghcr.io/kingkill85/snap-flow:latest
 ```
 
-You will see:
-```
-========================================
-       DEFAULT ADMIN USER CREATED       
-========================================
-Email: admin@snapflow.com
-Password: XXXXXXXXXXXX  ← This is your temporary password
-========================================
-```
-
-**⚠️ Important:** Change the default admin password immediately after first login!
+Use a secret manager or protected runtime environment for these values. Do not place them in the image or commit them to compose files.
 
 ### 🛠️ Docker Compose Configuration
 
@@ -228,6 +221,8 @@ services:
       - NODE_ENV=production
       - PORT=8000
       - JWT_SECRET=${JWT_SECRET:-}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:?set ADMIN_EMAIL for first-start setup}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?set a unique password of at least 16 characters}
       - DATABASE_URL=./data/database.sqlite
       - UPLOAD_DIR=./uploads
       - CORS_ORIGIN=http://localhost:8000

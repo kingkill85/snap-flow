@@ -125,6 +125,74 @@ def _exact_issue_reference(body: object, issue: int) -> bool:
     return re.search(rf"(?im)\b{verb}\s+{target}\b", body) is not None
 
 
+def _discover_managed_pr(issue: int) -> dict:
+    query = """
+      query($owner:String!,$name:String!,$cursor:String) {
+        repository(owner:$owner,name:$name) {
+          pullRequests(states:OPEN,first:100,after:$cursor) {
+            nodes { number body }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }
+    """
+    owner, name = REPOSITORY.split("/", 1)
+    cursor = None
+    summaries = []
+    seen_cursors = set()
+    while True:
+        arguments = ["api", "graphql", "-f", f"query={query}",
+                     "-F", f"owner={owner}", "-F", f"name={name}"]
+        if cursor is not None:
+            arguments.extend(["-F", f"cursor={cursor}"])
+        document = _gh_json(arguments)
+        if not isinstance(document, dict) or "errors" in document:
+            raise PreviewError("open PR pagination returned an invalid shape")
+        try:
+            connection = document["data"]["repository"]["pullRequests"]
+            nodes, page_info = connection["nodes"], connection["pageInfo"]
+            has_next, end_cursor = page_info["hasNextPage"], page_info["endCursor"]
+        except (KeyError, TypeError) as error:
+            raise PreviewError("open PR pagination returned an invalid shape") from error
+        if (not isinstance(nodes, list) or type(has_next) is not bool
+                or any(not isinstance(node, dict)
+                       or set(node) != {"number", "body"}
+                       or type(node["number"]) is not int
+                       or not isinstance(node["body"], str) for node in nodes)):
+            raise PreviewError("open PR pagination returned an invalid shape")
+        summaries.extend(nodes)
+        if not has_next:
+            break
+        if not isinstance(end_cursor, str) or not end_cursor or end_cursor in seen_cursors:
+            raise PreviewError("open PR pagination did not prove exhaustion")
+        seen_cursors.add(end_cursor)
+        cursor = end_cursor
+    linked = [summary for summary in summaries
+              if _exact_issue_reference(summary["body"], issue)]
+    if len(linked) != 1:
+        raise PreviewError("managed Issue must resolve to exactly one open PR")
+    pr = _gh_json(["pr", "view", str(linked[0]["number"]), "--repo", REPOSITORY,
+                   "--json", "number,body,isDraft,headRefOid,baseRefOid,mergeable,"
+                   "updatedAt,author,state"])
+    if (not isinstance(pr, dict) or pr.get("number") != linked[0]["number"]
+            or pr.get("state") != "OPEN"
+            or not _exact_issue_reference(pr.get("body"), issue)):
+        raise PreviewError("managed PR details do not match exhaustive discovery")
+    file_pages = _gh_json([
+        "api", f"repos/{REPOSITORY}/pulls/{pr['number']}/files?per_page=100",
+        "--paginate", "--slurp",
+    ])
+    if (not isinstance(file_pages, list) or not file_pages
+            or any(not isinstance(page, list) for page in file_pages)):
+        raise PreviewError("managed PR files could not be exhaustively retrieved")
+    files = [item for page in file_pages for item in page]
+    if any(not isinstance(item, dict) or not isinstance(item.get("filename"), str)
+           for item in files):
+        raise PreviewError("managed PR files returned an invalid shape")
+    pr["files"] = [{"path": item["filename"]} for item in files]
+    return pr
+
+
 def _validate_checks(document: object, sha: str) -> dict[str, list[str]]:
     pages = document if isinstance(document, list) else [document]
     if not pages or any(not isinstance(page, dict) for page in pages):
@@ -233,15 +301,7 @@ def validate_gate(issue: int, command: str, review_evidence: pathlib.Path,
             or "neo-dev" not in [label.get("name") for label in labels
                                   if isinstance(label, dict)]):
         raise PreviewError("managed Issue must be open and carry neo-dev")
-    prs = _gh_json(["pr", "list", "--repo", REPOSITORY, "--state", "open",
-                    "--limit", "100",
-                    "--json", "number,body,isDraft,headRefOid,baseRefOid,mergeable,"
-                    "files,updatedAt,author"])
-    linked = [pr for pr in prs if isinstance(pr, dict)
-              and _exact_issue_reference(pr.get("body"), issue)] if isinstance(prs, list) else []
-    if len(linked) != 1:
-        raise PreviewError("managed Issue must resolve to exactly one open PR")
-    pr = linked[0]
+    pr = _discover_managed_pr(issue)
     if pr.get("isDraft") is not True or pr.get("mergeable") != "MERGEABLE":
         raise PreviewError("managed PR must be Draft and cleanly mergeable")
     if pr.get("headRefOid") != sha:

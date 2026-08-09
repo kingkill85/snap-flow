@@ -35,3 +35,14 @@ test('manual preview smoke rejects missing credentials and non-full SHA', () => 
     assert.throws(() => readPreviewSmokeContract(environment));
   }
 });
+
+test('cleanup phase requires a numeric preview-only project id', () => {
+  const base = {
+    PREVIEW_ADMIN_EMAIL: 'preview@example.test',
+    PREVIEW_ADMIN_PASSWORD: 'preview-only-password',
+    EXPECTED_SHA: SHA,
+    PREVIEW_SMOKE_PHASE: 'cleanup',
+  };
+  assert.throws(() => readPreviewSmokeContract(base));
+  assert.equal(readPreviewSmokeContract({ ...base, PREVIEW_SMOKE_ID: '42' }).createdId, '42');
+});

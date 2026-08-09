@@ -39,7 +39,7 @@ try {
     await page.getByText(name, { exact: false }).first().waitFor();
     console.log(JSON.stringify({ route, sha: expectedSha, created_id: id,
       reload_proven: true, mobile_viewport: { width: 390, height: 844 } }));
-  } else {
+  } else if (phase === 'verify-cleanup') {
     const existing = await api(`/projects/${createdId}`);
     if (existing.status !== 200) throw new Error('preview project did not persist across restart');
     const removed = await api(`/projects/${createdId}`, { method: 'DELETE' });
@@ -49,6 +49,13 @@ try {
     console.log(JSON.stringify({ route, sha: expectedSha, created_id: createdId,
       restart_proven: true, cleanup_proven: true,
       mobile_viewport: { width: 390, height: 844 } }));
+  } else {
+    const removed = await api(`/projects/${createdId}`, { method: 'DELETE' });
+    if (removed.status !== 200 && removed.status !== 404) {
+      throw new Error('preview project cleanup recovery failed');
+    }
+    console.log(JSON.stringify({ route, sha: expectedSha, created_id: createdId,
+      cleanup_proven: true, mobile_viewport: { width: 390, height: 844 } }));
   }
 } finally {
   await browser.close();

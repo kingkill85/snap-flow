@@ -139,6 +139,8 @@ class LockAndTransactionTest(unittest.TestCase):
                             side_effect=lambda *_: events.append(("healthy",))), \
                  mock.patch("neo_dev_webhook.manual_preview_stack.verify",
                             side_effect=lambda *_args, **_kw: events.append(("verify",)) or {}), \
+                 mock.patch("neo_dev_webhook.manual_preview_stack._exercise_persistence",
+                            side_effect=lambda *_args, **_kw: events.append(("exercise",)) or {}), \
                  mock.patch("neo_dev_webhook.manual_preview_stack._slot_lock",
                             side_effect=lambda *_a, **_k: nullcontext()):
                 deploy(SHA, DIGEST)
@@ -147,7 +149,7 @@ class LockAndTransactionTest(unittest.TestCase):
                 ("compose", "pull"), ("compose", "up", "-d", "--remove-orphans"),
                 ("healthy",), ("provision",),
             ])
-            self.assertEqual(events[-1], ("verify",))
+            self.assertEqual(events[-2:], [("verify",), ("exercise",)])
 
 
 class PersistenceEvidenceTest(unittest.TestCase):
