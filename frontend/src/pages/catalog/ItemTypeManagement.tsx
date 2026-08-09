@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { itemTypeService, type ItemType } from '@/services/item-type';
+import { Fragment, useState, useEffect } from 'react';
+import { itemTypeService, type ItemType, type ZoningParameter } from '@/services/item-type';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -13,8 +13,9 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ItemTypeFormModal } from '@/components/items/ItemTypeFormModal';
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal';
+import { ZoningParameterFormModal } from '@/components/items/ZoningParameterFormModal';
 import ItemTypeBadge from '@/components/items/ItemTypeBadge';
-import { Plus, Pencil, Trash2, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, ArrowUp, ArrowDown, Loader2, ChevronDown, Power } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { extractErrorMessage } from '@/utils';
 import type { CreateItemTypeDTO, UpdateItemTypeDTO } from '@/services/item-type';
@@ -29,6 +30,17 @@ const ItemTypeManagement = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemTypeToEdit, setItemTypeToEdit] = useState<ItemType | null>(null);
   const [itemTypeToDelete, setItemTypeToDelete] = useState<ItemType | null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [parameters, setParameters] = useState<Record<number, ZoningParameter[]>>({});
+  const [parameterModal, setParameterModal] = useState<{ itemType: ItemType; parameter: ZoningParameter | null } | null>(null);
+  const [parameterToDelete, setParameterToDelete] = useState<{ itemType: ItemType; parameter: ZoningParameter } | null>(null);
+
+  const loadParameters = async (itemType: ItemType) => {
+    if (expanded === itemType.id) { setExpanded(null); return; }
+    try { const loaded = await itemTypeService.getZoningParameters(itemType.id, true); setParameters((current) => ({ ...current, [itemType.id]: loaded })); setExpanded(itemType.id); }
+    catch (err) { setError(extractErrorMessage(err) || 'Failed to load zoning parameters'); }
+  };
+  const refreshParameters = async (id: number) => { const loaded = await itemTypeService.getZoningParameters(id, true); setParameters((current) => ({ ...current, [id]: loaded })); };
 
   const fetchItemTypes = async (signal?: AbortSignal) => {
     try {
@@ -143,10 +155,11 @@ const ItemTypeManagement = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                itemTypes.map((itemType, index) => (
-                  <TableRow key={itemType.id}>
+                itemTypes.map((itemType, index) => (<Fragment key={itemType.id}>
+                  <TableRow>
                     <TableCell>
                       <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="icon" aria-label={`${expanded === itemType.id ? 'Collapse' : 'Expand'} ${itemType.name} zoning parameters`} onClick={() => loadParameters(itemType)}><ChevronDown className={`h-4 w-4 ${expanded === itemType.id ? 'rotate-180' : ''}`} /></Button>
                         <span className="text-muted-foreground w-6">{itemType.sort_order}</span>
                         {isAdmin && (
                           <div className="flex flex-col">
@@ -185,7 +198,19 @@ const ItemTypeManagement = () => {
                       </TableCell>
                     )}
                   </TableRow>
-                ))
+                  {expanded === itemType.id && <TableRow><TableCell colSpan={4}><div className="ml-8 space-y-3" aria-label={`${itemType.name} zoning parameters`}>
+                    <div className="flex justify-between"><h3 className="font-semibold">Zoning Parameters</h3>{isAdmin && <Button size="sm" onClick={() => setParameterModal({ itemType, parameter: null })}><Plus className="mr-1 h-4 w-4" />Create</Button>}</div>
+                    {(parameters[itemType.id] ?? []).length === 0 ? <p className="text-sm text-muted-foreground">No zoning parameters configured.</p> : (parameters[itemType.id] ?? []).map((parameter, parameterIndex, list) => <div key={parameter.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2">
+                      <span className={parameter.is_active ? '' : 'text-muted-foreground line-through'}>{parameter.name}</span>
+                      {isAdmin && <div className="flex gap-2">
+                        <Button variant="outline" size="sm" aria-label={`Move ${parameter.name} up`} disabled={parameterIndex === 0} onClick={async () => { const ids = list.map((row) => row.id); [ids[parameterIndex - 1], ids[parameterIndex]] = [ids[parameterIndex], ids[parameterIndex - 1]]; const reordered = await itemTypeService.reorderZoningParameters(itemType.id, ids); setParameters((current) => ({ ...current, [itemType.id]: reordered })); }}><ArrowUp className="h-4 w-4" /></Button>
+                        <Button variant="outline" size="sm" aria-label={`Move ${parameter.name} down`} disabled={parameterIndex === list.length - 1} onClick={async () => { const ids = list.map((row) => row.id); [ids[parameterIndex + 1], ids[parameterIndex]] = [ids[parameterIndex], ids[parameterIndex + 1]]; const reordered = await itemTypeService.reorderZoningParameters(itemType.id, ids); setParameters((current) => ({ ...current, [itemType.id]: reordered })); }}><ArrowDown className="h-4 w-4" /></Button>
+                        <Button variant="outline" size="sm" onClick={() => setParameterModal({ itemType, parameter })}><Pencil className="mr-1 h-4 w-4" />Edit</Button>
+                        <Button variant="outline" size="sm" onClick={async () => { await itemTypeService.setZoningParameterActive(itemType.id, parameter.id, !parameter.is_active); await refreshParameters(itemType.id); }}><Power className="mr-1 h-4 w-4" />{parameter.is_active ? 'Deactivate' : 'Activate'}</Button>
+                        <Button variant="destructive" size="sm" onClick={() => setParameterToDelete({ itemType, parameter })}><Trash2 className="mr-1 h-4 w-4" />Delete</Button>
+                      </div>}
+                    </div>)}</div></TableCell></TableRow>}
+                </Fragment>))
               )}
             </TableBody>
           </Table>
@@ -207,6 +232,10 @@ const ItemTypeManagement = () => {
         onClose={() => { setShowDeleteModal(false); setItemTypeToDelete(null); }}
         onConfirm={handleDelete}
       />
+      <ZoningParameterFormModal parameter={parameterModal?.parameter ?? null} open={parameterModal !== null} onClose={() => setParameterModal(null)} onSubmit={async (data) => {
+        if (!parameterModal) return; if (parameterModal.parameter) await itemTypeService.updateZoningParameter(parameterModal.itemType.id, parameterModal.parameter.id, data); else await itemTypeService.createZoningParameter(parameterModal.itemType.id, data); await refreshParameters(parameterModal.itemType.id);
+      }} />
+      <ConfirmDeleteModal title="Delete Zoning Parameter" itemName={parameterToDelete?.parameter.name ?? ''} warningText="Parameters with saved Area values cannot be deleted. Deactivate them instead." isOpen={parameterToDelete !== null} onClose={() => setParameterToDelete(null)} onConfirm={async () => { if (!parameterToDelete) return; await itemTypeService.deleteZoningParameter(parameterToDelete.itemType.id, parameterToDelete.parameter.id); await refreshParameters(parameterToDelete.itemType.id); }} />
     </div>
   );
 };

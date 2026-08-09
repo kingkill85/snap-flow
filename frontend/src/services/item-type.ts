@@ -23,6 +23,10 @@ export interface UpdateItemTypeDTO {
   is_active?: boolean;
 }
 
+export interface ZoningParameter {
+  id: number; item_type_id: number; name: string; sort_order: number; is_active: boolean; created_at: string; updated_at: string;
+}
+
 export const itemTypeService = {
   async getAll(signal?: AbortSignal, includeInactive = false): Promise<ItemType[]> {
     const params = includeInactive ? { include_inactive: 'true' } : undefined;
@@ -62,5 +66,24 @@ export const itemTypeService = {
   async reorder(ids: number[]): Promise<ItemType[]> {
     const response = await api.patch('/item-types/reorder', { ids });
     return response.data.data;
+  },
+  async getZoningParameters(id: number, includeInactive = false): Promise<ZoningParameter[]> {
+    const response = await api.get(`/item-types/${id}/zoning-parameters`, { params: includeInactive ? { include_inactive: 'true' } : undefined });
+    return response.data.data;
+  },
+  async createZoningParameter(id: number, data: { name: string; sort_order?: number }): Promise<ZoningParameter> {
+    return (await api.post(`/item-types/${id}/zoning-parameters`, data)).data.data;
+  },
+  async updateZoningParameter(id: number, parameterId: number, data: { name?: string; sort_order?: number }): Promise<ZoningParameter> {
+    return (await api.put(`/item-types/${id}/zoning-parameters/${parameterId}`, data)).data.data;
+  },
+  async setZoningParameterActive(id: number, parameterId: number, active: boolean): Promise<ZoningParameter> {
+    return (await api.patch(`/item-types/${id}/zoning-parameters/${parameterId}/${active ? 'activate' : 'deactivate'}`)).data.data;
+  },
+  async deleteZoningParameter(id: number, parameterId: number): Promise<void> {
+    await api.delete(`/item-types/${id}/zoning-parameters/${parameterId}`);
+  },
+  async reorderZoningParameters(id: number, ids: number[]): Promise<ZoningParameter[]> {
+    return (await api.patch(`/item-types/${id}/zoning-parameters/reorder`, { ids })).data.data;
   },
 };

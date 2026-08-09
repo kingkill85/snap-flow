@@ -871,6 +871,7 @@ const ProjectDashboard = () => {
       <AreaEditModal
         area={editingArea}
         onSave={async (id, data) => { await updateArea(id, data); }}
+        onReload={async (id) => { setEditingArea(await areaService.getById(id)); }}
         onClose={() => setEditingArea(null)}
       />
 

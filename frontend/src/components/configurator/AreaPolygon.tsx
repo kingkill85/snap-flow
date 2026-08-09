@@ -463,6 +463,39 @@ export function AreaPolygon({
         );
       })()}
 
+      {(() => {
+        const positiveGroups = area.zoning_groups
+          .map((group) => ({ ...group, parameters: group.parameters.filter((parameter) => parameter.value > 0) }))
+          .filter((group) => group.parameters.length > 0);
+        if (!positiveGroups.length) return null;
+        const allRows = positiveGroups.flatMap((group) => group.parameters.map((parameter, index) => ({
+          group: index === 0 ? group.item_type : null,
+          text: `${parameter.name}: ${parameter.value}`,
+        })));
+        const maxRows = 6;
+        const visible = allRows.slice(0, maxRows);
+        const omitted = allRows.length - visible.length;
+        const summaryFont = 10 / scale;
+        const rowHeight = 14 / scale;
+        const width = 150 / scale;
+        const height = (visible.length + (omitted ? 1 : 0)) * rowHeight + 10 / scale;
+        const x = area.x + 6 / scale;
+        const y = area.y + 6 / scale;
+        return <g data-testid="area-zoning-summary" aria-label="Zoning summary" style={{ pointerEvents: 'none' }}>
+          <rect x={x} y={y} width={width} height={height} rx={4 / scale} fill="rgba(0,0,0,.7)" />
+          {visible.map((row, index) => {
+            const display = row.text.length > 24 ? `${row.text.slice(0, 23)}…` : row.text;
+            const prefix = row.group ? `${row.group.name} — ` : '';
+            return <text key={`${index}-${row.text}`} x={x + 6 / scale} y={y + (index + 1) * rowHeight}
+              fontSize={summaryFont} fill="white" style={{ userSelect: 'none' }}>
+              <title>{`${prefix}${row.text}`}</title>
+              {prefix}{display}
+            </text>;
+          })}
+          {omitted > 0 && <text x={x + 6 / scale} y={y + (visible.length + 1) * rowHeight} fontSize={summaryFont} fill="white">+{omitted} more</text>}
+        </g>;
+      })()}
+
       {/* Selection-only elements */}
       {isSelected && (
         <>
