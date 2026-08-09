@@ -33,4 +33,22 @@ describe('AreaEditModal zoning parameters', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('reload required'); expect(screen.getByLabelText('Relay zones')).toHaveValue(7);
     fireEvent.click(screen.getByRole('button', { name: 'Reload Area' })); await waitFor(() => expect(onReload).toHaveBeenCalledWith(1));
   });
+
+  it('keeps ordered groups discoverable in responsive layout and Escape discards drafts', () => {
+    const onSave = vi.fn(); const onClose = vi.fn(); render(<AreaEditModal area={area} onSave={onSave} onClose={onClose} />);
+    expect(screen.getByRole('button', { name: /Lighting/ }).compareDocumentPosition(screen.getByRole('button', { name: /HVAC/ }))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(document.querySelector('[class*="md:grid-cols-2"]')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Relay zones'), { target: { value: '9999' } });
+    expect(screen.getByRole('button', { name: 'Increase Relay zones' })).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('preserves drafts and exposes server validation errors', async () => {
+    render(<AreaEditModal area={area} onSave={vi.fn().mockRejectedValue({ response: { status: 400, data: { error: 'Values must be integers' } } })} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Relay zones'), { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Values must be integers');
+    expect(screen.getByLabelText('Relay zones')).toHaveValue(8);
+  });
 });

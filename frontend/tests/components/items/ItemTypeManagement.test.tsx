@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import ItemTypeManagement from '@/pages/catalog/ItemTypeManagement';
 import { itemTypeService } from '@/services/item-type';
 import { useAuth } from '@/context/AuthContext';
@@ -12,6 +12,12 @@ vi.mock('@/services/item-type', () => ({
     update: vi.fn(),
     delete: vi.fn(),
     reorder: vi.fn(),
+    getZoningParameters: vi.fn(),
+    createZoningParameter: vi.fn(),
+    updateZoningParameter: vi.fn(),
+    deleteZoningParameter: vi.fn(),
+    reorderZoningParameters: vi.fn(),
+    setZoningParameterActive: vi.fn(),
   },
 }));
 
@@ -102,5 +108,35 @@ describe('ItemTypeManagement', () => {
     });
 
     expect(screen.queryByText('Add Type')).not.toBeInTheDocument();
+  });
+
+  it('keeps referenced delete open and directs the administrator to deactivate', async () => {
+    vi.mocked(itemTypeService.getAll).mockResolvedValue(mockItemTypes);
+    vi.mocked(itemTypeService.getZoningParameters).mockResolvedValue([{ id: 9, item_type_id: 1, name: 'Relay zones', sort_order: 1, is_active: true, created_at: '', updated_at: '' }]);
+    vi.mocked(itemTypeService.deleteZoningParameter).mockRejectedValue({ response: { data: { error: 'Parameter is in use; deactivate it instead' } } });
+    render(<ItemTypeManagement />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand Zigbee zoning parameters' }));
+    const parameters = await screen.findByLabelText('Zigbee zoning parameters');
+    fireEvent.click(parameters.querySelector('button.bg-destructive')!);
+    const dialog = await screen.findByRole('dialog', { name: 'Delete Zoning Parameter' });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/deactivate.*preserve saved Area values/i);
+    expect(dialog).toBeVisible();
+  });
+
+  it('surfaces activation and reorder failures in an accessible alert', async () => {
+    vi.mocked(itemTypeService.getAll).mockResolvedValue(mockItemTypes);
+    vi.mocked(itemTypeService.getZoningParameters).mockResolvedValue([
+      { id: 9, item_type_id: 1, name: 'Relay', sort_order: 1, is_active: true, created_at: '', updated_at: '' },
+      { id: 10, item_type_id: 1, name: 'Fan', sort_order: 2, is_active: true, created_at: '', updated_at: '' },
+    ]);
+    vi.mocked(itemTypeService.setZoningParameterActive).mockRejectedValue(new Error('Forbidden'));
+    render(<ItemTypeManagement />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand Zigbee zoning parameters' }));
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Deactivate' }))[0]);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Forbidden');
+    vi.mocked(itemTypeService.reorderZoningParameters).mockRejectedValue(new Error('Invalid order'));
+    fireEvent.click(screen.getByRole('button', { name: 'Move Fan up' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid order');
   });
 });

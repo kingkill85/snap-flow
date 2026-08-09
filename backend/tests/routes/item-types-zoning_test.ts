@@ -8,6 +8,7 @@ const { userRepository } = await import("../../src/repositories/user.ts");
 const { itemTypeRepository } = await import(
   "../../src/repositories/item-type.ts"
 );
+const { getDb } = await import("../../src/config/database.ts");
 
 async function token(role: "admin" | "user"): Promise<string> {
   const email = `${role}@zoning.test`;
@@ -104,4 +105,45 @@ Deno.test("nested zoning parameter routes validate, authorize, order and preserv
     },
   );
   assertEquals(badOrder.status, 400);
+
+  const relayId = body.data[0].id as number;
+  const fanId = body.data[1].id as number;
+  for (const [path, method, requestBody] of [
+    [`/api/item-types/${type.id}/zoning-parameters/${relayId}`, "PUT", { name: "Forbidden rename" }],
+    [`/api/item-types/${type.id}/zoning-parameters/reorder`, "PATCH", { ids: [fanId, relayId] }],
+    [`/api/item-types/${type.id}/zoning-parameters/${relayId}/deactivate`, "PATCH", undefined],
+    [`/api/item-types/${type.id}/zoning-parameters/${relayId}/activate`, "PATCH", undefined],
+    [`/api/item-types/${type.id}/zoning-parameters/${relayId}`, "DELETE", undefined],
+  ] as const) {
+    const response = await testRequest(path, { method, headers: { Authorization: `Bearer ${user}`, ...(requestBody ? { "Content-Type": "application/json" } : {}) }, ...(requestBody ? { body: JSON.stringify(requestBody) } : {}) });
+    assertEquals(response.status, 403);
+  }
+  const renamed = await testRequest(`/api/item-types/${type.id}/zoning-parameters/${relayId}`, { method: "PUT", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" }, body: JSON.stringify({ name: "Relay circuits" }) });
+  assertEquals(renamed.status, 200);
+  assertEquals((await parseJSON(renamed)).data.id, relayId);
+  const deactivated = await testRequest(`/api/item-types/${type.id}/zoning-parameters/${relayId}/deactivate`, { method: "PATCH", headers: { Authorization: `Bearer ${admin}` } });
+  assertEquals(deactivated.status, 200);
+  const activeList = await parseJSON(await testRequest(`/api/item-types/${type.id}/zoning-parameters?include_inactive=true`, { headers: { Authorization: `Bearer ${user}` } }));
+  assertEquals(activeList.data.map((row: { id: number }) => row.id), [fanId]);
+  const adminList = await parseJSON(await testRequest(`/api/item-types/${type.id}/zoning-parameters?include_inactive=true`, { headers: { Authorization: `Bearer ${admin}` } }));
+  assertEquals(adminList.data.length, 2);
+  assertEquals((await testRequest(`/api/item-types/${type.id}/zoning-parameters/${relayId}/activate`, { method: "PATCH", headers: { Authorization: `Bearer ${admin}` } })).status, 200);
+  const validOrder = await testRequest(`/api/item-types/${type.id}/zoning-parameters/reorder`, { method: "PATCH", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" }, body: JSON.stringify({ ids: [fanId, relayId] }) });
+  assertEquals(validOrder.status, 200);
+  assertEquals((await parseJSON(validOrder)).data.map((row: { id: number }) => row.id), [fanId, relayId]);
+  const otherType = await itemTypeRepository.create({ name: "HVAC", abbreviation: "HVC" });
+  assertEquals((await testRequest(`/api/item-types/${otherType.id}/zoning-parameters/${relayId}`, { method: "PUT", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" }, body: JSON.stringify({ name: "Foreign" }) })).status, 404);
+  assertEquals((await testRequest(`/api/item-types/${type.id}/zoning-parameters/${fanId}`, { method: "DELETE", headers: { Authorization: `Bearer ${admin}` } })).status, 200);
+
+  const db = getDb();
+  db.query("INSERT INTO project_groups(customer_name, tenant_id) VALUES ('Customer',1)");
+  const groupId = db.queryEntries<{ id: number }>("SELECT id FROM project_groups")[0].id;
+  const projectId = db.queryEntries<{ id: number }>("INSERT INTO projects(project_group_id,version_name,tenant_id) VALUES (?,'v1',1) RETURNING id", [groupId])[0].id;
+  const floorplanId = db.queryEntries<{ id: number }>("INSERT INTO floorplans(project_id,name,image_path) VALUES (?,'Plan','plan.png') RETURNING id", [projectId])[0].id;
+  const areaId = db.queryEntries<{ id: number }>("INSERT INTO placements(floorplan_id,type,x,y,width,height) VALUES (?,'area',0,0,10,10) RETURNING id", [floorplanId])[0].id;
+  db.query("INSERT INTO area_properties(placement_id,name) VALUES (?,'Room')", [areaId]);
+  db.query("INSERT INTO area_zoning_values(area_placement_id,parameter_id,value) VALUES (?,?,2)", [areaId, relayId]);
+  const conflict = await testRequest(`/api/item-types/${type.id}/zoning-parameters/${relayId}`, { method: "DELETE", headers: { Authorization: `Bearer ${admin}` } });
+  assertEquals(conflict.status, 409);
+  assertEquals((await parseJSON(conflict)).code, "PARAMETER_IN_USE");
 });

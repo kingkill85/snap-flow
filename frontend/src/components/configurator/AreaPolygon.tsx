@@ -468,28 +468,49 @@ export function AreaPolygon({
           .map((group) => ({ ...group, parameters: group.parameters.filter((parameter) => parameter.value > 0) }))
           .filter((group) => group.parameters.length > 0);
         if (!positiveGroups.length) return null;
-        const allRows = positiveGroups.flatMap((group) => group.parameters.map((parameter, index) => ({
-          group: index === 0 ? group.item_type : null,
-          text: `${parameter.name}: ${parameter.value}`,
-        })));
-        const maxRows = 6;
-        const visible = allRows.slice(0, maxRows);
-        const omitted = allRows.length - visible.length;
         const summaryFont = 10 / scale;
         const rowHeight = 14 / scale;
-        const width = 150 / scale;
-        const height = (visible.length + (omitted ? 1 : 0)) * rowHeight + 10 / scale;
-        const x = area.x + 6 / scale;
-        const y = area.y + 6 / scale;
+        const bounds = sortedVertices.reduce((box, vertex) => ({ minX: Math.min(box.minX, vertex.x), minY: Math.min(box.minY, vertex.y), maxX: Math.max(box.maxX, vertex.x), maxY: Math.max(box.maxY, vertex.y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+        const padding = 4 / scale;
+        const availableLines = Math.max(1, Math.min(7, Math.floor((bounds.maxY - bounds.minY - padding * 2 - 10 / scale) / rowHeight)));
+        const totalRows = positiveGroups.reduce((count, group) => count + group.parameters.length, 0);
+        const maxRows = Math.min(6, Math.max(0, availableLines - (totalRows > availableLines ? 1 : 0)));
+        const queued = positiveGroups.map((group) => group.parameters.map((parameter) => ({
+          group: group.item_type,
+          text: `${parameter.name}: ${parameter.value}`,
+        })));
+        const visible: Array<{ group: typeof positiveGroups[number]['item_type']; text: string }> = [];
+        while (visible.length < maxRows && queued.some((rows) => rows.length > 0)) {
+          for (const rows of queued) {
+            const row = rows.shift();
+            if (row) visible.push(row);
+            if (visible.length === maxRows) break;
+          }
+        }
+        const omitted = queued.reduce((count, rows) => count + rows.length, 0);
+        const width = Math.min(150 / scale, Math.max(40 / scale, bounds.maxX - bounds.minX - padding * 2));
+        const height = Math.min((visible.length + (omitted ? 1 : 0)) * rowHeight + 10 / scale, Math.max(rowHeight + padding * 2, bounds.maxY - bounds.minY - padding * 2));
+        let longest = { a: sortedVertices[0], b: sortedVertices[1], length: -1 };
+        sortedVertices.forEach((a, index) => { const b = sortedVertices[(index + 1) % sortedVertices.length]; const length = Math.hypot(b.x - a.x, b.y - a.y); if (length > longest.length) longest = { a, b, length }; });
+        const midpoint = { x: (longest.a.x + longest.b.x) / 2, y: (longest.a.y + longest.b.y) / 2 };
+        const normal = { x: -(longest.b.y - longest.a.y), y: longest.b.x - longest.a.x };
+        const normalLength = Math.hypot(normal.x, normal.y) || 1;
+        const centroid = sortedVertices.reduce((sum, vertex) => ({ x: sum.x + vertex.x / sortedVertices.length, y: sum.y + vertex.y / sortedVertices.length }), { x: 0, y: 0 });
+        const direction = ((normal.x / normalLength) * (centroid.x - midpoint.x) + (normal.y / normalLength) * (centroid.y - midpoint.y)) >= 0 ? 1 : -1;
+        const desiredX = midpoint.x + direction * normal.x / normalLength * (height / 2 + 18 / scale) - width / 2;
+        const desiredY = midpoint.y + direction * normal.y / normalLength * (height / 2 + 18 / scale) - height / 2;
+        const x = Math.min(Math.max(desiredX, bounds.minX + padding), bounds.maxX - width - padding);
+        const y = Math.min(Math.max(desiredY, bounds.minY + padding), bounds.maxY - height - padding);
+        const maxCharacters = Math.max(8, Math.floor((width * scale - 12) / 5.5));
         return <g data-testid="area-zoning-summary" aria-label="Zoning summary" style={{ pointerEvents: 'none' }}>
-          <rect x={x} y={y} width={width} height={height} rx={4 / scale} fill="rgba(0,0,0,.7)" />
+          <rect data-testid="area-zoning-summary-bounds" x={x} y={y} width={width} height={height} rx={4 / scale} fill="rgba(0,0,0,.7)" />
           {visible.map((row, index) => {
-            const display = row.text.length > 24 ? `${row.text.slice(0, 23)}…` : row.text;
-            const prefix = row.group ? `${row.group.name} — ` : '';
+            const fullText = `${row.group.name} — ${row.text}`;
+            const display = fullText.length > maxCharacters ? `${fullText.slice(0, maxCharacters - 1)}…` : fullText;
             return <text key={`${index}-${row.text}`} x={x + 6 / scale} y={y + (index + 1) * rowHeight}
               fontSize={summaryFont} fill="white" style={{ userSelect: 'none' }}>
-              <title>{`${prefix}${row.text}`}</title>
-              {prefix}{display}
+              <title>{fullText}</title>
+              {display}
             </text>;
           })}
           {omitted > 0 && <text x={x + 6 / scale} y={y + (visible.length + 1) * rowHeight} fontSize={summaryFont} fill="white">+{omitted} more</text>}

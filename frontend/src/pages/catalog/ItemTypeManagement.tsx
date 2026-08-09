@@ -34,6 +34,13 @@ const ItemTypeManagement = () => {
   const [parameters, setParameters] = useState<Record<number, ZoningParameter[]>>({});
   const [parameterModal, setParameterModal] = useState<{ itemType: ItemType; parameter: ZoningParameter | null } | null>(null);
   const [parameterToDelete, setParameterToDelete] = useState<{ itemType: ItemType; parameter: ZoningParameter } | null>(null);
+  const [parameterError, setParameterError] = useState('');
+
+  const reportParameterError = (err: unknown, fallback: string) => {
+    const message = extractErrorMessage(err, '') || (err instanceof Error ? err.message : fallback);
+    setParameterError(message.includes('in use') ? `${message}. Deactivate the parameter to preserve saved Area values.` : message);
+    setError(message);
+  };
 
   const loadParameters = async (itemType: ItemType) => {
     if (expanded === itemType.id) { setExpanded(null); return; }
@@ -203,10 +210,10 @@ const ItemTypeManagement = () => {
                     {(parameters[itemType.id] ?? []).length === 0 ? <p className="text-sm text-muted-foreground">No zoning parameters configured.</p> : (parameters[itemType.id] ?? []).map((parameter, parameterIndex, list) => <div key={parameter.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2">
                       <span className={parameter.is_active ? '' : 'text-muted-foreground line-through'}>{parameter.name}</span>
                       {isAdmin && <div className="flex gap-2">
-                        <Button variant="outline" size="sm" aria-label={`Move ${parameter.name} up`} disabled={parameterIndex === 0} onClick={async () => { const ids = list.map((row) => row.id); [ids[parameterIndex - 1], ids[parameterIndex]] = [ids[parameterIndex], ids[parameterIndex - 1]]; const reordered = await itemTypeService.reorderZoningParameters(itemType.id, ids); setParameters((current) => ({ ...current, [itemType.id]: reordered })); }}><ArrowUp className="h-4 w-4" /></Button>
-                        <Button variant="outline" size="sm" aria-label={`Move ${parameter.name} down`} disabled={parameterIndex === list.length - 1} onClick={async () => { const ids = list.map((row) => row.id); [ids[parameterIndex + 1], ids[parameterIndex]] = [ids[parameterIndex], ids[parameterIndex + 1]]; const reordered = await itemTypeService.reorderZoningParameters(itemType.id, ids); setParameters((current) => ({ ...current, [itemType.id]: reordered })); }}><ArrowDown className="h-4 w-4" /></Button>
+                        <Button variant="outline" size="sm" aria-label={`Move ${parameter.name} up`} disabled={parameterIndex === 0} onClick={async () => { try { const ids = list.map((row) => row.id); [ids[parameterIndex - 1], ids[parameterIndex]] = [ids[parameterIndex], ids[parameterIndex - 1]]; const reordered = await itemTypeService.reorderZoningParameters(itemType.id, ids); setParameters((current) => ({ ...current, [itemType.id]: reordered })); setParameterError(''); } catch (err) { reportParameterError(err, 'Failed to reorder zoning parameters'); } }}><ArrowUp className="h-4 w-4" /></Button>
+                        <Button variant="outline" size="sm" aria-label={`Move ${parameter.name} down`} disabled={parameterIndex === list.length - 1} onClick={async () => { try { const ids = list.map((row) => row.id); [ids[parameterIndex + 1], ids[parameterIndex]] = [ids[parameterIndex], ids[parameterIndex + 1]]; const reordered = await itemTypeService.reorderZoningParameters(itemType.id, ids); setParameters((current) => ({ ...current, [itemType.id]: reordered })); setParameterError(''); } catch (err) { reportParameterError(err, 'Failed to reorder zoning parameters'); } }}><ArrowDown className="h-4 w-4" /></Button>
                         <Button variant="outline" size="sm" onClick={() => setParameterModal({ itemType, parameter })}><Pencil className="mr-1 h-4 w-4" />Edit</Button>
-                        <Button variant="outline" size="sm" onClick={async () => { await itemTypeService.setZoningParameterActive(itemType.id, parameter.id, !parameter.is_active); await refreshParameters(itemType.id); }}><Power className="mr-1 h-4 w-4" />{parameter.is_active ? 'Deactivate' : 'Activate'}</Button>
+                        <Button variant="outline" size="sm" onClick={async () => { try { await itemTypeService.setZoningParameterActive(itemType.id, parameter.id, !parameter.is_active); await refreshParameters(itemType.id); setParameterError(''); } catch (err) { reportParameterError(err, `Failed to ${parameter.is_active ? 'deactivate' : 'activate'} zoning parameter`); } }}><Power className="mr-1 h-4 w-4" />{parameter.is_active ? 'Deactivate' : 'Activate'}</Button>
                         <Button variant="destructive" size="sm" onClick={() => setParameterToDelete({ itemType, parameter })}><Trash2 className="mr-1 h-4 w-4" />Delete</Button>
                       </div>}
                     </div>)}</div></TableCell></TableRow>}
@@ -235,7 +242,7 @@ const ItemTypeManagement = () => {
       <ZoningParameterFormModal parameter={parameterModal?.parameter ?? null} open={parameterModal !== null} onClose={() => setParameterModal(null)} onSubmit={async (data) => {
         if (!parameterModal) return; if (parameterModal.parameter) await itemTypeService.updateZoningParameter(parameterModal.itemType.id, parameterModal.parameter.id, data); else await itemTypeService.createZoningParameter(parameterModal.itemType.id, data); await refreshParameters(parameterModal.itemType.id);
       }} />
-      <ConfirmDeleteModal title="Delete Zoning Parameter" itemName={parameterToDelete?.parameter.name ?? ''} warningText="Parameters with saved Area values cannot be deleted. Deactivate them instead." isOpen={parameterToDelete !== null} onClose={() => setParameterToDelete(null)} onConfirm={async () => { if (!parameterToDelete) return; await itemTypeService.deleteZoningParameter(parameterToDelete.itemType.id, parameterToDelete.parameter.id); await refreshParameters(parameterToDelete.itemType.id); }} />
+      <ConfirmDeleteModal title="Delete Zoning Parameter" itemName={parameterToDelete?.parameter.name ?? ''} warningText="Parameters with saved Area values cannot be deleted. Deactivate them instead." error={parameterError} isOpen={parameterToDelete !== null} onClose={() => { setParameterToDelete(null); setParameterError(''); }} onConfirm={async () => { if (!parameterToDelete) return; try { await itemTypeService.deleteZoningParameter(parameterToDelete.itemType.id, parameterToDelete.parameter.id); await refreshParameters(parameterToDelete.itemType.id); setParameterError(''); } catch (err) { reportParameterError(err, 'Failed to delete zoning parameter'); throw err; } }} />
     </div>
   );
 };

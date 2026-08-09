@@ -293,7 +293,7 @@ export class AreaRepository {
       }
       const values = data.zoning_values ?? [];
       if (
-        values.length !== applicable.length || new Set(values.map((v) =>
+        new Set(values.map((v) =>
             v.parameter_id
           )).size !== values.length ||
         values.some((value) =>
@@ -303,7 +303,7 @@ export class AreaRepository {
         )
       ) {
         throw new Error(
-          "ZONING_VALIDATION: Values must be unique integers from 0 to 9999 for every applicable parameter",
+          "ZONING_VALIDATION: Values must be unique integers from 0 to 9999 for applicable parameters",
         );
       }
       const sets: string[] = [];
@@ -320,13 +320,14 @@ export class AreaRepository {
         `UPDATE area_properties SET ${sets.join(", ")} WHERE placement_id = ?`,
         args,
       );
+      for (const parameterId of applicable) {
+        db.query(
+          "DELETE FROM area_zoning_values WHERE area_placement_id = ? AND parameter_id = ?",
+          [id, parameterId],
+        );
+      }
       for (const value of values) {
-        if (value.value === 0) {
-          db.query(
-            "DELETE FROM area_zoning_values WHERE area_placement_id = ? AND parameter_id = ?",
-            [id, value.parameter_id],
-          );
-        } else {db.query(
+        if (value.value > 0) {db.query(
             `INSERT INTO area_zoning_values(area_placement_id, parameter_id, value) VALUES (?, ?, ?)
           ON CONFLICT(area_placement_id, parameter_id) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
             [id, value.parameter_id, value.value],
