@@ -1,20 +1,13 @@
 # Permanent SnapFlow test stack
 
-`preview/deploy.py <full-40-character-sha>` updates the single permanent
-`snapflow-test` stack to the immutable image for that commit.
+The repository defines exactly one permanent `snapflow-test` stack at
+`https://snapflow-test.kingkill.org`.
 
-The stack always uses `https://snapflow-test.kingkill.org` and the same persistent
-data/upload mounts. Updating the software does not reset, seed, or remove data.
-If startup or `/version` verification fails, the previous image configuration is
-restored.
+1. Build the selected full commit SHA with **Build exact-SHA preview image**.
+2. Set `SNAPFLOW_IMAGE=ghcr.io/kingkill85/snap-flow:sha-<full-sha>` in the
+   stack `.env`.
+3. Run `docker compose pull` and `docker compose up -d` in the existing stack.
+4. Verify `/health` and `/version`.
 
-Initial host setup requires a mode-`600` `.env` beside `compose.yaml`:
-
-```dotenv
-JWT_SECRET=<preview-only-secret>
-SNAPFLOW_IMAGE=ghcr.io/kingkill85/snap-flow:sha-<full-sha>
-SNAPFLOW_SHA=<full-sha>
-```
-
-Build an exact image with the **Build exact-SHA preview image** workflow, then run
-the deploy command on the Docker host.
+The Compose file always reuses the same persistent database and upload mounts.
+Updating the software does not reset, seed, create, or remove application data.
