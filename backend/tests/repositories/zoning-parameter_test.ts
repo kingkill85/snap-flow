@@ -75,6 +75,74 @@ Deno.test("parameter lifecycle preserves stable identity and orders deterministi
   );
 });
 
+Deno.test("Unicode caseless uniqueness covers create, rename, and reactivation", () => {
+  clearDatabase();
+  const typeId = createType();
+  const street = zoningParameterRepository.create(typeId, "Straße", 1);
+
+  assertThrows(
+    () => zoningParameterRepository.create(typeId, "STRASSE", 2),
+    ZoningValidationError,
+  );
+
+  const other = zoningParameterRepository.create(typeId, "Other", 2);
+  assertThrows(
+    () =>
+      zoningParameterRepository.update(typeId, other.id, { name: "STRASSE" }),
+    ZoningValidationError,
+  );
+  assertEquals(
+    zoningParameterRepository.findById(typeId, street.id)?.name,
+    "Straße",
+  );
+  assertEquals(
+    zoningParameterRepository.findById(typeId, other.id)?.name,
+    "Other",
+  );
+
+  zoningParameterRepository.setActive(typeId, street.id, false);
+  const replacement = zoningParameterRepository.create(typeId, "STRASSE", 3);
+  assertThrows(
+    () => zoningParameterRepository.setActive(typeId, street.id, true),
+    ZoningValidationError,
+  );
+  assertEquals(
+    Boolean(zoningParameterRepository.findById(typeId, street.id)?.is_active),
+    false,
+  );
+  assertEquals(
+    Boolean(
+      zoningParameterRepository.findById(typeId, replacement.id)?.is_active,
+    ),
+    true,
+  );
+
+  const otherTypeId = createType("HVAC");
+  assertEquals(
+    zoningParameterRepository.create(otherTypeId, "Straße").item_type_id,
+    otherTypeId,
+  );
+
+  // Compatibility with a database written by the reviewed pre-fix algorithm:
+  // its persisted key used lowercase only, but comparisons must be corrected
+  // immediately without deleting or changing that record.
+  const legacyTypeId = createType("Legacy");
+  getDb().query(
+    "INSERT INTO item_type_zoning_parameters(item_type_id,name,name_key,sort_order) VALUES (?,?,?,1)",
+    [legacyTypeId, "Straße", "straße"],
+  );
+  assertThrows(
+    () => zoningParameterRepository.create(legacyTypeId, "STRASSE"),
+    ZoningValidationError,
+  );
+  assertEquals(
+    zoningParameterRepository.findAll(legacyTypeId, true).map((row) =>
+      row.name
+    ),
+    ["Straße"],
+  );
+});
+
 Deno.test("referenced parameters cannot be deleted and Area values enforce positive bounds", () => {
   clearDatabase();
   const db = getDb();

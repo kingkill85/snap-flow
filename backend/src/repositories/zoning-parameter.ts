@@ -13,8 +13,17 @@ export interface ZoningParameter {
 export class ZoningConflictError extends Error {}
 export class ZoningValidationError extends Error {}
 
-const nameKey = (name: string) =>
-  name.normalize("NFKC").toLocaleLowerCase("und");
+/**
+ * Locale-independent caseless key for persisted uniqueness checks.
+ *
+ * Unicode default casing can expand characters only when uppercasing (for
+ * example, `ß` -> `SS`). Uppercase followed by lowercase therefore provides
+ * the expansion needed for caseless matching while NFKC handles compatibility
+ * forms such as ligatures. The final normalization makes combining sequences
+ * deterministic before the key is persisted.
+ */
+export const zoningParameterNameKey = (name: string) =>
+  name.normalize("NFKC").toUpperCase().toLowerCase().normalize("NFKC");
 
 export class ZoningParameterRepository {
   findAll(itemTypeId: number, includeInactive = false): ZoningParameter[] {
@@ -47,6 +56,7 @@ export class ZoningParameterRepository {
     sortOrder?: number,
   ): ZoningParameter {
     this.assertItemType(itemTypeId);
+    this.assertNoEquivalentActiveName(itemTypeId, name);
     const order = sortOrder ?? Number(
       (getDb().queryEntries(
         `
@@ -61,7 +71,7 @@ export class ZoningParameterRepository {
         INSERT INTO item_type_zoning_parameters(item_type_id, name, name_key, sort_order)
         VALUES (?, ?, ?, ?) RETURNING id
       `,
-        [itemTypeId, name, nameKey(name), order],
+        [itemTypeId, name, zoningParameterNameKey(name), order],
       );
       return this.findById(itemTypeId, (rows[0] as { id: number }).id)!;
     } catch (error) {
@@ -82,6 +92,9 @@ export class ZoningParameterRepository {
     const current = this.findById(itemTypeId, id);
     if (!current) return null;
     const name = data.name ?? current.name;
+    if (current.is_active) {
+      this.assertNoEquivalentActiveName(itemTypeId, name, id);
+    }
     try {
       getDb().query(
         `UPDATE item_type_zoning_parameters
@@ -89,7 +102,7 @@ export class ZoningParameterRepository {
         WHERE item_type_id = ? AND id = ?`,
         [
           name,
-          nameKey(name),
+          zoningParameterNameKey(name),
           data.sort_order ?? current.sort_order,
           itemTypeId,
           id,
@@ -113,11 +126,12 @@ export class ZoningParameterRepository {
   ): ZoningParameter | null {
     const current = this.findById(itemTypeId, id);
     if (!current) return null;
+    if (active) this.assertNoEquivalentActiveName(itemTypeId, current.name, id);
     try {
       getDb().query(
-        `UPDATE item_type_zoning_parameters SET is_active = ?, updated_at = CURRENT_TIMESTAMP
+        `UPDATE item_type_zoning_parameters SET is_active = ?, name_key = ?, updated_at = CURRENT_TIMESTAMP
       WHERE item_type_id = ? AND id = ?`,
-        [active ? 1 : 0, itemTypeId, id],
+        [active ? 1 : 0, zoningParameterNameKey(current.name), itemTypeId, id],
       );
     } catch (error) {
       if (String(error).includes("UNIQUE")) {
@@ -177,6 +191,23 @@ export class ZoningParameterRepository {
         .length
     ) {
       throw new ZoningValidationError("Product Type not found");
+    }
+  }
+
+  private assertNoEquivalentActiveName(
+    itemTypeId: number,
+    name: string,
+    excludeId?: number,
+  ): void {
+    const requestedKey = zoningParameterNameKey(name);
+    const equivalent = this.findAll(itemTypeId).some((parameter) =>
+      parameter.id !== excludeId &&
+      zoningParameterNameKey(parameter.name) === requestedKey
+    );
+    if (equivalent) {
+      throw new ZoningValidationError(
+        "An equivalent active parameter name already exists",
+      );
     }
   }
 }
