@@ -51,6 +51,30 @@ describe('zoning annotation layout', () => {
     expect(ZONING_ANNOTATION_STYLE.foreground).not.toBe(ZONING_ANNOTATION_STYLE.outline);
   });
 
+  it('keeps the Product Type, parameter identity, and exact value in painted text', () => {
+    const persistedArea = resizedArea(1, 0, 500, 300, 2);
+    persistedArea.zoning_groups = persistedArea.zoning_groups.map((group, index) => ({
+      ...group,
+      item_type: {
+        ...group.item_type,
+        name: `Issue89 Type ${index} 1780000000000`,
+        abbreviation: `I${index}X`,
+      },
+      parameters: [{ id: index + 1, name: `Zones ${index}`, sort_order: 0, value: index === 0 ? 4 : 2 }],
+    }));
+
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    });
+
+    expect(descriptor.lines.map((line) => line.displayText)).toEqual([
+      expect.stringMatching(/I0X.*Zones 0.*4/),
+      expect.stringMatching(/I1X.*Zones 1.*2/),
+    ]);
+  });
+
   it('chooses another bounded candidate near products and never overlaps them', () => {
     const product = { x: 70, y: 35, width: 90, height: 65 };
     const roomyArea = { ...area(1), width: 500, height: 300, vertices: [
@@ -104,8 +128,9 @@ describe('zoning annotation layout', () => {
   it('contains max-length wide glyphs inside the canonical horizontal paint envelope', () => {
     const wideArea = resizedArea(1, 0, 600, 400, 1);
     wideArea.zoning_groups[0].item_type.name = 'W'.repeat(100);
+    wideArea.zoning_groups[0].item_type.abbreviation = 'WWW';
     wideArea.zoning_groups[0].parameters = Array.from({ length: 8 }, (_, index) => ({
-      id: index + 1, name: `Wide ${index + 1}`, sort_order: index, value: index + 1,
+      id: index + 1, name: `${'W'.repeat(100)} ${index + 1}`, sort_order: index, value: index === 0 ? 9999 : index + 1,
     }));
     const product = { x: 625, y: 120, width: 65, height: 40 };
     const descriptor = layoutZoningAnnotations({
@@ -115,7 +140,7 @@ describe('zoning annotation layout', () => {
     const fitted = getAnnotationPresentation(descriptor, 0.18);
     expect(fitted).toEqual(quarter);
     expect(descriptor.lines[0].fullText).toContain('W'.repeat(100));
-    expect(descriptor.lines[0].displayText).toMatch(/^W+…$/);
+    expect(descriptor.lines[0].displayText).toMatch(/^W+…·W+…:9999$/);
     expect(quarter.clipBounds).toEqual(quarter.bounds);
     expect(quarter.clipBounds.x + quarter.clipBounds.width).toBeLessThan(product.x);
     expect(quarter.clipBounds.x + quarter.clipBounds.width).toBeLessThanOrEqual(700);

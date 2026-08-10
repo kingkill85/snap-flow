@@ -13,6 +13,7 @@ test('Issue 89 real-runtime feature retains the approved representative acceptan
     'Native keyboard stepper and persistence',
     'Cancel discards drafts',
     'Positive-only grouped annotations persist after reload',
+    'Saved editor values reach the floorplan and PNG export',
     'Annotation overflow remains bounded and accessible',
     'Annotation remains readable over varied floorplan backgrounds',
     'Annotation avoids a nearby product placement',

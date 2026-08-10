@@ -23,6 +23,7 @@ describe('AreaEditModal zoning parameters', () => {
     const onSave = vi.fn(); const onClose = vi.fn(); render(<AreaEditModal area={area} onSave={onSave} onClose={onClose} />);
     const input = screen.getByLabelText('Fan zones');
     expect(input).toHaveAttribute('type', 'number'); expect(input).toHaveAttribute('min', '0'); expect(input).toHaveAttribute('max', '9999'); expect(input).toHaveAttribute('step', '1');
+    expect(input).toHaveClass('pr-8'); expect(input).toHaveClass('text-left');
     expect(screen.queryByRole('button', { name: /Increase|Decrease/ })).toBeNull();
     fireEvent.change(input, { target: { value: '-1' } }); expect(input).toHaveValue(0);
     fireEvent.change(screen.getByLabelText('Relay zones'), { target: { value: '3' } }); fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));

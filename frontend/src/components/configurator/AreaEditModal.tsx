@@ -197,7 +197,7 @@ export function AreaEditModal({ area, onSave, onClose, onReload }: AreaEditModal
                     <div className="divide-y divide-border/60">
                       {group.parameters.map((parameter) => {
                         const value = values[parameter.id] ?? 0;
-                        return <div key={parameter.id} className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-3 py-1.5">
+                        return <div key={parameter.id} className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3 py-1.5">
                           <Label htmlFor={`zoning-${parameter.id}`} className="truncate text-sm font-normal" title={parameter.name}>{parameter.name}</Label>
                           <Input
                             id={`zoning-${parameter.id}`}
@@ -217,7 +217,7 @@ export function AreaEditModal({ area, onSave, onClose, onReload }: AreaEditModal
                               }));
                             }}
                             aria-describedby={`zoning-help-${parameter.id}`}
-                            className="h-8 w-[5.5rem] px-2 text-right"
+                            className="h-8 w-24 pl-3 pr-8 text-left tabular-nums"
                           />
                           <span id={`zoning-help-${parameter.id}`} className="sr-only">Integer from 0 to 9999. Use arrow keys or the native stepper to change the value.</span>
                         </div>;

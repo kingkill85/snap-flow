@@ -58,6 +58,13 @@ Feature: Generic Product Type zoning parameters
     Then each Product Type with a positive value has one labelled group
     And zero-valued parameters and empty Product Type groups are absent
 
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#save-and-reopen-compact-zoning-values
+  Scenario: Saved editor values reach the floorplan and PNG export
+    Given an Area editor contains one or more Product Type groups
+    When the user enters values manually, saves, and reopens the Area editor
+    Then the saved values appear beside the same parameter labels in the same Product Type groups
+    And zero and positive values retain their defined persistence semantics
+
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#long-and-numerous-values
   Scenario: Annotation overflow remains bounded and accessible
     Given an Area has more positive values than fit within the summary bounds and some names are long

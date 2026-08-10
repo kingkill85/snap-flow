@@ -52,9 +52,6 @@ export const ZONING_ANNOTATION_STYLE = Object.freeze({
   foreground: '#ffffff',
   outline: '#111827',
   outlineWidth: 3,
-  // Used only for deterministic ellipsis. Shared renderer clipping is the
-  // fail-closed paint boundary for wide and fallback glyphs.
-  characterWidthRatio: 0.58,
   canonicalMinScale: 0.25,
 });
 
@@ -62,6 +59,13 @@ interface LayoutInput {
   areas: readonly Area[];
   productBounds: readonly AnnotationRect[];
   imageBounds: AnnotationRect;
+}
+
+interface PositiveAnnotationRow {
+  fullText: string;
+  productTypeLabel: string;
+  parameterName: string;
+  value: number;
 }
 
 const intersects = (a: AnnotationRect, b: AnnotationRect, padding = 0) =>
@@ -200,10 +204,13 @@ const positiveRows = (area: Area) => {
       parameters: group.parameters.filter((parameter) => parameter.value > 0),
     }))
     .filter((group) => group.parameters.length > 0);
-  const queues = groups.map((group) => group.parameters.map((parameter) =>
-    `${group.item_type.name} — ${parameter.name}: ${parameter.value}`
-  ));
-  const rows: string[] = [];
+  const queues = groups.map((group) => group.parameters.map((parameter): PositiveAnnotationRow => ({
+    fullText: `${group.item_type.name} — ${parameter.name}: ${parameter.value}`,
+    productTypeLabel: group.item_type.abbreviation,
+    parameterName: parameter.name,
+    value: parameter.value,
+  })));
+  const rows: PositiveAnnotationRow[] = [];
   while (queues.some((queue) => queue.length > 0)) {
     for (const queue of queues) {
       const row = queue.shift();
@@ -216,21 +223,79 @@ const positiveRows = (area: Area) => {
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
 
-function displayedLines(rows: readonly string[], visibleCount: number, width: number) {
-  const maxCharacters = Math.max(
-    1,
-    Math.floor((width - (ZONING_ANNOTATION_STYLE.padding + ZONING_ANNOTATION_STYLE.outlineWidth) * 2) /
-      (ZONING_ANNOTATION_STYLE.fontSize * ZONING_ANNOTATION_STYLE.characterWidthRatio)),
-  );
-  return rows.slice(0, visibleCount).map((fullText) => {
-    const glyphs = Array.from(fullText);
-    return {
-      fullText,
-      displayText: glyphs.length > maxCharacters
-        ? `${glyphs.slice(0, maxCharacters - 1).join('')}…`
-        : fullText,
-    };
-  });
+const conservativeGlyphRatio = (glyph: string) => {
+  if (/\s/u.test(glyph)) return 0.35;
+  if (/[MW]/u.test(glyph)) return 1;
+  if (/[mw]/u.test(glyph)) return 0.9;
+  if (/[A-Z]/u.test(glyph)) return 0.76;
+  if (/[0-9]/u.test(glyph)) return 0.64;
+  if (/[.,:;!'|ilI\-·/]/u.test(glyph)) return 0.42;
+  if ((glyph.codePointAt(0) ?? 128) <= 127) return 0.66;
+  return 1;
+};
+
+const conservativeTextWidth = (value: string) => Array.from(value).reduce(
+  (width, glyph) => width + conservativeGlyphRatio(glyph) * ZONING_ANNOTATION_STYLE.fontSize,
+  0,
+);
+
+function ellipsizeToWidth(value: string, width: number) {
+  if (conservativeTextWidth(value) <= width) return value;
+  const ellipsis = '…';
+  const ellipsisWidth = conservativeTextWidth(ellipsis);
+  if (width < ellipsisWidth) return '';
+  let result = '';
+  let used = 0;
+  for (const glyph of Array.from(value)) {
+    const glyphWidth = conservativeTextWidth(glyph);
+    if (used + glyphWidth + ellipsisWidth > width) break;
+    result += glyph;
+    used += glyphWidth;
+  }
+  return result ? `${result}${ellipsis}` : ellipsis;
+}
+
+function displayedLines(rows: readonly PositiveAnnotationRow[], visibleCount: number, width: number) {
+  const availableWidth = width -
+    (ZONING_ANNOTATION_STYLE.padding + ZONING_ANNOTATION_STYLE.outlineWidth) * 2;
+  const lines: AnnotationLine[] = [];
+
+  for (const row of rows.slice(0, visibleCount)) {
+    if (conservativeTextWidth(row.fullText) <= availableWidth) {
+      lines.push({ fullText: row.fullText, displayText: row.fullText });
+      continue;
+    }
+
+    const readable = `${row.productTypeLabel} · ${row.parameterName}: ${row.value}`;
+    if (conservativeTextWidth(readable) <= availableWidth) {
+      lines.push({ fullText: row.fullText, displayText: readable });
+      continue;
+    }
+
+    const separator = '·';
+    const suffix = `:${row.value}`;
+    const fixedWidth = conservativeTextWidth(separator + suffix);
+    const parameterGlyphs = Array.from(row.parameterName);
+    const minimumParameter = parameterGlyphs.length > 1
+      ? `${parameterGlyphs[0]}…`
+      : (parameterGlyphs[0] ?? '');
+    const minimumParameterWidth = conservativeTextWidth(minimumParameter);
+    const productTypeBudget = Math.min(
+      28,
+      availableWidth - fixedWidth - minimumParameterWidth,
+    );
+    const productType = ellipsizeToWidth(row.productTypeLabel, productTypeBudget);
+    const parameterBudget = availableWidth - fixedWidth - conservativeTextWidth(productType);
+    const parameter = ellipsizeToWidth(row.parameterName, parameterBudget);
+    const displayText = `${productType}${separator}${parameter}${suffix}`;
+
+    // If even the compact Product Type + parameter + value form cannot fit,
+    // omit the annotation instead of painting a misleading partial value.
+    if (!productType || !parameter || conservativeTextWidth(displayText) > availableWidth) return null;
+    lines.push({ fullText: row.fullText, displayText });
+  }
+
+  return lines;
 }
 
 export function layoutZoningAnnotations({
@@ -288,13 +353,17 @@ export function layoutZoningAnnotations({
         if (nameBounds.some((name) => intersects(candidateBounds, name, collisionPadding))) continue;
         if (placed.some((annotation) => intersects(candidateBounds, annotation, collisionPadding))) continue;
         const lines = displayedLines(rows, visibleCount, width * canonicalScale);
+        if (!lines) continue;
         descriptor = Object.freeze({
           areaId: area.id,
           lines: Object.freeze(lines),
           omitted,
           bounds: Object.freeze(candidateBounds),
           anchor: candidate.name,
-          accessibleText: [...rows.slice(0, visibleCount), ...(omitted ? [`+${omitted} more`] : [])].join('; '),
+          accessibleText: [
+            ...rows.slice(0, visibleCount).map((row) => row.fullText),
+            ...(omitted ? [`+${omitted} more`] : []),
+          ].join('; '),
         });
         break;
       }

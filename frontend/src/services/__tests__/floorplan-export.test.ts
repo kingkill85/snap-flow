@@ -291,8 +291,8 @@ describe('exportFloorplanImage', () => {
 
   it('draws shared positive-only zoning annotations with dual contrast and no panel', async () => {
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea]);
-    expect(mockCtx.strokeText).toHaveBeenCalledWith(expect.stringContaining('Lighting'), expect.any(Number), expect.any(Number));
-    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringContaining('Lighting'), expect.any(Number), expect.any(Number));
+    expect(mockCtx.strokeText).toHaveBeenCalledWith(expect.stringMatching(/^L…·R…:3$/), expect.any(Number), expect.any(Number));
+    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringMatching(/^L…·R…:3$/), expect.any(Number), expect.any(Number));
     expect(mockCtx.fillText).not.toHaveBeenCalledWith(expect.stringContaining('Zero zones'), expect.anything(), expect.anything());
     expect(mockCtx.strokeStyle).toBe(ZONING_ANNOTATION_STYLE.outline);
     expect(mockCtx.lineWidth).toBe(ZONING_ANNOTATION_STYLE.outlineWidth);
