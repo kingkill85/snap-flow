@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Placement } from '@/services/placement';
 import type { Item } from '@/services/item';
+import { getPlacementDecorationStyle } from '@/components/configurator/placement-decoration';
 
 // Mock data for placement tests
 const mockPlacement: Placement = {
@@ -88,6 +89,19 @@ describe('DraggablePlacement', () => {
   it('has select functionality', () => {
     mockOnSelect(mockPlacement.id);
     expect(mockOnSelect).toHaveBeenCalledWith(1);
+  });
+
+  it('keeps every placement decoration inside the canonical placement paint envelope', () => {
+    const states = [
+      { isSelected: false, isDragging: false, isDuplicating: false },
+      { isSelected: true, isDragging: false, isDuplicating: false },
+      { isSelected: false, isDragging: true, isDuplicating: true },
+    ];
+    for (const state of states) {
+      const style = getPlacementDecorationStyle({ ...state, color: '#123456' });
+      expect(style.boxShadow).toMatch(/^inset /);
+      expect(style.outline).toBe('none');
+    }
   });
 });
 

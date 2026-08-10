@@ -191,20 +191,32 @@ export async function exportFloorplanImage(
       ctx.globalAlpha = 1;
 
       // Name label — longest edge, offset inward (matching canvas SVG)
-      const label = area.name || 'Area';
       const nameGeometry = getAreaNameLabelGeometry(area, 1);
       if (!nameGeometry) continue;
 
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.beginPath();
-      ctx.roundRect(nameGeometry.bounds.x, nameGeometry.bounds.y, nameGeometry.bounds.width, nameGeometry.bounds.height, nameGeometry.radius);
-      ctx.fill();
+      ctx.save();
+      try {
+        ctx.fillStyle = nameGeometry.background;
+        ctx.beginPath();
+        ctx.roundRect(nameGeometry.bounds.x, nameGeometry.bounds.y, nameGeometry.bounds.width, nameGeometry.bounds.height, nameGeometry.radius);
+        ctx.fill();
 
-      ctx.font = `600 ${nameGeometry.fontSize}px Arial, sans-serif`;
-      ctx.fillStyle = 'white';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, nameGeometry.center.x, nameGeometry.center.y);
+        ctx.beginPath();
+        ctx.rect(
+          nameGeometry.clipBounds.x,
+          nameGeometry.clipBounds.y,
+          nameGeometry.clipBounds.width,
+          nameGeometry.clipBounds.height,
+        );
+        ctx.clip();
+        ctx.font = `${nameGeometry.fontWeight} ${nameGeometry.fontSize}px ${nameGeometry.fontFamily}`;
+        ctx.fillStyle = nameGeometry.foreground;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(nameGeometry.displayText, nameGeometry.center.x, nameGeometry.center.y);
+      } finally {
+        ctx.restore();
+      }
     }
   }
 

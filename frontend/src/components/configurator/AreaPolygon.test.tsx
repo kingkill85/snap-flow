@@ -11,6 +11,21 @@ const base: Area = { id: 1, floorplan_id: 1, x: 0, y: 0, width: 600, height: 400
 
 describe('AreaPolygon zoning annotation', () => {
   it('omits annotations when the shared model has no positive rows', () => { const { container } = render(<svg><AreaPolygon {...props} area={base} /></svg>); expect(container.querySelector('[data-testid="area-zoning-annotation"]')).toBeNull(); });
+  it('paints the Area name through the shared bounded descriptor and exposes the full name', () => {
+    const fullName = 'W'.repeat(20);
+    const { container } = render(<svg><AreaPolygon {...props} scale={0.25} area={{ ...base, name: fullName }} /></svg>);
+    const clipped = container.querySelector('[data-testid="area-name-text-clip"]');
+    expect(clipped).toHaveAttribute('clip-path', 'url(#area-name-clip-1)');
+    expect(container.querySelector('#area-name-clip-1 path')).not.toBeNull();
+    const text = container.querySelector('[data-testid="area-name-text"]')!;
+    const directlyPainted = [...text.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent ?? '')
+      .join('');
+    expect(directlyPainted).toContain('…');
+    expect(directlyPainted).not.toBe(fullName);
+    expect(text.querySelector('title')).toHaveTextContent(fullName);
+  });
   it('renders the shared descriptor directly with full text, dual contrast and pointer pass-through', () => {
     const parameters = Array.from({ length: 8 }, (_, index) => ({ id: index + 1, name: `Very long zoning parameter name ${index}`, sort_order: index, value: index === 0 ? 0 : index }));
     const area = { ...base, zoning_groups: [{ item_type: { id: 1, name: 'Lighting', abbreviation: 'LGT', color: '#f00', sort_order: 1 }, parameters }] };
@@ -23,7 +38,7 @@ describe('AreaPolygon zoning annotation', () => {
     expect(container.querySelector('#zoning-annotation-clip-1 path')).not.toBeNull();
     expect(container.textContent).not.toContain('name 0: 0');
     expect(container.textContent).toContain(`+${annotation.omitted} more`);
-    expect(container.querySelector('title')?.textContent).toContain('Lighting');
+    expect(container.querySelector('[data-testid="area-zoning-annotation"] title')?.textContent).toContain('Lighting');
     const text = container.querySelector('[data-testid="area-zoning-annotation"] text')!;
     expect(text).toHaveAttribute('fill', ZONING_ANNOTATION_STYLE.foreground);
     expect(text).toHaveAttribute('stroke', ZONING_ANNOTATION_STYLE.outline);

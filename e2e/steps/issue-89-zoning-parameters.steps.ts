@@ -6,7 +6,7 @@ import type { SnapFlowWorld } from '../support/world.ts';
 
 type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: number; value: number };
 type Bounds = { x: number; y: number; width: number; height: number };
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[] };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[] };
 
 const WIDE_GLYPH_NAME = 'W'.repeat(100);
 
@@ -198,15 +198,56 @@ Given('the user changed Area properties or zoning values in the dialog', async f
 When('the user activates Cancel, presses Escape, or dismisses the dialog', async function (this: ZoningWorld) { await this.page!.getByRole('button', { name: 'Cancel' }).click(); });
 Then('no draft changes are sent or retained', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); const area = (await response.json()).data; expect(area.name).toBe(this.originalName); expect(area.zoning_groups[0].parameters[0].value).toBe(0); });
 
-Given('an Area has positive and zero values across two applicable Product Types', async function (this: ZoningWorld) { await setupArea(this, 2, 1); await saveValues(this, [3, 0]); });
-When('the interactive floorplan or PNG export renders', async function (this: ZoningWorld) { await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); await this.page!.reload(); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
+Given('an Area has positive and zero values across two applicable Product Types', async function (this: ZoningWorld) {
+  await setupArea(this, 2, 2);
+  const commonPrefix = 'Shared Product Type '.repeat(3);
+  for (const [index, itemTypeId] of this.itemTypeIds.entries()) {
+    const renamedType = await this.page!.request.put(`${this.apiUrl}/api/item-types/${itemTypeId}`, {
+      headers: authHeaders(this),
+      data: { name: `${commonPrefix}${index ? 'Beta' : 'Alpha'}`, abbreviation: 'X' },
+    });
+    expect(renamedType.status()).toBe(200);
+    const renamedParameter = await this.page!.request.put(`${this.apiUrl}/api/item-types/${itemTypeId}/zoning-parameters/${this.parameterIds[index * 2]}`, {
+      headers: authHeaders(this),
+      data: { name: 'Zones' },
+    });
+    expect(renamedParameter.status()).toBe(200);
+  }
+  await saveValues(this, [3, 0, 3, 0]);
+});
+When('the interactive floorplan or PNG export renders', async function (this: ZoningWorld) {
+  await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`);
+  await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible();
+  await this.page!.reload();
+  await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible();
+  await this.page!.evaluate(() => {
+    const prototype = CanvasRenderingContext2D.prototype;
+    const original = prototype.fillText;
+    (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows = [];
+    prototype.fillText = function (text, x, y, maxWidth) {
+      if (/Zones.*3/.test(text)) (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows.push(text);
+      return maxWidth === undefined ? original.call(this, text, x, y) : original.call(this, text, x, y, maxWidth);
+    };
+  });
+  const downloadPromise = this.page!.waitForEvent('download');
+  await this.page!.getByTitle('Export floorplan image').click();
+  const download = await downloadPromise;
+  expect(await download.path()).toBeTruthy();
+  this.duplicateRasterRows = await this.page!.evaluate(() => (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows);
+});
 Then('each Product Type with a positive value has one labelled group', async function (this: ZoningWorld) {
-  expect((await paintedAnnotationRows(this)).some((row) => /I0X.*Zones 0.*3/.test(row))).toBe(true);
-  await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveAccessibleName(/Issue89 Type 0.*Zones 0: 3/);
+  const directRows = (await paintedAnnotationRows(this)).filter((row) => /Zones.*3/.test(row));
+  expect(directRows).toHaveLength(2);
+  expect(new Set(directRows).size).toBe(2);
+  expect(directRows.some((row) => row.includes('1·X'))).toBe(true);
+  expect(directRows.some((row) => row.includes('2·X'))).toBe(true);
+  expect(this.duplicateRasterRows).toEqual(directRows);
+  expect(new Set(this.duplicateRasterRows).size).toBe(2);
+  await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveAccessibleName(/Shared Product Type .*Alpha.*Zones: 3.*Shared Product Type .*Beta.*Zones: 3/);
 });
 Then('zero-valued parameters and empty Product Type groups are absent', async function (this: ZoningWorld) {
-  expect((await paintedAnnotationRows(this)).some((row) => /I1X|Zones 1/.test(row))).toBe(false);
-  await expect(this.page!.getByTestId('area-zoning-annotation')).not.toHaveAccessibleName(/Issue89 Type 1/);
+  expect((await paintedAnnotationRows(this)).some((row) => row.includes('Extremely long parameter wording'))).toBe(false);
+  expect(this.duplicateRasterRows.some((row) => row.includes('Extremely long parameter wording'))).toBe(false);
 });
 
 Given('an Area editor contains one or more Product Type groups', async function (this: ZoningWorld) {
@@ -275,10 +316,14 @@ Given('an Area has more positive values than fit within the summary bounds and s
   expect(renamed.status()).toBe(200);
   const renamedParameter = await this.page!.request.put(`${this.apiUrl}/api/item-types/${this.itemTypeIds[0]}/zoning-parameters/${this.parameterIds[0]}`, { headers: authHeaders(this), data: { name: this.wideGlyphName } });
   expect(renamedParameter.status()).toBe(200);
-  const secondResponse = await this.page!.request.post(`${this.apiUrl}/api/areas`, { headers: authHeaders(this), data: { floorplan_id: this.floorplanId, x: 550, y: 30, width: 400, height: 300, name: 'Nearby Review Area' } });
+  const secondResponse = await this.page!.request.post(`${this.apiUrl}/api/areas`, { headers: authHeaders(this), data: { floorplan_id: this.floorplanId, x: 550, y: 30, width: 400, height: 300, name: '照明😀領域照明😀領域' } });
   const second = (await secondResponse.json()).data;
   const saved = await this.page!.request.put(`${this.apiUrl}/api/areas/${second.id}`, { headers: authHeaders(this), data: { revision: second.revision, applicable_parameter_ids: this.parameterIds, zoning_values: this.parameterIds.map((parameter_id) => ({ parameter_id, value: 2 })) } });
   expect(saved.status()).toBe(200);
+  const thirdResponse = await this.page!.request.post(`${this.apiUrl}/api/areas`, { headers: authHeaders(this), data: { floorplan_id: this.floorplanId, x: 30, y: 350, width: 500, height: 250, name: 'W'.repeat(20) } });
+  const third = (await thirdResponse.json()).data;
+  const thirdSaved = await this.page!.request.put(`${this.apiUrl}/api/areas/${third.id}`, { headers: authHeaders(this), data: { revision: third.revision, applicable_parameter_ids: this.parameterIds, zoning_values: this.parameterIds.map((parameter_id) => ({ parameter_id, value: 2 })) } });
+  expect(thirdSaved.status()).toBe(200);
   await createNearbyRotatedProduct(this, { x: 970, y: 120, width: 40, height: 40, rotation: 0 });
 });
 When('the floorplan renders at any supported zoom', async function (this: ZoningWorld) {
@@ -294,6 +339,13 @@ When('the floorplan renders at any supported zoom', async function (this: Zoning
     await action(); await expect(this.page!.getByText(`${zoom}%`, { exact: true })).toBeVisible();
     const annotations = (await this.page!.getByTestId('area-zoning-clip-boundary').all()).map(async (locator) => (await locator.boundingBox())!);
     const names = (await this.page!.getByTestId('area-name-label-bounds').all()).map(async (locator) => (await locator.boundingBox())!);
+    const nameClips = this.page!.getByTestId('area-name-text-clip');
+    await expect(nameClips).toHaveCount(3);
+    for (const clip of await nameClips.all()) {
+      await expect(clip).toHaveAttribute('clip-path', /url\(#area-name-clip-/);
+      await expect(clip.getByTestId('area-name-text')).toHaveAttribute('data-testid', 'area-name-text');
+      expect(await clip.locator('title').textContent()).not.toBe('');
+    }
     const image = await this.page!.locator('[data-floorplan-image="true"]').boundingBox();
     const product = await this.page!.locator(`[data-placement-id="${this.productId}"]`).boundingBox();
     expect(image).not.toBeNull(); expect(product).not.toBeNull();
@@ -344,11 +396,51 @@ Then('its meaning remains available without relying on color', async function (t
 });
 
 Given('an Area contains positive zoning values and one or more product placements near its preferred annotation anchor', async function (this: ZoningWorld) {
+  await this.page!.setViewportSize({ width: 480, height: 700 });
   await setupArea(this, 1, 1); await saveValues(this, [3]);
   await createNearbyRotatedProduct(this);
 });
 When('the interactive floorplan lays out the annotation', async function (this: ZoningWorld) { await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); await expect(this.page!.locator(`[data-placement-id="${this.productId}"]`)).toBeVisible(); });
-Then('it deterministically selects the first safe candidate that intersects neither a product placement nor an earlier annotation', async function (this: ZoningWorld) { const annotationLocator = this.page!.getByTestId('area-zoning-annotation'); await expect(annotationLocator.locator('rect')).toHaveCount(0); const text = annotationLocator.locator('text').first(); await expect(text).toHaveAttribute('fill', '#ffffff'); await expect(text).toHaveAttribute('stroke', '#111827'); const annotation = await annotationLocator.boundingBox(); const product = await this.page!.locator(`[data-placement-id="${this.productId}"]`).boundingBox(); expect(annotation && product).toBeTruthy(); expect(annotation!.x + annotation!.width <= product!.x || annotation!.x >= product!.x + product!.width || annotation!.y + annotation!.height <= product!.y || annotation!.y >= product!.y + product!.height).toBeTruthy(); });
+Then('it deterministically selects the first safe candidate that intersects neither a product placement nor an earlier annotation', async function (this: ZoningWorld) {
+  const assertPaintEnvelope = async (selected: boolean) => {
+    const annotationLocator = this.page!.getByTestId('area-zoning-annotation');
+    const placementLocator = this.page!.locator(`[data-placement-id="${this.productId}"]`);
+    const text = annotationLocator.locator('text').first();
+    await expect(text).toHaveAttribute('fill', '#ffffff');
+    await expect(text).toHaveAttribute('stroke', '#111827');
+    const decoration = placementLocator.locator('[data-placement-decoration]');
+    await expect(decoration).toHaveAttribute('data-decoration-state', selected ? 'selected' : 'default');
+    const styles = await placementLocator.evaluate((placement) => {
+      const root = getComputedStyle(placement);
+      const decorationElement = placement.querySelector<HTMLElement>('[data-placement-decoration]');
+      if (!decorationElement) throw new Error('Placement decoration is missing');
+      const decorationStyle = getComputedStyle(decorationElement);
+      return {
+        rootBorder: [root.borderTopWidth, root.borderRightWidth, root.borderBottomWidth, root.borderLeftWidth],
+        rootOutline: root.outlineStyle,
+        rootShadow: root.boxShadow,
+        decorationShadow: decorationStyle.boxShadow,
+      };
+    });
+    expect(styles.rootBorder).toEqual(['0px', '0px', '0px', '0px']);
+    expect(styles.rootOutline).toBe('none');
+    expect(styles.rootShadow).toBe('none');
+    expect(styles.decorationShadow).toContain('inset');
+    const annotation = await annotationLocator.boundingBox();
+    const product = await placementLocator.boundingBox();
+    expect(annotation && product).toBeTruthy();
+    expect(annotation!.x + annotation!.width <= product!.x || annotation!.x >= product!.x + product!.width || annotation!.y + annotation!.height <= product!.y || annotation!.y >= product!.y + product!.height).toBeTruthy();
+  };
+
+  await expect(this.page!.getByTestId('area-zoning-annotation').locator('rect')).toHaveCount(0);
+  await assertPaintEnvelope(false);
+  await this.page!.locator(`[data-placement-id="${this.productId}"]`).click();
+  await assertPaintEnvelope(true);
+  await this.page!.setViewportSize({ width: 1280, height: 900 });
+  await this.page!.getByTitle('Reset zoom (Ctrl+0)').click();
+  await this.page!.locator(`[data-placement-id="${this.productId}"]`).click();
+  await assertPaintEnvelope(true);
+});
 Then('if all candidates are constrained it omits lower-priority rows and reports them with `+N more` rather than covering a product item', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveAttribute('data-anchor'); });
 
 Given('a zoning annotation is visible on an Area', async function (this: ZoningWorld) { await setupArea(this, 1, 2); await saveValues(this, [3, 0]); await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
@@ -453,10 +545,38 @@ When('PNG export is attempted', async function (this: ZoningWorld) { this.export
 Then('the existing export operation reports failure and triggers no download', async function (this: ZoningWorld) { await expect(this.page!.getByRole('alert')).toContainText(/export failed.*forced annotation failure/i); await this.page!.waitForTimeout(300); expect(this.exportDownloaded).toBe(false); });
 Then('it does not silently export an image missing zoning annotations', function (this: ZoningWorld) { expect(this.exportDownloaded).toBe(false); });
 
-Given('two editors loaded the same Area revision and applicability set', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); });
+Given('two editors loaded the same Area revision and applicability set', async function (this: ZoningWorld) {
+  await setupArea(this, 1, 1);
+  const moved = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}/vertices`, {
+    headers: authHeaders(this),
+    data: { vertices: [{ x: 30, y: 180 }, { x: 530, y: 180 }, { x: 530, y: 480 }, { x: 30, y: 480 }] },
+  });
+  expect(moved.status()).toBe(200);
+  this.areaRevision = (await moved.json()).data.revision;
+  await openAreaEditor(this);
+});
 When('the first update succeeds and the second submits its stale revision', async function (this: ZoningWorld) { const first = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this), data: { revision: this.areaRevision, name: 'Winning Area', applicable_parameter_ids: this.parameterIds, zoning_values: [{ parameter_id: this.parameterIds[0], value: 4 }] } }); expect(first.status()).toBe(200); await this.page!.getByLabel('Name').fill('Losing Area'); await this.page!.getByRole('button', { name: 'Update' }).click(); });
 Then('the second update receives `409 Conflict`', async function (this: ZoningWorld) { await expect(this.page!.getByRole('alert')).toContainText(/changed|reload/i); });
-Then('the first update remains unchanged', async function (this: ZoningWorld) { await this.page!.getByRole('button', { name: 'Reload Area' }).click(); await expect(this.page!.getByLabel('Name')).toHaveValue('Winning Area'); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4'); });
+Then('the first update remains unchanged', async function (this: ZoningWorld) {
+  await this.page!.getByRole('button', { name: 'Reload Area' }).click();
+  await expect(this.page!.getByLabel('Name')).toHaveValue('Winning Area');
+  await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4');
+  await this.page!.getByRole('button', { name: 'Cancel' }).click();
+
+  const areasPanel = this.page!.getByLabel('Areas');
+  await expect(areasPanel.getByText('Winning Area', { exact: true })).toBeVisible();
+  await expect(this.page!.getByTestId('area-zoning-annotation')).toContainText(/Zones 0.*4/);
+  await areasPanel.getByTitle('Edit area').click();
+  await expect(this.page!.getByLabel('Name')).toHaveValue('Winning Area');
+  await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4');
+  await this.page!.getByRole('button', { name: 'Cancel' }).click();
+
+  await this.page!.getByRole('tab', { name: 'Products' }).click();
+  await this.page!.locator(`[data-area-id="${this.areaId}"]`).click({ position: { x: 10, y: 10 } });
+  await this.page!.locator('button[title="Edit area"]:visible').click();
+  await expect(this.page!.getByLabel('Name')).toHaveValue('Winning Area');
+  await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4');
+});
 
 Given('an authorized user selects a source version with multiple floorplans and copied Areas having positive zoning values', async function (this: ZoningWorld) {
   await setupArea(this, 1, 1);

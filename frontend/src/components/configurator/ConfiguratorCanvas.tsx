@@ -23,6 +23,7 @@ import { exportFloorplanImage } from '@/services/floorplan-export';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AreaPolygon } from './AreaPolygon';
 import { getPlacementCollisionBounds, layoutZoningAnnotations } from './zoning-annotation';
+import { getPlacementDecorationStyle } from './placement-decoration';
 import type { Area } from '@/services/area';
 
 // CSS keyframes for fade-in animation (50ms for snappy feel)
@@ -471,6 +472,17 @@ function DraggablePlacement({
     ? itemService.getImageUrl(item.preview_image)
     : null;
   const displayName = item?.name || 'Unknown';
+  const decorationState = isSelected
+    ? 'selected'
+    : isDuplicating && isDragging
+      ? 'duplicating'
+      : 'default';
+  const decorationStyle = getPlacementDecorationStyle({
+    isSelected,
+    isDragging,
+    isDuplicating: Boolean(isDuplicating),
+    color: typeColor,
+  });
 
   return (
     <div
@@ -489,17 +501,14 @@ function DraggablePlacement({
         transformOrigin: 'center center',
         zIndex: isResizing ? 200 : isDragging ? 100 : isNew ? 1 : 1,
         animation: undefined,
-        ...(isSelected
-          ? { '--tw-ring-color': typeColor || 'hsl(var(--primary))' } as React.CSSProperties
-          : { borderColor: typeColor || 'hsl(var(--primary))' }
-        ),
+        outline: 'none',
       }}
       className={`rounded select-none group ${
         isSelected
-          ? 'ring-2 shadow-lg z-50'
+          ? 'z-50'
           : isDuplicating && isDragging
-            ? 'border-2 border-dashed overflow-hidden opacity-60'
-            : 'border-2 overflow-hidden'
+            ? 'overflow-hidden opacity-60'
+            : 'overflow-hidden'
       } ${isDragging ? (isCtrlPressed ? 'cursor-copy z-50' : 'cursor-grabbing z-50') : isResizing ? 'cursor-nwse-resize z-50' : isSelected ? 'cursor-default' : isCtrlPressed ? 'cursor-copy' : 'cursor-move'}`}
       title={displayName}
       onClick={handleClick}
@@ -517,6 +526,12 @@ function DraggablePlacement({
         </div>
       )}
 
+      <div
+        data-placement-decoration
+        data-decoration-state={decorationState}
+        className="pointer-events-none absolute inset-0 z-20 rounded"
+        style={decorationStyle}
+      />
 
       {isSelected && (
         <>

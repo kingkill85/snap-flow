@@ -113,6 +113,42 @@ Deno.test("Area aggregate applies selected active Product Types and atomically r
   const invalidResponse = await testRequest(`/api/areas/${area.id}`, { method: "PUT", headers: { Authorization: bearer, "Content-Type": "application/json" }, body: JSON.stringify({ name: "HTTP rollback", revision: omitted.revision, applicable_parameter_ids: [relay.id], zoning_values: [{ parameter_id: relay.id, value: 10000 }] }) });
   assertEquals(invalidResponse.status, 400);
   assertEquals((await areaRepository.findById(area.id))?.name, "Omitted clears");
+
+  const invalidIds = ["1junk", "1.5", "0", "-1", "9007199254740992"];
+  const mutationSnapshot = {
+    areaCount: db.queryEntries("SELECT id FROM placements WHERE type = 'area'").length,
+    valueCount: db.queryEntries("SELECT area_placement_id, parameter_id, value FROM area_zoning_values").length,
+    name: (await areaRepository.findById(area.id))!.name,
+    vertices: (await areaRepository.findById(area.id))!.vertices.map(({ x, y }) => ({ x, y })),
+  };
+  for (const rawId of invalidIds) {
+    for (const response of [
+      await testRequest(`/api/areas/${rawId}`, { headers: { Authorization: bearer } }),
+      await testRequest(`/api/areas/${rawId}`, { method: "PUT", headers: { Authorization: bearer, "Content-Type": "application/json" }, body: JSON.stringify({ name: `Malformed ${rawId}` }) }),
+      await testRequest(`/api/areas/${rawId}/vertices`, { method: "PUT", headers: { Authorization: bearer, "Content-Type": "application/json" }, body: JSON.stringify({ vertices: [{ x: 0, y: 0 }, { x: 9, y: 0 }, { x: 0, y: 9 }] }) }),
+      await testRequest(`/api/areas/${rawId}`, { method: "DELETE", headers: { Authorization: bearer } }),
+    ]) {
+      assertEquals(response.status, 400, `Area path ID ${rawId} must fail closed`);
+      const body = await parseJSON(response);
+      assertEquals(Object.hasOwn(body, "error"), true);
+    }
+  }
+  for (const rawFloorplanId of invalidIds) {
+    const response = await testRequest(`/api/areas?floorplan_id=${encodeURIComponent(rawFloorplanId)}`, { headers: { Authorization: bearer } });
+    assertEquals(response.status, 400, `floorplan query ID ${rawFloorplanId} must fail closed`);
+    assertEquals(Object.hasOwn(await parseJSON(response), "error"), true);
+  }
+  for (const floorplanId of ["1junk", 1.5, 0, -1, 9007199254740992]) {
+    const response = await testRequest("/api/areas", { method: "POST", headers: { Authorization: bearer, "Content-Type": "application/json" }, body: JSON.stringify({ floorplan_id: floorplanId, x: 0, y: 0, width: 5, height: 5 }) });
+    assertEquals(response.status, 400, `floorplan body ID ${floorplanId} must fail closed`);
+    assertEquals(Object.hasOwn(await parseJSON(response), "error"), true);
+  }
+  const afterMalformedIds = (await areaRepository.findById(area.id))!;
+  assertEquals(afterMalformedIds.name, mutationSnapshot.name);
+  assertEquals(afterMalformedIds.vertices.map(({ x, y }) => ({ x, y })), mutationSnapshot.vertices);
+  assertEquals(db.queryEntries("SELECT id FROM placements WHERE type = 'area'").length, mutationSnapshot.areaCount);
+  assertEquals(db.queryEntries("SELECT area_placement_id, parameter_id, value FROM area_zoning_values").length, mutationSnapshot.valueCount);
+
   for (const request of [
     testRequest(`/api/areas?floorplan_id=${floorplan.id}`, { headers: { Authorization: otherBearer } }),
     testRequest(`/api/areas/${area.id}`, { headers: { Authorization: otherBearer } }),

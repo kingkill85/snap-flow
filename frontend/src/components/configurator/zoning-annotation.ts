@@ -34,10 +34,17 @@ export interface AnnotationPresentation {
 }
 
 export interface AreaNameLabelGeometry {
+  fullText: string;
+  displayText: string;
   bounds: Readonly<AnnotationRect>;
+  clipBounds: Readonly<AnnotationRect>;
   center: Readonly<{ x: number; y: number }>;
   fontSize: number;
   radius: number;
+  fontFamily: string;
+  fontWeight: number;
+  foreground: string;
+  background: string;
 }
 
 export const ZONING_ANNOTATION_STYLE = Object.freeze({
@@ -53,6 +60,19 @@ export const ZONING_ANNOTATION_STYLE = Object.freeze({
   outline: '#111827',
   outlineWidth: 3,
   canonicalMinScale: 0.25,
+});
+
+export const AREA_NAME_LABEL_STYLE = Object.freeze({
+  fontFamily: ZONING_ANNOTATION_STYLE.fontFamily,
+  fontSize: 12,
+  fontWeight: 600,
+  maxWidth: 160,
+  paddingX: 6,
+  paddingY: 3,
+  edgeGap: 4,
+  radius: 4,
+  foreground: '#ffffff',
+  background: 'rgba(0,0,0,0.55)',
 });
 
 interface LayoutInput {
@@ -118,25 +138,43 @@ function labelAnchor(area: Area) {
 
 export function getAreaNameLabelGeometry(area: Area, displayScale = 1): AreaNameLabelGeometry | null {
   const anchor = labelAnchor(area);
-  if (!anchor) return null;
+  const areaRectangle = areaBounds(area);
+  if (!anchor || !areaRectangle) return null;
   const requestedScale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
   const scale = Math.max(requestedScale, ZONING_ANNOTATION_STYLE.canonicalMinScale);
-  const label = area.name || 'Area';
-  const fontSize = 12 / scale;
-  const padX = 6 / scale;
-  const padY = 3 / scale;
-  const width = label.length * fontSize * 0.6 + padX * 2;
+  const fullText = area.name || 'Area';
+  const fontSize = AREA_NAME_LABEL_STYLE.fontSize / scale;
+  const padX = AREA_NAME_LABEL_STYLE.paddingX / scale;
+  const padY = AREA_NAME_LABEL_STYLE.paddingY / scale;
+  const maximumWidth = Math.min(
+    AREA_NAME_LABEL_STYLE.maxWidth / scale,
+    Math.max(1, areaRectangle.width - AREA_NAME_LABEL_STYLE.edgeGap * 2 / scale),
+  );
+  const width = Math.min(maximumWidth, conservativeTextWidth(fullText, fontSize) + padX * 2);
   const height = fontSize + padY * 2;
-  const inset = height / 2 + 4 / scale;
-  const center = {
+  const inset = height / 2 + AREA_NAME_LABEL_STYLE.edgeGap / scale;
+  const rawCenter = {
     x: anchor.x + anchor.inwardX * inset,
     y: anchor.y + anchor.inwardY * inset,
   };
+  const center = Object.freeze({
+    x: clamp(rawCenter.x, areaRectangle.x + width / 2, areaRectangle.x + areaRectangle.width - width / 2),
+    y: clamp(rawCenter.y, areaRectangle.y + height / 2, areaRectangle.y + areaRectangle.height - height / 2),
+  });
+  const bounds = Object.freeze({ x: center.x - width / 2, y: center.y - height / 2, width, height });
+  const displayText = ellipsizeToWidth(fullText, Math.max(0, width - padX * 2), fontSize);
   return Object.freeze({
-    bounds: Object.freeze({ x: center.x - width / 2, y: center.y - height / 2, width, height }),
-    center: Object.freeze(center),
+    fullText,
+    displayText,
+    bounds,
+    clipBounds: bounds,
+    center,
     fontSize,
-    radius: 4 / scale,
+    radius: AREA_NAME_LABEL_STYLE.radius / scale,
+    fontFamily: AREA_NAME_LABEL_STYLE.fontFamily,
+    fontWeight: AREA_NAME_LABEL_STYLE.fontWeight,
+    foreground: AREA_NAME_LABEL_STYLE.foreground,
+    background: AREA_NAME_LABEL_STYLE.background,
   });
 }
 
@@ -149,7 +187,7 @@ const unionRects = (rectangles: readonly AnnotationRect[]): AnnotationRect => {
 };
 
 export function getCanonicalAreaNameLabelBounds(area: Area): AnnotationRect | null {
-  const geometries = [ZONING_ANNOTATION_STYLE.canonicalMinScale, 0.5, 1, 1.5]
+  const geometries = [ZONING_ANNOTATION_STYLE.canonicalMinScale, 0.5, 1, 1.5, 3]
     .map((scale) => getAreaNameLabelGeometry(area, scale))
     .filter((geometry): geometry is AreaNameLabelGeometry => geometry !== null);
   return geometries.length ? unionRects(geometries.map((geometry) => geometry.bounds)) : null;
@@ -204,9 +242,17 @@ const positiveRows = (area: Area) => {
       parameters: group.parameters.filter((parameter) => parameter.value > 0),
     }))
     .filter((group) => group.parameters.length > 0);
-  const queues = groups.map((group) => group.parameters.map((parameter): PositiveAnnotationRow => ({
+  const abbreviationCounts = new Map<string, number>();
+  for (const group of groups) {
+    const abbreviation = group.item_type.abbreviation;
+    abbreviationCounts.set(abbreviation, (abbreviationCounts.get(abbreviation) ?? 0) + 1);
+  }
+  const needsDisambiguation = [...abbreviationCounts.values()].some((count) => count > 1);
+  const queues = groups.map((group, groupIndex) => group.parameters.map((parameter): PositiveAnnotationRow => ({
     fullText: `${group.item_type.name} — ${parameter.name}: ${parameter.value}`,
-    productTypeLabel: group.item_type.abbreviation,
+    productTypeLabel: needsDisambiguation
+      ? `${groupIndex + 1}·${group.item_type.abbreviation}`
+      : group.item_type.abbreviation,
     parameterName: parameter.name,
     value: parameter.value,
   })));
@@ -234,20 +280,20 @@ const conservativeGlyphRatio = (glyph: string) => {
   return 1;
 };
 
-const conservativeTextWidth = (value: string) => Array.from(value).reduce(
-  (width, glyph) => width + conservativeGlyphRatio(glyph) * ZONING_ANNOTATION_STYLE.fontSize,
+const conservativeTextWidth = (value: string, fontSize: number = ZONING_ANNOTATION_STYLE.fontSize) => Array.from(value).reduce(
+  (width, glyph) => width + conservativeGlyphRatio(glyph) * fontSize,
   0,
 );
 
-function ellipsizeToWidth(value: string, width: number) {
-  if (conservativeTextWidth(value) <= width) return value;
+function ellipsizeToWidth(value: string, width: number, fontSize: number = ZONING_ANNOTATION_STYLE.fontSize) {
+  if (conservativeTextWidth(value, fontSize) <= width) return value;
   const ellipsis = '…';
-  const ellipsisWidth = conservativeTextWidth(ellipsis);
+  const ellipsisWidth = conservativeTextWidth(ellipsis, fontSize);
   if (width < ellipsisWidth) return '';
   let result = '';
   let used = 0;
   for (const glyph of Array.from(value)) {
-    const glyphWidth = conservativeTextWidth(glyph);
+    const glyphWidth = conservativeTextWidth(glyph, fontSize);
     if (used + glyphWidth + ellipsisWidth > width) break;
     result += glyph;
     used += glyphWidth;

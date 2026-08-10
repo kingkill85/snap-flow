@@ -407,10 +407,13 @@ export function AreaPolygon({
       />
 
       {/* Name label — on the longest edge, offset inward, with dark pill background */}
-      {nameGeometry && (() => {
-        const label = area.name || 'Area';
-        return (
+      {nameGeometry && (
           <g style={{ pointerEvents: 'none' }}>
+            <defs>
+              <clipPath id={`area-name-clip-${area.id}`}>
+                <path d={`M ${nameGeometry.clipBounds.x} ${nameGeometry.clipBounds.y} h ${nameGeometry.clipBounds.width} v ${nameGeometry.clipBounds.height} h -${nameGeometry.clipBounds.width} Z`} />
+              </clipPath>
+            </defs>
             <rect
               data-testid="area-name-label-bounds"
               x={nameGeometry.bounds.x}
@@ -418,21 +421,29 @@ export function AreaPolygon({
               width={nameGeometry.bounds.width}
               height={nameGeometry.bounds.height}
               rx={nameGeometry.radius}
-              fill="rgba(0,0,0,0.55)"
+              fill={nameGeometry.background}
             />
-            <text
-              x={nameGeometry.center.x}
-              y={nameGeometry.center.y + nameGeometry.fontSize * 0.35}
-              fontSize={nameGeometry.fontSize}
-              fill="white"
-              textAnchor="middle"
-              style={{ userSelect: 'none', fontWeight: 600 }}
+            <g
+              data-testid="area-name-text-clip"
+              clipPath={`url(#area-name-clip-${area.id})`}
             >
-              {label}
-            </text>
+              <text
+                data-testid="area-name-text"
+                x={nameGeometry.center.x}
+                y={nameGeometry.center.y + nameGeometry.fontSize * 0.35}
+                fontFamily={nameGeometry.fontFamily}
+                fontSize={nameGeometry.fontSize}
+                fontWeight={nameGeometry.fontWeight}
+                fill={nameGeometry.foreground}
+                textAnchor="middle"
+                style={{ userSelect: 'none' }}
+              >
+                <title>{nameGeometry.fullText}</title>
+                {nameGeometry.displayText}
+              </text>
+            </g>
           </g>
-        );
-      })()}
+      )}
 
       {showZoningAnnotation && zoningAnnotation && annotationPresentation && exportPresentation ? (
         <g

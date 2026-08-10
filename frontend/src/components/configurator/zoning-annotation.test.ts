@@ -75,6 +75,33 @@ describe('zoning annotation layout', () => {
     ]);
   });
 
+  it('assigns injective visible labels to distinct positive groups with duplicate abbreviations', () => {
+    const persistedArea = resizedArea(1, 0, 500, 300, 2);
+    const sharedPrefix = 'Shared Product Type '.repeat(4);
+    persistedArea.zoning_groups = persistedArea.zoning_groups.map((group, index) => ({
+      ...group,
+      item_type: {
+        ...group.item_type,
+        id: 80 + index,
+        name: `${sharedPrefix}${index === 0 ? 'Alpha' : 'Beta'}`,
+        abbreviation: 'X',
+      },
+      parameters: [{ id: index + 1, name: 'Zones', sort_order: 0, value: 4 }],
+    }));
+
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    });
+    const painted = descriptor.lines.map((line) => line.displayText);
+    expect(painted).toHaveLength(2);
+    expect(new Set(painted).size).toBe(2);
+    expect(painted.every((line) => /Zones.*4/.test(line))).toBe(true);
+    expect(painted.some((line) => line.includes('1·X'))).toBe(true);
+    expect(painted.some((line) => line.includes('2·X'))).toBe(true);
+  });
+
   it('chooses another bounded candidate near products and never overlaps them', () => {
     const product = { x: 70, y: 35, width: 90, height: 65 };
     const roomyArea = { ...area(1), width: 500, height: 300, vertices: [
@@ -108,6 +135,39 @@ describe('zoning annotation layout', () => {
       const name = getAreaNameLabelGeometry(livingRoom, scale)!.bounds;
       expect(overlaps(annotation, name)).toBe(false);
     }
+  });
+
+  it('defines one bounded Area-name paint descriptor across glyph and scale boundaries', () => {
+    const names = ['Living Room', 'W'.repeat(20), '照明😀'.repeat(12)];
+    for (const name of names) {
+      const namedArea = { ...resizedArea(1, 0, 2000, 600, 1), name };
+      for (const scale of [0.18, 0.25, 0.5, 1, 1.5, 3]) {
+        const descriptor = getAreaNameLabelGeometry(namedArea, scale) as ReturnType<typeof getAreaNameLabelGeometry> & {
+          fullText?: string;
+          displayText?: string;
+          clipBounds?: AnnotationRect;
+          fontFamily?: string;
+          fontWeight?: number;
+        };
+        expect(descriptor).not.toBeNull();
+        expect(descriptor!.fullText).toBe(name);
+        expect(descriptor!.displayText).toBeTruthy();
+        expect(descriptor!.clipBounds).toEqual(descriptor!.bounds);
+        expect(descriptor!.fontFamily).toBe(ZONING_ANNOTATION_STYLE.fontFamily);
+        expect(descriptor!.fontWeight).toBe(ZONING_ANNOTATION_STYLE.fontWeight);
+      }
+    }
+
+    const wideArea = { ...resizedArea(1, 0, 2000, 600, 1), name: 'W'.repeat(20) };
+    const product = { x: 680, y: 120, width: 640, height: 360 };
+    const [annotation] = layoutZoningAnnotations({
+      areas: [wideArea],
+      productBounds: [product],
+      imageBounds: { x: 0, y: 0, width: 2200, height: 800 },
+    });
+    expect(annotation).toBeDefined();
+    const nameDescriptor = getAreaNameLabelGeometry(wideArea, 0.25)!;
+    expect(overlaps(getAnnotationPresentation(annotation, 0.25).bounds, nameDescriptor.bounds)).toBe(false);
   });
 
   it('encloses the exact 25% product fixture and clamps fitted-below-minimum presentation', () => {

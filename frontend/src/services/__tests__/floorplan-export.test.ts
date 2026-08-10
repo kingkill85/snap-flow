@@ -5,7 +5,7 @@ import type { Placement } from '../placement';
 import type { Item } from '../item';
 import type { Area } from '../area';
 import { itemService } from '../item';
-import { getAnnotationPresentation, layoutZoningAnnotations, ZONING_ANNOTATION_STYLE } from '@/components/configurator/zoning-annotation';
+import { getAnnotationPresentation, getAreaNameLabelGeometry, layoutZoningAnnotations, ZONING_ANNOTATION_STYLE } from '@/components/configurator/zoning-annotation';
 
 // Mock the item service
 vi.mock('../item', () => ({
@@ -296,6 +296,59 @@ describe('exportFloorplanImage', () => {
     expect(mockCtx.fillText).not.toHaveBeenCalledWith(expect.stringContaining('Zero zones'), expect.anything(), expect.anything());
     expect(mockCtx.strokeStyle).toBe(ZONING_ANNOTATION_STYLE.outline);
     expect(mockCtx.lineWidth).toBe(ZONING_ANNOTATION_STYLE.outlineWidth);
+  });
+
+  it('draws duplicate-abbreviation Product Type groups with distinct visible raster labels', async () => {
+    const sharedPrefix = 'Shared Product Type '.repeat(4);
+    const duplicateGroups: Area = {
+      ...mockArea,
+      x: 100,
+      y: 100,
+      width: 600,
+      height: 400,
+      vertices: [
+        { id: 81, placement_id: 10, vertex_index: 0, x: 100, y: 100 },
+        { id: 82, placement_id: 10, vertex_index: 1, x: 700, y: 100 },
+        { id: 83, placement_id: 10, vertex_index: 2, x: 700, y: 500 },
+        { id: 84, placement_id: 10, vertex_index: 3, x: 100, y: 500 },
+      ],
+      zoning_groups: [80, 81].map((id, index) => ({
+        item_type: { id, name: `${sharedPrefix}${index ? 'Beta' : 'Alpha'}`, abbreviation: 'X', color: '#f00', sort_order: index },
+        parameters: [{ id, name: 'Zones', sort_order: 0, value: 4 }],
+      })),
+    };
+    const descriptor = layoutZoningAnnotations({ areas: [duplicateGroups], productBounds: [], imageBounds: { x: 0, y: 0, width: 1000, height: 800 } })[0];
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [duplicateGroups], undefined, undefined, [descriptor]);
+    const directRows = vi.mocked(mockCtx.fillText).mock.calls
+      .map(([text]) => String(text))
+      .filter((text) => /Zones.*4/.test(text));
+    expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
+    expect(new Set(directRows).size).toBe(2);
+    expect(directRows.some((line) => line.includes('1·X'))).toBe(true);
+    expect(directRows.some((line) => line.includes('2·X'))).toBe(true);
+  });
+
+  it('clips Area-name canvas paint to the exact shared descriptor bounds', async () => {
+    const fullName = 'W'.repeat(20);
+    const nameOnly = { ...mockArea, name: fullName, zoning_groups: [] };
+    const descriptor = getAreaNameLabelGeometry(nameOnly, 1) as ReturnType<typeof getAreaNameLabelGeometry> & {
+      displayText?: string;
+      clipBounds?: { x: number; y: number; width: number; height: number };
+    };
+    expect(descriptor).not.toBeNull();
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [nameOnly]);
+    expect(mockCtx.rect).toHaveBeenCalledWith(
+      descriptor!.clipBounds!.x,
+      descriptor!.clipBounds!.y,
+      descriptor!.clipBounds!.width,
+      descriptor!.clipBounds!.height,
+    );
+    const nameCall = vi.mocked(mockCtx.fillText).mock.calls.find(([text]) => text === descriptor!.displayText);
+    expect(nameCall).toBeDefined();
+    expect(descriptor!.displayText).toContain('…');
+    expect(vi.mocked(mockCtx.clip).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(mockCtx.fillText).mock.invocationCallOrder[0],
+    );
   });
 
   it('draws the exact canonical interactive descriptor without recomputing anchor or omission', async () => {

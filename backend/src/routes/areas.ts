@@ -3,12 +3,18 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.ts";
 import { areaRepository } from "../repositories/area.ts";
+import {
+  isPositiveSafeInteger,
+  parsePositiveSafeInteger,
+} from "../utils/positive-safe-integer.ts";
 
 const areaRoutes = new Hono();
 
 // Validation schemas
 const createAreaSchema = z.object({
-  floorplan_id: z.number(),
+  floorplan_id: z.number().refine(isPositiveSafeInteger, {
+    message: "Expected a positive safe integer",
+  }),
   x: z.number(),
   y: z.number(),
   width: z.number().positive(),
@@ -66,8 +72,8 @@ areaRoutes.get("/", authMiddleware, async (c) => {
       return c.json({ error: "Missing floorplan_id query parameter" }, 400);
     }
 
-    const id = Number(floorplanId);
-    if (!Number.isInteger(id) || id <= 0) {
+    const id = parsePositiveSafeInteger(floorplanId);
+    if (id === null) {
       return c.json({ error: "Invalid floorplan_id" }, 400);
     }
     if (!areaRepository.canAccessFloorplan(id, access(c))) {
@@ -83,8 +89,8 @@ areaRoutes.get("/", authMiddleware, async (c) => {
 
 // GET /areas/:id - Get single area
 areaRoutes.get("/:id", authMiddleware, async (c) => {
-  const id = parseInt(c.req.param("id"));
-  if (isNaN(id)) {
+  const id = parsePositiveSafeInteger(c.req.param("id"));
+  if (id === null) {
     return c.json({ error: "Invalid ID" }, 400);
   }
 
@@ -144,8 +150,8 @@ areaRoutes.put(
   authMiddleware,
   zValidator("json", updateAreaSchema),
   async (c) => {
-    const id = parseInt(c.req.param("id"));
-    if (isNaN(id)) {
+    const id = parsePositiveSafeInteger(c.req.param("id"));
+    if (id === null) {
       return c.json({ error: "Invalid ID" }, 400);
     }
     const data = c.req.valid("json");
@@ -156,7 +162,7 @@ areaRoutes.put(
         return c.json({ error: "Area not found" }, 404);
       }
 
-    const area = await areaRepository.updateProperties(id, data, access(c));
+      const area = await areaRepository.updateProperties(id, data, access(c));
 
       return c.json({
         data: area,
@@ -191,8 +197,8 @@ areaRoutes.put(
   authMiddleware,
   zValidator("json", updateVerticesSchema),
   async (c) => {
-    const id = parseInt(c.req.param("id"));
-    if (isNaN(id)) {
+    const id = parsePositiveSafeInteger(c.req.param("id"));
+    if (id === null) {
       return c.json({ error: "Invalid ID" }, 400);
     }
     const { vertices } = c.req.valid("json");
@@ -221,8 +227,8 @@ areaRoutes.put(
 
 // DELETE /areas/:id - Delete area
 areaRoutes.delete("/:id", authMiddleware, async (c) => {
-  const id = parseInt(c.req.param("id"));
-  if (isNaN(id)) {
+  const id = parsePositiveSafeInteger(c.req.param("id"));
+  if (id === null) {
     return c.json({ error: "Invalid ID" }, 400);
   }
 
