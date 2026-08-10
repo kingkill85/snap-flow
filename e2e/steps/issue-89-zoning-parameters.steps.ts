@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { SnapFlowWorld } from '../support/world.ts';
 
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; lastStatus: number; cssBounds: Array<{ width: number; height: number }> };
+type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: number; value: number };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ width: number; height: number }> };
 
 const authHeaders = (world: ZoningWorld) => ({ Authorization: `Bearer ${world.token}` });
 let cachedAdminAuth: { accessToken: string; refreshToken: string } | undefined;
@@ -30,8 +31,10 @@ async function setupArea(world: ZoningWorld, groups = 2, parametersPerGroup = 1)
       world.parameterIds.push((await parameterResponse.json()).data.id);
     }
   }
-  const projectResponse = await world.page!.request.post(`${world.apiUrl}/api/projects`, { headers: authHeaders(world), data: { customer_name: `Issue89 ${Date.now()}`, item_type_ids: world.itemTypeIds } });
-  world.projectId = (await projectResponse.json()).data.id;
+  world.customerName = `Issue89 ${Date.now()}`;
+  const projectResponse = await world.page!.request.post(`${world.apiUrl}/api/projects`, { headers: authHeaders(world), data: { customer_name: world.customerName, item_type_ids: world.itemTypeIds } });
+  const project = (await projectResponse.json()).data;
+  world.projectId = project.id; world.projectGroupId = project.project_group_id;
   const image = await readFile(resolve(process.cwd(), 'frontend/public/snapflow-logo.png'));
   const floorplanResponse = await world.page!.request.post(`${world.apiUrl}/api/floorplans`, { headers: authHeaders(world), multipart: { project_id: String(world.projectId), name: 'Issue 89 Plan', image: { name: 'plan.png', mimeType: 'image/png', buffer: image } } });
   const floorplanBody = await floorplanResponse.json(); if (!floorplanResponse.ok()) throw new Error(`floorplan ${floorplanResponse.status()}: ${JSON.stringify(floorplanBody)}`);
@@ -50,6 +53,22 @@ async function openAreaEditor(world: ZoningWorld) {
 async function saveValues(world: ZoningWorld, values: number[]) {
   const response = await world.page!.request.put(`${world.apiUrl}/api/areas/${world.areaId}`, { headers: authHeaders(world), data: { revision: world.areaRevision, applicable_parameter_ids: world.parameterIds, zoning_values: world.parameterIds.map((id, index) => ({ parameter_id: id, value: values[index] ?? 0 })) } });
   expect(response.status()).toBe(200); const area = (await response.json()).data; world.areaRevision = area.revision;
+}
+
+async function readProjectZoning(world: ZoningWorld, projectId: number): Promise<ZoningValueEvidence[]> {
+  const floorplansResponse = await world.page!.request.get(`${world.apiUrl}/api/floorplans?project_id=${projectId}`, { headers: authHeaders(world) });
+  expect(floorplansResponse.ok()).toBeTruthy();
+  const floorplans = (await floorplansResponse.json()).data as Array<{ id: number }>;
+  const evidence: ZoningValueEvidence[] = [];
+  for (const floorplan of floorplans) {
+    const areasResponse = await world.page!.request.get(`${world.apiUrl}/api/areas?floorplan_id=${floorplan.id}`, { headers: authHeaders(world) });
+    expect(areasResponse.ok()).toBeTruthy();
+    const areas = (await areasResponse.json()).data as Array<{ id: number; name: string; zoning_groups: Array<{ parameters: Array<{ id: number; value: number }> }> }>;
+    for (const area of areas) for (const group of area.zoning_groups) for (const parameter of group.parameters) {
+      if (parameter.value > 0) evidence.push({ areaId: area.id, areaName: area.name, parameterId: parameter.id, value: parameter.value });
+    }
+  }
+  return evidence.sort((left, right) => left.areaName.localeCompare(right.areaName) || left.parameterId - right.parameterId);
 }
 
 Given('an existing Product Type and an authenticated administrator', async function (this: ZoningWorld) {
@@ -109,6 +128,52 @@ Given('two editors loaded the same Area revision and applicability set', async f
 When('the first update succeeds and the second submits its stale revision', async function (this: ZoningWorld) { const first = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this), data: { revision: this.areaRevision, name: 'Winning Area', applicable_parameter_ids: this.parameterIds, zoning_values: [{ parameter_id: this.parameterIds[0], value: 4 }] } }); expect(first.status()).toBe(200); await this.page!.getByLabel('Name').fill('Losing Area'); await this.page!.getByRole('button', { name: 'Update' }).click(); });
 Then('the second update receives `409 Conflict`', async function (this: ZoningWorld) { await expect(this.page!.getByRole('alert')).toContainText(/changed|reload/i); });
 Then('the first update remains unchanged', async function (this: ZoningWorld) { await this.page!.getByRole('button', { name: 'Reload Area' }).click(); await expect(this.page!.getByLabel('Name')).toHaveValue('Winning Area'); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4'); });
+
+Given('an authorized user selects a source version with multiple floorplans and copied Areas having positive zoning values', async function (this: ZoningWorld) {
+  await setupArea(this, 1, 1);
+  await saveValues(this, [2]);
+  const image = await readFile(resolve(process.cwd(), 'frontend/public/snapflow-logo.png'));
+  const floorplanResponse = await this.page!.request.post(`${this.apiUrl}/api/floorplans`, { headers: authHeaders(this), multipart: { project_id: String(this.projectId), name: 'Issue 89 Second Plan', image: { name: 'second-plan.png', mimeType: 'image/png', buffer: image } } });
+  const secondFloorplan = (await floorplanResponse.json()).data;
+  const areaResponse = await this.page!.request.post(`${this.apiUrl}/api/areas`, { headers: authHeaders(this), data: { floorplan_id: secondFloorplan.id, x: 40, y: 40, width: 400, height: 250, name: 'Second Review Area' } });
+  const secondArea = (await areaResponse.json()).data;
+  const saved = await this.page!.request.put(`${this.apiUrl}/api/areas/${secondArea.id}`, { headers: authHeaders(this), data: { revision: secondArea.revision, applicable_parameter_ids: this.parameterIds, zoning_values: [{ parameter_id: this.parameterIds[0], value: 5 }] } });
+  expect(saved.status()).toBe(200);
+  this.sourceZoning = await readProjectZoning(this, this.projectId);
+  expect(this.sourceZoning).toHaveLength(2);
+});
+
+When('the user creates a new version through the existing Create Version flow', async function (this: ZoningWorld) {
+  await this.page!.goto(`${this.baseUrl}/projects`, { waitUntil: 'domcontentloaded' });
+  const groupRow = this.page!.getByRole('row').filter({ hasText: this.customerName });
+  await expect(groupRow).toBeVisible();
+  await groupRow.click();
+  await this.page!.getByRole('button', { name: 'Copy' }).last().click();
+  const dialog = this.page!.getByRole('dialog', { name: 'Create Version' });
+  await dialog.getByLabel('Version Name *').fill('Issue 89 copied version');
+  const responsePromise = this.page!.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/api/project-groups/${this.projectGroupId}/versions`));
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(201);
+  this.copiedProjectId = (await response.json()).data.id;
+  this.copiedZoning = await readProjectZoning(this, this.copiedProjectId);
+});
+
+Then('every source zoning value is reproduced exactly once for its corresponding new Area', function (this: ZoningWorld) {
+  expect(this.copiedZoning.map(({ areaName, parameterId, value }) => ({ areaName, parameterId, value }))).toEqual(
+    this.sourceZoning.map(({ areaName, parameterId, value }) => ({ areaName, parameterId, value })),
+  );
+});
+
+Then('every copied value references a new-version Area ID, never a source Area ID', function (this: ZoningWorld) {
+  const sourceAreaIds = new Set(this.sourceZoning.map((entry) => entry.areaId));
+  expect(this.copiedZoning.every((entry) => !sourceAreaIds.has(entry.areaId))).toBeTruthy();
+});
+
+Then("each copied value retains the source row's positive integer value and stable parameter identity", function (this: ZoningWorld) {
+  expect(this.copiedZoning.every((entry) => Number.isInteger(entry.value) && entry.value > 0)).toBeTruthy();
+  expect(this.copiedZoning.map((entry) => entry.parameterId)).toEqual(this.sourceZoning.map((entry) => entry.parameterId));
+});
 
 When('the administrator creates a parameter with a valid name and order', async function (this: ZoningWorld) {
   await this.page!.goto(`${this.baseUrl}/catalog/item-types`, { waitUntil: 'domcontentloaded' });

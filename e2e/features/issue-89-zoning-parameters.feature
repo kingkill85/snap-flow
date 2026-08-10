@@ -105,3 +105,11 @@ Feature: Generic Product Type zoning parameters
     When the first update succeeds and the second submits its stale revision
     Then the second update receives `409 Conflict`
     And the first update remains unchanged
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#copy-zoning-values-across-multiple-floorplans-and-areas
+  Scenario: Create Version preserves remapped zoning values
+    Given an authorized user selects a source version with multiple floorplans and copied Areas having positive zoning values
+    When the user creates a new version through the existing Create Version flow
+    Then every source zoning value is reproduced exactly once for its corresponding new Area
+    And every copied value references a new-version Area ID, never a source Area ID
+    And each copied value retains the source row's positive integer value and stable parameter identity

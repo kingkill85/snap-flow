@@ -20,6 +20,7 @@ test('Issue 89 real-runtime feature retains the approved representative acceptan
     'Deactivate and reactivate retains values',
     'Project Product Type reselection retains values',
     'Applicability conflict has visible recovery',
+    'Create Version preserves remapped zoning values',
   ];
   for (const scenario of required) assert.match(feature, new RegExp(`Scenario: ${scenario.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.equal((feature.match(/openspec-scenario:/g) ?? []).length, required.length);

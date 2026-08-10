@@ -412,6 +412,41 @@ export class ProjectGroupRepository {
           `, [newPlacementId, av.vertex_index, av.x, av.y]);
         }
 
+        // Copy persisted positive zoning values onto the corresponding Areas.
+        // Parameter definitions are Product-Type-owned stable identities, so only
+        // the Area placement identity is remapped for the new version.
+        const zoningValues = db.queryEntries(`
+          SELECT azv.area_placement_id, azv.parameter_id, azv.value
+          FROM area_zoning_values azv
+          JOIN placements p ON p.id = azv.area_placement_id
+          JOIN area_properties ap ON ap.placement_id = p.id
+          WHERE p.type = 'area'
+            AND p.floorplan_id IN (${placeholders})
+          ORDER BY azv.area_placement_id, azv.parameter_id
+        `, floorplanIds) as unknown as Array<{
+          area_placement_id: number;
+          parameter_id: number;
+          value: number;
+        }>;
+
+        for (const zoningValue of zoningValues) {
+          const newAreaPlacementId = placementIdMap.get(zoningValue.area_placement_id);
+          if (!newAreaPlacementId) {
+            throw new Error(`Missing destination Area mapping for placement ${zoningValue.area_placement_id}`);
+          }
+          if (
+            !Number.isInteger(zoningValue.parameter_id) || zoningValue.parameter_id <= 0 ||
+            !Number.isInteger(zoningValue.value) || zoningValue.value <= 0 || zoningValue.value > 9999
+          ) {
+            throw new Error('Invalid persisted Area zoning value');
+          }
+
+          db.query(`
+            INSERT INTO area_zoning_values (area_placement_id, parameter_id, value)
+            VALUES (?, ?, ?)
+          `, [newAreaPlacementId, zoningValue.parameter_id, zoningValue.value]);
+        }
+
         // Note: placement_addons table does not exist in current schema; skipped
       }
 
