@@ -5,8 +5,8 @@ import type { Area } from '@/services/area';
 import { layoutZoningAnnotations, ZONING_ANNOTATION_STYLE } from './zoning-annotation';
 
 const props = { isSelected: false, scale: 2, onSelect: vi.fn(), onMove: vi.fn(), onVertexMove: vi.fn(), onVerticesReplace: vi.fn(), onVertexAdd: vi.fn(), onVertexDelete: vi.fn(), onVerticesCommit: vi.fn() };
-const base: Area = { id: 1, floorplan_id: 1, x: 0, y: 0, width: 300, height: 220, name: 'Room', color: '#0000ff', opacity: .2, revision: 1, device_count: 0, created_at: '', updated_at: '', vertices: [
-  { id: 1, placement_id: 1, vertex_index: 0, x: 0, y: 0 }, { id: 2, placement_id: 1, vertex_index: 1, x: 300, y: 0 }, { id: 3, placement_id: 1, vertex_index: 2, x: 300, y: 220 }, { id: 4, placement_id: 1, vertex_index: 3, x: 0, y: 220 },
+const base: Area = { id: 1, floorplan_id: 1, x: 0, y: 0, width: 600, height: 400, name: 'Room', color: '#0000ff', opacity: .2, revision: 1, device_count: 0, created_at: '', updated_at: '', vertices: [
+  { id: 1, placement_id: 1, vertex_index: 0, x: 0, y: 0 }, { id: 2, placement_id: 1, vertex_index: 1, x: 600, y: 0 }, { id: 3, placement_id: 1, vertex_index: 2, x: 600, y: 400 }, { id: 4, placement_id: 1, vertex_index: 3, x: 0, y: 400 },
 ], zoning_groups: [] };
 
 describe('AreaPolygon zoning annotation', () => {

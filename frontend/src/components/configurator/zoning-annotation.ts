@@ -24,9 +24,12 @@ export interface ZoningAnnotationDescriptor {
 
 export interface AnnotationPresentation {
   bounds: Readonly<AnnotationRect>;
+  effectiveScale: number;
   fontSize: number;
   lineHeight: number;
   outlineWidth: number;
+  textX: number;
+  firstBaselineY: number;
 }
 
 export interface AreaNameLabelGeometry {
@@ -44,12 +47,12 @@ export const ZONING_ANNOTATION_STYLE = Object.freeze({
   maxWidth: 150,
   maxRows: 6,
   padding: 4,
-  collisionPadding: 3,
+  collisionPadding: 5,
   foreground: '#ffffff',
   outline: '#111827',
   outlineWidth: 3,
   characterWidthRatio: 0.58,
-  canonicalMinScale: 0.5,
+  canonicalMinScale: 0.25,
 });
 
 interface LayoutInput {
@@ -109,7 +112,8 @@ function labelAnchor(area: Area) {
 export function getAreaNameLabelGeometry(area: Area, displayScale = 1): AreaNameLabelGeometry | null {
   const anchor = labelAnchor(area);
   if (!anchor) return null;
-  const scale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
+  const requestedScale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
+  const scale = Math.max(requestedScale, ZONING_ANNOTATION_STYLE.canonicalMinScale);
   const label = area.name || 'Area';
   const fontSize = 12 / scale;
   const padX = 6 / scale;
@@ -138,7 +142,7 @@ const unionRects = (rectangles: readonly AnnotationRect[]): AnnotationRect => {
 };
 
 export function getCanonicalAreaNameLabelBounds(area: Area): AnnotationRect | null {
-  const geometries = [ZONING_ANNOTATION_STYLE.canonicalMinScale, 1, 1.5]
+  const geometries = [ZONING_ANNOTATION_STYLE.canonicalMinScale, 0.5, 1, 1.5]
     .map((scale) => getAreaNameLabelGeometry(area, scale))
     .filter((geometry): geometry is AreaNameLabelGeometry => geometry !== null);
   return geometries.length ? unionRects(geometries.map((geometry) => geometry.bounds)) : null;
@@ -159,22 +163,29 @@ export function getAnnotationPresentation(
   annotation: ZoningAnnotationDescriptor,
   displayScale = 1,
 ): AnnotationPresentation {
-  const scale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
+  const requestedScale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
+  const scale = Math.max(requestedScale, ZONING_ANNOTATION_STYLE.canonicalMinScale);
   const desiredWidth = ZONING_ANNOTATION_STYLE.maxWidth / scale;
   const desiredHeight = (annotation.lines.length + (annotation.omitted > 0 ? 1 : 0)) *
     ZONING_ANNOTATION_STYLE.lineHeight / scale;
   const width = Math.min(annotation.bounds.width, desiredWidth);
   const height = Math.min(annotation.bounds.height, desiredHeight);
-  return Object.freeze({
-    bounds: Object.freeze({
+  const bounds = Object.freeze({
       x: annotation.bounds.x + (annotation.bounds.width - width) / 2,
       y: annotation.bounds.y + (annotation.bounds.height - height) / 2,
       width,
       height,
-    }),
+  });
+  const outlineWidth = ZONING_ANNOTATION_STYLE.outlineWidth / scale;
+  return Object.freeze({
+    bounds,
+    effectiveScale: scale,
     fontSize: ZONING_ANNOTATION_STYLE.fontSize / scale,
     lineHeight: ZONING_ANNOTATION_STYLE.lineHeight / scale,
-    outlineWidth: ZONING_ANNOTATION_STYLE.outlineWidth / scale,
+    outlineWidth,
+    textX: bounds.x + (ZONING_ANNOTATION_STYLE.padding + ZONING_ANNOTATION_STYLE.outlineWidth) / scale,
+    firstBaselineY: bounds.y +
+      (ZONING_ANNOTATION_STYLE.lineHeight - 2 - ZONING_ANNOTATION_STYLE.outlineWidth) / scale,
   });
 }
 
@@ -204,7 +215,7 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 function displayedLines(rows: readonly string[], visibleCount: number, width: number) {
   const maxCharacters = Math.max(
     8,
-    Math.floor((width - ZONING_ANNOTATION_STYLE.padding * 2) /
+    Math.floor((width - (ZONING_ANNOTATION_STYLE.padding + ZONING_ANNOTATION_STYLE.outlineWidth) * 2) /
       (ZONING_ANNOTATION_STYLE.fontSize * ZONING_ANNOTATION_STYLE.characterWidthRatio)),
   );
   return rows.slice(0, visibleCount).map((fullText) => ({

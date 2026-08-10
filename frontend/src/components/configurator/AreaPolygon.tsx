@@ -447,8 +447,8 @@ export function AreaPolygon({
           {zoningAnnotation.lines.map((line, index) => (
             <text
               key={`${index}-${line.fullText}`}
-              x={annotationPresentation.bounds.x}
-              y={annotationPresentation.bounds.y + (index + 1) * annotationPresentation.lineHeight - 2 / scale}
+              x={annotationPresentation.textX}
+              y={annotationPresentation.firstBaselineY + index * annotationPresentation.lineHeight}
               fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
               fontSize={annotationPresentation.fontSize}
               fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
@@ -465,8 +465,8 @@ export function AreaPolygon({
           ))}
           {zoningAnnotation.omitted > 0 && (
             <text
-              x={annotationPresentation.bounds.x}
-              y={annotationPresentation.bounds.y + (zoningAnnotation.lines.length + 1) * annotationPresentation.lineHeight - 2 / scale}
+              x={annotationPresentation.textX}
+              y={annotationPresentation.firstBaselineY + zoningAnnotation.lines.length * annotationPresentation.lineHeight}
               fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
               fontSize={annotationPresentation.fontSize}
               fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}

@@ -247,8 +247,8 @@ export function drawZoningAnnotation(
     ctx.strokeStyle = ZONING_ANNOTATION_STYLE.outline;
     ctx.fillStyle = ZONING_ANNOTATION_STYLE.foreground;
     const drawLine = (text: string, index: number) => {
-      const x = presentation.bounds.x;
-      const y = presentation.bounds.y + (index + 1) * presentation.lineHeight - 2;
+      const x = presentation.textX;
+      const y = presentation.firstBaselineY + index * presentation.lineHeight;
       ctx.strokeText(text, x, y);
       ctx.fillText(text, x, y);
     };

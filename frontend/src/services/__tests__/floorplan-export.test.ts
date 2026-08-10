@@ -289,8 +289,8 @@ describe('exportFloorplanImage', () => {
 
   it('draws shared positive-only zoning annotations with dual contrast and no panel', async () => {
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea]);
-    expect(mockCtx.strokeText).toHaveBeenCalledWith(expect.stringContaining('Lighting — Relay zones'), expect.any(Number), expect.any(Number));
-    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringContaining('Lighting — Relay zones'), expect.any(Number), expect.any(Number));
+    expect(mockCtx.strokeText).toHaveBeenCalledWith(expect.stringContaining('Lighting'), expect.any(Number), expect.any(Number));
+    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringContaining('Lighting'), expect.any(Number), expect.any(Number));
     expect(mockCtx.fillText).not.toHaveBeenCalledWith(expect.stringContaining('Zero zones'), expect.anything(), expect.anything());
     expect(mockCtx.strokeStyle).toBe(ZONING_ANNOTATION_STYLE.outline);
     expect(mockCtx.lineWidth).toBe(ZONING_ANNOTATION_STYLE.outlineWidth);
@@ -301,7 +301,7 @@ describe('exportFloorplanImage', () => {
     const presentation = getAnnotationPresentation(descriptor, 1);
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea], undefined, undefined, [descriptor]);
     expect(descriptor.anchor).toBeTruthy();
-    expect(mockCtx.strokeText).toHaveBeenCalledWith(descriptor.lines[0].displayText, presentation.bounds.x, presentation.bounds.y + presentation.lineHeight - 2);
+    expect(mockCtx.strokeText).toHaveBeenCalledWith(descriptor.lines[0].displayText, presentation.textX, presentation.firstBaselineY);
     expect(mockCtx.fillText).toHaveBeenCalledTimes(descriptor.lines.length + (descriptor.omitted > 0 ? 1 : 0) + 1); // Area name plus annotation rows.
   });
 

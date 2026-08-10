@@ -6,7 +6,7 @@ import type { SnapFlowWorld } from '../support/world.ts';
 
 type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: number; value: number };
 type Bounds = { x: number; y: number; width: number; height: number };
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ annotation: Bounds; name: Bounds }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number };
 
 const authHeaders = (world: ZoningWorld) => ({ Authorization: `Bearer ${world.token}` });
 let cachedAdminAuth: { accessToken: string; refreshToken: string } | undefined;
@@ -56,18 +56,18 @@ async function saveValues(world: ZoningWorld, values: number[]) {
   expect(response.status()).toBe(200); const area = (await response.json()).data; world.areaRevision = area.revision;
 }
 
-async function createNearbyRotatedProduct(world: ZoningWorld) {
+async function createNearbyRotatedProduct(world: ZoningWorld, overrides: Partial<{ x: number; y: number; width: number; height: number; rotation: number }> = {}) {
   const categoryResponse = await world.page!.request.post(`${world.apiUrl}/api/categories`, { headers: authHeaders(world), data: { name: `Issue89 Category ${Date.now()}` } });
   const category = (await categoryResponse.json()).data;
   const itemResponse = await world.page!.request.post(`${world.apiUrl}/api/items`, { headers: authHeaders(world), data: { category_id: category.id, name: `Issue89 Product ${Date.now()}`, type_id: world.itemTypeIds[0] } });
   const itemBody = await itemResponse.json(); if (!itemResponse.ok()) throw new Error(JSON.stringify(itemBody));
   const variantResponse = await world.page!.request.post(`${world.apiUrl}/api/items/${itemBody.data.id}/variants`, { headers: authHeaders(world), multipart: { style_name: 'Default', price: '1' } });
   const variantBody = await variantResponse.json(); if (!variantResponse.ok()) throw new Error(JSON.stringify(variantBody));
-  const placement = { floorplan_id: world.floorplanId, item_variant_id: variantBody.data.id, x: 180, y: 90, width: 120, height: 20, rotation: 45 };
+  const placement = { floorplan_id: world.floorplanId, item_variant_id: variantBody.data.id, x: 180, y: 90, width: 120, height: 20, rotation: 45, ...overrides };
   const placementResponse = await world.page!.request.post(`${world.apiUrl}/api/placements`, { headers: authHeaders(world), data: placement });
   const placementBody = await placementResponse.json(); if (!placementResponse.ok()) throw new Error(JSON.stringify(placementBody));
   world.productId = placementBody.data.id;
-  const radians = Math.PI / 4;
+  const radians = placement.rotation * Math.PI / 180;
   const width = Math.abs(placement.width * Math.cos(radians)) + Math.abs(placement.height * Math.sin(radians));
   const height = Math.abs(placement.width * Math.sin(radians)) + Math.abs(placement.height * Math.cos(radians));
   world.productBounds = { x: placement.x + (placement.width - width) / 2, y: placement.y + (placement.height - height) / 2, width, height };
@@ -133,24 +133,59 @@ When('the interactive floorplan or PNG export renders', async function (this: Zo
 Then('each Product Type with a positive value has one labelled group', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).toContainText(/Issue89 Type 0.*Zones 0: 3/); });
 Then('zero-valued parameters and empty Product Type groups are absent', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).not.toContainText('Issue89 Type 1'); });
 
-Given('an Area has more positive values than fit within the summary bounds and some names are long', async function (this: ZoningWorld) { await setupArea(this, 2, 4); await saveValues(this, Array(8).fill(2)); });
+Given('an Area has more positive values than fit within the summary bounds and some names are long', async function (this: ZoningWorld) {
+  await setupArea(this, 2, 4); await saveValues(this, Array(8).fill(2));
+  const secondResponse = await this.page!.request.post(`${this.apiUrl}/api/areas`, { headers: authHeaders(this), data: { floorplan_id: this.floorplanId, x: 550, y: 30, width: 400, height: 300, name: 'Nearby Review Area' } });
+  const second = (await secondResponse.json()).data;
+  const saved = await this.page!.request.put(`${this.apiUrl}/api/areas/${second.id}`, { headers: authHeaders(this), data: { revision: second.revision, applicable_parameter_ids: this.parameterIds, zoning_values: this.parameterIds.map((parameter_id) => ({ parameter_id, value: 2 })) } });
+  expect(saved.status()).toBe(200);
+  await createNearbyRotatedProduct(this, { x: 200, y: 320, width: 200, height: 40, rotation: 0 });
+});
 When('the floorplan renders at any supported zoom', async function (this: ZoningWorld) {
   await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); this.cssBounds = [];
   const sequence = [
-    { target: 50, action: async () => { await this.page!.getByTitle('Zoom out').click(); await this.page!.getByTitle('Zoom out').click(); } },
-    { target: 100, action: async () => { await this.page!.getByTitle('Reset zoom (Ctrl+0)').click(); } },
-    { target: 150, action: async () => { await this.page!.getByTitle('Zoom in').click(); await this.page!.getByTitle('Zoom in').click(); } },
+    { label: '50%', zoom: 50, action: async () => { await this.page!.getByTitle('Zoom out').click(); await this.page!.getByTitle('Zoom out').click(); } },
+    { label: '25%', zoom: 25, action: async () => { await this.page!.getByTitle('Zoom out').click(); } },
+    { label: '25% fitted', zoom: 25, action: async () => { await this.page!.setViewportSize({ width: 480, height: 700 }); } },
+    { label: '100%', zoom: 100, action: async () => { await this.page!.setViewportSize({ width: 1280, height: 900 }); await this.page!.getByTitle('Reset zoom (Ctrl+0)').click(); } },
+    { label: '150%', zoom: 150, action: async () => { await this.page!.getByTitle('Zoom in').click(); await this.page!.getByTitle('Zoom in').click(); } },
   ];
-  for (const { target, action } of sequence) {
-    await action(); await expect(this.page!.getByText(`${target}%`, { exact: true })).toBeVisible();
-    const annotation = await this.page!.getByTestId('area-zoning-annotation').boundingBox();
-    const name = await this.page!.getByTestId('area-name-label-bounds').boundingBox();
-    expect(annotation).not.toBeNull(); expect(name).not.toBeNull(); this.cssBounds.push({ annotation: annotation!, name: name! });
+  for (const { label, zoom, action } of sequence) {
+    await action(); await expect(this.page!.getByText(`${zoom}%`, { exact: true })).toBeVisible();
+    const annotations = (await this.page!.getByTestId('area-zoning-annotation').all()).map(async (locator) => (await locator.boundingBox())!);
+    const names = (await this.page!.getByTestId('area-name-label-bounds').all()).map(async (locator) => (await locator.boundingBox())!);
+    const image = await this.page!.locator('[data-floorplan-image="true"]').boundingBox();
+    const product = await this.page!.locator(`[data-placement-id="${this.productId}"]`).boundingBox();
+    expect(image).not.toBeNull(); expect(product).not.toBeNull();
+    this.cssBounds.push({ annotations: await Promise.all(annotations), names: await Promise.all(names), image: image!, product: product!, label });
   }
 });
-Then('visible rows stay within the bounded summary', async function (this: ZoningWorld) { for (const { annotation, name } of this.cssBounds) { expect(annotation.width).toBeGreaterThan(0); expect(annotation.width).toBeLessThanOrEqual(230); expect(annotation.height).toBeLessThanOrEqual(150); expect(annotation.x + annotation.width <= name.x || annotation.x >= name.x + name.width || annotation.y + annotation.height <= name.y || annotation.y >= name.y + name.height).toBe(true); } });
+Then('visible rows stay within the bounded summary', async function (this: ZoningWorld) {
+  const separated = (left: Bounds, right: Bounds) => left.x + left.width <= right.x || left.x >= right.x + right.width || left.y + left.height <= right.y || left.y >= right.y + right.height;
+  for (const { annotations, names, image, product, label } of this.cssBounds) {
+    expect(annotations.length, `${label} annotations`).toBeGreaterThan(1);
+    for (const annotation of annotations) {
+      expect(annotation.width).toBeGreaterThan(0); expect(annotation.width).toBeLessThanOrEqual(230); expect(annotation.height).toBeLessThanOrEqual(150);
+      expect(annotation.x, `${label} image left`).toBeGreaterThanOrEqual(image.x - 1); expect(annotation.y, `${label} image top`).toBeGreaterThanOrEqual(image.y - 1);
+      expect(annotation.x + annotation.width, `${label} image right`).toBeLessThanOrEqual(image.x + image.width + 1); expect(annotation.y + annotation.height, `${label} image bottom`).toBeLessThanOrEqual(image.y + image.height + 1);
+      expect(separated(annotation, product), `${label} product collision`).toBe(true);
+      for (const name of names) {
+        if (!separated(annotation, name)) throw new Error(
+          `${label} name collision annotation=${JSON.stringify(annotation)} name=${JSON.stringify(name)}`,
+        );
+      }
+    }
+    for (let index = 1; index < annotations.length; index++) expect(separated(annotations[index - 1], annotations[index]), `${label} prior annotation collision`).toBe(true);
+  }
+});
 Then('truncated content exposes full text accessibly', async function (this: ZoningWorld) { const annotation = this.page!.getByTestId('area-zoning-annotation'); expect(await annotation.locator('title').count()).toBeGreaterThan(0); });
-Then('a `+N more` row reports the omitted positive values', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).toContainText(/\+2 more/); });
+Then('a `+N more` row reports the omitted positive values', async function (this: ZoningWorld) {
+  for (const annotation of await this.page!.getByTestId('area-zoning-annotation').all()) {
+    const omitted = Number(await annotation.getAttribute('data-omitted'));
+    expect(omitted).toBeGreaterThan(0);
+    await expect(annotation).toContainText(`+${omitted} more`);
+  }
+});
 
 Given('positive zoning annotations cross light, dark, detailed, and mixed regions of a floorplan', async function (this: ZoningWorld) { await setupArea(this, 2, 2); await saveValues(this, [2, 0, 4, 0]); });
 When('the interactive floorplan renders at a supported zoom', async function (this: ZoningWorld) { await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
@@ -213,7 +248,7 @@ Then('the PNG contains the same grouped annotation text, ordering, omission coun
   expect(stroke?.strokeStyle).toBe('#111827'); expect(stroke?.lineWidth).toBe(3); expect(fill?.fillStyle).toBe('#ffffff');
   const rasterX = Number(stroke?.x); const rasterY = Number(stroke?.y);
   expect(this.annotationAnchor).not.toBe(''); expect(this.annotationOmitted).toBeGreaterThanOrEqual(0);
-  expect(rasterX).toBeCloseTo(this.annotationBounds.x); expect(rasterY).toBeCloseTo(this.annotationBounds.y + 12);
+  expect(rasterX).toBeCloseTo(this.annotationBounds.x + 7); expect(rasterY).toBeCloseTo(this.annotationBounds.y + 9);
   const overflowCalls = calls.filter((call) => /^\+\d+ more$/.test(String(call.text)) && call.kind === 'fill');
   expect(overflowCalls).toHaveLength(this.annotationOmitted > 0 ? 1 : 0);
   const separated = this.annotationBounds.x + this.annotationBounds.width <= this.productBounds.x || this.annotationBounds.x >= this.productBounds.x + this.productBounds.width || this.annotationBounds.y + this.annotationBounds.height <= this.productBounds.y || this.annotationBounds.y >= this.productBounds.y + this.productBounds.height;
