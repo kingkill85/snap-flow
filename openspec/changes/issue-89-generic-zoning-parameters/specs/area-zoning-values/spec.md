@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines secure Area zoning-value persistence, project applicability, accessible editing, and readable grouped summaries on the floorplan.
+Defines secure Area zoning-value persistence, project applicability, accessible compact editing, and readable grouped annotations shared by interactive and exported floorplans.
 
 ## ADDED Requirements
 
@@ -74,49 +74,79 @@ Each Area response SHALL include a monotonically increasing revision. A zoning-a
 - **THEN** the save receives `409 Conflict`
 - **AND** no Area property or value from that request is persisted
 
-### Requirement: The Area editor uses accessible stacked Product Type sections
-When applicable parameters exist, the existing Edit Area dialog MUST expand responsively and retain the existing Area property controls and one Cancel/Update action pair. It SHALL place zoning controls in a second column on sufficiently wide viewports and below the Area controls on narrow viewports. The zoning column MUST use always-visible, ordered, collapsible Product Type sections rather than tabs, with each section heading showing the Product Type name and color. Every parameter MUST have a persistent label, a directly editable numeric input, and labelled decrement/increment buttons; keyboard operation, focus indication, screen-reader names, and validation messages MUST remain available without relying on color.
+### Requirement: The Area editor uses a compact accessible Product Type layout
+When applicable parameters exist, the existing Edit Area dialog MUST expand responsively and retain the existing Area property controls and one Cancel/Update action pair aligned at the bottom right. On sufficiently wide viewports it SHALL present a compact zoning pane beside the Area controls; on narrow viewports it SHALL place that pane below the Area controls. The zoning pane MUST have a prominent generic zoning heading and ordered Product Type headings rather than tabs or card-per-parameter containers. Under each Product Type heading, every parameter MUST occupy one dense, consistently spaced row with a persistent label beside a narrow native `number` input. The input MUST retain its browser-native stepper, accept keyboard arrows and manual decimal-digit entry, enforce the allowed integer range, and expose focus, label, bounds, and validation semantics without relying on color. The editor MUST NOT render custom increment or decrement controls.
+
+The dialog body MUST provide bounded internal scrolling when content exceeds the viewport while the heading and bottom-right actions remain reachable. Saving MUST use the existing atomic Area update, and reopening after a successful save MUST display the persisted values in their original Product Type groups.
+
+#### Scenario: Edit one Product Type compactly on desktop
+- **GIVEN** an Area has definitions from one applicable Product Type and viewport width permits two columns
+- **WHEN** the user opens Edit Area
+- **THEN** Area properties and the compact zoning pane are visible side by side
+- **AND** each parameter appears as one narrow number input beside its label under the Product Type heading
+- **AND** no parameter card, tab, or custom increment/decrement control is rendered
 
 #### Scenario: Edit multiple Product Type groups on desktop
 - **GIVEN** an Area has definitions from multiple applicable Product Types and viewport width permits two columns
 - **WHEN** the user opens Edit Area
-- **THEN** Area properties and the zoning column are visible side by side
-- **AND** all Product Type headings remain discoverable without switching tabs
+- **THEN** each Product Type appears as an ordered compact section in the zoning pane
+- **AND** all headings and parameter rows remain discoverable without switching tabs
 
 #### Scenario: Edit on a narrow viewport
 - **GIVEN** an Area has applicable definitions and the viewport cannot fit two columns
 - **WHEN** the user opens Edit Area
-- **THEN** the zoning sections stack below the Area property controls
-- **AND** the dialog body scrolls while its title and action controls remain usable
+- **THEN** the compact zoning pane stacks below the Area property controls without horizontal page overflow
+- **AND** the dialog body scrolls while its heading and bottom-right action controls remain reachable and usable
 
-#### Scenario: Operate a stepper accessibly
+#### Scenario: Operate a native number input accessibly
 - **GIVEN** focus is on a parameter control
-- **WHEN** the user types an integer or activates its labelled plus or minus button by keyboard
+- **WHEN** the user types an integer or uses the native number-input keyboard step operation
 - **THEN** the displayed value changes within the allowed range
 - **AND** decrement at zero cannot create a negative value
+- **AND** no redundant custom plus or minus control is present
+
+#### Scenario: Save and reopen compact zoning values
+- **GIVEN** an Area editor contains one or more Product Type groups
+- **WHEN** the user enters values manually, saves, and reopens the Area editor
+- **THEN** the saved values appear beside the same parameter labels in the same Product Type groups
+- **AND** zero and positive values retain their defined persistence semantics
 
 #### Scenario: Cancel an edit
 - **GIVEN** the user changed Area properties or zoning values in the dialog
 - **WHEN** the user activates Cancel, presses Escape, or dismisses the dialog
 - **THEN** no draft changes are sent or retained
 
-### Requirement: Floorplan summaries show only meaningful grouped values
-Each Area SHALL render a compact summary for every applicable Product Type having at least one positive parameter value. Each group MUST identify the Product Type and list only positive values as `parameter name: value` in configured order. A Product Type with no positive values MUST have no group, and an Area with no non-empty groups MUST have no zoning summary.
+### Requirement: Floorplan annotations show only meaningful grouped values
+Each Area SHALL derive one annotation model for every applicable Product Type having at least one positive parameter value. Each group MUST identify the Product Type and list only positive values as `parameter name: value` in configured order. A Product Type with no positive values MUST have no group, and an Area with no non-empty groups MUST have no zoning annotation in either the interactive floorplan or PNG export. Categories, BOQ data, and module choices MUST NOT contribute annotations or zoning values.
 
 #### Scenario: Mixed zero and positive values
 - **GIVEN** an Area has positive and zero values across two applicable Product Types
-- **WHEN** the floorplan renders
+- **WHEN** the interactive floorplan or PNG export renders
 - **THEN** each Product Type with a positive value has one labelled group
 - **AND** zero-valued parameters and empty Product Type groups are absent
 
 #### Scenario: No positive values
 - **GIVEN** an Area has no positive values among applicable definitions
-- **WHEN** the floorplan renders
+- **WHEN** the interactive floorplan or PNG export renders
 - **THEN** only the existing Area name label is rendered
-- **AND** no empty zoning container consumes floorplan space
+- **AND** no empty zoning annotation consumes floorplan or export space
 
-### Requirement: Summaries remain readable without obscuring the floorplan
-The zoning summary SHALL use viewport-independent SVG sizing consistent with the existing zoom scale, remain anchored inside or adjacent to the Area name label, and cap its displayed width and height. Long names MUST be ellipsized or clipped with the full text available through an accessible tooltip/title, and excess rows MUST collapse into a final `+N more` indicator rather than overflowing the Area or covering an unbounded portion of the floorplan. The summary MUST be non-interactive so existing Area selection and drag behavior is unchanged.
+### Requirement: Annotations remain readable without obscuring the floorplan
+The interactive floorplan SHALL render zoning annotation text directly over the floorplan without a large opaque panel. Text MUST use a deterministic dual-contrast foreground and outline/halo treatment that remains legible over light, dark, detailed, and mixed floorplan imagery without relying on Product Type color alone. Annotation layout MUST consider Area bounds, Area-name labels, every visible product-placement rectangle, and previously placed zoning annotations. It MUST choose from a fixed ordered set of candidate anchors, reject candidates that intersect product placements, prefer a non-overlapping candidate, and deterministically omit lower-priority rows with a `+N more` indicator when no safe full layout exists. It MUST never cover a visible product placement. Nearby Areas and placements MUST produce the same layout for the same input order, and annotations MUST remain non-interactive so existing selection and drag behavior is unchanged.
+
+Long names MUST be ellipsized or clipped with the full interactive text available through an accessible name or title. Typography, line order, spacing, truncation limits, contrast treatment, candidate-anchor priority, collision padding, and omission rules MUST come from one shared deterministic annotation presentation/model rather than independent interactive and export implementations.
+
+#### Scenario: Read annotations over varied floorplan backgrounds
+- **GIVEN** positive zoning annotations cross light, dark, detailed, and mixed regions of a floorplan
+- **WHEN** the interactive floorplan renders at a supported zoom
+- **THEN** every visible annotation uses the defined dual-contrast text treatment without a large opaque backing panel
+- **AND** its meaning remains available without relying on color
+
+#### Scenario: Avoid overlapping nearby product placements
+- **GIVEN** an Area contains positive zoning values and one or more product placements near its preferred annotation anchor
+- **WHEN** the interactive floorplan lays out the annotation
+- **THEN** it deterministically selects the first safe candidate that intersects neither a product placement nor an earlier annotation
+- **AND** if all candidates are constrained it omits lower-priority rows and reports them with `+N more` rather than covering a product item
 
 #### Scenario: Long and numerous values
 - **GIVEN** an Area has more positive values than fit within the summary bounds and some names are long
@@ -125,11 +155,40 @@ The zoning summary SHALL use viewport-independent SVG sizing consistent with the
 - **AND** truncated content exposes full text accessibly
 - **AND** a `+N more` row reports the omitted positive values
 
-#### Scenario: Select or drag through a summary
-- **GIVEN** a zoning summary is visible on an Area
-- **WHEN** the user selects or drags the underlying Area at the summary position
+#### Scenario: Select or drag through an annotation
+- **GIVEN** a zoning annotation is visible on an Area
+- **WHEN** the user selects or drags the underlying Area at the annotation position
 - **THEN** the existing Area interaction handles the pointer event
-- **AND** the summary does not become a separate interaction target
+- **AND** the annotation does not become a separate interaction target
+
+### Requirement: PNG exports preserve zoning annotation parity
+The existing PNG floorplan image export SHALL include zoning annotations for every visible Area using the same shared annotation model, visible Area set, visible product-placement collision geometry, positive-only grouping, text, order, truncation, omission count, anchor selection, collision padding, and contrast style as the interactive floorplan. Semantic parity means both surfaces contain the same Product Type groups, parameter/value rows, order, omitted-row count, and selected normalized anchor for the same visibility state. Visual parity means font family, weight, relative line height, foreground/outline colors, outline ratio, alignment, and spacing are derived from the same presentation constants; raster antialiasing need not be pixel-identical.
+
+The export SHALL map natural floorplan coordinates to its raster canvas with a single deterministic scale transform. At every supported floorplan image size, the annotation's dimensions, stroke, collision bounds, and anchor MUST scale proportionally from the shared model and remain within the exported image. Annotation layout or drawing failure MUST reject the export through the existing surfaced export-error path before a download is triggered; the exporter MUST NOT silently produce a PNG that omits requested annotations.
+
+#### Scenario: Export includes the interactive annotations
+- **GIVEN** the interactive floorplan shows positive zoning annotations for visible Areas
+- **WHEN** the user invokes the existing PNG floorplan export with the same Area, placement, and visibility state
+- **THEN** the PNG contains the same grouped annotation text, ordering, omission count, normalized anchors, and contrast treatment
+- **AND** hidden Areas and zero or empty groups remain absent
+
+#### Scenario: Export remains deterministic at supported scales
+- **GIVEN** the same floorplan state is exported at any supported natural image size
+- **WHEN** the shared annotation layout is transformed to raster coordinates
+- **THEN** its geometry and style scale deterministically and remain inside the image bounds
+- **AND** repeated exports of the same state choose the same anchors and omitted rows
+
+#### Scenario: Export annotations remain clear near products and varied imagery
+- **GIVEN** annotations are near visible product placements over varied floorplan backgrounds
+- **WHEN** the PNG is exported
+- **THEN** no annotation covers a product placement
+- **AND** the dual-contrast text treatment remains present without a large opaque panel
+
+#### Scenario: Annotation export fails closed
+- **GIVEN** the shared annotation model cannot be laid out or drawn completely
+- **WHEN** PNG export is attempted
+- **THEN** the existing export operation reports failure and triggers no download
+- **AND** it does not silently export an image missing zoning annotations
 
 ### Requirement: Existing data and consumers remain compatible
 The migration MUST be additive and MUST NOT create zoning definitions or values for existing Product Types or Areas. Existing Area list/get responses SHALL retain all current fields and add zoning data and revision fields without changing their meaning. Existing projects and Areas MUST behave exactly as before until an administrator configures an applicable definition.
@@ -182,7 +241,7 @@ The zoning copy MUST participate in the same atomic operation as creation of the
 - **AND** creates no project or zoning rows
 
 ### Requirement: User-visible scenarios are traceable across test layers
-Every normative Issue #89 scenario MUST be mapped to automated coverage or an explicit justified review assertion. Persistence, validation, authorization, lifecycle, atomicity, migration, project-version copying, and conflict behavior MUST have backend repository or route coverage; editor and summary presentation MUST have focused frontend unit/component coverage; and representative configuration, multi-group editing, persistence-after-reload, positive-only summary, accessibility, overflow, stale/error recovery, and Create Version zoning preservation paths MUST be covered by Issue #89-tagged Cucumber scenarios driven by Playwright against the real SnapFlow frontend and backend.
+Every normative Issue #89 scenario MUST be mapped to automated coverage or an explicit justified review assertion. Persistence, validation, authorization, lifecycle, atomicity, migration, project-version copying, and conflict behavior MUST have backend repository or route coverage. Editor, shared annotation layout, interactive rendering, collision, and PNG drawing/failure behavior MUST have focused frontend unit/component/service coverage. Representative configuration, one- and multi-Product-Type editing, persistence-after-reload, positive-only annotations, varied-background readability, placement collision, responsive overflow, stale/error recovery, PNG export parity, and Create Version zoning preservation paths MUST be covered by Issue #89-tagged Cucumber scenarios driven by Playwright against the real SnapFlow frontend and backend; raster evidence MUST inspect the downloaded PNG rather than only the download event.
 
 #### Scenario: Traceability gate is evaluated
 - **GIVEN** the Issue #89 implementation is ready for review

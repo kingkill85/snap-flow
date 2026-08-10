@@ -2,7 +2,7 @@
 
 See `proposal.md` for motivation and the two delta specs for observable behavior. The existing domain calls the owner-configured concept a Product Type in the UI and `item_types` in storage/API code. Projects select Product Types through `project_item_types`; categories are a separate catalog grouping and are not a project activation mechanism.
 
-Areas are `placements` rows with `type = 'area'`, one `area_properties` row, and ordered `area_vertices`. `GET /api/areas?floorplan_id=...`, `GET /api/areas/:id`, and `PUT /api/areas/:id` currently return or update name/color/opacity without tenant-scoping the floorplan/project chain. The React `AreaEditModal` is one 400px dialog; `AreaPolygon` draws an SVG pill along the longest edge. Product Type management already has admin-only Hono routes, repository ordering, and a management page. Projects already expose `item_type_ids`.
+Areas are `placements` rows with `type = 'area'`, one `area_properties` row, and ordered `area_vertices`. `GET /api/areas?floorplan_id=...`, `GET /api/areas/:id`, and `PUT /api/areas/:id` return and update their aggregates. `AreaEditModal` currently expands to an 850px two-column dialog when zoning groups exist, but wraps parameters in bordered collapsible sections with custom plus/minus buttons. `ConfiguratorCanvas` owns the complete visible Area and product-placement sets; `AreaPolygon` draws each interactive SVG Area and currently puts zoning rows in an opaque rectangle. `floorplan-export.ts` already receives Areas, placements, catalog items, and visibility filters and draws a natural-resolution PNG, but omits zoning annotations. These are the revision's integration points; Product Type management and the backend contracts remain unchanged.
 
 SQLite migrations run sequentially from `backend/src/scripts/migrate.ts`. Repository operations are synchronous over one connection and use explicit transactions. The repository has Deno route/repository tests, Vitest component/service tests, and a root Cucumber/Playwright harness that starts and probes the real runtime. No extra runtime dependency is needed.
 
@@ -16,12 +16,14 @@ SQLite migrations run sequentially from `backend/src/scripts/migrate.ts`. Reposi
 - Bound UI size and query work so many Areas or definitions do not create unbounded overlays or per-Area database query loops.
 - Close the existing authorization gap for Area routes touched by this capability by resolving access through the owning project.
 - Make project-version creation carry copied Areas' zoning values to their remapped Area identities without cloning Product Type definitions or weakening the existing transaction and authorization boundary.
+- Use one deterministic annotation model and layout for unobtrusive interactive SVG annotations and natural-resolution PNG export, including product-placement collision avoidance.
+- Align the Area editor with the approved compact visual direction while retaining generic Product Type grouping and accessible native number inputs.
 
 **Non-Goals:**
 
 - Automatic module choice, BOM/BOQ generation, pricing, or electrical compatibility rules.
 - Vendor-specific schemas, parameter data types other than bounded non-negative integers, parameter units, formulas, dependencies, or per-project definition overrides.
-- Excel import/export, proposal/invoice output, floorplan image export, or historical display-name snapshots.
+- Excel import/export, proposal/invoice output, new export formats or controls, or historical display-name snapshots; only annotation parity in the existing PNG floorplan export changes.
 - A new permission system, public API version, real-time collaboration channel, or bulk Area editor.
 
 ## Decisions
@@ -88,25 +90,31 @@ Area list/detail/create/update/vertices/delete paths touched during implementati
 
 This scopes the security correction to the Area capability rather than redesigning all floorplan routes. Merely trusting authenticated IDs was rejected because it permits cross-tenant reads and writes.
 
-### 6. Use responsive stacked sections, not tabs, in one Area dialog
+### 6. Use a compact responsive zoning pane with native number inputs
 
-When `zoning_groups` is non-empty, increase the dialog to a bounded desktop width (approximately 800–900px), use two columns at the existing responsive breakpoint, and place zoning below Area properties on smaller screens. The right/bottom pane is titled “Zoning Parameters” and uses an accessible accordion-like stack in Product Type order. Sections begin expanded; users may collapse them, but every group heading stays visible with text plus the existing Product Type color/badge. One shared footer retains Cancel and Update.
+When `zoning_groups` is non-empty, keep the bounded 800–900px desktop dialog and two-column layout, placing zoning below Area properties on smaller screens. The right/bottom pane has a prominent generic zoning heading followed by ordered lightweight Product Type headings and dense parameter rows, not tabs, collapsible cards, or a card per parameter. Each row places a persistent label beside a narrow native `input[type=number]`. Preserve the browser stepper, direct entry, arrow-key operation, min/max/step attributes, focus ring, described bounds, and validation feedback. Remove custom plus/minus buttons because they duplicate the native control. Product Type color may supplement text but never carry meaning alone. One bottom-right footer retains Cancel and Update.
 
-Tabs were considered because the owner suggested them. Sections are chosen because they keep multiple Product Types simultaneously discoverable, allow comparison and keyboard traversal without hidden tab panels, and adapt naturally to a vertical mobile layout. Each row uses a labelled `input type="number"` with min/max/step plus explicitly named minus/plus buttons. Client-side constraints improve feedback but the server remains authoritative.
+The supplied mockup's compact white pane, prominent heading, narrow controls, tight rhythm, and footer alignment guide hierarchy. Its circular custom controls are superseded by the owner's explicit native-stepper direction. A fixed `BusPro / KNX` heading is rejected because definitions stay generic and multiple Product Types may be active. Bounded internal scrolling keeps the header and footer reachable on narrow or content-heavy layouts. Client-side constraints improve feedback but the server remains authoritative.
 
 The Product Type management view gains an expandable parameters subtable using the existing extracted modal and action-button patterns. Create/edit uses one reusable form modal; delete confirmation is extracted and explains the deactivate alternative when referenced.
 
-### 7. Render one bounded SVG summary block per Area
+### 7. Share a pure deterministic annotation model across SVG and PNG
 
-Derive summary rows from positive values only, grouped and ordered exactly as returned. Anchor a non-pointer-interactive SVG group just inward from the existing longest-edge name pill, choosing the inward direction and clamping to the Area bounding box where practical. Use inverse-scale dimensions like the existing label, fixed maximum width/row count, per-row ellipsis/clip paths plus `<title>` text, and a final `+N more` row that counts all omitted positive parameter rows. Product Type headings use text and color; meaning never relies on color alone.
+Add a pure frontend annotation module consumed by `ConfiguratorCanvas`/`AreaPolygon` and `floorplan-export.ts`. Its inputs are ordered Area zoning groups, Area polygon/name-label bounds, visible product-placement rectangles in natural floorplan coordinates, earlier annotation bounds in stable Area-ID order, image bounds, and a scale descriptor. Its immutable output contains positive-only grouped lines, full and displayed text, omitted-row count, a normalized anchor/collision rectangle, and style tokens; it performs no DOM or canvas work.
 
-One block avoids scattered labels and keeps dragging behavior unchanged. Rendering every value or allowing an unbounded foreign-object panel was rejected because small Areas and zoomed floorplans would become unreadable.
+Use a fixed candidate order derived from Area edges and centroid. Reject candidates intersecting visible placements; prefer the first candidate not intersecting an earlier annotation or Area-name label; clamp only when collision constraints survive. Reduce rows in stable group/parameter order with `+N more` when a complete annotation cannot fit. If no minimum safe candidate exists, omit it rather than cover a product. Stable Area-ID processing, fixed metrics, and explicit padding make the result repeatable.
+
+Render text directly with no summary rectangle or large opaque panel. SVG and canvas share font family, weight, line-height ratio, alignment, and dual-contrast foreground plus opposite outline/halo tokens. This edge separation remains readable on varied imagery without nondeterministic pixel sampling or color-only meaning. SVG adds accessible full text/title and `pointer-events: none`.
+
+“Match” is semantic and proportional, not pixel-identical: both surfaces use identical descriptor lines, order, omitted count, normalized anchor, collision decision, and style constants. `AreaPolygon` maps natural coordinates through its SVG viewBox/zoom behavior; the exporter maps them once to the natural-resolution canvas and scales font, line height, outline, and padding proportionally. Raster antialiasing may differ. Layout/drawing exceptions abort before image encoding or link activation so export cannot silently omit requested annotations.
+
+Alternatives rejected were the opaque panel (obstructive), separate SVG/canvas algorithms (drift), background-pixel sampling (rendering and cross-origin variability), layout without placement geometry (covers products), and DOM capture (changes the established export sizing/pipeline).
 
 ### 8. Verification is scenario-driven and includes independent UI review
 
-Create a traceability table during implementation mapping every delta-spec scenario to Deno, Vitest, Cucumber/Playwright, or a justified independent review assertion. Tag the new feature/scenarios with Issue #89 metadata accepted by the repository traceability checker. Cucumber steps configure definitions through real authenticated API/admin UI seams, edit through the real browser UI, reload, and assert both API persistence and SVG output. Focused accessibility assertions cover names, keyboard controls, focus, dialog responsiveness, clipped-title exposure, and conflict/error recovery.
+Create a traceability table during implementation mapping every delta-spec scenario to Deno, Vitest, Cucumber/Playwright, or a justified independent review assertion. Tag the new feature/scenarios with Issue #89 metadata accepted by the repository traceability checker. Cucumber steps use the real authenticated runtime, edit and reload values, assert SVG output, trigger the existing PNG export, decode the downloaded raster, and assert representative text/style/collision evidence rather than merely a download event. Focused tests cover deterministic ordering, anchors, collision and scaling; SVG/canvas parity; fail-closed export; native input semantics; accessible names; keyboard operation; focus; responsiveness; full-text exposure; and error recovery.
 
-Because Area editing and floorplan rendering visibly change, independent Playwright UI review applies at desktop and narrow viewports after automated suites pass. Independent code and test review also apply under the governed workflow.
+Accessibility covers label association, native spinbutton semantics, visible focus, keyboard/manual entry, contrast, non-color group identity, accessible full annotation text, and pointer pass-through. Responsive review covers desktop, phone-width stacking, internal overflow, and action reachability. Performance fixtures use many Areas and placements; the pure layout sorts once, checks bounded candidates, avoids DOM measurement/image sampling, and adds no backend queries. Because Area editing, floorplan rendering, and exported presentation change visibly, independent Playwright UI review applies at desktop and narrow viewports after automated suites pass. Independent code and test review also apply under the governed workflow.
 
 ### 9. Copy Area zoning values through the existing project-version identity maps
 
@@ -125,7 +133,9 @@ Alternatives considered were copying values with the source Area IDs (creates cr
 - [Renames alter historical wording] → Deliberately display the current reusable definition name while stable identity preserves numeric values; historical snapshots are a non-goal.
 - [Deactivated/unselected values become invisible but still occupy storage] → Preserve them for reversible configuration and expose them again only when applicable; administrators can see definition usage before attempting deletion.
 - [Current Area authorization is broader than intended] → Add tenant-scoped joins and regression tests for every Area route in the touched surface, returning non-disclosing 404s.
-- [SVG summaries can crowd very small polygons] → Clamp dimensions, cap rows, ellipsize, and use `+N more`; accept that the compact summary conveys a subset while the editor provides all values.
+- [Annotations can crowd small Areas or dense placement layouts] → Use bounded candidates, placement/name/annotation collision geometry, stable row reduction with `+N more`, and omit when no safe minimum exists; the editor remains complete.
+- [SVG and canvas text metrics can differ] → Use conservative fixed metrics and shared proportional style constants, assert semantic/normalized-anchor parity, and allow only raster antialiasing differences.
+- [PNG annotation failure could yield misleading output] → Complete layout/drawing before encoding or activating a download and fail the existing export operation as a whole.
 - [SQLite schema rollback cannot safely drop an added column in all deployed versions] → Treat rollback as application rollback with additive tables/column left dormant; do not destructively down-migrate production data.
 - [An incomplete Area ID map could silently omit zoning values] → Select only source-version Area rows, require every selected source Area to have a destination mapping, and roll back the complete version creation on any mismatch or insert failure.
 - [Copied values could accidentally remain coupled to the source version] → Insert independent destination rows keyed by new Area IDs, retain only the shared stable parameter identity, and test edits in both directions after copying.
