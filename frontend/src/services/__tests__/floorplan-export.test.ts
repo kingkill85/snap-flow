@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { exportFloorplanImage } from '../floorplan-export';
+import { drawZoningAnnotation, exportFloorplanImage } from '../floorplan-export';
 import type { Floorplan } from '../floorplan';
 import type { Placement } from '../placement';
 import type { Item } from '../item';
@@ -31,6 +31,8 @@ describe('exportFloorplanImage', () => {
       translate: vi.fn(),
       rotate: vi.fn(),
       beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
       moveTo: vi.fn(),
       lineTo: vi.fn(),
       quadraticCurveTo: vi.fn(),
@@ -302,7 +304,37 @@ describe('exportFloorplanImage', () => {
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea], undefined, undefined, [descriptor]);
     expect(descriptor.anchor).toBeTruthy();
     expect(mockCtx.strokeText).toHaveBeenCalledWith(descriptor.lines[0].displayText, presentation.textX, presentation.firstBaselineY);
+    expect(mockCtx.rect).toHaveBeenCalledWith(
+      presentation.clipBounds.x,
+      presentation.clipBounds.y,
+      presentation.clipBounds.width,
+      presentation.clipBounds.height,
+    );
+    expect(mockCtx.clip).toHaveBeenCalled();
     expect(mockCtx.fillText).toHaveBeenCalledTimes(descriptor.lines.length + (descriptor.omitted > 0 ? 1 : 0) + 1); // Area name plus annotation rows.
+  });
+
+  it('clips max-length wide-glyph raster text to the shared accepted descriptor', () => {
+    const descriptor = Object.freeze({
+      areaId: 89,
+      lines: Object.freeze([{ fullText: 'W'.repeat(100), displayText: `${'W'.repeat(22)}…` }]),
+      omitted: 0,
+      bounds: Object.freeze({ x: 0, y: 112, width: 600, height: 56 }),
+      anchor: 'below-name',
+      accessibleText: 'W'.repeat(100),
+    });
+    const presentation = getAnnotationPresentation(descriptor, 1);
+    drawZoningAnnotation(mockCtx, descriptor);
+    expect(mockCtx.rect).toHaveBeenCalledWith(
+      presentation.clipBounds.x,
+      presentation.clipBounds.y,
+      presentation.clipBounds.width,
+      presentation.clipBounds.height,
+    );
+    expect(vi.mocked(mockCtx.clip).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(mockCtx.strokeText).mock.invocationCallOrder[0],
+    );
+    expect(mockCtx.strokeText).toHaveBeenCalledWith(descriptor.lines[0].displayText, expect.any(Number), expect.any(Number));
   });
 
   it('omits hidden Area annotations', async () => {

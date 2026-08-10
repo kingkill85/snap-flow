@@ -6,7 +6,9 @@ import type { SnapFlowWorld } from '../support/world.ts';
 
 type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: number; value: number };
 type Bounds = { x: number; y: number; width: number; height: number };
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string };
+
+const WIDE_GLYPH_NAME = 'W'.repeat(100);
 
 const authHeaders = (world: ZoningWorld) => ({ Authorization: `Bearer ${world.token}` });
 let cachedAdminAuth: { accessToken: string; refreshToken: string } | undefined;
@@ -135,11 +137,14 @@ Then('zero-valued parameters and empty Product Type groups are absent', async fu
 
 Given('an Area has more positive values than fit within the summary bounds and some names are long', async function (this: ZoningWorld) {
   await setupArea(this, 2, 4); await saveValues(this, Array(8).fill(2));
+  this.wideGlyphName = WIDE_GLYPH_NAME;
+  const renamed = await this.page!.request.put(`${this.apiUrl}/api/item-types/${this.itemTypeIds[0]}`, { headers: authHeaders(this), data: { name: this.wideGlyphName } });
+  expect(renamed.status()).toBe(200);
   const secondResponse = await this.page!.request.post(`${this.apiUrl}/api/areas`, { headers: authHeaders(this), data: { floorplan_id: this.floorplanId, x: 550, y: 30, width: 400, height: 300, name: 'Nearby Review Area' } });
   const second = (await secondResponse.json()).data;
   const saved = await this.page!.request.put(`${this.apiUrl}/api/areas/${second.id}`, { headers: authHeaders(this), data: { revision: second.revision, applicable_parameter_ids: this.parameterIds, zoning_values: this.parameterIds.map((parameter_id) => ({ parameter_id, value: 2 })) } });
   expect(saved.status()).toBe(200);
-  await createNearbyRotatedProduct(this, { x: 200, y: 320, width: 200, height: 40, rotation: 0 });
+  await createNearbyRotatedProduct(this, { x: 970, y: 120, width: 40, height: 40, rotation: 0 });
 });
 When('the floorplan renders at any supported zoom', async function (this: ZoningWorld) {
   await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); this.cssBounds = [];
@@ -152,7 +157,7 @@ When('the floorplan renders at any supported zoom', async function (this: Zoning
   ];
   for (const { label, zoom, action } of sequence) {
     await action(); await expect(this.page!.getByText(`${zoom}%`, { exact: true })).toBeVisible();
-    const annotations = (await this.page!.getByTestId('area-zoning-annotation').all()).map(async (locator) => (await locator.boundingBox())!);
+    const annotations = (await this.page!.getByTestId('area-zoning-clip-boundary').all()).map(async (locator) => (await locator.boundingBox())!);
     const names = (await this.page!.getByTestId('area-name-label-bounds').all()).map(async (locator) => (await locator.boundingBox())!);
     const image = await this.page!.locator('[data-floorplan-image="true"]').boundingBox();
     const product = await this.page!.locator(`[data-placement-id="${this.productId}"]`).boundingBox();
@@ -168,7 +173,9 @@ Then('visible rows stay within the bounded summary', async function (this: Zonin
       expect(annotation.width).toBeGreaterThan(0); expect(annotation.width).toBeLessThanOrEqual(230); expect(annotation.height).toBeLessThanOrEqual(150);
       expect(annotation.x, `${label} image left`).toBeGreaterThanOrEqual(image.x - 1); expect(annotation.y, `${label} image top`).toBeGreaterThanOrEqual(image.y - 1);
       expect(annotation.x + annotation.width, `${label} image right`).toBeLessThanOrEqual(image.x + image.width + 1); expect(annotation.y + annotation.height, `${label} image bottom`).toBeLessThanOrEqual(image.y + image.height + 1);
-      expect(separated(annotation, product), `${label} product collision`).toBe(true);
+      if (!separated(annotation, product)) throw new Error(
+        `${label} product collision annotation=${JSON.stringify(annotation)} product=${JSON.stringify(product)}`,
+      );
       for (const name of names) {
         if (!separated(annotation, name)) throw new Error(
           `${label} name collision annotation=${JSON.stringify(annotation)} name=${JSON.stringify(name)}`,
@@ -178,7 +185,11 @@ Then('visible rows stay within the bounded summary', async function (this: Zonin
     for (let index = 1; index < annotations.length; index++) expect(separated(annotations[index - 1], annotations[index]), `${label} prior annotation collision`).toBe(true);
   }
 });
-Then('truncated content exposes full text accessibly', async function (this: ZoningWorld) { const annotation = this.page!.getByTestId('area-zoning-annotation'); expect(await annotation.locator('title').count()).toBeGreaterThan(0); });
+Then('truncated content exposes full text accessibly', async function (this: ZoningWorld) {
+  const annotation = this.page!.getByTestId('area-zoning-annotation');
+  expect(await annotation.locator('title').count()).toBeGreaterThan(0);
+  await expect(annotation.first()).toHaveAccessibleName(new RegExp(this.wideGlyphName));
+});
 Then('a `+N more` row reports the omitted positive values', async function (this: ZoningWorld) {
   for (const annotation of await this.page!.getByTestId('area-zoning-annotation').all()) {
     const omitted = Number(await annotation.getAttribute('data-omitted'));
@@ -205,7 +216,14 @@ When('the user selects or drags the underlying Area at the annotation position',
 Then('the existing Area interaction handles the pointer event', function (this: ZoningWorld) { expect(this.lastStatus).toBe(0); });
 Then('the annotation does not become a separate interaction target', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveCSS('pointer-events', 'none'); });
 
-Given('the interactive floorplan shows positive zoning annotations for visible Areas', async function (this: ZoningWorld) { await setupArea(this, 1, 2); await saveValues(this, [3, 0]); await createNearbyRotatedProduct(this); await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
+Given('the interactive floorplan shows positive zoning annotations for visible Areas', async function (this: ZoningWorld) {
+  await setupArea(this, 1, 2); await saveValues(this, [3, 0]);
+  this.wideGlyphName = `${'W'.repeat(99)}P`;
+  const renamed = await this.page!.request.put(`${this.apiUrl}/api/item-types/${this.itemTypeIds[0]}`, { headers: authHeaders(this), data: { name: this.wideGlyphName } });
+  expect(renamed.status()).toBe(200);
+  await createNearbyRotatedProduct(this, { x: 650, y: 120, width: 65, height: 40, rotation: 0 });
+  await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible();
+});
 When('the user invokes the existing PNG floorplan export with the same Area, placement, and visibility state', async function (this: ZoningWorld) {
   const annotation = this.page!.getByTestId('area-zoning-annotation');
   const serializedBounds = await annotation.getAttribute('data-export-bounds');
@@ -214,12 +232,15 @@ When('the user invokes the existing PNG floorplan export with the same Area, pla
   this.annotationBounds = { x, y, width, height };
   this.annotationAnchor = await annotation.getAttribute('data-anchor') ?? '';
   this.annotationOmitted = Number(await annotation.getAttribute('data-omitted'));
+  this.annotationAccessibleText = await annotation.getAttribute('aria-label') ?? '';
   await this.page!.evaluate(() => {
     const prototype = CanvasRenderingContext2D.prototype as CanvasRenderingContext2D & { __issue89Wrapped?: boolean };
     if (prototype.__issue89Wrapped) return;
     prototype.__issue89Wrapped = true;
     const originalStrokeText = prototype.strokeText;
     const originalFillText = prototype.fillText;
+    const originalRect = prototype.rect;
+    const originalClip = prototype.clip as (...args: unknown[]) => void;
     (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText = [];
     prototype.strokeText = function (text, x, y, maxWidth) {
       (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'stroke', text, x, y, strokeStyle: this.strokeStyle, lineWidth: this.lineWidth });
@@ -233,6 +254,14 @@ When('the user invokes the existing PNG floorplan export with the same Area, pla
         ? originalFillText.call(this, text, x, y)
         : originalFillText.call(this, text, x, y, maxWidth);
     };
+    prototype.rect = function (x, y, width, height) {
+      (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'clip-rect', x, y, width, height });
+      return originalRect.call(this, x, y, width, height);
+    };
+    (prototype as unknown as { clip: (...args: unknown[]) => void }).clip = function (...args: unknown[]) {
+      (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'clip' });
+      return Reflect.apply(originalClip, this, args);
+    };
   });
   const downloadPromise = this.page!.waitForEvent('download');
   await this.page!.getByTitle('Export floorplan image').click();
@@ -243,12 +272,16 @@ When('the user invokes the existing PNG floorplan export with the same Area, pla
 Then('the PNG contains the same grouped annotation text, ordering, omission count, normalized anchors, and contrast treatment', async function (this: ZoningWorld) {
   expect(this.downloadBytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
   const calls = await this.page!.evaluate(() => (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText);
-  const stroke = calls.find((call) => call.kind === 'stroke' && String(call.text).includes('Issue89 Type 0'));
-  const fill = calls.find((call) => call.kind === 'fill' && String(call.text).includes('Issue89 Type 0'));
+  const stroke = calls.find((call) => call.kind === 'stroke' && String(call.text).includes('W'));
+  const fill = calls.find((call) => call.kind === 'fill' && String(call.text).includes('W'));
   expect(stroke?.strokeStyle).toBe('#111827'); expect(stroke?.lineWidth).toBe(3); expect(fill?.fillStyle).toBe('#ffffff');
   const rasterX = Number(stroke?.x); const rasterY = Number(stroke?.y);
   expect(this.annotationAnchor).not.toBe(''); expect(this.annotationOmitted).toBeGreaterThanOrEqual(0);
+  expect(this.annotationAccessibleText).toContain(this.wideGlyphName);
   expect(rasterX).toBeCloseTo(this.annotationBounds.x + 7); expect(rasterY).toBeCloseTo(this.annotationBounds.y + 9);
+  const clipRect = calls.find((call) => call.kind === 'clip-rect' && Number(call.x) === this.annotationBounds.x);
+  expect(clipRect).toMatchObject({ ...this.annotationBounds, kind: 'clip-rect' });
+  expect(calls.findIndex((call) => call === clipRect)).toBeLessThan(calls.findIndex((call) => call === stroke));
   const overflowCalls = calls.filter((call) => /^\+\d+ more$/.test(String(call.text)) && call.kind === 'fill');
   expect(overflowCalls).toHaveLength(this.annotationOmitted > 0 ? 1 : 0);
   const separated = this.annotationBounds.x + this.annotationBounds.width <= this.productBounds.x || this.annotationBounds.x >= this.productBounds.x + this.productBounds.width || this.annotationBounds.y + this.annotationBounds.height <= this.productBounds.y || this.annotationBounds.y >= this.productBounds.y + this.productBounds.height;

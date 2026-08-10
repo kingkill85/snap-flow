@@ -24,6 +24,7 @@ export interface ZoningAnnotationDescriptor {
 
 export interface AnnotationPresentation {
   bounds: Readonly<AnnotationRect>;
+  clipBounds: Readonly<AnnotationRect>;
   effectiveScale: number;
   fontSize: number;
   lineHeight: number;
@@ -51,6 +52,8 @@ export const ZONING_ANNOTATION_STYLE = Object.freeze({
   foreground: '#ffffff',
   outline: '#111827',
   outlineWidth: 3,
+  // Used only for deterministic ellipsis. Shared renderer clipping is the
+  // fail-closed paint boundary for wide and fallback glyphs.
   characterWidthRatio: 0.58,
   canonicalMinScale: 0.25,
 });
@@ -179,6 +182,7 @@ export function getAnnotationPresentation(
   const outlineWidth = ZONING_ANNOTATION_STYLE.outlineWidth / scale;
   return Object.freeze({
     bounds,
+    clipBounds: bounds,
     effectiveScale: scale,
     fontSize: ZONING_ANNOTATION_STYLE.fontSize / scale,
     lineHeight: ZONING_ANNOTATION_STYLE.lineHeight / scale,
@@ -214,16 +218,19 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 
 function displayedLines(rows: readonly string[], visibleCount: number, width: number) {
   const maxCharacters = Math.max(
-    8,
+    1,
     Math.floor((width - (ZONING_ANNOTATION_STYLE.padding + ZONING_ANNOTATION_STYLE.outlineWidth) * 2) /
       (ZONING_ANNOTATION_STYLE.fontSize * ZONING_ANNOTATION_STYLE.characterWidthRatio)),
   );
-  return rows.slice(0, visibleCount).map((fullText) => ({
-    fullText,
-    displayText: fullText.length > maxCharacters
-      ? `${fullText.slice(0, maxCharacters - 1)}…`
-      : fullText,
-  }));
+  return rows.slice(0, visibleCount).map((fullText) => {
+    const glyphs = Array.from(fullText);
+    return {
+      fullText,
+      displayText: glyphs.length > maxCharacters
+        ? `${glyphs.slice(0, maxCharacters - 1).join('')}…`
+        : fullText,
+    };
+  });
 }
 
 export function layoutZoningAnnotations({

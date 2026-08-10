@@ -19,6 +19,8 @@ describe('AreaPolygon zoning annotation', () => {
     const rendered = screen.getByLabelText(/Zoning annotation/);
     expect(rendered).toHaveStyle({ pointerEvents: 'none' });
     expect(container.querySelector('[data-testid="area-zoning-annotation"] rect')).toBeNull();
+    expect(container.querySelector('[data-testid="area-zoning-text-clip"]')).toHaveAttribute('clip-path', 'url(#zoning-annotation-clip-1)');
+    expect(container.querySelector('#zoning-annotation-clip-1 path')).not.toBeNull();
     expect(container.textContent).not.toContain('name 0: 0');
     expect(container.textContent).toContain(`+${annotation.omitted} more`);
     expect(container.querySelector('title')?.textContent).toContain('Lighting');

@@ -246,6 +246,14 @@ export function drawZoningAnnotation(
     ctx.lineWidth = presentation.outlineWidth;
     ctx.strokeStyle = ZONING_ANNOTATION_STYLE.outline;
     ctx.fillStyle = ZONING_ANNOTATION_STYLE.foreground;
+    ctx.beginPath();
+    ctx.rect(
+      presentation.clipBounds.x,
+      presentation.clipBounds.y,
+      presentation.clipBounds.width,
+      presentation.clipBounds.height,
+    );
+    ctx.clip();
     const drawLine = (text: string, index: number) => {
       const x = presentation.textX;
       const y = presentation.firstBaselineY + index * presentation.lineHeight;

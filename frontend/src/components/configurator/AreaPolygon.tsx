@@ -444,41 +444,48 @@ export function AreaPolygon({
           aria-label={`Zoning annotation: ${zoningAnnotation.accessibleText}`}
           style={{ pointerEvents: 'none' }}
         >
-          {zoningAnnotation.lines.map((line, index) => (
-            <text
-              key={`${index}-${line.fullText}`}
-              x={annotationPresentation.textX}
-              y={annotationPresentation.firstBaselineY + index * annotationPresentation.lineHeight}
-              fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
-              fontSize={annotationPresentation.fontSize}
-              fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
-              fill={ZONING_ANNOTATION_STYLE.foreground}
-              stroke={ZONING_ANNOTATION_STYLE.outline}
-              strokeWidth={annotationPresentation.outlineWidth}
-              strokeLinejoin="round"
-              paintOrder="stroke fill"
-              style={{ userSelect: 'none' }}
-            >
-              <title>{line.fullText}</title>
-              {line.displayText}
-            </text>
-          ))}
-          {zoningAnnotation.omitted > 0 && (
-            <text
-              x={annotationPresentation.textX}
-              y={annotationPresentation.firstBaselineY + zoningAnnotation.lines.length * annotationPresentation.lineHeight}
-              fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
-              fontSize={annotationPresentation.fontSize}
-              fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
-              fill={ZONING_ANNOTATION_STYLE.foreground}
-              stroke={ZONING_ANNOTATION_STYLE.outline}
-              strokeWidth={annotationPresentation.outlineWidth}
-              strokeLinejoin="round"
-              paintOrder="stroke fill"
-            >
-              +{zoningAnnotation.omitted} more
-            </text>
-          )}
+          <defs>
+            <clipPath id={`zoning-annotation-clip-${area.id}`}>
+              <path data-testid="area-zoning-clip-boundary" d={`M ${annotationPresentation.clipBounds.x} ${annotationPresentation.clipBounds.y} h ${annotationPresentation.clipBounds.width} v ${annotationPresentation.clipBounds.height} h -${annotationPresentation.clipBounds.width} Z`} />
+            </clipPath>
+          </defs>
+          <g clipPath={`url(#zoning-annotation-clip-${area.id})`} data-testid="area-zoning-text-clip">
+            {zoningAnnotation.lines.map((line, index) => (
+              <text
+                key={`${index}-${line.fullText}`}
+                x={annotationPresentation.textX}
+                y={annotationPresentation.firstBaselineY + index * annotationPresentation.lineHeight}
+                fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
+                fontSize={annotationPresentation.fontSize}
+                fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
+                fill={ZONING_ANNOTATION_STYLE.foreground}
+                stroke={ZONING_ANNOTATION_STYLE.outline}
+                strokeWidth={annotationPresentation.outlineWidth}
+                strokeLinejoin="round"
+                paintOrder="stroke fill"
+                style={{ userSelect: 'none' }}
+              >
+                <title>{line.fullText}</title>
+                {line.displayText}
+              </text>
+            ))}
+            {zoningAnnotation.omitted > 0 && (
+              <text
+                x={annotationPresentation.textX}
+                y={annotationPresentation.firstBaselineY + zoningAnnotation.lines.length * annotationPresentation.lineHeight}
+                fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
+                fontSize={annotationPresentation.fontSize}
+                fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
+                fill={ZONING_ANNOTATION_STYLE.foreground}
+                stroke={ZONING_ANNOTATION_STYLE.outline}
+                strokeWidth={annotationPresentation.outlineWidth}
+                strokeLinejoin="round"
+                paintOrder="stroke fill"
+              >
+                +{zoningAnnotation.omitted} more
+              </text>
+            )}
+          </g>
         </g>
       ) : null}
 

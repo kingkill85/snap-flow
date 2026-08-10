@@ -101,6 +101,26 @@ describe('zoning annotation layout', () => {
       .toBeLessThanOrEqual(quarter.bounds.y + quarter.bounds.height);
   });
 
+  it('contains max-length wide glyphs inside the canonical horizontal paint envelope', () => {
+    const wideArea = resizedArea(1, 0, 600, 400, 1);
+    wideArea.zoning_groups[0].item_type.name = 'W'.repeat(100);
+    wideArea.zoning_groups[0].parameters = Array.from({ length: 8 }, (_, index) => ({
+      id: index + 1, name: `Wide ${index + 1}`, sort_order: index, value: index + 1,
+    }));
+    const product = { x: 625, y: 120, width: 65, height: 40 };
+    const descriptor = layoutZoningAnnotations({
+      areas: [wideArea], productBounds: [product], imageBounds: { x: 0, y: 0, width: 700, height: 500 },
+    })[0];
+    const quarter = getAnnotationPresentation(descriptor, 0.25);
+    const fitted = getAnnotationPresentation(descriptor, 0.18);
+    expect(fitted).toEqual(quarter);
+    expect(descriptor.lines[0].fullText).toContain('W'.repeat(100));
+    expect(descriptor.lines[0].displayText).toMatch(/^W+…$/);
+    expect(quarter.clipBounds).toEqual(quarter.bounds);
+    expect(quarter.clipBounds.x + quarter.clipBounds.width).toBeLessThan(product.x);
+    expect(quarter.clipBounds.x + quarter.clipBounds.width).toBeLessThanOrEqual(700);
+  });
+
   it('keeps the no-product 25% line envelope inside the image and prior annotations', () => {
     const firstArea = resizedArea(1, 0, 600, 400, 1);
     firstArea.zoning_groups[0].parameters = Array.from({ length: 8 }, (_, index) => ({ id: index + 1, name: `Parameter ${index + 1}`, sort_order: index, value: index + 1 }));
