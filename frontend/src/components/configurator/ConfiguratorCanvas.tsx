@@ -22,7 +22,7 @@ import type { FloorplanBom } from '@/services/bom';
 import { exportFloorplanImage } from '@/services/floorplan-export';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AreaPolygon } from './AreaPolygon';
-import { layoutZoningAnnotations } from './zoning-annotation';
+import { getPlacementCollisionBounds, layoutZoningAnnotations } from './zoning-annotation';
 import type { Area } from '@/services/area';
 
 // CSS keyframes for fade-in animation (50ms for snappy feel)
@@ -1368,15 +1368,9 @@ export function ConfiguratorCanvas({
   }), [placements, items, visibleCategoryIds, hiddenTypeIds]);
   const zoningAnnotations = useMemo(() => layoutZoningAnnotations({
     areas: visibleAreas,
-    productBounds: visibleProductPlacements.map((placement) => ({
-      x: placement.x,
-      y: placement.y,
-      width: placement.width,
-      height: placement.height,
-    })),
+    productBounds: visibleProductPlacements.map(getPlacementCollisionBounds),
     imageBounds: { x: 0, y: 0, width: imageNaturalSize.width, height: imageNaturalSize.height },
-    displayScale: Math.min(scaledScaleX, scaledScaleY) || 1,
-  }), [visibleAreas, visibleProductPlacements, imageNaturalSize.width, imageNaturalSize.height, scaledScaleX, scaledScaleY]);
+  }), [visibleAreas, visibleProductPlacements, imageNaturalSize.width, imageNaturalSize.height]);
   const zoningAnnotationsByArea = useMemo(
     () => new Map(zoningAnnotations.map((annotation) => [annotation.areaId, annotation])),
     [zoningAnnotations],
@@ -1406,7 +1400,7 @@ export function ConfiguratorCanvas({
   const handleExportImage = async () => {
     setExportError('');
     try {
-      await exportFloorplanImage(floorplan, placements, items, {}, visibleCategoryIds, areas, hiddenAreaIds, hiddenTypeIds);
+      await exportFloorplanImage(floorplan, placements, items, {}, visibleCategoryIds, areas, hiddenAreaIds, hiddenTypeIds, zoningAnnotations);
     } catch (err) {
       console.error('Failed to export floorplan:', err);
       setExportError(err instanceof Error ? err.message : 'Failed to export floorplan image');

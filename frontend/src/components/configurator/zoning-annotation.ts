@@ -1,4 +1,5 @@
 import type { Area } from '@/services/area';
+import type { Placement } from '@/services/placement';
 
 export interface AnnotationRect {
   x: number;
@@ -19,7 +20,20 @@ export interface ZoningAnnotationDescriptor {
   bounds: Readonly<AnnotationRect>;
   anchor: string;
   accessibleText: string;
-  presentationScale: number;
+}
+
+export interface AnnotationPresentation {
+  bounds: Readonly<AnnotationRect>;
+  fontSize: number;
+  lineHeight: number;
+  outlineWidth: number;
+}
+
+export interface AreaNameLabelGeometry {
+  bounds: Readonly<AnnotationRect>;
+  center: Readonly<{ x: number; y: number }>;
+  fontSize: number;
+  radius: number;
 }
 
 export const ZONING_ANNOTATION_STYLE = Object.freeze({
@@ -35,13 +49,13 @@ export const ZONING_ANNOTATION_STYLE = Object.freeze({
   outline: '#111827',
   outlineWidth: 3,
   characterWidthRatio: 0.58,
+  canonicalMinScale: 0.5,
 });
 
 interface LayoutInput {
   areas: readonly Area[];
   productBounds: readonly AnnotationRect[];
   imageBounds: AnnotationRect;
-  displayScale?: number;
 }
 
 const intersects = (a: AnnotationRect, b: AnnotationRect, padding = 0) =>
@@ -59,13 +73,9 @@ const areaBounds = (area: Area): AnnotationRect | null => {
   return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
 };
 
-export function getAreaNameLabelBounds(area: Area): AnnotationRect | null {
+function labelAnchor(area: Area) {
   const bounds = areaBounds(area);
   if (!bounds) return null;
-  const label = area.name || 'Area';
-  const fontSize = 12;
-  const width = label.length * fontSize * 0.6 + 12;
-  const height = fontSize + 6;
   const vertices = [...area.vertices].sort((a, b) => a.vertex_index - b.vertex_index);
   const centroid = vertices.reduce(
     (sum, vertex) => ({ x: sum.x + vertex.x / vertices.length, y: sum.y + vertex.y / vertices.length }),
@@ -93,10 +103,79 @@ export function getAreaNameLabelBounds(area: Area): AnnotationRect | null {
       inwardY: direction * ny / normalLength,
     };
   });
-  const inset = height / 2 + 4;
-  const centerX = best.x + best.inwardX * inset;
-  const centerY = best.y + best.inwardY * inset;
-  return { x: centerX - width / 2, y: centerY - height / 2, width, height };
+  return best;
+}
+
+export function getAreaNameLabelGeometry(area: Area, displayScale = 1): AreaNameLabelGeometry | null {
+  const anchor = labelAnchor(area);
+  if (!anchor) return null;
+  const scale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
+  const label = area.name || 'Area';
+  const fontSize = 12 / scale;
+  const padX = 6 / scale;
+  const padY = 3 / scale;
+  const width = label.length * fontSize * 0.6 + padX * 2;
+  const height = fontSize + padY * 2;
+  const inset = height / 2 + 4 / scale;
+  const center = {
+    x: anchor.x + anchor.inwardX * inset,
+    y: anchor.y + anchor.inwardY * inset,
+  };
+  return Object.freeze({
+    bounds: Object.freeze({ x: center.x - width / 2, y: center.y - height / 2, width, height }),
+    center: Object.freeze(center),
+    fontSize,
+    radius: 4 / scale,
+  });
+}
+
+const unionRects = (rectangles: readonly AnnotationRect[]): AnnotationRect => {
+  const left = Math.min(...rectangles.map((rectangle) => rectangle.x));
+  const top = Math.min(...rectangles.map((rectangle) => rectangle.y));
+  const right = Math.max(...rectangles.map((rectangle) => rectangle.x + rectangle.width));
+  const bottom = Math.max(...rectangles.map((rectangle) => rectangle.y + rectangle.height));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+};
+
+export function getCanonicalAreaNameLabelBounds(area: Area): AnnotationRect | null {
+  const geometries = [ZONING_ANNOTATION_STYLE.canonicalMinScale, 1, 1.5]
+    .map((scale) => getAreaNameLabelGeometry(area, scale))
+    .filter((geometry): geometry is AreaNameLabelGeometry => geometry !== null);
+  return geometries.length ? unionRects(geometries.map((geometry) => geometry.bounds)) : null;
+}
+
+export function getPlacementCollisionBounds(
+  placement: Pick<Placement, 'x' | 'y' | 'width' | 'height' | 'rotation'>,
+): AnnotationRect {
+  const radians = (placement.rotation || 0) * Math.PI / 180;
+  const width = Math.abs(placement.width * Math.cos(radians)) + Math.abs(placement.height * Math.sin(radians));
+  const height = Math.abs(placement.width * Math.sin(radians)) + Math.abs(placement.height * Math.cos(radians));
+  const centerX = placement.x + placement.width / 2;
+  const centerY = placement.y + placement.height / 2;
+  return Object.freeze({ x: centerX - width / 2, y: centerY - height / 2, width, height });
+}
+
+export function getAnnotationPresentation(
+  annotation: ZoningAnnotationDescriptor,
+  displayScale = 1,
+): AnnotationPresentation {
+  const scale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
+  const desiredWidth = ZONING_ANNOTATION_STYLE.maxWidth / scale;
+  const desiredHeight = (annotation.lines.length + (annotation.omitted > 0 ? 1 : 0)) *
+    ZONING_ANNOTATION_STYLE.lineHeight / scale;
+  const width = Math.min(annotation.bounds.width, desiredWidth);
+  const height = Math.min(annotation.bounds.height, desiredHeight);
+  return Object.freeze({
+    bounds: Object.freeze({
+      x: annotation.bounds.x + (annotation.bounds.width - width) / 2,
+      y: annotation.bounds.y + (annotation.bounds.height - height) / 2,
+      width,
+      height,
+    }),
+    fontSize: ZONING_ANNOTATION_STYLE.fontSize / scale,
+    lineHeight: ZONING_ANNOTATION_STYLE.lineHeight / scale,
+    outlineWidth: ZONING_ANNOTATION_STYLE.outlineWidth / scale,
+  });
 }
 
 const positiveRows = (area: Area) => {
@@ -140,12 +219,11 @@ export function layoutZoningAnnotations({
   areas,
   productBounds,
   imageBounds,
-  displayScale = 1,
 }: LayoutInput): readonly ZoningAnnotationDescriptor[] {
-  const presentationScale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
-  const scaled = (value: number) => value / presentationScale;
+  const canonicalScale = ZONING_ANNOTATION_STYLE.canonicalMinScale;
+  const scaled = (value: number) => value / canonicalScale;
   const orderedAreas = [...areas].sort((a, b) => a.id - b.id);
-  const nameBounds = orderedAreas.map(getAreaNameLabelBounds).filter(
+  const nameBounds = orderedAreas.map(getCanonicalAreaNameLabelBounds).filter(
     (bounds): bounds is AnnotationRect => bounds !== null,
   );
   const placed: AnnotationRect[] = [];
@@ -191,7 +269,7 @@ export function layoutZoningAnnotations({
         if (productBounds.some((product) => intersects(candidateBounds, product, collisionPadding))) continue;
         if (nameBounds.some((name) => intersects(candidateBounds, name, collisionPadding))) continue;
         if (placed.some((annotation) => intersects(candidateBounds, annotation, collisionPadding))) continue;
-        const lines = displayedLines(rows, visibleCount, width * presentationScale);
+        const lines = displayedLines(rows, visibleCount, width * canonicalScale);
         descriptor = Object.freeze({
           areaId: area.id,
           lines: Object.freeze(lines),
@@ -199,7 +277,6 @@ export function layoutZoningAnnotations({
           bounds: Object.freeze(candidateBounds),
           anchor: candidate.name,
           accessibleText: [...rows.slice(0, visibleCount), ...(omitted ? [`+${omitted} more`] : [])].join('; '),
-          presentationScale,
         });
         break;
       }

@@ -5,6 +5,9 @@ import type { Area } from './area';
 import { itemService } from './item';
 import {
   layoutZoningAnnotations,
+  getAnnotationPresentation,
+  getAreaNameLabelGeometry,
+  getPlacementCollisionBounds,
   ZONING_ANNOTATION_STYLE,
   type ZoningAnnotationDescriptor,
 } from '@/components/configurator/zoning-annotation';
@@ -122,6 +125,7 @@ export async function exportFloorplanImage(
   areas?: Area[],
   hiddenAreaIds?: Set<number>,
   hiddenTypeIds?: Set<number>,
+  preparedZoningAnnotations?: readonly ZoningAnnotationDescriptor[],
 ): Promise<void> {
   const { quality = EXPORT_CONFIG.DEFAULT_QUALITY, backgroundColor } = options;
 
@@ -156,14 +160,9 @@ export async function exportFloorplanImage(
   const visibleAreas = areas
     ? areas.filter((area) => !hiddenAreaIds?.has(area.id))
     : [];
-  const zoningAnnotations = layoutZoningAnnotations({
+  const zoningAnnotations = preparedZoningAnnotations ?? layoutZoningAnnotations({
     areas: visibleAreas,
-    productBounds: filteredPlacements.map((placement) => ({
-      x: placement.x,
-      y: placement.y,
-      width: placement.width,
-      height: placement.height,
-    })),
+    productBounds: filteredPlacements.map(getPlacementCollisionBounds),
     imageBounds: { x: 0, y: 0, width: canvasWidth, height: canvasHeight },
   });
 
@@ -193,50 +192,19 @@ export async function exportFloorplanImage(
 
       // Name label — longest edge, offset inward (matching canvas SVG)
       const label = area.name || 'Area';
-      const centX = verts.reduce((s, v) => s + v.x, 0) / verts.length;
-      const centY = verts.reduce((s, v) => s + v.y, 0) / verts.length;
-
-      let bestLen = 0;
-      let midX = centX, midY = centY;
-      let inX = 0, inY = 0;
-
-      for (let i = 0; i < verts.length; i++) {
-        const a = verts[i];
-        const b = verts[(i + 1) % verts.length];
-        const len = Math.hypot(b.x - a.x, b.y - a.y);
-        if (len > bestLen) {
-          bestLen = len;
-          midX = (a.x + b.x) / 2;
-          midY = (a.y + b.y) / 2;
-          const nx = -(b.y - a.y);
-          const ny = b.x - a.x;
-          const nLen = Math.hypot(nx, ny) || 1;
-          const dot = (midX + nx / nLen - midX) * (centX - midX) + (midY + ny / nLen - midY) * (centY - midY);
-          const sign = dot >= 0 ? 1 : -1;
-          inX = sign * nx / nLen;
-          inY = sign * ny / nLen;
-        }
-      }
-
-      const padX = 8;
-      const padY = 5;
-      ctx.font = 'bold 16px sans-serif';
-      const metrics = ctx.measureText(label);
-      const textW = metrics.width + padX * 2;
-      const textH = 16 + padY * 2;
-      const insetDist = textH / 2 + 6;
-      const lx = midX + inX * insetDist;
-      const ly = midY + inY * insetDist;
+      const nameGeometry = getAreaNameLabelGeometry(area, 1);
+      if (!nameGeometry) continue;
 
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.beginPath();
-      ctx.roundRect(lx - textW / 2, ly - textH / 2, textW, textH, 4);
+      ctx.roundRect(nameGeometry.bounds.x, nameGeometry.bounds.y, nameGeometry.bounds.width, nameGeometry.bounds.height, nameGeometry.radius);
       ctx.fill();
 
+      ctx.font = `600 ${nameGeometry.fontSize}px Arial, sans-serif`;
       ctx.fillStyle = 'white';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(label, lx, ly);
+      ctx.fillText(label, nameGeometry.center.x, nameGeometry.center.y);
     }
   }
 
@@ -270,17 +238,17 @@ export function drawZoningAnnotation(
 ): void {
   ctx.save();
   try {
-    const scale = annotation.presentationScale;
-    ctx.font = `${ZONING_ANNOTATION_STYLE.fontWeight} ${ZONING_ANNOTATION_STYLE.fontSize / scale}px ${ZONING_ANNOTATION_STYLE.fontFamily}`;
+    const presentation = getAnnotationPresentation(annotation, 1);
+    ctx.font = `${ZONING_ANNOTATION_STYLE.fontWeight} ${presentation.fontSize}px ${ZONING_ANNOTATION_STYLE.fontFamily}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.lineJoin = 'round';
-    ctx.lineWidth = ZONING_ANNOTATION_STYLE.outlineWidth / scale;
+    ctx.lineWidth = presentation.outlineWidth;
     ctx.strokeStyle = ZONING_ANNOTATION_STYLE.outline;
     ctx.fillStyle = ZONING_ANNOTATION_STYLE.foreground;
     const drawLine = (text: string, index: number) => {
-      const x = annotation.bounds.x;
-      const y = annotation.bounds.y + ((index + 1) * ZONING_ANNOTATION_STYLE.lineHeight - 2) / scale;
+      const x = presentation.bounds.x;
+      const y = presentation.bounds.y + (index + 1) * presentation.lineHeight - 2;
       ctx.strokeText(text, x, y);
       ctx.fillText(text, x, y);
     };

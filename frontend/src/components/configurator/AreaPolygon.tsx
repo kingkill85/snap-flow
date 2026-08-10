@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import type { Area } from '@/services/area';
 import type { ZoningAnnotationDescriptor } from './zoning-annotation';
-import { ZONING_ANNOTATION_STYLE } from './zoning-annotation';
+import { getAnnotationPresentation, getAreaNameLabelGeometry, ZONING_ANNOTATION_STYLE } from './zoning-annotation';
 
 export interface AreaPolygonProps {
   area: Area;
@@ -76,7 +76,9 @@ export function AreaPolygon({
   const handleRadius = 6 / scale;  // Inner radius — with 2px stroke gives ~16px total visual diameter
   const handleStroke = 2 / scale;
   const edgeHitWidth = 12 / scale;
-  const fontSize = 12 / scale;
+  const nameGeometry = getAreaNameLabelGeometry(area, scale);
+  const annotationPresentation = zoningAnnotation ? getAnnotationPresentation(zoningAnnotation, scale) : null;
+  const exportPresentation = zoningAnnotation ? getAnnotationPresentation(zoningAnnotation, 1) : null;
 
 
   // -----------------------------------------------------------------------
@@ -405,60 +407,23 @@ export function AreaPolygon({
       />
 
       {/* Name label — on the longest edge, offset inward, with dark pill background */}
-      {(() => {
+      {nameGeometry && (() => {
         const label = area.name || 'Area';
-        const padX = 6 / scale;
-        const padY = 3 / scale;
-        const estWidth = label.length * fontSize * 0.6 + padX * 2;
-        const estHeight = fontSize + padY * 2;
-        const centroidX = sortedVertices.reduce((s, v) => s + v.x, 0) / (sortedVertices.length || 1);
-        const centroidY = sortedVertices.reduce((s, v) => s + v.y, 0) / (sortedVertices.length || 1);
-
-        // Find the longest edge
-        let bestLen = 0;
-        let bestMidX = centroidX;
-        let bestMidY = centroidY;
-        let bestInwardX = 0;
-        let bestInwardY = 0;
-
-        for (let i = 0; i < sortedVertices.length; i++) {
-          const a = sortedVertices[i];
-          const b = sortedVertices[(i + 1) % sortedVertices.length];
-          const len = Math.hypot(b.x - a.x, b.y - a.y);
-          if (len > bestLen) {
-            bestLen = len;
-            bestMidX = (a.x + b.x) / 2;
-            bestMidY = (a.y + b.y) / 2;
-            const nx = -(b.y - a.y);
-            const ny = b.x - a.x;
-            const nLen = Math.hypot(nx, ny) || 1;
-            const testX = bestMidX + nx / nLen;
-            const testY = bestMidY + ny / nLen;
-            const dotInward = (testX - bestMidX) * (centroidX - bestMidX) + (testY - bestMidY) * (centroidY - bestMidY);
-            const sign = dotInward >= 0 ? 1 : -1;
-            bestInwardX = sign * nx / nLen;
-            bestInwardY = sign * ny / nLen;
-          }
-        }
-
-        const insetDist = (estHeight / 2 + 4 / scale);
-        const lx = bestMidX + bestInwardX * insetDist;
-        const ly = bestMidY + bestInwardY * insetDist;
-
         return (
           <g style={{ pointerEvents: 'none' }}>
             <rect
-              x={lx - estWidth / 2}
-              y={ly - estHeight / 2}
-              width={estWidth}
-              height={estHeight}
-              rx={4 / scale}
+              data-testid="area-name-label-bounds"
+              x={nameGeometry.bounds.x}
+              y={nameGeometry.bounds.y}
+              width={nameGeometry.bounds.width}
+              height={nameGeometry.bounds.height}
+              rx={nameGeometry.radius}
               fill="rgba(0,0,0,0.55)"
             />
             <text
-              x={lx}
-              y={ly + fontSize * 0.35}
-              fontSize={fontSize}
+              x={nameGeometry.center.x}
+              y={nameGeometry.center.y + nameGeometry.fontSize * 0.35}
+              fontSize={nameGeometry.fontSize}
               fill="white"
               textAnchor="middle"
               style={{ userSelect: 'none', fontWeight: 600 }}
@@ -469,25 +434,27 @@ export function AreaPolygon({
         );
       })()}
 
-      {showZoningAnnotation && zoningAnnotation ? (
+      {showZoningAnnotation && zoningAnnotation && annotationPresentation && exportPresentation ? (
         <g
           data-testid="area-zoning-annotation"
           data-anchor={zoningAnnotation.anchor}
-          data-bounds={`${zoningAnnotation.bounds.x},${zoningAnnotation.bounds.y},${zoningAnnotation.bounds.width},${zoningAnnotation.bounds.height}`}
+          data-bounds={`${annotationPresentation.bounds.x},${annotationPresentation.bounds.y},${annotationPresentation.bounds.width},${annotationPresentation.bounds.height}`}
+          data-export-bounds={`${exportPresentation.bounds.x},${exportPresentation.bounds.y},${exportPresentation.bounds.width},${exportPresentation.bounds.height}`}
+          data-omitted={zoningAnnotation.omitted}
           aria-label={`Zoning annotation: ${zoningAnnotation.accessibleText}`}
           style={{ pointerEvents: 'none' }}
         >
           {zoningAnnotation.lines.map((line, index) => (
             <text
               key={`${index}-${line.fullText}`}
-              x={zoningAnnotation.bounds.x}
-              y={zoningAnnotation.bounds.y + ((index + 1) * ZONING_ANNOTATION_STYLE.lineHeight - 2) / zoningAnnotation.presentationScale}
+              x={annotationPresentation.bounds.x}
+              y={annotationPresentation.bounds.y + (index + 1) * annotationPresentation.lineHeight - 2 / scale}
               fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
-              fontSize={ZONING_ANNOTATION_STYLE.fontSize / zoningAnnotation.presentationScale}
+              fontSize={annotationPresentation.fontSize}
               fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
               fill={ZONING_ANNOTATION_STYLE.foreground}
               stroke={ZONING_ANNOTATION_STYLE.outline}
-              strokeWidth={ZONING_ANNOTATION_STYLE.outlineWidth / zoningAnnotation.presentationScale}
+              strokeWidth={annotationPresentation.outlineWidth}
               strokeLinejoin="round"
               paintOrder="stroke fill"
               style={{ userSelect: 'none' }}
@@ -498,14 +465,14 @@ export function AreaPolygon({
           ))}
           {zoningAnnotation.omitted > 0 && (
             <text
-              x={zoningAnnotation.bounds.x}
-              y={zoningAnnotation.bounds.y + ((zoningAnnotation.lines.length + 1) * ZONING_ANNOTATION_STYLE.lineHeight - 2) / zoningAnnotation.presentationScale}
+              x={annotationPresentation.bounds.x}
+              y={annotationPresentation.bounds.y + (zoningAnnotation.lines.length + 1) * annotationPresentation.lineHeight - 2 / scale}
               fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
-              fontSize={ZONING_ANNOTATION_STYLE.fontSize / zoningAnnotation.presentationScale}
+              fontSize={annotationPresentation.fontSize}
               fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
               fill={ZONING_ANNOTATION_STYLE.foreground}
               stroke={ZONING_ANNOTATION_STYLE.outline}
-              strokeWidth={ZONING_ANNOTATION_STYLE.outlineWidth / zoningAnnotation.presentationScale}
+              strokeWidth={annotationPresentation.outlineWidth}
               strokeLinejoin="round"
               paintOrder="stroke fill"
             >

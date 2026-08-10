@@ -5,7 +5,8 @@ import { resolve } from 'node:path';
 import type { SnapFlowWorld } from '../support/world.ts';
 
 type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: number; value: number };
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ width: number; height: number }>; productId: number; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: { x: number; y: number; width: number; height: number } };
+type Bounds = { x: number; y: number; width: number; height: number };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ annotation: Bounds; name: Bounds }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number };
 
 const authHeaders = (world: ZoningWorld) => ({ Authorization: `Bearer ${world.token}` });
 let cachedAdminAuth: { accessToken: string; refreshToken: string } | undefined;
@@ -35,7 +36,7 @@ async function setupArea(world: ZoningWorld, groups = 2, parametersPerGroup = 1)
   const projectResponse = await world.page!.request.post(`${world.apiUrl}/api/projects`, { headers: authHeaders(world), data: { customer_name: world.customerName, item_type_ids: world.itemTypeIds } });
   const project = (await projectResponse.json()).data;
   world.projectId = project.id; world.projectGroupId = project.project_group_id;
-  const image = await readFile(resolve(process.cwd(), 'frontend/public/snapflow-logo.png'));
+  const image = await readFile(resolve(process.cwd(), 'frontend/public/snapflow_variation_c_true_transparent_set/snapflow_icon_1024_transparent.png'));
   const floorplanResponse = await world.page!.request.post(`${world.apiUrl}/api/floorplans`, { headers: authHeaders(world), multipart: { project_id: String(world.projectId), name: 'Issue 89 Plan', image: { name: 'plan.png', mimeType: 'image/png', buffer: image } } });
   const floorplanBody = await floorplanResponse.json(); if (!floorplanResponse.ok()) throw new Error(`floorplan ${floorplanResponse.status()}: ${JSON.stringify(floorplanBody)}`);
   world.floorplanId = floorplanBody.data.id;
@@ -53,6 +54,23 @@ async function openAreaEditor(world: ZoningWorld) {
 async function saveValues(world: ZoningWorld, values: number[]) {
   const response = await world.page!.request.put(`${world.apiUrl}/api/areas/${world.areaId}`, { headers: authHeaders(world), data: { revision: world.areaRevision, applicable_parameter_ids: world.parameterIds, zoning_values: world.parameterIds.map((id, index) => ({ parameter_id: id, value: values[index] ?? 0 })) } });
   expect(response.status()).toBe(200); const area = (await response.json()).data; world.areaRevision = area.revision;
+}
+
+async function createNearbyRotatedProduct(world: ZoningWorld) {
+  const categoryResponse = await world.page!.request.post(`${world.apiUrl}/api/categories`, { headers: authHeaders(world), data: { name: `Issue89 Category ${Date.now()}` } });
+  const category = (await categoryResponse.json()).data;
+  const itemResponse = await world.page!.request.post(`${world.apiUrl}/api/items`, { headers: authHeaders(world), data: { category_id: category.id, name: `Issue89 Product ${Date.now()}`, type_id: world.itemTypeIds[0] } });
+  const itemBody = await itemResponse.json(); if (!itemResponse.ok()) throw new Error(JSON.stringify(itemBody));
+  const variantResponse = await world.page!.request.post(`${world.apiUrl}/api/items/${itemBody.data.id}/variants`, { headers: authHeaders(world), multipart: { style_name: 'Default', price: '1' } });
+  const variantBody = await variantResponse.json(); if (!variantResponse.ok()) throw new Error(JSON.stringify(variantBody));
+  const placement = { floorplan_id: world.floorplanId, item_variant_id: variantBody.data.id, x: 180, y: 90, width: 120, height: 20, rotation: 45 };
+  const placementResponse = await world.page!.request.post(`${world.apiUrl}/api/placements`, { headers: authHeaders(world), data: placement });
+  const placementBody = await placementResponse.json(); if (!placementResponse.ok()) throw new Error(JSON.stringify(placementBody));
+  world.productId = placementBody.data.id;
+  const radians = Math.PI / 4;
+  const width = Math.abs(placement.width * Math.cos(radians)) + Math.abs(placement.height * Math.sin(radians));
+  const height = Math.abs(placement.width * Math.sin(radians)) + Math.abs(placement.height * Math.cos(radians));
+  world.productBounds = { x: placement.x + (placement.width - width) / 2, y: placement.y + (placement.height - height) / 2, width, height };
 }
 
 async function readProjectZoning(world: ZoningWorld, projectId: number): Promise<ZoningValueEvidence[]> {
@@ -125,10 +143,12 @@ When('the floorplan renders at any supported zoom', async function (this: Zoning
   ];
   for (const { target, action } of sequence) {
     await action(); await expect(this.page!.getByText(`${target}%`, { exact: true })).toBeVisible();
-    const box = await this.page!.getByTestId('area-zoning-annotation').boundingBox(); expect(box).not.toBeNull(); this.cssBounds.push({ width: box!.width, height: box!.height });
+    const annotation = await this.page!.getByTestId('area-zoning-annotation').boundingBox();
+    const name = await this.page!.getByTestId('area-name-label-bounds').boundingBox();
+    expect(annotation).not.toBeNull(); expect(name).not.toBeNull(); this.cssBounds.push({ annotation: annotation!, name: name! });
   }
 });
-Then('visible rows stay within the bounded summary', async function (this: ZoningWorld) { for (const box of this.cssBounds) { expect(box.width).toBeGreaterThan(0); expect(box.width).toBeLessThanOrEqual(230); expect(box.height).toBeLessThanOrEqual(150); } });
+Then('visible rows stay within the bounded summary', async function (this: ZoningWorld) { for (const { annotation, name } of this.cssBounds) { expect(annotation.width).toBeGreaterThan(0); expect(annotation.width).toBeLessThanOrEqual(230); expect(annotation.height).toBeLessThanOrEqual(150); expect(annotation.x + annotation.width <= name.x || annotation.x >= name.x + name.width || annotation.y + annotation.height <= name.y || annotation.y >= name.y + name.height).toBe(true); } });
 Then('truncated content exposes full text accessibly', async function (this: ZoningWorld) { const annotation = this.page!.getByTestId('area-zoning-annotation'); expect(await annotation.locator('title').count()).toBeGreaterThan(0); });
 Then('a `+N more` row reports the omitted positive values', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).toContainText(/\+2 more/); });
 
@@ -139,15 +159,7 @@ Then('its meaning remains available without relying on color', async function (t
 
 Given('an Area contains positive zoning values and one or more product placements near its preferred annotation anchor', async function (this: ZoningWorld) {
   await setupArea(this, 1, 1); await saveValues(this, [3]);
-  const categoryResponse = await this.page!.request.post(`${this.apiUrl}/api/categories`, { headers: authHeaders(this), data: { name: `Issue89 Category ${Date.now()}` } });
-  const category = (await categoryResponse.json()).data;
-  const itemResponse = await this.page!.request.post(`${this.apiUrl}/api/items`, { headers: authHeaders(this), data: { category_id: category.id, name: `Issue89 Product ${Date.now()}`, type_id: this.itemTypeIds[0] } });
-  const itemBody = await itemResponse.json(); if (!itemResponse.ok()) throw new Error(JSON.stringify(itemBody));
-  const variantResponse = await this.page!.request.post(`${this.apiUrl}/api/items/${itemBody.data.id}/variants`, { headers: authHeaders(this), multipart: { style_name: 'Default', price: '1' } });
-  const variantBody = await variantResponse.json(); if (!variantResponse.ok()) throw new Error(JSON.stringify(variantBody));
-  const placementResponse = await this.page!.request.post(`${this.apiUrl}/api/placements`, { headers: authHeaders(this), data: { floorplan_id: this.floorplanId, item_variant_id: variantBody.data.id, x: 180, y: 90, width: 140, height: 100, rotation: 0 } });
-  const placementBody = await placementResponse.json(); if (!placementResponse.ok()) throw new Error(JSON.stringify(placementBody));
-  this.productId = placementBody.data.id;
+  await createNearbyRotatedProduct(this);
 });
 When('the interactive floorplan lays out the annotation', async function (this: ZoningWorld) { await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); await expect(this.page!.locator(`[data-placement-id="${this.productId}"]`)).toBeVisible(); });
 Then('it deterministically selects the first safe candidate that intersects neither a product placement nor an earlier annotation', async function (this: ZoningWorld) { const annotationLocator = this.page!.getByTestId('area-zoning-annotation'); await expect(annotationLocator.locator('rect')).toHaveCount(0); const text = annotationLocator.locator('text').first(); await expect(text).toHaveAttribute('fill', '#ffffff'); await expect(text).toHaveAttribute('stroke', '#111827'); const annotation = await annotationLocator.boundingBox(); const product = await this.page!.locator(`[data-placement-id="${this.productId}"]`).boundingBox(); expect(annotation && product).toBeTruthy(); expect(annotation!.x + annotation!.width <= product!.x || annotation!.x >= product!.x + product!.width || annotation!.y + annotation!.height <= product!.y || annotation!.y >= product!.y + product!.height).toBeTruthy(); });
@@ -158,12 +170,15 @@ When('the user selects or drags the underlying Area at the annotation position',
 Then('the existing Area interaction handles the pointer event', function (this: ZoningWorld) { expect(this.lastStatus).toBe(0); });
 Then('the annotation does not become a separate interaction target', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveCSS('pointer-events', 'none'); });
 
-Given('the interactive floorplan shows positive zoning annotations for visible Areas', async function (this: ZoningWorld) { await setupArea(this, 1, 2); await saveValues(this, [3, 0]); await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
+Given('the interactive floorplan shows positive zoning annotations for visible Areas', async function (this: ZoningWorld) { await setupArea(this, 1, 2); await saveValues(this, [3, 0]); await createNearbyRotatedProduct(this); await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
 When('the user invokes the existing PNG floorplan export with the same Area, placement, and visibility state', async function (this: ZoningWorld) {
-  const serializedBounds = await this.page!.getByTestId('area-zoning-annotation').getAttribute('data-bounds');
+  const annotation = this.page!.getByTestId('area-zoning-annotation');
+  const serializedBounds = await annotation.getAttribute('data-export-bounds');
   if (!serializedBounds) throw new Error('Interactive annotation bounds unavailable');
   const [x, y, width, height] = serializedBounds.split(',').map(Number);
   this.annotationBounds = { x, y, width, height };
+  this.annotationAnchor = await annotation.getAttribute('data-anchor') ?? '';
+  this.annotationOmitted = Number(await annotation.getAttribute('data-omitted'));
   await this.page!.evaluate(() => {
     const prototype = CanvasRenderingContext2D.prototype as CanvasRenderingContext2D & { __issue89Wrapped?: boolean };
     if (prototype.__issue89Wrapped) return;
@@ -197,8 +212,12 @@ Then('the PNG contains the same grouped annotation text, ordering, omission coun
   const fill = calls.find((call) => call.kind === 'fill' && String(call.text).includes('Issue89 Type 0'));
   expect(stroke?.strokeStyle).toBe('#111827'); expect(stroke?.lineWidth).toBe(3); expect(fill?.fillStyle).toBe('#ffffff');
   const rasterX = Number(stroke?.x); const rasterY = Number(stroke?.y);
-  expect(rasterX + 75).toBeCloseTo(this.annotationBounds.x + this.annotationBounds.width / 2);
-  expect(rasterY).toBeGreaterThan(0);
+  expect(this.annotationAnchor).not.toBe(''); expect(this.annotationOmitted).toBeGreaterThanOrEqual(0);
+  expect(rasterX).toBeCloseTo(this.annotationBounds.x); expect(rasterY).toBeCloseTo(this.annotationBounds.y + 12);
+  const overflowCalls = calls.filter((call) => /^\+\d+ more$/.test(String(call.text)) && call.kind === 'fill');
+  expect(overflowCalls).toHaveLength(this.annotationOmitted > 0 ? 1 : 0);
+  const separated = this.annotationBounds.x + this.annotationBounds.width <= this.productBounds.x || this.annotationBounds.x >= this.productBounds.x + this.productBounds.width || this.annotationBounds.y + this.annotationBounds.height <= this.productBounds.y || this.annotationBounds.y >= this.productBounds.y + this.productBounds.height;
+  expect(separated).toBe(true);
   const raster = await this.page!.evaluate(async ({ base64, bounds }) => {
     const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
     const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
@@ -232,7 +251,7 @@ Then('the first update remains unchanged', async function (this: ZoningWorld) { 
 Given('an authorized user selects a source version with multiple floorplans and copied Areas having positive zoning values', async function (this: ZoningWorld) {
   await setupArea(this, 1, 1);
   await saveValues(this, [2]);
-  const image = await readFile(resolve(process.cwd(), 'frontend/public/snapflow-logo.png'));
+  const image = await readFile(resolve(process.cwd(), 'frontend/public/snapflow_variation_c_true_transparent_set/snapflow_icon_1024_transparent.png'));
   const floorplanResponse = await this.page!.request.post(`${this.apiUrl}/api/floorplans`, { headers: authHeaders(this), multipart: { project_id: String(this.projectId), name: 'Issue 89 Second Plan', image: { name: 'second-plan.png', mimeType: 'image/png', buffer: image } } });
   const secondFloorplan = (await floorplanResponse.json()).data;
   const areaResponse = await this.page!.request.post(`${this.apiUrl}/api/areas`, { headers: authHeaders(this), data: { floorplan_id: secondFloorplan.id, x: 40, y: 40, width: 400, height: 250, name: 'Second Review Area' } });

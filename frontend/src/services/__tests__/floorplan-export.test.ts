@@ -5,7 +5,7 @@ import type { Placement } from '../placement';
 import type { Item } from '../item';
 import type { Area } from '../area';
 import { itemService } from '../item';
-import { ZONING_ANNOTATION_STYLE } from '@/components/configurator/zoning-annotation';
+import { getAnnotationPresentation, layoutZoningAnnotations, ZONING_ANNOTATION_STYLE } from '@/components/configurator/zoning-annotation';
 
 // Mock the item service
 vi.mock('../item', () => ({
@@ -289,11 +289,20 @@ describe('exportFloorplanImage', () => {
 
   it('draws shared positive-only zoning annotations with dual contrast and no panel', async () => {
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea]);
-    expect(mockCtx.strokeText).toHaveBeenCalledWith(expect.stringContaining('Lighting — Relay zones:'), expect.any(Number), expect.any(Number));
-    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringContaining('Lighting — Relay zones:'), expect.any(Number), expect.any(Number));
+    expect(mockCtx.strokeText).toHaveBeenCalledWith(expect.stringContaining('Lighting — Relay zones'), expect.any(Number), expect.any(Number));
+    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringContaining('Lighting — Relay zones'), expect.any(Number), expect.any(Number));
     expect(mockCtx.fillText).not.toHaveBeenCalledWith(expect.stringContaining('Zero zones'), expect.anything(), expect.anything());
     expect(mockCtx.strokeStyle).toBe(ZONING_ANNOTATION_STYLE.outline);
     expect(mockCtx.lineWidth).toBe(ZONING_ANNOTATION_STYLE.outlineWidth);
+  });
+
+  it('draws the exact canonical interactive descriptor without recomputing anchor or omission', async () => {
+    const descriptor = layoutZoningAnnotations({ areas: [mockArea], productBounds: [], imageBounds: { x: 0, y: 0, width: 1000, height: 800 } })[0];
+    const presentation = getAnnotationPresentation(descriptor, 1);
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea], undefined, undefined, [descriptor]);
+    expect(descriptor.anchor).toBeTruthy();
+    expect(mockCtx.strokeText).toHaveBeenCalledWith(descriptor.lines[0].displayText, presentation.bounds.x, presentation.bounds.y + presentation.lineHeight - 2);
+    expect(mockCtx.fillText).toHaveBeenCalledTimes(descriptor.lines.length + (descriptor.omitted > 0 ? 1 : 0) + 1); // Area name plus annotation rows.
   });
 
   it('omits hidden Area annotations', async () => {
