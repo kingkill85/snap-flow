@@ -83,6 +83,7 @@ interface LayoutInput {
 
 interface PositiveAnnotationRow {
   fullText: string;
+  productTypeDiscriminator: string;
   productTypeLabel: string;
   parameterName: string;
   value: number;
@@ -242,17 +243,13 @@ const positiveRows = (area: Area) => {
       parameters: group.parameters.filter((parameter) => parameter.value > 0),
     }))
     .filter((group) => group.parameters.length > 0);
-  const abbreviationCounts = new Map<string, number>();
-  for (const group of groups) {
-    const abbreviation = group.item_type.abbreviation;
-    abbreviationCounts.set(abbreviation, (abbreviationCounts.get(abbreviation) ?? 0) + 1);
-  }
-  const needsDisambiguation = [...abbreviationCounts.values()].some((count) => count > 1);
-  const queues = groups.map((group, groupIndex) => group.parameters.map((parameter): PositiveAnnotationRow => ({
+  const queues = groups.map((group) => group.parameters.map((parameter): PositiveAnnotationRow => ({
     fullText: `${group.item_type.name} — ${parameter.name}: ${parameter.value}`,
-    productTypeLabel: needsDisambiguation
-      ? `${groupIndex + 1}·${group.item_type.abbreviation}`
-      : group.item_type.abbreviation,
+    // The stable ID-derived token is painted in full before any ellipsized
+    // Product Type text. Distinct groups therefore cannot converge during
+    // the final width transformation used by either SVG or canvas.
+    productTypeDiscriminator: `#${group.item_type.id.toString(36)}`,
+    productTypeLabel: group.item_type.abbreviation,
     parameterName: parameter.name,
     value: parameter.value,
   })));
@@ -307,12 +304,14 @@ function displayedLines(rows: readonly PositiveAnnotationRow[], visibleCount: nu
   const lines: AnnotationLine[] = [];
 
   for (const row of rows.slice(0, visibleCount)) {
-    if (conservativeTextWidth(row.fullText) <= availableWidth) {
-      lines.push({ fullText: row.fullText, displayText: row.fullText });
+    const identityPrefix = `${row.productTypeDiscriminator} `;
+    const identifiedFullText = `${identityPrefix}${row.fullText}`;
+    if (conservativeTextWidth(identifiedFullText) <= availableWidth) {
+      lines.push({ fullText: row.fullText, displayText: identifiedFullText });
       continue;
     }
 
-    const readable = `${row.productTypeLabel} · ${row.parameterName}: ${row.value}`;
+    const readable = `${identityPrefix}${row.productTypeLabel} · ${row.parameterName}: ${row.value}`;
     if (conservativeTextWidth(readable) <= availableWidth) {
       lines.push({ fullText: row.fullText, displayText: readable });
       continue;
@@ -320,7 +319,7 @@ function displayedLines(rows: readonly PositiveAnnotationRow[], visibleCount: nu
 
     const separator = '·';
     const suffix = `:${row.value}`;
-    const fixedWidth = conservativeTextWidth(separator + suffix);
+    const compactFixedWidth = conservativeTextWidth(row.productTypeDiscriminator + separator + suffix);
     const parameterGlyphs = Array.from(row.parameterName);
     const minimumParameter = parameterGlyphs.length > 1
       ? `${parameterGlyphs[0]}…`
@@ -328,16 +327,20 @@ function displayedLines(rows: readonly PositiveAnnotationRow[], visibleCount: nu
     const minimumParameterWidth = conservativeTextWidth(minimumParameter);
     const productTypeBudget = Math.min(
       28,
-      availableWidth - fixedWidth - minimumParameterWidth,
+      Math.max(0, availableWidth - compactFixedWidth - conservativeTextWidth(' ') - minimumParameterWidth),
     );
     const productType = ellipsizeToWidth(row.productTypeLabel, productTypeBudget);
-    const parameterBudget = availableWidth - fixedWidth - conservativeTextWidth(productType);
+    const productTypeIdentifier = productType
+      ? `${row.productTypeDiscriminator} ${productType}`
+      : row.productTypeDiscriminator;
+    const parameterBudget = availableWidth -
+      conservativeTextWidth(productTypeIdentifier + separator + suffix);
     const parameter = ellipsizeToWidth(row.parameterName, parameterBudget);
-    const displayText = `${productType}${separator}${parameter}${suffix}`;
+    const displayText = `${productTypeIdentifier}${separator}${parameter}${suffix}`;
 
     // If even the compact Product Type + parameter + value form cannot fit,
     // omit the annotation instead of painting a misleading partial value.
-    if (!productType || !parameter || conservativeTextWidth(displayText) > availableWidth) return null;
+    if (!parameter || conservativeTextWidth(displayText) > availableWidth) return null;
     lines.push({ fullText: row.fullText, displayText });
   }
 

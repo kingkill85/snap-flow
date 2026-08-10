@@ -201,10 +201,11 @@ Then('no draft changes are sent or retained', async function (this: ZoningWorld)
 Given('an Area has positive and zero values across two applicable Product Types', async function (this: ZoningWorld) {
   await setupArea(this, 2, 2);
   const commonPrefix = 'Shared Product Type '.repeat(3);
+  const collidingAbbreviations = ['ABCDEFGH1', 'ABCDEFGH2'];
   for (const [index, itemTypeId] of this.itemTypeIds.entries()) {
     const renamedType = await this.page!.request.put(`${this.apiUrl}/api/item-types/${itemTypeId}`, {
       headers: authHeaders(this),
-      data: { name: `${commonPrefix}${index ? 'Beta' : 'Alpha'}`, abbreviation: 'X' },
+      data: { name: `${commonPrefix}${index ? 'Beta' : 'Alpha'}`, abbreviation: collidingAbbreviations[index] },
     });
     expect(renamedType.status()).toBe(200);
     const renamedParameter = await this.page!.request.put(`${this.apiUrl}/api/item-types/${itemTypeId}/zoning-parameters/${this.parameterIds[index * 2]}`, {
@@ -225,7 +226,7 @@ When('the interactive floorplan or PNG export renders', async function (this: Zo
     const original = prototype.fillText;
     (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows = [];
     prototype.fillText = function (text, x, y, maxWidth) {
-      if (/Zones.*3/.test(text)) (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows.push(text);
+      if (/Z.*:\s*3$/.test(text)) (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows.push(text);
       return maxWidth === undefined ? original.call(this, text, x, y) : original.call(this, text, x, y, maxWidth);
     };
   });
@@ -236,11 +237,11 @@ When('the interactive floorplan or PNG export renders', async function (this: Zo
   this.duplicateRasterRows = await this.page!.evaluate(() => (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows);
 });
 Then('each Product Type with a positive value has one labelled group', async function (this: ZoningWorld) {
-  const directRows = (await paintedAnnotationRows(this)).filter((row) => /Zones.*3/.test(row));
+  const directRows = (await paintedAnnotationRows(this)).filter((row) => /Z.*:\s*3$/.test(row));
   expect(directRows).toHaveLength(2);
   expect(new Set(directRows).size).toBe(2);
-  expect(directRows.some((row) => row.includes('1·X'))).toBe(true);
-  expect(directRows.some((row) => row.includes('2·X'))).toBe(true);
+  expect(directRows.some((row) => row.startsWith(`#${this.itemTypeIds[0].toString(36)} `))).toBe(true);
+  expect(directRows.some((row) => row.startsWith(`#${this.itemTypeIds[1].toString(36)} `))).toBe(true);
   expect(this.duplicateRasterRows).toEqual(directRows);
   expect(new Set(this.duplicateRasterRows).size).toBe(2);
   await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveAccessibleName(/Shared Product Type .*Alpha.*Zones: 3.*Shared Product Type .*Beta.*Zones: 3/);

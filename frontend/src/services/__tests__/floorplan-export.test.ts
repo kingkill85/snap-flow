@@ -291,8 +291,8 @@ describe('exportFloorplanImage', () => {
 
   it('draws shared positive-only zoning annotations with dual contrast and no panel', async () => {
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea]);
-    expect(mockCtx.strokeText).toHaveBeenCalledWith(expect.stringMatching(/^L…·R…:3$/), expect.any(Number), expect.any(Number));
-    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringMatching(/^L…·R…:3$/), expect.any(Number), expect.any(Number));
+    expect(mockCtx.strokeText).toHaveBeenCalledWith(expect.stringMatching(/^#1(?: L…)?·R.*…:3$/), expect.any(Number), expect.any(Number));
+    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringMatching(/^#1(?: L…)?·R.*…:3$/), expect.any(Number), expect.any(Number));
     expect(mockCtx.fillText).not.toHaveBeenCalledWith(expect.stringContaining('Zero zones'), expect.anything(), expect.anything());
     expect(mockCtx.strokeStyle).toBe(ZONING_ANNOTATION_STYLE.outline);
     expect(mockCtx.lineWidth).toBe(ZONING_ANNOTATION_STYLE.outlineWidth);
@@ -304,12 +304,12 @@ describe('exportFloorplanImage', () => {
       ...mockArea,
       x: 100,
       y: 100,
-      width: 600,
+      width: 360,
       height: 400,
       vertices: [
         { id: 81, placement_id: 10, vertex_index: 0, x: 100, y: 100 },
-        { id: 82, placement_id: 10, vertex_index: 1, x: 700, y: 100 },
-        { id: 83, placement_id: 10, vertex_index: 2, x: 700, y: 500 },
+        { id: 82, placement_id: 10, vertex_index: 1, x: 460, y: 100 },
+        { id: 83, placement_id: 10, vertex_index: 2, x: 460, y: 500 },
         { id: 84, placement_id: 10, vertex_index: 3, x: 100, y: 500 },
       ],
       zoning_groups: [80, 81].map((id, index) => ({
@@ -321,11 +321,48 @@ describe('exportFloorplanImage', () => {
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [duplicateGroups], undefined, undefined, [descriptor]);
     const directRows = vi.mocked(mockCtx.fillText).mock.calls
       .map(([text]) => String(text))
-      .filter((text) => /Zones.*4/.test(text));
+      .filter((text) => /:\s*4$/.test(text));
     expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
     expect(new Set(directRows).size).toBe(2);
-    expect(directRows.some((line) => line.includes('1·X'))).toBe(true);
-    expect(directRows.some((line) => line.includes('2·X'))).toBe(true);
+    expect(directRows.some((line) => line.startsWith('#28 '))).toBe(true);
+    expect(directRows.some((line) => line.startsWith('#29 '))).toBe(true);
+  });
+
+  it('draws distinct stable raster identifiers after colliding abbreviation truncation', async () => {
+    const collidingGroups: Area = {
+      ...mockArea,
+      x: 100,
+      y: 100,
+      width: 360,
+      height: 400,
+      vertices: [
+        { id: 81, placement_id: 10, vertex_index: 0, x: 100, y: 100 },
+        { id: 82, placement_id: 10, vertex_index: 1, x: 460, y: 100 },
+        { id: 83, placement_id: 10, vertex_index: 2, x: 460, y: 500 },
+        { id: 84, placement_id: 10, vertex_index: 3, x: 100, y: 500 },
+      ],
+      zoning_groups: ['ABCDEFGH1', 'ABCDEFGH2'].map((abbreviation, index) => ({
+        item_type: {
+          id: 80 + index,
+          name: `${'W'.repeat(84)}${index ? 'Beta' : 'Alpha'}`,
+          abbreviation,
+          color: '#f00',
+          sort_order: index,
+        },
+        parameters: [{ id: 80 + index, name: 'Zones', sort_order: 0, value: 4 }],
+      })),
+    };
+    const descriptor = layoutZoningAnnotations({ areas: [collidingGroups], productBounds: [], imageBounds: { x: 0, y: 0, width: 1000, height: 800 } })[0];
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [collidingGroups], undefined, undefined, [descriptor]);
+    const directRows = vi.mocked(mockCtx.fillText).mock.calls
+      .map(([text]) => String(text))
+      .filter((text) => /Z.*:\s*4$/.test(text));
+    expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
+    expect(directRows).toEqual([
+      expect.stringMatching(/^#28(?: .+)?·?Z.*:\s*4$/u),
+      expect.stringMatching(/^#29(?: .+)?·?Z.*:\s*4$/u),
+    ]);
+    expect(new Set(directRows).size).toBe(2);
   });
 
   it('clips Area-name canvas paint to the exact shared descriptor bounds', async () => {

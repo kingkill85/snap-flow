@@ -46,4 +46,41 @@ describe('AreaPolygon zoning annotation', () => {
       .map((row) => [...row.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent).join(''));
     expect(paintedRows.some((row) => /T.*Very.*: ?1/.test(row))).toBe(true);
   });
+  it('directly paints distinct stable identifiers after colliding abbreviation truncation', () => {
+    const collidingArea: Area = {
+      ...base,
+      zoning_groups: ['ABCDEFGHIJ', 'ABCDEFGHIK'].map((abbreviation, index) => ({
+        item_type: {
+          id: 80 + index,
+          name: `${'W'.repeat(84)}${index ? 'Beta' : 'Alpha'}`,
+          abbreviation,
+          color: '#f00',
+          sort_order: index,
+        },
+        parameters: [{ id: 80 + index, name: 'Zones', sort_order: 0, value: 4 }],
+      })),
+    };
+    const annotation = layoutZoningAnnotations({
+      areas: [collidingArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1000, height: 800 },
+    })[0];
+    const { container } = render(<svg><AreaPolygon {...props} area={collidingArea} zoningAnnotation={annotation} /></svg>);
+    const directlyPainted = [...container.querySelectorAll('[data-testid="area-zoning-annotation"] text')]
+      .map((row) => [...row.childNodes]
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent ?? '')
+        .join(''));
+    expect(directlyPainted).toEqual(annotation.lines.map((line) => line.displayText));
+    expect(directlyPainted).toEqual([
+      expect.stringMatching(/^#28(?: .+)?·?Z.*:\s*4$/u),
+      expect.stringMatching(/^#29(?: .+)?·?Z.*:\s*4$/u),
+    ]);
+    expect(new Set(directlyPainted).size).toBe(2);
+    const fullText = [...container.querySelectorAll('[data-testid="area-zoning-annotation"] title')]
+      .map((title) => title.textContent ?? '')
+      .join('; ');
+    expect(fullText).toContain(`${'W'.repeat(84)}Alpha — Zones: 4`);
+    expect(fullText).toContain(`${'W'.repeat(84)}Beta — Zones: 4`);
+  });
 });

@@ -75,31 +75,43 @@ describe('zoning annotation layout', () => {
     ]);
   });
 
-  it('assigns injective visible labels to distinct positive groups with duplicate abbreviations', () => {
-    const persistedArea = resizedArea(1, 0, 500, 300, 2);
-    const sharedPrefix = 'Shared Product Type '.repeat(4);
-    persistedArea.zoning_groups = persistedArea.zoning_groups.map((group, index) => ({
-      ...group,
-      item_type: {
-        ...group.item_type,
-        id: 80 + index,
-        name: `${sharedPrefix}${index === 0 ? 'Alpha' : 'Beta'}`,
-        abbreviation: 'X',
-      },
-      parameters: [{ id: index + 1, name: 'Zones', sort_order: 0, value: 4 }],
-    }));
+  it.each([
+    { label: 'identical abbreviations', abbreviations: ['X', 'X'], names: ['Shared Alpha', 'Shared Beta'] },
+    { label: 'distinct alphabetic abbreviations colliding after truncation', abbreviations: ['ABCDEFGHIJ', 'ABCDEFGHIK'], names: [`${'W'.repeat(84)}A`, `${'W'.repeat(84)}B`] },
+    { label: 'distinct numeric suffixes colliding after truncation', abbreviations: ['ABCDEFGH1', 'ABCDEFGH2'], names: ['Common prefix Alpha', 'Common prefix Beta'] },
+    { label: 'long common prefixes in a narrow budget', abbreviations: ['PREFIXAAA1', 'PREFIXAAA2'], names: ['Long common Product Type Alpha', 'Long common Product Type Beta'] },
+    { label: 'Unicode and fallback glyph names', abbreviations: ['照明設備甲', '照明設備乙'], names: ['照明😀共有名甲', '照明😀共有名乙'] },
+  ])('keeps final directly painted group identifiers injective for $label', ({ abbreviations, names }) => {
+    for (const width of [420, 500]) {
+      const persistedArea = resizedArea(1, 0, width, 300, 2);
+      persistedArea.zoning_groups = persistedArea.zoning_groups.map((group, index) => ({
+        ...group,
+        item_type: {
+          ...group.item_type,
+          id: 80 + index,
+          name: names[index],
+          abbreviation: abbreviations[index],
+        },
+        parameters: [{ id: index + 1, name: 'Zones', sort_order: 0, value: 4 }],
+      }));
+      const input = {
+        areas: [persistedArea],
+        productBounds: [],
+        imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+      };
 
-    const [descriptor] = layoutZoningAnnotations({
-      areas: [persistedArea],
-      productBounds: [],
-      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
-    });
-    const painted = descriptor.lines.map((line) => line.displayText);
-    expect(painted).toHaveLength(2);
-    expect(new Set(painted).size).toBe(2);
-    expect(painted.every((line) => /Zones.*4/.test(line))).toBe(true);
-    expect(painted.some((line) => line.includes('1·X'))).toBe(true);
-    expect(painted.some((line) => line.includes('2·X'))).toBe(true);
+      const [descriptor] = layoutZoningAnnotations(input);
+      const painted = descriptor.lines.map((line) => line.displayText);
+      expect(layoutZoningAnnotations(input)).toEqual([descriptor]);
+      expect(painted).toHaveLength(2);
+      expect(new Set(painted).size).toBe(2);
+      expect(painted).toEqual([
+        expect.stringMatching(/^#28(?: .+)?·?Z.*:\s*4$/u),
+        expect.stringMatching(/^#29(?: .+)?·?Z.*:\s*4$/u),
+      ]);
+      expect(descriptor.accessibleText).toContain(`${names[0]} — Zones: 4`);
+      expect(descriptor.accessibleText).toContain(`${names[1]} — Zones: 4`);
+    }
   });
 
   it('chooses another bounded candidate near products and never overlaps them', () => {
@@ -200,7 +212,7 @@ describe('zoning annotation layout', () => {
     const fitted = getAnnotationPresentation(descriptor, 0.18);
     expect(fitted).toEqual(quarter);
     expect(descriptor.lines[0].fullText).toContain('W'.repeat(100));
-    expect(descriptor.lines[0].displayText).toMatch(/^W+…·W+…:9999$/);
+    expect(descriptor.lines[0].displayText).toMatch(/^#1 W+…·W+…:9999$/);
     expect(quarter.clipBounds).toEqual(quarter.bounds);
     expect(quarter.clipBounds.x + quarter.clipBounds.width).toBeLessThan(product.x);
     expect(quarter.clipBounds.x + quarter.clipBounds.width).toBeLessThanOrEqual(700);
