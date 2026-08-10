@@ -3,7 +3,9 @@ import { exportFloorplanImage } from '../floorplan-export';
 import type { Floorplan } from '../floorplan';
 import type { Placement } from '../placement';
 import type { Item } from '../item';
+import type { Area } from '../area';
 import { itemService } from '../item';
+import { ZONING_ANNOTATION_STYLE } from '@/components/configurator/zoning-annotation';
 
 // Mock the item service
 vi.mock('../item', () => ({
@@ -35,6 +37,10 @@ describe('exportFloorplanImage', () => {
       closePath: vi.fn(),
       stroke: vi.fn(),
       fill: vi.fn(),
+      fillText: vi.fn(),
+      strokeText: vi.fn(),
+      measureText: vi.fn((text: string) => ({ width: text.length * 8 })),
+      roundRect: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
     mockCanvas = {
@@ -130,6 +136,25 @@ describe('exportFloorplanImage', () => {
         created_at: '2024-01-01',
       },
     ],
+  };
+
+  const mockArea: Area = {
+    id: 10, floorplan_id: 1, x: 300, y: 200, width: 300, height: 220,
+    name: 'Living', color: '#3b82f6', opacity: 0.2, revision: 1,
+    device_count: 0, created_at: '', updated_at: '',
+    vertices: [
+      { id: 1, placement_id: 10, vertex_index: 0, x: 300, y: 200 },
+      { id: 2, placement_id: 10, vertex_index: 1, x: 600, y: 200 },
+      { id: 3, placement_id: 10, vertex_index: 2, x: 600, y: 420 },
+      { id: 4, placement_id: 10, vertex_index: 3, x: 300, y: 420 },
+    ],
+    zoning_groups: [{
+      item_type: { id: 1, name: 'Lighting', abbreviation: 'LGT', color: '#f00', sort_order: 1 },
+      parameters: [
+        { id: 1, name: 'Relay zones', sort_order: 1, value: 3 },
+        { id: 2, name: 'Zero zones', sort_order: 2, value: 0 },
+      ],
+    }],
   };
 
   it('should create canvas with floorplan dimensions', async () => {
@@ -260,6 +285,27 @@ describe('exportFloorplanImage', () => {
 
     expect(mockCtx.fillStyle).toBe('#ffffff');
     expect(mockCtx.fillRect).toHaveBeenCalledWith(0, 0, 1000, 800);
+  });
+
+  it('draws shared positive-only zoning annotations with dual contrast and no panel', async () => {
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea]);
+    expect(mockCtx.strokeText).toHaveBeenCalledWith(expect.stringContaining('Lighting — Relay zones:'), expect.any(Number), expect.any(Number));
+    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringContaining('Lighting — Relay zones:'), expect.any(Number), expect.any(Number));
+    expect(mockCtx.fillText).not.toHaveBeenCalledWith(expect.stringContaining('Zero zones'), expect.anything(), expect.anything());
+    expect(mockCtx.strokeStyle).toBe(ZONING_ANNOTATION_STYLE.outline);
+    expect(mockCtx.lineWidth).toBe(ZONING_ANNOTATION_STYLE.outlineWidth);
+  });
+
+  it('omits hidden Area annotations', async () => {
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea], new Set([mockArea.id]));
+    expect(mockCtx.strokeText).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before encoding or download when annotation drawing fails', async () => {
+    vi.mocked(mockCtx.strokeText).mockImplementation(() => { throw new Error('annotation draw failed'); });
+    await expect(exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea])).rejects.toThrow('annotation draw failed');
+    expect(mockCanvas.toDataURL).not.toHaveBeenCalled();
+    expect(document.createElement).not.toHaveBeenCalledWith('a');
   });
 
   it('should continue drawing other placements when one fails', async () => {

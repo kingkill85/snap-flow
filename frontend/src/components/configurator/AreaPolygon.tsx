@@ -1,5 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import type { Area } from '@/services/area';
+import type { ZoningAnnotationDescriptor } from './zoning-annotation';
+import { ZONING_ANNOTATION_STYLE } from './zoning-annotation';
 
 export interface AreaPolygonProps {
   area: Area;
@@ -12,6 +14,8 @@ export interface AreaPolygonProps {
   onVertexAdd: (id: number, afterIndex: number, x: number, y: number) => void;
   onVertexDelete: (id: number, vertexIndex: number) => void;
   onVerticesCommit: (id: number) => void;
+  zoningAnnotation?: ZoningAnnotationDescriptor;
+  showZoningAnnotation?: boolean;
 }
 
 interface DragState {
@@ -53,6 +57,8 @@ export function AreaPolygon({
   onVertexAdd,
   onVertexDelete,
   onVerticesCommit,
+  zoningAnnotation,
+  showZoningAnnotation = true,
 }: AreaPolygonProps) {
   const dragStateRef = useRef<DragState | null>(null);
   const prevSvgPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -463,62 +469,51 @@ export function AreaPolygon({
         );
       })()}
 
-      {(() => {
-        const positiveGroups = area.zoning_groups
-          .map((group) => ({ ...group, parameters: group.parameters.filter((parameter) => parameter.value > 0) }))
-          .filter((group) => group.parameters.length > 0);
-        if (!positiveGroups.length) return null;
-        // The configurator SVG uses floorplan coordinates directly. Keep these
-        // dimensions in CSS-pixel-equivalent units; applying the zoom inverse
-        // here makes the summary visibly grow/shrink as browser evidence showed.
-        const summaryFont = 10;
-        const rowHeight = 14;
-        const bounds = sortedVertices.reduce((box, vertex) => ({ minX: Math.min(box.minX, vertex.x), minY: Math.min(box.minY, vertex.y), maxX: Math.max(box.maxX, vertex.x), maxY: Math.max(box.maxY, vertex.y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
-        const padding = 4;
-        const availableLines = Math.max(1, Math.min(7, Math.floor((bounds.maxY - bounds.minY - padding * 2 - 10) / rowHeight)));
-        const totalRows = positiveGroups.reduce((count, group) => count + group.parameters.length, 0);
-        const maxRows = Math.min(6, Math.max(0, availableLines - (totalRows > availableLines ? 1 : 0)));
-        const queued = positiveGroups.map((group) => group.parameters.map((parameter) => ({
-          group: group.item_type,
-          text: `${parameter.name}: ${parameter.value}`,
-        })));
-        const visible: Array<{ group: typeof positiveGroups[number]['item_type']; text: string }> = [];
-        while (visible.length < maxRows && queued.some((rows) => rows.length > 0)) {
-          for (const rows of queued) {
-            const row = rows.shift();
-            if (row) visible.push(row);
-            if (visible.length === maxRows) break;
-          }
-        }
-        const omitted = queued.reduce((count, rows) => count + rows.length, 0);
-        const width = Math.min(150, Math.max(40, bounds.maxX - bounds.minX - padding * 2));
-        const height = Math.min((visible.length + (omitted ? 1 : 0)) * rowHeight + 10, Math.max(rowHeight + padding * 2, bounds.maxY - bounds.minY - padding * 2));
-        let longest = { a: sortedVertices[0], b: sortedVertices[1], length: -1 };
-        sortedVertices.forEach((a, index) => { const b = sortedVertices[(index + 1) % sortedVertices.length]; const length = Math.hypot(b.x - a.x, b.y - a.y); if (length > longest.length) longest = { a, b, length }; });
-        const midpoint = { x: (longest.a.x + longest.b.x) / 2, y: (longest.a.y + longest.b.y) / 2 };
-        const normal = { x: -(longest.b.y - longest.a.y), y: longest.b.x - longest.a.x };
-        const normalLength = Math.hypot(normal.x, normal.y) || 1;
-        const centroid = sortedVertices.reduce((sum, vertex) => ({ x: sum.x + vertex.x / sortedVertices.length, y: sum.y + vertex.y / sortedVertices.length }), { x: 0, y: 0 });
-        const direction = ((normal.x / normalLength) * (centroid.x - midpoint.x) + (normal.y / normalLength) * (centroid.y - midpoint.y)) >= 0 ? 1 : -1;
-        const desiredX = midpoint.x + direction * normal.x / normalLength * (height / 2 + 18) - width / 2;
-        const desiredY = midpoint.y + direction * normal.y / normalLength * (height / 2 + 18) - height / 2;
-        const x = Math.min(Math.max(desiredX, bounds.minX + padding), bounds.maxX - width - padding);
-        const y = Math.min(Math.max(desiredY, bounds.minY + padding), bounds.maxY - height - padding);
-        const maxCharacters = Math.max(8, Math.floor((width - 12) / 5.5));
-        return <g data-testid="area-zoning-summary" aria-label="Zoning summary" style={{ pointerEvents: 'none' }}>
-          <rect data-testid="area-zoning-summary-bounds" x={x} y={y} width={width} height={height} rx={4} fill="rgba(0,0,0,.7)" />
-          {visible.map((row, index) => {
-            const fullText = `${row.group.name} — ${row.text}`;
-            const display = fullText.length > maxCharacters ? `${fullText.slice(0, maxCharacters - 1)}…` : fullText;
-            return <text key={`${index}-${row.text}`} x={x + 6} y={y + (index + 1) * rowHeight}
-              fontSize={summaryFont} fill="white" style={{ userSelect: 'none' }}>
-              <title>{fullText}</title>
-              {display}
-            </text>;
-          })}
-          {omitted > 0 && <text x={x + 6} y={y + (visible.length + 1) * rowHeight} fontSize={summaryFont} fill="white">+{omitted} more</text>}
-        </g>;
-      })()}
+      {showZoningAnnotation && zoningAnnotation ? (
+        <g
+          data-testid="area-zoning-annotation"
+          data-anchor={zoningAnnotation.anchor}
+          data-bounds={`${zoningAnnotation.bounds.x},${zoningAnnotation.bounds.y},${zoningAnnotation.bounds.width},${zoningAnnotation.bounds.height}`}
+          aria-label={`Zoning annotation: ${zoningAnnotation.accessibleText}`}
+          style={{ pointerEvents: 'none' }}
+        >
+          {zoningAnnotation.lines.map((line, index) => (
+            <text
+              key={`${index}-${line.fullText}`}
+              x={zoningAnnotation.bounds.x}
+              y={zoningAnnotation.bounds.y + ((index + 1) * ZONING_ANNOTATION_STYLE.lineHeight - 2) / zoningAnnotation.presentationScale}
+              fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
+              fontSize={ZONING_ANNOTATION_STYLE.fontSize / zoningAnnotation.presentationScale}
+              fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
+              fill={ZONING_ANNOTATION_STYLE.foreground}
+              stroke={ZONING_ANNOTATION_STYLE.outline}
+              strokeWidth={ZONING_ANNOTATION_STYLE.outlineWidth / zoningAnnotation.presentationScale}
+              strokeLinejoin="round"
+              paintOrder="stroke fill"
+              style={{ userSelect: 'none' }}
+            >
+              <title>{line.fullText}</title>
+              {line.displayText}
+            </text>
+          ))}
+          {zoningAnnotation.omitted > 0 && (
+            <text
+              x={zoningAnnotation.bounds.x}
+              y={zoningAnnotation.bounds.y + ((zoningAnnotation.lines.length + 1) * ZONING_ANNOTATION_STYLE.lineHeight - 2) / zoningAnnotation.presentationScale}
+              fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
+              fontSize={ZONING_ANNOTATION_STYLE.fontSize / zoningAnnotation.presentationScale}
+              fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
+              fill={ZONING_ANNOTATION_STYLE.foreground}
+              stroke={ZONING_ANNOTATION_STYLE.outline}
+              strokeWidth={ZONING_ANNOTATION_STYLE.outlineWidth / zoningAnnotation.presentationScale}
+              strokeLinejoin="round"
+              paintOrder="stroke fill"
+            >
+              +{zoningAnnotation.omitted} more
+            </text>
+          )}
+        </g>
+      ) : null}
 
       {/* Selection-only elements */}
       {isSelected && (

@@ -10,7 +10,7 @@
     "build": "cd frontend && npm run build",
     "e2e": "npm run e2e:traceability && npm run e2e:unit && NODE_OPTIONS=--import=tsx cucumber-js --config cucumber.mjs",
     "e2e:unit": "node --import tsx --test e2e/tests/*.test.ts",
-    "e2e:traceability": "python3 -m tools.neo_dev_webhook.scenario_traceability --features e2e/features --change issue-89-generic-zoning-parameters --matrix docs/issue-89-scenario-traceability.md --approved-sha d13afe536e6e8dcd727a7a2a32da642ab3de6ee2",
+    "e2e:traceability": "python3 -m tools.neo_dev_webhook.scenario_traceability --features e2e/features --change issue-89-generic-zoning-parameters --matrix docs/issue-89-scenario-traceability.md --approved-sha 9dff3d83b82d32698993d05f3cca3ac4b7b5e695",
     "e2e:install": "playwright install chromium",
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json"
   },

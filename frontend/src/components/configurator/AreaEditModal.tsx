@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { X, Save, Minus, Plus } from 'lucide-react';
+import { X, Save } from 'lucide-react';
 import type { Area, UpdateAreaDTO } from '@/services/area';
 
 export interface AreaEditModalProps {
@@ -27,7 +27,6 @@ export function AreaEditModal({ area, onSave, onClose, onReload }: AreaEditModal
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [values, setValues] = useState<Record<number, number>>({});
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [reloadRequired, setReloadRequired] = useState(false);
 
   useEffect(() => {
@@ -36,7 +35,6 @@ export function AreaEditModal({ area, onSave, onClose, onReload }: AreaEditModal
       setColor(area.color || '#3b82f6');
       setOpacity(Math.round(area.opacity * 100));
       setValues(Object.fromEntries(area.zoning_groups.flatMap((group) => group.parameters.map((parameter) => [parameter.id, parameter.value]))));
-      setCollapsed(new Set());
     } else {
       setName('');
       setColor('#3b82f6');
@@ -185,39 +183,53 @@ export function AreaEditModal({ area, onSave, onClose, onReload }: AreaEditModal
             </div>
 
             {area?.zoning_groups.length ? (
-              <section aria-labelledby="zoning-heading" className="space-y-3">
-                <h3 id="zoning-heading" className="font-semibold">Zoning Parameters</h3>
-                {area.zoning_groups.map((group) => {
-                  const isCollapsed = collapsed.has(group.item_type.id);
-                  return <div key={group.item_type.id} className="rounded-md border">
-                    <button type="button" aria-expanded={!isCollapsed} className="flex w-full items-center gap-2 p-3 font-medium"
-                      onClick={() => setCollapsed((current) => { const next = new Set(current); isCollapsed ? next.delete(group.item_type.id) : next.add(group.item_type.id); return next; })}>
-                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: group.item_type.color }} aria-hidden="true" />
+              <section aria-labelledby="zoning-heading" className="min-w-0 space-y-4">
+                <div>
+                  <h3 id="zoning-heading" className="text-base font-semibold">Zoning Parameters</h3>
+                  <p className="text-xs text-muted-foreground">Enter the required quantity for each configured parameter.</p>
+                </div>
+                {area.zoning_groups.map((group) => (
+                  <div key={group.item_type.id} role="group" aria-labelledby={`zoning-group-${group.item_type.id}`} className="space-y-1.5">
+                    <h4 id={`zoning-group-${group.item_type.id}`} className="flex items-center gap-2 text-sm font-medium">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: group.item_type.color }} aria-hidden="true" />
                       {group.item_type.name}
-                    </button>
-                    {!isCollapsed && <div className="space-y-3 border-t p-3">
+                    </h4>
+                    <div className="divide-y divide-border/60">
                       {group.parameters.map((parameter) => {
                         const value = values[parameter.id] ?? 0;
-                        const setValue = (next: number) => setValues((current) => ({ ...current, [parameter.id]: Math.max(0, Math.min(9999, next)) }));
-                        return <div key={parameter.id} className="space-y-1">
-                          <Label htmlFor={`zoning-${parameter.id}`}>{parameter.name}</Label>
-                          <div className="flex items-center gap-2">
-                            <Button type="button" variant="outline" size="icon" aria-label={`Decrease ${parameter.name}`} disabled={value === 0} onClick={() => setValue(value - 1)}><Minus className="h-4 w-4" /></Button>
-                            <Input id={`zoning-${parameter.id}`} type="number" min={0} max={9999} step={1} inputMode="numeric" value={value}
-                              onChange={(event) => setValue(Number(event.target.value))} aria-describedby={`zoning-help-${parameter.id}`} />
-                            <Button type="button" variant="outline" size="icon" aria-label={`Increase ${parameter.name}`} disabled={value === 9999} onClick={() => setValue(value + 1)}><Plus className="h-4 w-4" /></Button>
-                          </div>
-                          <span id={`zoning-help-${parameter.id}`} className="sr-only">Integer from 0 to 9999</span>
+                        return <div key={parameter.id} className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-3 py-1.5">
+                          <Label htmlFor={`zoning-${parameter.id}`} className="truncate text-sm font-normal" title={parameter.name}>{parameter.name}</Label>
+                          <Input
+                            id={`zoning-${parameter.id}`}
+                            type="number"
+                            min={0}
+                            max={9999}
+                            step={1}
+                            inputMode="numeric"
+                            value={value}
+                            onChange={(event) => {
+                              const next = Number(event.target.value);
+                              setValues((current) => ({
+                                ...current,
+                                [parameter.id]: Number.isFinite(next)
+                                  ? Math.max(0, Math.min(9999, Math.trunc(next)))
+                                  : 0,
+                              }));
+                            }}
+                            aria-describedby={`zoning-help-${parameter.id}`}
+                            className="h-8 w-[5.5rem] px-2 text-right"
+                          />
+                          <span id={`zoning-help-${parameter.id}`} className="sr-only">Integer from 0 to 9999. Use arrow keys or the native stepper to change the value.</span>
                         </div>;
                       })}
-                    </div>}
-                  </div>;
-                })}
+                    </div>
+                  </div>
+                ))}
               </section>
             ) : null}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 pt-4">
             <Button type="button" variant="outline" onClick={onClose}>
               <X className="mr-2 h-4 w-4" />
               Cancel

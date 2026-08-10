@@ -13,16 +13,19 @@ describe('AreaEditModal zoning parameters', () => {
   it('renders ordered discoverable sections and submits the complete applicable set', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined); render(<AreaEditModal area={area} onSave={onSave} onClose={vi.fn()} />);
     expect(screen.getByRole('heading', { name: 'Zoning Parameters' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Lighting/ })).toHaveAttribute('aria-expanded', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'Increase Fan zones' }));
+    expect(screen.getByRole('group', { name: 'Lighting' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Fan zones'), { target: { value: '1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Update' }));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(1, expect.objectContaining({ revision: 4, applicable_parameter_ids: [8, 9], zoning_values: [{ parameter_id: 8, value: 2 }, { parameter_id: 9, value: 1 }] })));
   });
 
-  it('bounds decrement at zero and Cancel does not save drafts', () => {
+  it('uses compact native inputs with no redundant controls and Cancel does not save drafts', () => {
     const onSave = vi.fn(); const onClose = vi.fn(); render(<AreaEditModal area={area} onSave={onSave} onClose={onClose} />);
-    expect(screen.getByRole('button', { name: 'Decrease Fan zones' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Increase Relay zones' })); fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const input = screen.getByLabelText('Fan zones');
+    expect(input).toHaveAttribute('type', 'number'); expect(input).toHaveAttribute('min', '0'); expect(input).toHaveAttribute('max', '9999'); expect(input).toHaveAttribute('step', '1');
+    expect(screen.queryByRole('button', { name: /Increase|Decrease/ })).toBeNull();
+    fireEvent.change(input, { target: { value: '-1' } }); expect(input).toHaveValue(0);
+    fireEvent.change(screen.getByLabelText('Relay zones'), { target: { value: '3' } }); fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onSave).not.toHaveBeenCalled(); expect(onClose).toHaveBeenCalled();
   });
 
@@ -36,10 +39,10 @@ describe('AreaEditModal zoning parameters', () => {
 
   it('keeps ordered groups discoverable in responsive layout and Escape discards drafts', () => {
     const onSave = vi.fn(); const onClose = vi.fn(); render(<AreaEditModal area={area} onSave={onSave} onClose={onClose} />);
-    expect(screen.getByRole('button', { name: /Lighting/ }).compareDocumentPosition(screen.getByRole('button', { name: /HVAC/ }))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.getByRole('group', { name: 'Lighting' }).compareDocumentPosition(screen.getByRole('group', { name: 'HVAC' }))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(document.querySelector('[class*="md:grid-cols-2"]')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Relay zones'), { target: { value: '9999' } });
-    expect(screen.getByRole('button', { name: 'Increase Relay zones' })).toBeDisabled();
+    expect(screen.getByLabelText('Relay zones')).toHaveValue(9999);
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onSave).not.toHaveBeenCalled();
   });

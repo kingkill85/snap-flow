@@ -7,7 +7,7 @@ from pathlib import Path
 from tools.neo_dev_webhook import scenario_traceability
 
 
-APPROVED_SHA = "d13afe536e6e8dcd727a7a2a32da642ab3de6ee2"
+APPROVED_SHA = "9dff3d83b82d32698993d05f3cca3ac4b7b5e695"
 SPEC_PATH = (
     "openspec/changes/issue-89-generic-zoning-parameters/"
     "specs/area-zoning-values/spec.md"

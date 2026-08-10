@@ -3,6 +3,11 @@ import type { Placement } from './placement';
 import type { Item } from './item';
 import type { Area } from './area';
 import { itemService } from './item';
+import {
+  layoutZoningAnnotations,
+  ZONING_ANNOTATION_STYLE,
+  type ZoningAnnotationDescriptor,
+} from '@/components/configurator/zoning-annotation';
 
 interface ExportOptions {
   quality?: number;
@@ -141,12 +146,29 @@ export async function exportFloorplanImage(
 
   ctx.drawImage(floorplanImage, 0, 0, canvasWidth, canvasHeight);
 
+  const filteredPlacements = placements.filter(placement => {
+    const item = items.find(i => i.id === placement.item_id);
+    if (!item) return true;
+    if (visibleCategoryIds && !visibleCategoryIds.has(item.category_id)) return false;
+    if (hiddenTypeIds && hiddenTypeIds.size > 0 && item.type_id && hiddenTypeIds.has(item.type_id)) return false;
+    return true;
+  });
+  const visibleAreas = areas
+    ? areas.filter((area) => !hiddenAreaIds?.has(area.id))
+    : [];
+  const zoningAnnotations = layoutZoningAnnotations({
+    areas: visibleAreas,
+    productBounds: filteredPlacements.map((placement) => ({
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
+      height: placement.height,
+    })),
+    imageBounds: { x: 0, y: 0, width: canvasWidth, height: canvasHeight },
+  });
+
   // Draw visible areas (polygons with fill + border + name label)
   if (areas) {
-    const visibleAreas = hiddenAreaIds
-      ? areas.filter(a => !hiddenAreaIds.has(a.id))
-      : areas;
-
     // Sort largest first so smaller areas draw on top
     const sorted = [...visibleAreas].sort((a, b) => (b.width * b.height) - (a.width * a.height));
 
@@ -218,21 +240,18 @@ export async function exportFloorplanImage(
     }
   }
 
-  // Filter placements by visible categories and visible types
-  const filteredPlacements = placements.filter(placement => {
-    const item = items.find(i => i.id === placement.item_id);
-    if (!item) return true;
-    if (visibleCategoryIds && !visibleCategoryIds.has(item.category_id)) return false;
-    if (hiddenTypeIds && hiddenTypeIds.size > 0 && item.type_id && hiddenTypeIds.has(item.type_id)) return false;
-    return true;
-  });
-
   for (const placement of filteredPlacements) {
     try {
       await drawPlacement(ctx, placement, items);
     } catch (err) {
       console.warn(`Failed to draw placement ${placement.id}:`, err);
     }
+  }
+
+  // Drawing annotations is part of the requested export. Any exception here
+  // aborts before encoding or link activation so a partial PNG is never sent.
+  for (const annotation of zoningAnnotations) {
+    drawZoningAnnotation(ctx, annotation);
   }
 
   const dataUrl = canvas.toDataURL('image/png', quality);
@@ -243,6 +262,35 @@ export async function exportFloorplanImage(
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+export function drawZoningAnnotation(
+  ctx: CanvasRenderingContext2D,
+  annotation: ZoningAnnotationDescriptor,
+): void {
+  ctx.save();
+  try {
+    const scale = annotation.presentationScale;
+    ctx.font = `${ZONING_ANNOTATION_STYLE.fontWeight} ${ZONING_ANNOTATION_STYLE.fontSize / scale}px ${ZONING_ANNOTATION_STYLE.fontFamily}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = ZONING_ANNOTATION_STYLE.outlineWidth / scale;
+    ctx.strokeStyle = ZONING_ANNOTATION_STYLE.outline;
+    ctx.fillStyle = ZONING_ANNOTATION_STYLE.foreground;
+    const drawLine = (text: string, index: number) => {
+      const x = annotation.bounds.x;
+      const y = annotation.bounds.y + ((index + 1) * ZONING_ANNOTATION_STYLE.lineHeight - 2) / scale;
+      ctx.strokeText(text, x, y);
+      ctx.fillText(text, x, y);
+    };
+    annotation.lines.forEach((line, index) => drawLine(line.displayText, index));
+    if (annotation.omitted > 0) {
+      drawLine(`+${annotation.omitted} more`, annotation.lines.length);
+    }
+  } finally {
+    ctx.restore();
+  }
 }
 
 async function drawPlacement(

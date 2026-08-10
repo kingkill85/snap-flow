@@ -1,7 +1,7 @@
 # Issue #89 scenario traceability
 
-Approved source SHA: `d13afe536e6e8dcd727a7a2a32da642ab3de6ee2`
-Approved scenario count: **40**
+Approved source SHA: `9dff3d83b82d32698993d05f3cca3ac4b7b5e695`
+Approved scenario count: **48**
 
 The matrix covers every active scenario in both approved delta specifications. Evidence layers are `backend`, `frontend`, representative real-runtime `cucumber`, or a justified `reviewed assertion`. Cucumber uses the harness-spawned Deno/SQLite backend and Vite frontend without mocks; it intentionally represents user-visible integration paths rather than duplicating every backend permutation.
 
@@ -12,19 +12,27 @@ The matrix covers every active scenario in both approved delta specifications. E
 | Reject one invalid value without partial save | backend + cucumber | HTTP 400 and unchanged state in `backend/tests/routes/areas_zoning_test.ts`; real-runtime scenario `Invalid value is rejected atomically` |
 | Project has one configured Product Type | backend | Repository aggregate in `backend/tests/routes/areas_zoning_test.ts` |
 | Project has multiple configured Product Types | backend + frontend | Aggregate ordering in `backend/tests/routes/areas_zoning_test.ts` and `frontend/src/components/configurator/AreaEditModal.test.tsx` |
-| Project has no applicable definitions | backend + frontend | Empty aggregate compatibility in `backend/tests/config/zoning_migration_test.ts`; empty summary in `frontend/src/components/configurator/AreaPolygon.test.tsx` |
+| Project has no applicable definitions | backend + frontend | Empty aggregate compatibility in `backend/tests/config/zoning_migration_test.ts`; empty annotation in `frontend/src/components/configurator/AreaPolygon.test.tsx` |
 | Tenant user edits own project Area | backend | Authenticated HTTP update in `backend/tests/routes/areas_zoning_test.ts` |
 | Cross-tenant Area request | backend + cucumber | Route suites `backend/tests/routes/areas_zoning_test.ts` and `backend/tests/routes/areas_test.ts`; real-runtime scenario `Cross-tenant Area is non-disclosing` |
 | Concurrent Area edit wins once | backend + cucumber | Stale transaction rollback in `backend/tests/routes/areas_zoning_test.ts`; real-runtime scenario `Stale revision recovery` |
 | Definition changes while editor is open | backend + cucumber | Applicability conflict in `backend/tests/routes/areas_zoning_test.ts`; real-runtime scenario `Applicability conflict has visible recovery` |
-| Edit multiple Product Type groups on desktop | frontend + cucumber | `frontend/src/components/configurator/AreaEditModal.test.tsx`; real-runtime scenario `Multiple Product Type groups on desktop` |
+| Edit one Product Type compactly on desktop | frontend + cucumber | Native compact row assertions in `frontend/src/components/configurator/AreaEditModal.test.tsx`; real-runtime scenario `Compact native zoning editor` |
+| Edit multiple Product Type groups on desktop | frontend + cucumber | Ordered compact groups in `frontend/src/components/configurator/AreaEditModal.test.tsx`; real-runtime scenario `Multiple Product Type groups on desktop` |
 | Edit on a narrow viewport | frontend + cucumber | Responsive component assertions in `frontend/src/components/configurator/AreaEditModal.test.tsx`; real-runtime scenario `Narrow accessible editor` at 390×700 |
-| Operate a stepper accessibly | frontend + cucumber | Bounds and accessible controls in `frontend/src/components/configurator/AreaEditModal.test.tsx`; real-runtime scenario `Keyboard stepper and persistence` |
+| Operate a native number input accessibly | frontend + cucumber | Native spinbutton bounds and absence of custom controls in `frontend/src/components/configurator/AreaEditModal.test.tsx`; real-runtime scenario `Native keyboard stepper and persistence` |
+| Save and reopen compact zoning values | frontend | Complete atomic payload and reopened-prop state behavior in `frontend/src/components/configurator/AreaEditModal.test.tsx`; the representative native-input real-runtime scenario separately proves persisted reopening |
 | Cancel an edit | frontend + cucumber | Component discard behavior in `frontend/src/components/configurator/AreaEditModal.test.tsx`; real-runtime scenario `Cancel discards drafts` |
-| Mixed zero and positive values | frontend + cucumber | Positive-only rendering in `frontend/src/components/configurator/AreaPolygon.test.tsx`; real-runtime scenario `Positive-only grouped summary persists after reload` |
+| Mixed zero and positive values | frontend + cucumber | Positive-only shared model/rendering in `frontend/src/components/configurator/zoning-annotation.test.ts` and `AreaPolygon.test.tsx`; real-runtime scenario `Positive-only grouped annotations persist after reload` |
 | No positive values | frontend | Empty-summary assertion in `frontend/src/components/configurator/AreaPolygon.test.tsx` |
-| Long and numerous values | frontend + cucumber | Bounded geometry in `frontend/src/components/configurator/AreaPolygon.test.tsx`; real-runtime scenario `Summary overflow remains bounded and accessible` |
-| Select or drag through a summary | frontend | `frontend/src/components/configurator/AreaPolygon.test.tsx` verifies non-target `pointer-events: none` behavior |
+| Read annotations over varied floorplan backgrounds | frontend + cucumber | Shared dual-contrast constants and SVG fill/stroke assertions in `frontend/src/components/configurator/zoning-annotation.test.ts` and `AreaPolygon.test.tsx`; real-runtime scenario `Annotation remains readable over varied floorplan backgrounds` verifies direct outlined text without a panel or color-only grouping |
+| Avoid overlapping nearby product placements | frontend + cucumber | Candidate/collision assertions in `frontend/src/components/configurator/zoning-annotation.test.ts`; real-runtime scenario `Annotation avoids a nearby product placement` compares rendered bounding boxes |
+| Long and numerous values | frontend + cucumber | Bounded deterministic model in `frontend/src/components/configurator/zoning-annotation.test.ts`; real-runtime scenario `Annotation overflow remains bounded and accessible` |
+| Select or drag through an annotation | frontend + cucumber | `frontend/src/components/configurator/AreaPolygon.test.tsx` verifies `pointer-events: none`; real-runtime scenario `Annotation passes pointer interaction through` uses hit testing |
+| Export includes the interactive annotations | frontend + cucumber | Shared descriptor drawing and hidden-Area assertions in `frontend/src/services/__tests__/floorplan-export.test.ts`; real-runtime scenario `PNG export preserves annotation presentation` decodes the downloaded PNG, inspects foreground/outline pixels in the shared annotation bounds, and compares real canvas text/style/coordinates with the interactive descriptor |
+| Export remains deterministic at supported scales | frontend | Repeated normalized output in `frontend/src/components/configurator/zoning-annotation.test.ts` and shared raster constants in `frontend/src/services/__tests__/floorplan-export.test.ts` |
+| Export annotations remain clear near products and varied imagery | frontend | Placement-safe shared model and dual-contrast canvas assertions in focused model/export tests; representative real-runtime nearby-placement and PNG scenarios separately exercise both consumers |
+| Annotation export fails closed | frontend + cucumber | `frontend/src/services/__tests__/floorplan-export.test.ts` asserts no encoding/link creation after drawing failure; real-runtime scenario `PNG annotation export fails closed` asserts surfaced error and no download |
 | Upgrade an existing database | backend | Pre-zoning fixture, migration constraints, and repeated startup in `backend/tests/config/zoning_migration_test.ts` |
 | Existing project after upgrade | backend | Preserved project graph, revision zero, and empty zoning tables in `backend/tests/config/zoning_migration_test.ts` |
 | Copy zoning values across multiple floorplans and Areas | backend + cucumber | Remapping/stable identity assertions in `backend/tests/repositories/project-version-zoning_test.ts`; real UI flow `Create Version preserves remapped zoning values` |
@@ -32,7 +40,7 @@ The matrix covers every active scenario in both approved delta specifications. E
 | Copied versions are isolated after creation | backend | Source→destination and destination→source mutation isolation in `backend/tests/repositories/project-version-zoning_test.ts` |
 | Zoning-copy failure rolls back version creation | backend | Injected late zoning failure with BOM-inclusive complete database count restoration in `backend/tests/repositories/project-version-zoning_test.ts` |
 | Inaccessible source version is not copied | backend | Same-tenant wrong-group and cross-tenant non-global route cases with unchanged project/zoning counts in `backend/tests/repositories/project-version-zoning_test.ts` |
-| Traceability gate is evaluated | reviewed assertion | `tools/neo_dev_webhook/tests/test_scenario_traceability.py` proves the matrix denominator comes from all 40 approved scenarios; `npm run e2e:traceability` validates this matrix plus representative feature mappings |
+| Traceability gate is evaluated | backend + frontend | `tools/neo_dev_webhook/tests/test_scenario_traceability.py` proves the matrix denominator comes from all 48 approved scenarios; `npm run e2e:traceability` validates this matrix plus representative feature mappings |
 | Administrator creates a definition | backend + cucumber | HTTP route in `backend/tests/routes/item-types-zoning_test.ts`; real-runtime scenario `Administrator creates a definition` |
 | Non-administrator attempts configuration | backend + cucumber | HTTP 403 in `backend/tests/routes/item-types-zoning_test.ts`; real-runtime scenario `Non-administrator authorization is enforced` |
 | Definitions are listed predictably | backend | Ordered HTTP response in `backend/tests/routes/item-types-zoning_test.ts` |

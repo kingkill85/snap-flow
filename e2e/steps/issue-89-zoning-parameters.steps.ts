@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import type { SnapFlowWorld } from '../support/world.ts';
 
 type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: number; value: number };
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ width: number; height: number }> };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ width: number; height: number }>; productId: number; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: { x: number; y: number; width: number; height: number } };
 
 const authHeaders = (world: ZoningWorld) => ({ Authorization: `Bearer ${world.token}` });
 let cachedAdminAuth: { accessToken: string; refreshToken: string } | undefined;
@@ -86,26 +86,34 @@ Then('the system returns `409 Conflict`', async function (this: ZoningWorld) { a
 Then('preserves the definition and all values', async function (this: ZoningWorld) { await expect(this.page!.getByRole('dialog', { name: 'Delete Zoning Parameter' })).toBeVisible(); const area = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); expect((await area.json()).data.zoning_groups[0].parameters[0].value).toBe(2); });
 
 Given('an Area has definitions from multiple applicable Product Types and viewport width permits two columns', async function (this: ZoningWorld) { await this.page!.setViewportSize({ width: 1440, height: 1000 }); await setupArea(this, 2, 1); });
+Given('an Area has definitions from one applicable Product Type and viewport width permits two columns', async function (this: ZoningWorld) { await this.page!.setViewportSize({ width: 1440, height: 1000 }); await setupArea(this, 1, 2); });
 Given('an Area has applicable definitions and the viewport cannot fit two columns', async function (this: ZoningWorld) { await this.page!.setViewportSize({ width: 390, height: 700 }); await setupArea(this, 2, 4); });
 When('the user opens Edit Area', async function (this: ZoningWorld) { await openAreaEditor(this); });
-Then('Area properties and the zoning column are visible side by side', async function (this: ZoningWorld) { const columns = this.page!.getByRole('dialog').locator('.md\\:grid-cols-2'); await expect(columns).toBeVisible(); expect(await columns.evaluate((element) => getComputedStyle(element).gridTemplateColumns)).not.toBe('none'); });
-Then('all Product Type headings remain discoverable without switching tabs', async function (this: ZoningWorld) { for (let group = 0; group < 2; group++) await expect(this.page!.getByRole('button', { name: new RegExp(`Issue89 Type ${group}`) })).toBeVisible(); await expect(this.page!.getByRole('tab')).toHaveCount(0); });
-Then('the zoning sections stack below the Area property controls', async function (this: ZoningWorld) { const name = this.page!.getByLabel('Name'); const zoning = this.page!.getByRole('heading', { name: 'Zoning Parameters' }); expect((await name.boundingBox())!.y).toBeLessThan((await zoning.boundingBox())!.y); });
-Then('the dialog body scrolls while its title and action controls remain usable', async function (this: ZoningWorld) { const body = this.page!.getByRole('dialog').locator('.overflow-y-auto'); expect(await body.evaluate((element) => element.scrollHeight > element.clientHeight)).toBeTruthy(); await expect(this.page!.getByRole('button', { name: 'Update' })).toBeVisible(); });
+Then('Area properties and the compact zoning pane are visible side by side', async function (this: ZoningWorld) { const columns = this.page!.getByRole('dialog').locator('.md\\:grid-cols-2'); await expect(columns).toBeVisible(); expect(await columns.evaluate((element) => getComputedStyle(element).gridTemplateColumns)).not.toBe('none'); });
+Then('each parameter appears as one narrow number input beside its label under the Product Type heading', async function (this: ZoningWorld) { const inputs = this.page!.getByRole('group', { name: /Issue89 Type 0/ }).getByRole('spinbutton'); await expect(inputs).toHaveCount(2); for (const input of await inputs.all()) expect((await input.boundingBox())!.width).toBeLessThan(110); });
+Then(/^no parameter card, tab, or custom increment\/decrement control is rendered$/, async function (this: ZoningWorld) { await expect(this.page!.getByRole('tab')).toHaveCount(0); await expect(this.page!.getByRole('button', { name: /Increase|Decrease/ })).toHaveCount(0); });
+Then('each Product Type appears as an ordered compact section in the zoning pane', async function (this: ZoningWorld) { const groups = this.page!.getByRole('group', { name: /Issue89 Type/ }); await expect(groups).toHaveCount(2); expect(await groups.nth(0).getAttribute('aria-labelledby')).toContain(String(this.itemTypeIds[0])); });
+Then('all headings and parameter rows remain discoverable without switching tabs', async function (this: ZoningWorld) { for (let group = 0; group < 2; group++) { await expect(this.page!.getByRole('heading', { name: new RegExp(`Issue89 Type ${group}`) })).toBeVisible(); await expect(this.page!.getByRole('spinbutton', { name: `Zones ${group}`, exact: true })).toBeVisible(); } await expect(this.page!.getByRole('tab')).toHaveCount(0); });
+Then('the compact zoning pane stacks below the Area property controls without horizontal page overflow', async function (this: ZoningWorld) { const name = this.page!.getByLabel('Name'); const zoning = this.page!.getByRole('heading', { name: 'Zoning Parameters' }); expect((await name.boundingBox())!.y).toBeLessThan((await zoning.boundingBox())!.y); expect(await this.page!.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy(); });
+Then('the dialog body scrolls while its heading and bottom-right action controls remain reachable and usable', async function (this: ZoningWorld) { const body = this.page!.getByRole('dialog').locator('.overflow-y-auto'); expect(await body.evaluate((element) => element.scrollHeight > element.clientHeight)).toBeTruthy(); await expect(this.page!.getByRole('heading', { name: 'Zoning Parameters' })).toBeVisible(); await expect(this.page!.getByRole('button', { name: 'Update' })).toBeVisible(); });
 
 Given('focus is on a parameter control', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).focus(); });
-When('the user types an integer or activates its labelled plus or minus button by keyboard', async function (this: ZoningWorld) { await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill('4'); await this.page!.getByRole('button', { name: 'Increase Zones 0' }).press('Enter'); await this.page!.getByRole('button', { name: 'Update' }).click(); await openAreaEditor(this); });
+When('the user enters a value with the native number input', async function (this: ZoningWorld) { await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill('4'); await this.page!.getByRole('button', { name: 'Update' }).click(); await openAreaEditor(this); });
+Then('the compact editor has no custom increment or decrement controls', async function (this: ZoningWorld) { await expect(this.page!.getByRole('button', { name: /Increase|Decrease/ })).toHaveCount(0); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveAttribute('step', '1'); });
+Then('the saved native value is shown after reopening', async function (this: ZoningWorld) { await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4'); });
+When('the user types an integer or uses the native number-input keyboard step operation', async function (this: ZoningWorld) { const input = this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }); await input.fill('4'); await input.press('ArrowUp'); await this.page!.getByRole('button', { name: 'Update' }).click(); await openAreaEditor(this); });
 Then('the displayed value changes within the allowed range', async function (this: ZoningWorld) { await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('5'); });
-Then('decrement at zero cannot create a negative value', async function (this: ZoningWorld) { await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill('0'); await expect(this.page!.getByRole('button', { name: 'Decrease Zones 0' })).toBeDisabled(); });
+Then('decrement at zero cannot create a negative value', async function (this: ZoningWorld) { const input = this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }); await input.fill('0'); await input.press('ArrowDown'); await expect(input).toHaveValue('0'); });
+Then('no redundant custom plus or minus control is present', async function (this: ZoningWorld) { await expect(this.page!.getByRole('button', { name: /Increase|Decrease/ })).toHaveCount(0); });
 
 Given('the user changed Area properties or zoning values in the dialog', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); await this.page!.getByLabel('Name').fill('Draft Name'); await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill('8'); });
 When('the user activates Cancel, presses Escape, or dismisses the dialog', async function (this: ZoningWorld) { await this.page!.getByRole('button', { name: 'Cancel' }).click(); });
 Then('no draft changes are sent or retained', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); const area = (await response.json()).data; expect(area.name).toBe(this.originalName); expect(area.zoning_groups[0].parameters[0].value).toBe(0); });
 
 Given('an Area has positive and zero values across two applicable Product Types', async function (this: ZoningWorld) { await setupArea(this, 2, 1); await saveValues(this, [3, 0]); });
-When('the floorplan renders', async function (this: ZoningWorld) { await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByLabel('Zoning summary')).toBeVisible(); await this.page!.reload(); await expect(this.page!.getByLabel('Zoning summary')).toBeVisible(); });
-Then('each Product Type with a positive value has one labelled group', async function (this: ZoningWorld) { await expect(this.page!.getByLabel('Zoning summary')).toContainText(/Issue89 Type 0.*Zones 0: 3/); });
-Then('zero-valued parameters and empty Product Type groups are absent', async function (this: ZoningWorld) { await expect(this.page!.getByLabel('Zoning summary')).not.toContainText('Issue89 Type 1'); });
+When('the interactive floorplan or PNG export renders', async function (this: ZoningWorld) { await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); await this.page!.reload(); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
+Then('each Product Type with a positive value has one labelled group', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).toContainText(/Issue89 Type 0.*Zones 0: 3/); });
+Then('zero-valued parameters and empty Product Type groups are absent', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).not.toContainText('Issue89 Type 1'); });
 
 Given('an Area has more positive values than fit within the summary bounds and some names are long', async function (this: ZoningWorld) { await setupArea(this, 2, 4); await saveValues(this, Array(8).fill(2)); });
 When('the floorplan renders at any supported zoom', async function (this: ZoningWorld) {
@@ -117,12 +125,104 @@ When('the floorplan renders at any supported zoom', async function (this: Zoning
   ];
   for (const { target, action } of sequence) {
     await action(); await expect(this.page!.getByText(`${target}%`, { exact: true })).toBeVisible();
-    const box = await this.page!.getByTestId('area-zoning-summary-bounds').boundingBox(); expect(box).not.toBeNull(); this.cssBounds.push({ width: box!.width, height: box!.height });
+    const box = await this.page!.getByTestId('area-zoning-annotation').boundingBox(); expect(box).not.toBeNull(); this.cssBounds.push({ width: box!.width, height: box!.height });
   }
 });
-Then('visible rows stay within the bounded summary', async function (this: ZoningWorld) { for (const box of this.cssBounds) { expect(box.width).toBeLessThanOrEqual(150.5); expect(Math.abs(box.width - this.cssBounds[0].width)).toBeLessThan(1); expect(Math.abs(box.height - this.cssBounds[0].height)).toBeLessThan(1); } });
-Then('truncated content exposes full text accessibly', async function (this: ZoningWorld) { const summary = this.page!.getByLabel('Zoning summary'); expect(await summary.locator('title').count()).toBeGreaterThan(0); const box = await summary.boundingBox(); expect(box).not.toBeNull(); const hitSummary = await this.page!.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-testid="area-zoning-summary"]') !== null, { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 }); expect(hitSummary).toBe(false); });
-Then('a `+N more` row reports the omitted positive values', async function (this: ZoningWorld) { await expect(this.page!.getByLabel('Zoning summary')).toContainText(/\+2 more/); });
+Then('visible rows stay within the bounded summary', async function (this: ZoningWorld) { for (const box of this.cssBounds) { expect(box.width).toBeGreaterThan(0); expect(box.width).toBeLessThanOrEqual(230); expect(box.height).toBeLessThanOrEqual(150); } });
+Then('truncated content exposes full text accessibly', async function (this: ZoningWorld) { const annotation = this.page!.getByTestId('area-zoning-annotation'); expect(await annotation.locator('title').count()).toBeGreaterThan(0); });
+Then('a `+N more` row reports the omitted positive values', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).toContainText(/\+2 more/); });
+
+Given('positive zoning annotations cross light, dark, detailed, and mixed regions of a floorplan', async function (this: ZoningWorld) { await setupArea(this, 2, 2); await saveValues(this, [2, 0, 4, 0]); });
+When('the interactive floorplan renders at a supported zoom', async function (this: ZoningWorld) { await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
+Then('every visible annotation uses the defined dual-contrast text treatment without a large opaque backing panel', async function (this: ZoningWorld) { const annotation = this.page!.getByTestId('area-zoning-annotation'); await expect(annotation.locator('rect')).toHaveCount(0); for (const text of await annotation.locator('text').all()) { await expect(text).toHaveAttribute('fill', '#ffffff'); await expect(text).toHaveAttribute('stroke', '#111827'); } });
+Then('its meaning remains available without relying on color', async function (this: ZoningWorld) { const annotation = this.page!.getByTestId('area-zoning-annotation'); await expect(annotation).toContainText(/Issue89 Type 0.*Zones 0: 2/); await expect(annotation).toContainText(/Issue89 Type 1.*Zones 1: 4/); });
+
+Given('an Area contains positive zoning values and one or more product placements near its preferred annotation anchor', async function (this: ZoningWorld) {
+  await setupArea(this, 1, 1); await saveValues(this, [3]);
+  const categoryResponse = await this.page!.request.post(`${this.apiUrl}/api/categories`, { headers: authHeaders(this), data: { name: `Issue89 Category ${Date.now()}` } });
+  const category = (await categoryResponse.json()).data;
+  const itemResponse = await this.page!.request.post(`${this.apiUrl}/api/items`, { headers: authHeaders(this), data: { category_id: category.id, name: `Issue89 Product ${Date.now()}`, type_id: this.itemTypeIds[0] } });
+  const itemBody = await itemResponse.json(); if (!itemResponse.ok()) throw new Error(JSON.stringify(itemBody));
+  const variantResponse = await this.page!.request.post(`${this.apiUrl}/api/items/${itemBody.data.id}/variants`, { headers: authHeaders(this), multipart: { style_name: 'Default', price: '1' } });
+  const variantBody = await variantResponse.json(); if (!variantResponse.ok()) throw new Error(JSON.stringify(variantBody));
+  const placementResponse = await this.page!.request.post(`${this.apiUrl}/api/placements`, { headers: authHeaders(this), data: { floorplan_id: this.floorplanId, item_variant_id: variantBody.data.id, x: 180, y: 90, width: 140, height: 100, rotation: 0 } });
+  const placementBody = await placementResponse.json(); if (!placementResponse.ok()) throw new Error(JSON.stringify(placementBody));
+  this.productId = placementBody.data.id;
+});
+When('the interactive floorplan lays out the annotation', async function (this: ZoningWorld) { await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); await expect(this.page!.locator(`[data-placement-id="${this.productId}"]`)).toBeVisible(); });
+Then('it deterministically selects the first safe candidate that intersects neither a product placement nor an earlier annotation', async function (this: ZoningWorld) { const annotationLocator = this.page!.getByTestId('area-zoning-annotation'); await expect(annotationLocator.locator('rect')).toHaveCount(0); const text = annotationLocator.locator('text').first(); await expect(text).toHaveAttribute('fill', '#ffffff'); await expect(text).toHaveAttribute('stroke', '#111827'); const annotation = await annotationLocator.boundingBox(); const product = await this.page!.locator(`[data-placement-id="${this.productId}"]`).boundingBox(); expect(annotation && product).toBeTruthy(); expect(annotation!.x + annotation!.width <= product!.x || annotation!.x >= product!.x + product!.width || annotation!.y + annotation!.height <= product!.y || annotation!.y >= product!.y + product!.height).toBeTruthy(); });
+Then('if all candidates are constrained it omits lower-priority rows and reports them with `+N more` rather than covering a product item', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveAttribute('data-anchor'); });
+
+Given('a zoning annotation is visible on an Area', async function (this: ZoningWorld) { await setupArea(this, 1, 2); await saveValues(this, [3, 0]); await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
+When('the user selects or drags the underlying Area at the annotation position', async function (this: ZoningWorld) { const annotation = this.page!.getByTestId('area-zoning-annotation'); const box = await annotation.boundingBox(); expect(box).not.toBeNull(); this.lastStatus = await this.page!.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-testid="area-zoning-annotation"]') ? 1 : 0, { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 }); });
+Then('the existing Area interaction handles the pointer event', function (this: ZoningWorld) { expect(this.lastStatus).toBe(0); });
+Then('the annotation does not become a separate interaction target', async function (this: ZoningWorld) { await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveCSS('pointer-events', 'none'); });
+
+Given('the interactive floorplan shows positive zoning annotations for visible Areas', async function (this: ZoningWorld) { await setupArea(this, 1, 2); await saveValues(this, [3, 0]); await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
+When('the user invokes the existing PNG floorplan export with the same Area, placement, and visibility state', async function (this: ZoningWorld) {
+  const serializedBounds = await this.page!.getByTestId('area-zoning-annotation').getAttribute('data-bounds');
+  if (!serializedBounds) throw new Error('Interactive annotation bounds unavailable');
+  const [x, y, width, height] = serializedBounds.split(',').map(Number);
+  this.annotationBounds = { x, y, width, height };
+  await this.page!.evaluate(() => {
+    const prototype = CanvasRenderingContext2D.prototype as CanvasRenderingContext2D & { __issue89Wrapped?: boolean };
+    if (prototype.__issue89Wrapped) return;
+    prototype.__issue89Wrapped = true;
+    const originalStrokeText = prototype.strokeText;
+    const originalFillText = prototype.fillText;
+    (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText = [];
+    prototype.strokeText = function (text, x, y, maxWidth) {
+      (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'stroke', text, x, y, strokeStyle: this.strokeStyle, lineWidth: this.lineWidth });
+      return maxWidth === undefined
+        ? originalStrokeText.call(this, text, x, y)
+        : originalStrokeText.call(this, text, x, y, maxWidth);
+    };
+    prototype.fillText = function (text, x, y, maxWidth) {
+      (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'fill', text, x, y, fillStyle: this.fillStyle });
+      return maxWidth === undefined
+        ? originalFillText.call(this, text, x, y)
+        : originalFillText.call(this, text, x, y, maxWidth);
+    };
+  });
+  const downloadPromise = this.page!.waitForEvent('download');
+  await this.page!.getByTitle('Export floorplan image').click();
+  const download = await downloadPromise;
+  const path = await download.path(); if (!path) throw new Error('PNG download path unavailable');
+  this.downloadBytes = await readFile(path);
+});
+Then('the PNG contains the same grouped annotation text, ordering, omission count, normalized anchors, and contrast treatment', async function (this: ZoningWorld) {
+  expect(this.downloadBytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+  const calls = await this.page!.evaluate(() => (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText);
+  const stroke = calls.find((call) => call.kind === 'stroke' && String(call.text).includes('Issue89 Type 0'));
+  const fill = calls.find((call) => call.kind === 'fill' && String(call.text).includes('Issue89 Type 0'));
+  expect(stroke?.strokeStyle).toBe('#111827'); expect(stroke?.lineWidth).toBe(3); expect(fill?.fillStyle).toBe('#ffffff');
+  const rasterX = Number(stroke?.x); const rasterY = Number(stroke?.y);
+  expect(rasterX + 75).toBeCloseTo(this.annotationBounds.x + this.annotationBounds.width / 2);
+  expect(rasterY).toBeGreaterThan(0);
+  const raster = await this.page!.evaluate(async ({ base64, bounds }) => {
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+    const canvas = document.createElement('canvas'); canvas.width = bitmap.width; canvas.height = bitmap.height;
+    const context = canvas.getContext('2d'); if (!context) throw new Error('Raster inspection context unavailable');
+    context.drawImage(bitmap, 0, 0); bitmap.close();
+    const left = Math.max(0, Math.floor(bounds.x - 3)); const top = Math.max(0, Math.floor(bounds.y - 3));
+    const width = Math.min(canvas.width - left, Math.ceil(bounds.width + 6)); const height = Math.min(canvas.height - top, Math.ceil(bounds.height + 6));
+    const pixels = context.getImageData(left, top, width, height).data;
+    let light = 0; let dark = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index] > 245 && pixels[index + 1] > 245 && pixels[index + 2] > 245 && pixels[index + 3] > 0) light++;
+      if (pixels[index] >= 10 && pixels[index] <= 35 && pixels[index + 1] >= 20 && pixels[index + 1] <= 45 && pixels[index + 2] >= 30 && pixels[index + 2] <= 60 && pixels[index + 3] > 0) dark++;
+    }
+    return { width: canvas.width, height: canvas.height, light, dark };
+  }, { base64: this.downloadBytes.toString('base64'), bounds: { x: rasterX, y: rasterY - 12, width: 150, height: 14 } });
+  expect(raster.width).toBeGreaterThan(0); expect(raster.height).toBeGreaterThan(0); expect(raster.light).toBeGreaterThan(0); expect(raster.dark).toBeGreaterThan(0);
+});
+Then('hidden Areas and zero or empty groups remain absent', async function (this: ZoningWorld) { const calls = await this.page!.evaluate(() => (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText); expect(calls.some((call) => String(call.text).includes('Extremely long parameter wording 0-1'))).toBe(false); });
+
+Given('the shared annotation model cannot be laid out or drawn completely', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await saveValues(this, [2]); await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); await this.page!.evaluate(() => { CanvasRenderingContext2D.prototype.strokeText = () => { throw new Error('Issue 89 forced annotation failure'); }; }); });
+When('PNG export is attempted', async function (this: ZoningWorld) { this.exportDownloaded = false; this.page!.once('download', () => { this.exportDownloaded = true; }); await this.page!.getByTitle('Export floorplan image').click(); });
+Then('the existing export operation reports failure and triggers no download', async function (this: ZoningWorld) { await expect(this.page!.getByRole('alert')).toContainText(/export failed.*forced annotation failure/i); await this.page!.waitForTimeout(300); expect(this.exportDownloaded).toBe(false); });
+Then('it does not silently export an image missing zoning annotations', function (this: ZoningWorld) { expect(this.exportDownloaded).toBe(false); });
 
 Given('two editors loaded the same Area revision and applicability set', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); });
 When('the first update succeeds and the second submits its stale revision', async function (this: ZoningWorld) { const first = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this), data: { revision: this.areaRevision, name: 'Winning Area', applicable_parameter_ids: this.parameterIds, zoning_values: [{ parameter_id: this.parameterIds[0], value: 4 }] } }); expect(first.status()).toBe(200); await this.page!.getByLabel('Name').fill('Losing Area'); await this.page!.getByRole('button', { name: 'Update' }).click(); });

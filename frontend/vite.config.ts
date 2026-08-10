@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+const backendProxyTarget = (process.env.VITE_API_URL ?? 'http://localhost:8000/api')
+  .replace(/\/api\/?$/, '')
+
 const e2eOwnership = () => ({
   name: 'snapflow-e2e-ownership',
   configureServer(server: { middlewares: { use: (path: string, handler: (_req: unknown, res: import('node:http').ServerResponse) => void) => void } }) {
@@ -34,11 +37,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: backendProxyTarget,
         changeOrigin: true,
       },
       '/uploads': {
-        target: 'http://localhost:8000',
+        target: backendProxyTarget,
         changeOrigin: true,
       },
     },

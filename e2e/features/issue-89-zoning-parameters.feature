@@ -15,26 +15,35 @@ Feature: Generic Product Type zoning parameters
     Then the system returns `409 Conflict`
     And preserves the definition and all values
 
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#edit-one-product-type-compactly-on-desktop
+  Scenario: Compact native zoning editor
+    Given an Area has definitions from one applicable Product Type and viewport width permits two columns
+    When the user opens Edit Area
+    Then Area properties and the compact zoning pane are visible side by side
+    And each parameter appears as one narrow number input beside its label under the Product Type heading
+    And no parameter card, tab, or custom increment/decrement control is rendered
+
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#edit-multiple-product-type-groups-on-desktop
   Scenario: Multiple Product Type groups on desktop
     Given an Area has definitions from multiple applicable Product Types and viewport width permits two columns
     When the user opens Edit Area
-    Then Area properties and the zoning column are visible side by side
-    And all Product Type headings remain discoverable without switching tabs
+    Then each Product Type appears as an ordered compact section in the zoning pane
+    And all headings and parameter rows remain discoverable without switching tabs
 
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#edit-on-a-narrow-viewport
   Scenario: Narrow accessible editor
     Given an Area has applicable definitions and the viewport cannot fit two columns
     When the user opens Edit Area
-    Then the zoning sections stack below the Area property controls
-    And the dialog body scrolls while its title and action controls remain usable
+    Then the compact zoning pane stacks below the Area property controls without horizontal page overflow
+    And the dialog body scrolls while its heading and bottom-right action controls remain reachable and usable
 
-  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#operate-a-stepper-accessibly
-  Scenario: Keyboard stepper and persistence
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#operate-a-native-number-input-accessibly
+  Scenario: Native keyboard stepper and persistence
     Given focus is on a parameter control
-    When the user types an integer or activates its labelled plus or minus button by keyboard
+    When the user types an integer or uses the native number-input keyboard step operation
     Then the displayed value changes within the allowed range
     And decrement at zero cannot create a negative value
+    And no redundant custom plus or minus control is present
 
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#cancel-an-edit
   Scenario: Cancel discards drafts
@@ -43,19 +52,54 @@ Feature: Generic Product Type zoning parameters
     Then no draft changes are sent or retained
 
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#mixed-zero-and-positive-values
-  Scenario: Positive-only grouped summary persists after reload
+  Scenario: Positive-only grouped annotations persist after reload
     Given an Area has positive and zero values across two applicable Product Types
-    When the floorplan renders
+    When the interactive floorplan or PNG export renders
     Then each Product Type with a positive value has one labelled group
     And zero-valued parameters and empty Product Type groups are absent
 
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#long-and-numerous-values
-  Scenario: Summary overflow remains bounded and accessible
+  Scenario: Annotation overflow remains bounded and accessible
     Given an Area has more positive values than fit within the summary bounds and some names are long
     When the floorplan renders at any supported zoom
     Then visible rows stay within the bounded summary
     And truncated content exposes full text accessibly
     And a `+N more` row reports the omitted positive values
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#read-annotations-over-varied-floorplan-backgrounds
+  Scenario: Annotation remains readable over varied floorplan backgrounds
+    Given positive zoning annotations cross light, dark, detailed, and mixed regions of a floorplan
+    When the interactive floorplan renders at a supported zoom
+    Then every visible annotation uses the defined dual-contrast text treatment without a large opaque backing panel
+    And its meaning remains available without relying on color
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#avoid-overlapping-nearby-product-placements
+  Scenario: Annotation avoids a nearby product placement
+    Given an Area contains positive zoning values and one or more product placements near its preferred annotation anchor
+    When the interactive floorplan lays out the annotation
+    Then it deterministically selects the first safe candidate that intersects neither a product placement nor an earlier annotation
+    And if all candidates are constrained it omits lower-priority rows and reports them with `+N more` rather than covering a product item
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#select-or-drag-through-an-annotation
+  Scenario: Annotation passes pointer interaction through
+    Given a zoning annotation is visible on an Area
+    When the user selects or drags the underlying Area at the annotation position
+    Then the existing Area interaction handles the pointer event
+    And the annotation does not become a separate interaction target
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#export-includes-the-interactive-annotations
+  Scenario: PNG export preserves annotation presentation
+    Given the interactive floorplan shows positive zoning annotations for visible Areas
+    When the user invokes the existing PNG floorplan export with the same Area, placement, and visibility state
+    Then the PNG contains the same grouped annotation text, ordering, omission count, normalized anchors, and contrast treatment
+    And hidden Areas and zero or empty groups remain absent
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#annotation-export-fails-closed
+  Scenario: PNG annotation export fails closed
+    Given the shared annotation model cannot be laid out or drawn completely
+    When PNG export is attempted
+    Then the existing export operation reports failure and triggers no download
+    And it does not silently export an image missing zoning annotations
 
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/product-type-zoning-parameters/spec.md#non-administrator-attempts-configuration
   Scenario: Non-administrator authorization is enforced

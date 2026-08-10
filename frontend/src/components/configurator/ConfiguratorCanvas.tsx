@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useEffect } from 'react';
+import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { Pencil, X, Loader2, AlertCircle, ZoomIn, ZoomOut, RotateCcw, RotateCw, Save, Trash2, Download } from 'lucide-react';
@@ -22,6 +22,7 @@ import type { FloorplanBom } from '@/services/bom';
 import { exportFloorplanImage } from '@/services/floorplan-export';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AreaPolygon } from './AreaPolygon';
+import { layoutZoningAnnotations } from './zoning-annotation';
 import type { Area } from '@/services/area';
 
 // CSS keyframes for fade-in animation (50ms for snappy feel)
@@ -477,6 +478,7 @@ function DraggablePlacement({
       {...(isSelected ? {} : listeners)}
       {...attributes}
       data-placement="true"
+      data-placement-id={placement.id}
       style={{
         position: 'absolute',
         left: placement.x * scaleX,
@@ -1117,6 +1119,7 @@ export function ConfiguratorCanvas({
   const [editingPlacement, setEditingPlacement] = useState<Placement | null>(null);
   const [imageCacheBuster, setImageCacheBuster] = useState(Date.now());
   const [isImageLoading, setIsImageLoading] = useState(true);
+  const [exportError, setExportError] = useState('');
   const { setNodeRef, isOver } = useDroppable({
     id: `canvas-${floorplan.id}`,
   });
@@ -1352,6 +1355,33 @@ export function ConfiguratorCanvas({
   const scaledScaleX = scaleX * zoom;
   const scaledScaleY = scaleY * zoom;
 
+  const visibleAreas = useMemo(
+    () => (areas ?? []).filter((area) => !hiddenAreaIds?.has(area.id)),
+    [areas, hiddenAreaIds],
+  );
+  const visibleProductPlacements = useMemo(() => placements.filter((placement) => {
+    const item = items.find((candidate) => candidate.id === placement.item_id);
+    if (!item) return true;
+    if (visibleCategoryIds && !visibleCategoryIds.has(item.category_id)) return false;
+    if (hiddenTypeIds?.size && item.type_id && hiddenTypeIds.has(item.type_id)) return false;
+    return true;
+  }), [placements, items, visibleCategoryIds, hiddenTypeIds]);
+  const zoningAnnotations = useMemo(() => layoutZoningAnnotations({
+    areas: visibleAreas,
+    productBounds: visibleProductPlacements.map((placement) => ({
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
+      height: placement.height,
+    })),
+    imageBounds: { x: 0, y: 0, width: imageNaturalSize.width, height: imageNaturalSize.height },
+    displayScale: Math.min(scaledScaleX, scaledScaleY) || 1,
+  }), [visibleAreas, visibleProductPlacements, imageNaturalSize.width, imageNaturalSize.height, scaledScaleX, scaledScaleY]);
+  const zoningAnnotationsByArea = useMemo(
+    () => new Map(zoningAnnotations.map((annotation) => [annotation.areaId, annotation])),
+    [zoningAnnotations],
+  );
+
   // Update scaleRef for DragOverlay sizing
   useEffect(() => {
     if (scaleRef) {
@@ -1374,10 +1404,12 @@ export function ConfiguratorCanvas({
   }, [setZoom, setPan]);
 
   const handleExportImage = async () => {
+    setExportError('');
     try {
       await exportFloorplanImage(floorplan, placements, items, {}, visibleCategoryIds, areas, hiddenAreaIds, hiddenTypeIds);
     } catch (err) {
       console.error('Failed to export floorplan:', err);
+      setExportError(err instanceof Error ? err.message : 'Failed to export floorplan image');
     }
   };
 
@@ -1544,6 +1576,7 @@ export function ConfiguratorCanvas({
                       <AreaPolygon
                         key={area.id}
                         area={area}
+                        zoningAnnotation={zoningAnnotationsByArea.get(area.id)}
                         isSelected={selectedAreaId === area.id}
                         scale={(Math.min(scaleX, scaleY) * zoom) || 1}
                         onSelect={(id) => { setSelectedPlacementId(null); onSelectArea?.(id); }}
@@ -1669,6 +1702,8 @@ export function ConfiguratorCanvas({
                     <AreaPolygon
                       key={selectedArea.id}
                       area={selectedArea}
+                      zoningAnnotation={zoningAnnotationsByArea.get(selectedArea.id)}
+                      showZoningAnnotation={false}
                       isSelected={true}
                       scale={(Math.min(scaleX, scaleY) * zoom) || 1}
                       onSelect={(id) => { setSelectedPlacementId(null); onSelectArea?.(id); }}
@@ -1692,6 +1727,11 @@ export function ConfiguratorCanvas({
         )}
 
         {/* Zoom Controls */}
+        {exportError && (
+          <div role="alert" className="absolute bottom-4 right-20 z-50 max-w-xs rounded-md border border-destructive/30 bg-background p-3 text-sm text-destructive shadow-lg">
+            Floorplan export failed: {exportError}
+          </div>
+        )}
         <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-50">
           <div className="bg-background/90 border rounded-lg shadow-lg p-2 flex flex-col gap-1">
             <Button
