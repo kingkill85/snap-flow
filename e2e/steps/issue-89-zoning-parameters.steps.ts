@@ -77,6 +77,9 @@ async function expectUsableNativeInputSpacing(world: ZoningWorld, inputs: Locato
     const metrics = await input.evaluate((element) => {
       const style = getComputedStyle(element);
       return {
+        width: Number.parseFloat(style.width),
+        minWidth: Number.parseFloat(style.minWidth),
+        flexShrink: style.flexShrink,
         paddingRight: Number.parseFloat(style.paddingRight),
         paddingLeft: Number.parseFloat(style.paddingLeft),
         textAlign: style.textAlign,
@@ -84,6 +87,9 @@ async function expectUsableNativeInputSpacing(world: ZoningWorld, inputs: Locato
     });
     expect(box!.width).toBeGreaterThanOrEqual(96);
     expect(box!.width).toBeLessThan(110);
+    expect(metrics.width).toBeGreaterThanOrEqual(104);
+    expect(metrics.minWidth).toBeGreaterThanOrEqual(104);
+    expect(metrics.flexShrink).toBe('0');
     expect(metrics.paddingRight).toBeGreaterThanOrEqual(32);
     expect(metrics.paddingLeft).toBeGreaterThanOrEqual(12);
     expect(metrics.textAlign).toBe('left');
