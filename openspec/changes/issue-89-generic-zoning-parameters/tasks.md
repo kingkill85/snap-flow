@@ -17,6 +17,8 @@
 - [ ] 3.3 RED: add Area route tests for grouped applicability through `project_item_types`, categories having no effect, additive backward-compatible responses, atomic property/value updates, invalid values, changed-definition and stale-revision 409 responses, and retained values across Product Type/definition/project deactivation.
 - [ ] 3.4 RED: add authorization regression tests for unauthenticated and cross-tenant list/detail/create/update/vertex/delete Area access, including non-disclosing 404 behavior and zero mutations.
 - [ ] 3.5 GREEN: tenant-scope all touched Area routes through floorplan → project, extend strict request/response schemas and services, and make the focused Area behavior/security tests pass without breaking property-only clients.
+- [ ] 3.6 RED: add repository and Create Version route tests covering multiple floorplans/Areas, mixed positive and omitted values, source-to-new Area ID remapping, unchanged stable parameter IDs, no cloned definitions, no duplicates/orphans/cross-version links, bidirectional post-copy isolation, existing tenant/source authorization, and injected zoning-copy failure with complete database rollback.
+- [ ] 3.7 GREEN: extend the existing transactional project-version copy to select zoning rows only for copied source Areas, require a destination Area mapping, insert independent rows using new Area IDs and unchanged parameter IDs, and make the focused repository/route tests pass without adding an endpoint or UI control.
 
 ## 4. Product Type Configuration UI RED/GREEN
 
@@ -38,6 +40,8 @@
 
 - [ ] 7.1 RED: add Issue #89-tagged Cucumber features and Playwright steps that fail against the pre-change real runtime for administrator definition configuration, one- and multi-Product-Type applicability, accessible desktop/narrow editing, direct/stepper entry, Cancel, persistence after reload, positive-only grouped summaries, overflow, deactivation/reactivation retention, stale-definition/revision recovery, authorization, and representative validation errors.
 - [ ] 7.2 GREEN: run the real backend/frontend and make those Cucumber/Playwright scenarios pass without mocks; update the traceability matrix with exact scenario/test references and record any justified non-automated assertions.
+- [ ] 7.3 RED: add an Issue #89-tagged real-runtime Cucumber/Playwright scenario that configures and saves representative zoning values, uses the existing Create Version browser flow, and fails unless the new version exposes the exact copied values on remapped Areas while source and destination remain independently editable.
+- [ ] 7.4 GREEN: make the Create Version zoning-preservation scenario pass against the spawned real backend/frontend, verify persisted destination Area IDs differ from source Area IDs while parameter IDs remain stable, and update the traceability matrix with the exact scenario and backend repository/route evidence. No frontend behavior change is expected beyond exercising the existing Create Version flow.
 
 ## 8. Verification and Independent Review
 

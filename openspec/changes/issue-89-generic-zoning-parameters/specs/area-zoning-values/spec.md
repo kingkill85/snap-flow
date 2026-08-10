@@ -145,8 +145,44 @@ The migration MUST be additive and MUST NOT create zoning definitions or values 
 - **WHEN** a user edits or views an Area
 - **THEN** existing Area property behavior and rendering remain unchanged
 
+### Requirement: Project version creation preserves copied Area zoning values
+When an authorized user creates a new project version from a source version through the existing Create Version flow, the system SHALL copy every persisted zoning value belonging to each source Area that is copied into the new version. Each copied row MUST reference the corresponding new Area identity through the source-to-new placement mapping and MUST retain the same stable Product-Type-owned `parameter_id`; the system MUST NOT clone parameter definitions. The copy MUST include only positive integer values owned by source Areas actually copied from the selected source version and MUST create no duplicate, orphaned, source-Area, or cross-version references.
+
+The zoning copy MUST participate in the same atomic operation as creation of the project version and copying of its floorplans, placements, Area properties and vertices, and project Product Type associations. Any zoning selection, mapping, validation, constraint, or persistence failure MUST roll back the entire new-version creation with no partial project or zoning rows. Existing tenant access and source-version membership rules for Create Version MUST apply unchanged.
+
+#### Scenario: Copy zoning values across multiple floorplans and Areas
+- **GIVEN** an authorized user selects a source version with multiple floorplans and copied Areas having positive zoning values
+- **WHEN** the user creates a new version through the existing Create Version flow
+- **THEN** every source zoning value is reproduced exactly once for its corresponding new Area
+- **AND** every copied value references a new-version Area ID, never a source Area ID
+- **AND** each copied value retains the source row's positive integer value and stable parameter identity
+
+#### Scenario: Copy mixed valued and unvalued Areas
+- **GIVEN** a source version contains copied Areas with positive zoning rows and copied Areas with zero or omitted values
+- **WHEN** an authorized user creates a new version
+- **THEN** the new version contains zoning rows only for the source's persisted positive values
+- **AND** unvalued Areas acquire no zoning rows
+- **AND** Product Type parameter definitions are not duplicated
+
+#### Scenario: Copied versions are isolated after creation
+- **GIVEN** a new version was created with zoning values copied to remapped Area IDs
+- **WHEN** an authorized user later changes or clears a zoning value in either the source or new version
+- **THEN** the corresponding value in the other version remains unchanged
+
+#### Scenario: Zoning-copy failure rolls back version creation
+- **GIVEN** otherwise valid version creation encounters a zoning-row mapping or persistence failure
+- **WHEN** the operation attempts to create the new version
+- **THEN** the request fails
+- **AND** no new project, floorplan, placement, Area, project Product Type association, or zoning-value row from that operation remains
+
+#### Scenario: Inaccessible source version is not copied
+- **GIVEN** an authenticated caller supplies a project group or source version outside the caller's tenant scope or a source version not belonging to the selected group
+- **WHEN** the caller submits the existing Create Version request
+- **THEN** the system returns the same non-disclosing authorization or not-found response used by current version creation
+- **AND** creates no project or zoning rows
+
 ### Requirement: User-visible scenarios are traceable across test layers
-Every normative Issue #89 scenario MUST be mapped to automated coverage or an explicit justified review assertion. Persistence, validation, authorization, lifecycle, atomicity, migration, and conflict behavior MUST have backend repository or route coverage; editor and summary presentation MUST have focused frontend unit/component coverage; and representative configuration, multi-group editing, persistence-after-reload, positive-only summary, accessibility, overflow, and stale/error recovery paths MUST be covered by Issue #89-tagged Cucumber scenarios driven by Playwright against the real SnapFlow frontend and backend.
+Every normative Issue #89 scenario MUST be mapped to automated coverage or an explicit justified review assertion. Persistence, validation, authorization, lifecycle, atomicity, migration, project-version copying, and conflict behavior MUST have backend repository or route coverage; editor and summary presentation MUST have focused frontend unit/component coverage; and representative configuration, multi-group editing, persistence-after-reload, positive-only summary, accessibility, overflow, stale/error recovery, and Create Version zoning preservation paths MUST be covered by Issue #89-tagged Cucumber scenarios driven by Playwright against the real SnapFlow frontend and backend.
 
 #### Scenario: Traceability gate is evaluated
 - **GIVEN** the Issue #89 implementation is ready for review

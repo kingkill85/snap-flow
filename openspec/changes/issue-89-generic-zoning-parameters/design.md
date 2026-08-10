@@ -15,12 +15,13 @@ SQLite migrations run sequentially from `backend/src/scripts/migrate.ts`. Reposi
 - Make a zoning-aware Area save all-or-nothing and detect both concurrent Area edits and configuration drift.
 - Bound UI size and query work so many Areas or definitions do not create unbounded overlays or per-Area database query loops.
 - Close the existing authorization gap for Area routes touched by this capability by resolving access through the owning project.
+- Make project-version creation carry copied Areas' zoning values to their remapped Area identities without cloning Product Type definitions or weakening the existing transaction and authorization boundary.
 
 **Non-Goals:**
 
 - Automatic module choice, BOM/BOQ generation, pricing, or electrical compatibility rules.
 - Vendor-specific schemas, parameter data types other than bounded non-negative integers, parameter units, formulas, dependencies, or per-project definition overrides.
-- Excel import/export, proposal/invoice output, floorplan image export, project-version copying semantics beyond preserving normal database relationships, or historical display-name snapshots.
+- Excel import/export, proposal/invoice output, floorplan image export, or historical display-name snapshots.
 - A new permission system, public API version, real-time collaboration channel, or bulk Area editor.
 
 ## Decisions
@@ -107,6 +108,16 @@ Create a traceability table during implementation mapping every delta-spec scena
 
 Because Area editing and floorplan rendering visibly change, independent Playwright UI review applies at desktop and narrow viewports after automated suites pass. Independent code and test review also apply under the governed workflow.
 
+### 9. Copy Area zoning values through the existing project-version identity maps
+
+The existing Create Version repository operation already runs project, floorplan, BOM, placement, Area properties/vertices, and project Product Type copying inside one database transaction and builds a `placementIdMap` from every copied source placement ID to its new placement ID. After copied Areas exist, load zoning rows by joining `area_zoning_values` to source Area placements on the source version's copied floorplans. For every row, require a mapped destination Area and insert the same positive integer value with `area_placement_id` set to the mapped placement ID and `parameter_id` unchanged.
+
+The copy query is source-version-scoped and Area-scoped, so it cannot select values for Areas that were not copied. Treat a selected zoning row without a mapped destination Area as an invariant failure instead of skipping it. The destination table's Area/parameter uniqueness and foreign keys remain the final duplicate/orphan guard. Product-Type-owned definitions are shared configuration and MUST NOT be cloned; copying `project_item_types` preserves applicability while the unchanged parameter identity preserves meaning.
+
+Any query, mapping, constraint, or insert failure propagates through the existing transaction so the new project and all related database rows roll back together. The existing version route remains the authorization boundary: it resolves the project group under tenant context and verifies that the supplied source version belongs to that accessible group before invoking the repository. No new endpoint or frontend control is required because the current Create Version modal already triggers this operation.
+
+Alternatives considered were copying values with the source Area IDs (creates cross-version links), cloning definitions per version (breaks Product-Type ownership and stable identity), and a post-commit copy job (permits partially created versions). Remapping only the Area foreign key within the existing transaction preserves both identity models and atomicity.
+
 ## Risks / Trade-offs
 
 - [Large Area list payload when many definitions exist] → Batch-query and assemble once, include only project-applicable active definitions, test representative scale, and keep summaries row-bounded.
@@ -116,6 +127,8 @@ Because Area editing and floorplan rendering visibly change, independent Playwri
 - [Current Area authorization is broader than intended] → Add tenant-scoped joins and regression tests for every Area route in the touched surface, returning non-disclosing 404s.
 - [SVG summaries can crowd very small polygons] → Clamp dimensions, cap rows, ellipsize, and use `+N more`; accept that the compact summary conveys a subset while the editor provides all values.
 - [SQLite schema rollback cannot safely drop an added column in all deployed versions] → Treat rollback as application rollback with additive tables/column left dormant; do not destructively down-migrate production data.
+- [An incomplete Area ID map could silently omit zoning values] → Select only source-version Area rows, require every selected source Area to have a destination mapping, and roll back the complete version creation on any mismatch or insert failure.
+- [Copied values could accidentally remain coupled to the source version] → Insert independent destination rows keyed by new Area IDs, retain only the shared stable parameter identity, and test edits in both directions after copying.
 
 ## Migration Plan
 
