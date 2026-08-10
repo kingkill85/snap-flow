@@ -71,6 +71,12 @@ function createFixture(): Fixture {
       "INSERT INTO area_vertices (placement_id, vertex_index, x, y) VALUES (?, 0, 0, 0), (?, 1, 100, 0), (?, 2, 100, 80)",
       [areaId, areaId, areaId],
     );
+    if (index === 0) {
+      db.query(
+        "INSERT INTO project_bom (project_id, floorplan_id, item_name, unit_price) VALUES (?, ?, ?, ?)",
+        [sourceProjectId, floorplanId, "Version zoning fixture item", 42],
+      );
+    }
   }
   db.query(
     "INSERT INTO area_zoning_values (area_placement_id, parameter_id, value) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)",
@@ -185,6 +191,18 @@ Deno.test("Create Version copies positive Area zoning values with remapped Areas
     2,
   );
   assertNotEquals(values[0]!.area_placement_id, fixture.sourceAreaIds[0]);
+
+  getDb().query(
+    "DELETE FROM area_zoning_values WHERE area_placement_id = ? AND parameter_id = ?",
+    [fixture.sourceAreaIds[0], fixture.parameterIds[0]],
+  );
+  assertEquals(
+    getDb().queryEntries<{ value: number }>(
+      "SELECT value FROM area_zoning_values WHERE area_placement_id = ? AND parameter_id = ?",
+      [values[0]!.area_placement_id, values[0]!.parameter_id],
+    )[0]!.value,
+    9,
+  );
 });
 
 Deno.test("Create Version route copies zoning and preserves source membership checks", async () => {
@@ -218,10 +236,19 @@ Deno.test("Create Version route copies zoning and preserves source membership ch
   const projectId = (await parseJSON(response)).data.id;
   assertEquals(destinationValues(projectId).length, 3);
 
+  const countMutationRows = () => ({
+    projects: getDb().queryEntries<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM projects",
+    )[0]!.count,
+    zoning: getDb().queryEntries<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM area_zoning_values",
+    )[0]!.count,
+  });
   const otherGroupId = insertId(
     "INSERT INTO project_groups (customer_name, tenant_id) VALUES (?, ?)",
     ["Other group", 1],
   );
+  const beforeWrongGroup = countMutationRows();
   const rejected = await testRequest(
     `/api/project-groups/${otherGroupId}/versions`,
     {
@@ -237,15 +264,80 @@ Deno.test("Create Version route copies zoning and preserves source membership ch
     },
   );
   assertEquals(rejected.status, 404);
+  assertEquals(countMutationRows(), beforeWrongGroup);
+
+  const foreignTenantId = insertId(
+    "INSERT INTO tenants (name, is_distributor, is_active) VALUES (?, 0, 1)",
+    ["Foreign version tenant"],
+  );
+  const foreignGroupId = insertId(
+    "INSERT INTO project_groups (customer_name, tenant_id) VALUES (?, ?)",
+    ["Foreign version customer", foreignTenantId],
+  );
+  const foreignProjectId = insertId(
+    "INSERT INTO projects (project_group_id, version_name, tenant_id) VALUES (?, ?, ?)",
+    [foreignGroupId, "foreign-v1", foreignTenantId],
+  );
+  const foreignItemTypeId = getDb().queryEntries<{ item_type_id: number }>(
+    "SELECT item_type_id FROM item_type_zoning_parameters WHERE id = ?",
+    [fixture.parameterIds[0]],
+  )[0]!.item_type_id;
+  getDb().query(
+    "INSERT INTO project_item_types (project_id, item_type_id) VALUES (?, ?)",
+    [foreignProjectId, foreignItemTypeId],
+  );
+  const foreignFloorplanId = insertId(
+    "INSERT INTO floorplans (project_id, name, image_path, sort_order) VALUES (?, ?, ?, 0)",
+    [foreignProjectId, "Foreign floor", "floorplans/foreign-missing.png"],
+  );
+  const foreignAreaId = insertId(
+    "INSERT INTO placements (floorplan_id, type, x, y, width, height, rotation) VALUES (?, 'area', 0, 0, 10, 10, 0)",
+    [foreignFloorplanId],
+  );
+  getDb().query(
+    "INSERT INTO area_properties (placement_id, name, color, opacity) VALUES (?, ?, ?, ?)",
+    [foreignAreaId, "Foreign Area", "#abcdef", 0.2],
+  );
+  getDb().query(
+    "INSERT INTO area_zoning_values (area_placement_id, parameter_id, value) VALUES (?, ?, ?)",
+    [foreignAreaId, fixture.parameterIds[0], 6],
+  );
+  const beforeCrossTenant = countMutationRows();
+  const crossTenant = await testRequest(
+    `/api/project-groups/${foreignGroupId}/versions`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        version_name: "inaccessible-copy",
+        source_project_id: foreignProjectId,
+      }),
+    },
+  );
+  assertEquals(crossTenant.status, 404);
+  assertEquals((await parseJSON(crossTenant)).error, "Project group not found");
+  assertEquals(countMutationRows(), beforeCrossTenant);
 });
 
 Deno.test("Create Version rolls back the complete version when zoning persistence fails", async () => {
   const fixture = createFixture();
   const db = getDb();
+  assertEquals(
+    db.queryEntries<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM project_bom WHERE project_id = ?",
+      [fixture.sourceProjectId],
+    )[0]!.count,
+    1,
+    "fixture must exercise BOM copying before the zoning failure",
+  );
   const before = Object.fromEntries(
     [
       "projects",
       "floorplans",
+      "project_bom",
       "placements",
       "area_properties",
       "area_vertices",
