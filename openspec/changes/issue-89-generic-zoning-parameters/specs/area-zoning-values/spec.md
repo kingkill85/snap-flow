@@ -75,16 +75,18 @@ Each Area response SHALL include a monotonically increasing revision. A zoning-a
 - **AND** no Area property or value from that request is persisted
 
 ### Requirement: The Area editor uses a compact accessible Product Type layout
-When applicable parameters exist, the existing Edit Area dialog MUST expand responsively and retain the existing Area property controls and one Cancel/Update action pair aligned at the bottom right. On sufficiently wide viewports it SHALL present a compact zoning pane beside the Area controls; on narrow viewports it SHALL place that pane below the Area controls. The zoning pane MUST have a prominent generic zoning heading and ordered Product Type headings rather than tabs or card-per-parameter containers. Under each Product Type heading, every parameter MUST occupy one dense, consistently spaced row with a persistent label beside a narrow native `number` input. The input MUST retain its browser-native stepper, accept keyboard arrows and manual decimal-digit entry, enforce the allowed integer range, and expose focus, label, bounds, and validation semantics without relying on color. The editor MUST NOT render custom increment or decrement controls.
+When applicable parameters exist, the existing Edit Area dialog MUST expand responsively and retain the existing Area property controls and one Cancel/Update action pair aligned at the bottom right. On sufficiently wide viewports it SHALL present a compact zoning pane beside the Area controls; on narrow viewports it SHALL place that pane below the Area controls. The zoning pane MUST have a prominent generic zoning heading and ordered Product Type headings rather than tabs or card-per-parameter containers. Under each Product Type heading, every parameter MUST occupy one dense, consistently aligned row containing an application-styled compound number control and a persistent parameter label. The compound control MUST present an explicit decrement button, a compact direct-entry value field, and an explicit increment button as one visually integrated group. When these application controls are present, the value field MUST NOT expose a duplicate browser-native spinner.
 
-The dialog body MUST provide bounded internal scrolling when content exceeds the viewport while the heading and bottom-right actions remain reachable. Saving MUST use the existing atomic Area update, and reopening after a successful save MUST display the persisted values in their original Product Type groups.
+The control MUST use an inclusive integer domain of 0 through 9999 and step 1. It MUST accept direct base-10 decimal-digit entry and `ArrowUp`/`ArrowDown` operation from the value field. Increment, decrement, and arrow operations MUST clamp at the bounds; the decrement button MUST be disabled at 0 and the increment button MUST be disabled at 9999. A temporary blank draft MAY be entered and SHALL commit as zero. Fractional, negative, non-digit, non-finite, and out-of-range manual drafts MUST NOT be silently truncated or persisted: the editor MUST retain the draft for correction, expose a programmatically associated validation error, and block Update without sending a mutation. Each value field MUST have a persistent programmatic parameter label and a description of its bounds and current validation state. Each increment and decrement button MUST have a distinct accessible name containing the parameter context. The value field and enabled decrement/increment buttons MUST participate in ordinary sequential keyboard focus, expose visible focus, use operable hit targets of at least 32 by 32 CSS pixels, and communicate disabled state without color alone.
+
+The dialog body MUST provide bounded internal scrolling when content exceeds the viewport while the heading and bottom-right actions remain reachable. Rows across one or multiple Product Type groups MUST remain densely and deterministically aligned. On narrow or phone-width viewports a row MAY stack or wrap its persistent label, but its controls MUST remain usable without page-level horizontal overflow. Saving MUST use the existing atomic Area update, and reopening after a successful save MUST display the persisted values in their original Product Type groups.
 
 #### Scenario: Edit one Product Type compactly on desktop
 - **GIVEN** an Area has definitions from one applicable Product Type and viewport width permits two columns
 - **WHEN** the user opens Edit Area
 - **THEN** Area properties and the compact zoning pane are visible side by side
-- **AND** each parameter appears as one narrow number input beside its label under the Product Type heading
-- **AND** no parameter card, tab, or custom increment/decrement control is rendered
+- **AND** each parameter appears with an integrated decrement, direct-entry value field, increment, and persistent label under the Product Type heading
+- **AND** no parameter card, tab, or duplicate browser-native spinner is rendered
 
 #### Scenario: Edit multiple Product Type groups on desktop
 - **GIVEN** an Area has definitions from multiple applicable Product Types and viewport width permits two columns
@@ -98,12 +100,25 @@ The dialog body MUST provide bounded internal scrolling when content exceeds the
 - **THEN** the compact zoning pane stacks below the Area property controls without horizontal page overflow
 - **AND** the dialog body scrolls while its heading and bottom-right action controls remain reachable and usable
 
-#### Scenario: Operate a native number input accessibly
-- **GIVEN** focus is on a parameter control
-- **WHEN** the user types an integer or uses the native number-input keyboard step operation
-- **THEN** the displayed value changes within the allowed range
-- **AND** decrement at zero cannot create a negative value
-- **AND** no redundant custom plus or minus control is present
+#### Scenario: Operate the compound number control accessibly
+- **GIVEN** focus is on a parameter value field whose current value is within the allowed range
+- **WHEN** the user types an integer, presses `ArrowUp` or `ArrowDown`, or activates the parameter-specific increment or decrement button
+- **THEN** the displayed value changes by direct entry or step 1 without leaving the inclusive 0 through 9999 range
+- **AND** the field retains its parameter label and bounds description while the buttons expose distinct parameter-specific accessible names
+- **AND** keyboard focus can move through decrement, value, and increment with a visible focus indicator
+
+#### Scenario: Reach and respect the integer boundaries
+- **GIVEN** a parameter control displays 0 or 9999
+- **WHEN** the user attempts to step beyond the corresponding boundary
+- **THEN** the value remains clamped within the allowed range
+- **AND** the boundary-facing decrement or increment button is disabled while the opposite action remains available
+
+#### Scenario: Reject an invalid manual draft without mutation
+- **GIVEN** a user is editing a parameter value
+- **WHEN** the user enters a fractional, negative, non-digit, non-finite, or out-of-range draft and activates Update
+- **THEN** an associated validation message identifies the allowed integer range
+- **AND** the invalid draft remains available for correction
+- **AND** no Area mutation request is sent and no value is partially persisted
 
 #### Scenario: Save and reopen compact zoning values
 - **GIVEN** an Area editor contains one or more Product Type groups
@@ -117,7 +132,7 @@ The dialog body MUST provide bounded internal scrolling when content exceeds the
 - **THEN** no draft changes are sent or retained
 
 ### Requirement: Floorplan annotations show only meaningful grouped values
-Each Area SHALL derive one annotation model for every applicable Product Type having at least one positive parameter value. Each group MUST identify the Product Type and list only positive values as `parameter name: value` in configured order. A Product Type with no positive values MUST have no group, and an Area with no non-empty groups MUST have no zoning annotation in either the interactive floorplan or PNG export. Categories, BOQ data, and module choices MUST NOT contribute annotations or zoning values.
+Each Area SHALL derive one annotation model for every applicable Product Type having at least one positive parameter value. Each group MUST identify the Product Type and list only positive values as `parameter name: value` in configured order. A Product Type with no positive values MUST have no group, and an Area with no non-empty groups MUST have no zoning annotation in either the interactive floorplan or PNG export. The normal API-loaded Area data and stored geometry used by an existing project MUST feed the same normalized annotation input for interactive SVG and PNG export; persisted positive values MUST NOT be dropped because the Area came from an existing database, state refetch, version selection, or one supported stored geometry representation. Categories, BOQ data, and module choices MUST NOT contribute annotations or zoning values.
 
 #### Scenario: Mixed zero and positive values
 - **GIVEN** an Area has positive and zero values across two applicable Product Types
@@ -130,6 +145,13 @@ Each Area SHALL derive one annotation model for every applicable Product Type ha
 - **WHEN** the interactive floorplan or PNG export renders
 - **THEN** only the existing Area name label is rendered
 - **AND** no empty zoning annotation consumes floorplan or export space
+
+#### Scenario: Existing project values reach both real renderers
+- **GIVEN** a normal Area API response for an existing project contains real stored Area geometry and persisted positive zoning values that are visible in Edit Area
+- **WHEN** the configurator renders that Area and the user invokes the existing PNG export without replacing the data with a synthetic fixture
+- **THEN** the interactive floorplan contains directly painted SVG annotation rows for those exact positive values
+- **AND** the downloaded PNG contains paint and pixel evidence for the same grouped values through the same normalized Area and descriptor path
+- **AND** neither renderer silently omits the annotation because of data or geometry adaptation
 
 ### Requirement: Annotations remain readable without obscuring the floorplan
 The interactive floorplan SHALL render zoning annotation text directly over the floorplan without a large opaque panel. Text MUST use a deterministic dual-contrast foreground and outline/halo treatment that remains legible over light, dark, detailed, and mixed floorplan imagery without relying on Product Type color alone. Annotation layout MUST consider Area bounds, Area-name labels, every visible product-placement rectangle, and previously placed zoning annotations. It MUST choose from a fixed ordered set of candidate anchors, reject candidates that intersect product placements, prefer a non-overlapping candidate, and deterministically omit lower-priority rows with a `+N more` indicator when no safe full layout exists. It MUST never cover a visible product placement. Nearby Areas and placements MUST produce the same layout for the same input order, and annotations MUST remain non-interactive so existing selection and drag behavior is unchanged.
@@ -241,7 +263,7 @@ The zoning copy MUST participate in the same atomic operation as creation of the
 - **AND** creates no project or zoning rows
 
 ### Requirement: User-visible scenarios are traceable across test layers
-Every normative Issue #89 scenario MUST be mapped to automated coverage or an explicit justified review assertion. Persistence, validation, authorization, lifecycle, atomicity, migration, project-version copying, and conflict behavior MUST have backend repository or route coverage. Editor, shared annotation layout, interactive rendering, collision, and PNG drawing/failure behavior MUST have focused frontend unit/component/service coverage. Representative configuration, one- and multi-Product-Type editing, persistence-after-reload, positive-only annotations, varied-background readability, placement collision, responsive overflow, stale/error recovery, PNG export parity, and Create Version zoning preservation paths MUST be covered by Issue #89-tagged Cucumber scenarios driven by Playwright against the real SnapFlow frontend and backend; raster evidence MUST inspect the downloaded PNG rather than only the download event.
+Every normative Issue #89 scenario MUST be mapped to automated coverage or an explicit justified review assertion. Persistence, validation, authorization, lifecycle, atomicity, migration, project-version copying, and conflict behavior MUST have backend repository or route coverage. Editor, compound-control bounds/drafts/keyboard/accessibility, shared annotation layout, production Area data/geometry adaptation, interactive rendering, collision, and PNG drawing/failure behavior MUST have focused frontend unit/component/service coverage. Representative configuration, one- and multi-Product-Type editing, explicit button and keyboard operation, invalid-entry no-mutation behavior, persistence-after-reload, positive-only annotations, varied-background readability, placement collision, responsive overflow, stale/error recovery, PNG export parity, and Create Version zoning preservation paths MUST be covered by Issue #89-tagged Cucumber scenarios driven by Playwright against the real SnapFlow frontend and backend. At least one real-runtime scenario MUST begin with persisted values and real stored Area geometry from a normally loaded existing project, then use the same values to prove direct interactive DOM/SVG paint and actual PNG paint/pixel output; a synthetic descriptor fixture, hidden title, or download event alone MUST NOT satisfy that evidence.
 
 #### Scenario: Traceability gate is evaluated
 - **GIVEN** the Issue #89 implementation is ready for review
