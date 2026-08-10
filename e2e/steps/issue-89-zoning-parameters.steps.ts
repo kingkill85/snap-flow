@@ -286,8 +286,9 @@ Then('zero and positive values retain their defined persistence semantics', asyn
   expect(persisted.zoning_groups.flatMap((group: { parameters: Array<{ value: number }> }) => group.parameters.map((parameter) => parameter.value))).toEqual([4, 0, 2, 0]);
   const annotation = this.page!.getByTestId('area-zoning-annotation');
   const paintedRows = await paintedAnnotationRows(this);
-  expect(paintedRows.some((row) => /I0X.*Zones 0.*4/.test(row))).toBe(true);
-  expect(paintedRows.some((row) => /I1X.*Zones 1.*2/.test(row))).toBe(true);
+  expect(paintedRows).toHaveLength(2);
+  expect(paintedRows[0]).toMatch(new RegExp(`^#${this.itemTypeIds[0].toString(36)} I0X.*Z.*:\\s*4$`));
+  expect(paintedRows[1]).toMatch(new RegExp(`^#${this.itemTypeIds[1].toString(36)} I1X.*Z.*:\\s*2$`));
   expect(paintedRows.some((row) => row.includes('wording'))).toBe(false);
   await expect(annotation).toHaveAccessibleName(/Issue89 Type 0.*Zones 0: 4.*Issue89 Type 1.*Zones 1: 2/);
   await this.page!.evaluate(() => {
@@ -306,8 +307,8 @@ Then('zero and positive values retain their defined persistence semantics', asyn
   const download = await downloadPromise;
   expect(await download.path()).toBeTruthy();
   const rasterText = await this.page!.evaluate(() => (window as unknown as { issue89UserPathRasterText: string[] }).issue89UserPathRasterText);
-  expect(rasterText.some((text) => text.includes('Zones 0: 4'))).toBe(true);
-  expect(rasterText.some((text) => text.includes('Zones 1: 2'))).toBe(true);
+  const rasterRows = rasterText.filter((text) => /:\s*(?:4|2)$/.test(text));
+  expect(rasterRows).toEqual(paintedRows);
 });
 
 Given('an Area has more positive values than fit within the summary bounds and some names are long', async function (this: ZoningWorld) {
