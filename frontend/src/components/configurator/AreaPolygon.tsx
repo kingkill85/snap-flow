@@ -452,6 +452,8 @@ export function AreaPolygon({
           data-bounds={`${annotationPresentation.bounds.x},${annotationPresentation.bounds.y},${annotationPresentation.bounds.width},${annotationPresentation.bounds.height}`}
           data-export-bounds={`${exportPresentation.bounds.x},${exportPresentation.bounds.y},${exportPresentation.bounds.width},${exportPresentation.bounds.height}`}
           data-omitted={zoningAnnotation.omitted}
+          data-minimum-readable-scale={zoningAnnotation.minimumReadableScale}
+          data-presentation-scale={annotationPresentation.effectiveScale}
           aria-label={`Zoning annotation: ${zoningAnnotation.accessibleText}`}
           style={{ pointerEvents: 'none' }}
         >

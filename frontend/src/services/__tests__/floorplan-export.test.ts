@@ -307,7 +307,7 @@ describe('exportFloorplanImage', () => {
     expect(mockCtx.lineWidth).toBe(1.5);
   });
 
-  it('draws production-default 200x150 Area rows through the shared inside descriptor', async () => {
+  it.each([1, 2, 8])('draws %i production-default 200x150 Area row(s) through the shared inside descriptor', async (rows) => {
     const productionArea: Area = {
       ...mockArea,
       x: 100,
@@ -322,10 +322,9 @@ describe('exportFloorplanImage', () => {
       ],
       zoning_groups: [{
         ...mockArea.zoning_groups[0],
-        parameters: [
-          { id: 1, name: 'Zone 1', sort_order: 0, value: 1 },
-          { id: 2, name: 'Zone 2', sort_order: 1, value: 2 },
-        ],
+        parameters: Array.from({ length: rows }, (_, index) => ({
+          id: index + 1, name: `Zone ${index + 1}`, sort_order: index, value: index + 1,
+        })),
       }],
     };
     const descriptor = layoutZoningAnnotations({
@@ -336,8 +335,13 @@ describe('exportFloorplanImage', () => {
 
     expect(descriptor).toBeDefined();
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [productionArea]);
-    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringMatching(/Z.*:\s*1$/), expect.any(Number), expect.any(Number));
-    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringMatching(/Z.*:\s*2$/), expect.any(Number), expect.any(Number));
+    for (const line of descriptor.lines) {
+      expect(mockCtx.strokeText).toHaveBeenCalledWith(line.displayText, expect.any(Number), expect.any(Number));
+      expect(mockCtx.fillText).toHaveBeenCalledWith(line.displayText, expect.any(Number), expect.any(Number));
+    }
+    if (rows === 8) expect(mockCtx.fillText).toHaveBeenCalledWith('+7 more', expect.any(Number), expect.any(Number));
+    expect(mockCtx.font).toBe('600 10px Arial, sans-serif');
+    expect(mockCtx.lineWidth).toBe(1.5);
   });
 
   it('draws duplicate-abbreviation Product Type groups with distinct visible raster labels', async () => {
@@ -432,7 +436,7 @@ describe('exportFloorplanImage', () => {
 
   it('draws the exact canonical interactive descriptor without recomputing anchor or omission', async () => {
     const descriptor = layoutZoningAnnotations({ areas: [mockArea], productBounds: [], imageBounds: { x: 0, y: 0, width: 1000, height: 800 } })[0];
-    const presentation = getAnnotationPresentation(descriptor, 1);
+    const presentation = getAnnotationPresentation(descriptor, 1)!;
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea], undefined, undefined, [descriptor]);
     expect(descriptor.anchor).toBeTruthy();
     expect(mockCtx.strokeText).toHaveBeenCalledWith(descriptor.lines[0].displayText, presentation.textX, presentation.firstBaselineY);
@@ -454,8 +458,9 @@ describe('exportFloorplanImage', () => {
       bounds: Object.freeze({ x: 0, y: 112, width: 600, height: 56 }),
       anchor: 'below-name',
       accessibleText: 'W'.repeat(100),
+      minimumReadableScale: 0.25,
     });
-    const presentation = getAnnotationPresentation(descriptor, 1);
+    const presentation = getAnnotationPresentation(descriptor, 1)!;
     drawZoningAnnotation(mockCtx, descriptor);
     expect(mockCtx.rect).toHaveBeenCalledWith(
       presentation.clipBounds.x,

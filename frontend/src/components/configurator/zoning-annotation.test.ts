@@ -112,7 +112,7 @@ describe('zoning annotation layout', () => {
     expect(overlaps(descriptor.bounds, getAreaNameLabelGeometry(persistedArea, 0.25)!.bounds)).toBe(false);
   });
 
-  it.each([1, 2])('contracts a production-default 200x150 Area for %i positive row(s)', (rows) => {
+  it.each([1, 2, 8])('contracts a production-default 200x150 Area for %i positive row(s)', (rows) => {
     const productionArea = ordinaryArea(200, 150, rows);
     const [descriptor] = layoutZoningAnnotations({
       areas: [productionArea],
@@ -126,11 +126,20 @@ describe('zoning annotation layout', () => {
     expect(descriptor.bounds.y).toBeGreaterThanOrEqual(100 + 150 * 0.6);
     expect(descriptor.bounds.x + descriptor.bounds.width).toBeLessThanOrEqual(300);
     expect(descriptor.bounds.y + descriptor.bounds.height).toBeLessThanOrEqual(250);
-    expect(descriptor.lines).toHaveLength(rows);
-    expect(descriptor.omitted).toBe(0);
-    expect(descriptor.canonicalScale).toBe(rows === 1 ? 0.5 : 0.75);
-    for (const displayScale of [0.25, 0.5, 1]) {
+    expect(descriptor.lines).toHaveLength(rows === 8 ? 1 : rows);
+    expect(descriptor.omitted).toBe(rows === 8 ? 7 : 0);
+    expect(descriptor.minimumReadableScale).toBe(rows === 1 ? 0.5 : 0.75);
+    for (const displayScale of [0.18, 0.25, 0.5, 0.859375, 1, 1.5]) {
       const presentation = getAnnotationPresentation(descriptor, displayScale);
+      if (displayScale < descriptor.minimumReadableScale) {
+        expect(presentation).toBeNull();
+        continue;
+      }
+      expect(presentation).not.toBeNull();
+      if (!presentation) continue;
+      expect(presentation.fontSize * displayScale).toBeCloseTo(ZONING_ANNOTATION_STYLE.fontSize);
+      expect(presentation.lineHeight * displayScale).toBeCloseTo(ZONING_ANNOTATION_STYLE.lineHeight);
+      expect(presentation.outlineWidth * displayScale).toBeCloseTo(ZONING_ANNOTATION_STYLE.outlineWidth);
       expect(presentation.bounds.x).toBeGreaterThanOrEqual(descriptor.bounds.x);
       expect(presentation.bounds.y).toBeGreaterThanOrEqual(descriptor.bounds.y);
       expect(presentation.bounds.x + presentation.bounds.width).toBeLessThanOrEqual(
@@ -154,8 +163,12 @@ describe('zoning annotation layout', () => {
     expect(layout(120, 90, 2)).toEqual([]);
     expect(layout(150, 110, 1)).toEqual([]);
     expect(layout(150, 115, 1)).toHaveLength(1);
+    expect(getAnnotationPresentation(layout(150, 115, 1)[0], 0.859375)).toBeNull();
+    expect(getAnnotationPresentation(layout(150, 115, 1)[0], 1)).not.toBeNull();
     expect(layout(170, 125, 2)).toEqual([]);
     expect(layout(180, 130, 2)).toHaveLength(1);
+    expect(getAnnotationPresentation(layout(180, 130, 2)[0], 0.859375)).toBeNull();
+    expect(getAnnotationPresentation(layout(180, 130, 2)[0], 1)).not.toBeNull();
     expect(layout(180, 130, 2)).toEqual(layout(180, 130, 2));
   });
 
@@ -311,7 +324,7 @@ describe('zoning annotation layout', () => {
     const largeArea = resizedArea(1);
     const product = { x: 150, y: 105, width: 60, height: 80 };
     const descriptor = layoutZoningAnnotations({ areas: [largeArea], productBounds: [product], imageBounds: { x: 0, y: 0, width: 700, height: 500 } })[0];
-    const presentations = [0.5, 1, 1.5].map((scale) => getAnnotationPresentation(descriptor, scale));
+    const presentations = [0.5, 1, 1.5].map((scale) => getAnnotationPresentation(descriptor, scale)!);
     expect(descriptor.anchor).not.toBe('below-name');
     expect(descriptor.omitted).toBeGreaterThan(0);
     expect(presentations.every((presentation) => !overlaps(presentation.bounds, product))).toBe(true);
@@ -325,7 +338,12 @@ describe('zoning annotation layout', () => {
     const livingRoom = { ...resizedArea(1), name: 'Living Room' };
     const descriptor = layoutZoningAnnotations({ areas: [livingRoom], productBounds: [], imageBounds: { x: 0, y: 0, width: 700, height: 500 } })[0];
     for (const scale of [0.18, 0.25, 0.5, 1, 1.5]) {
-      const annotation = getAnnotationPresentation(descriptor, scale).bounds;
+      const presentation = getAnnotationPresentation(descriptor, scale);
+      if (!presentation) {
+        expect(scale).toBeLessThan(descriptor.minimumReadableScale);
+        continue;
+      }
+      const annotation = presentation.bounds;
       const name = getAreaNameLabelGeometry(livingRoom, scale)!.bounds;
       expect(overlaps(annotation, name)).toBe(false);
     }
@@ -361,10 +379,10 @@ describe('zoning annotation layout', () => {
     });
     expect(annotation).toBeDefined();
     const nameDescriptor = getAreaNameLabelGeometry(wideArea, 0.25)!;
-    expect(overlaps(getAnnotationPresentation(annotation, 0.25).bounds, nameDescriptor.bounds)).toBe(false);
+    expect(overlaps(getAnnotationPresentation(annotation, 0.25)!.bounds, nameDescriptor.bounds)).toBe(false);
   });
 
-  it('encloses the exact 25% product fixture and clamps fitted-below-minimum presentation', () => {
+  it('encloses the exact 25% product fixture and omits fitted-below-minimum presentation', () => {
     const exactArea = resizedArea(1, 0, 600, 400, 1);
     exactArea.zoning_groups[0].parameters = Array.from({ length: 8 }, (_, index) => ({ id: index + 1, name: `Parameter ${index + 1}`, sort_order: index, value: index + 1 }));
     const product = { x: 200, y: 320, width: 200, height: 40 };
@@ -373,7 +391,9 @@ describe('zoning annotation layout', () => {
     const quarter = getAnnotationPresentation(descriptor, 0.25);
     const fitted = getAnnotationPresentation(descriptor, 0.18);
     expect(overlaps(quarter.bounds, product)).toBe(false);
-    expect(fitted).toEqual(quarter);
+    expect(fitted).toBeNull();
+    expect(quarter).not.toBeNull();
+    if (!quarter) return;
     expect(quarter.effectiveScale).toBe(0.25);
     expect(quarter.firstBaselineY + (descriptor.lines.length + (descriptor.omitted > 0 ? 1 : 0) - 1) * quarter.lineHeight + (2 + ZONING_ANNOTATION_STYLE.outlineWidth) / quarter.effectiveScale)
       .toBeLessThanOrEqual(quarter.bounds.y + quarter.bounds.height);
@@ -392,7 +412,9 @@ describe('zoning annotation layout', () => {
     })[0];
     const quarter = getAnnotationPresentation(descriptor, 0.25);
     const fitted = getAnnotationPresentation(descriptor, 0.18);
-    expect(fitted).toEqual(quarter);
+    expect(fitted).toBeNull();
+    expect(quarter).not.toBeNull();
+    if (!quarter) return;
     expect(descriptor.lines[0].fullText).toContain('W'.repeat(100));
     expect(descriptor.lines[0].displayText).toMatch(/^#1 W+…·W+…:9999$/);
     expect(quarter.clipBounds).toEqual(quarter.bounds);
@@ -400,14 +422,18 @@ describe('zoning annotation layout', () => {
     expect(quarter.clipBounds.x + quarter.clipBounds.width).toBeLessThanOrEqual(700);
   });
 
-  it('keeps the no-product 25% line envelope inside the image and prior annotations', () => {
+  it('keeps every readable no-product line envelope inside the image and prior annotations', () => {
     const firstArea = resizedArea(1, 0, 600, 400, 1);
     firstArea.zoning_groups[0].parameters = Array.from({ length: 8 }, (_, index) => ({ id: index + 1, name: `Parameter ${index + 1}`, sort_order: index, value: index + 1 }));
     const secondArea = resizedArea(2, 300, 600, 400, 1);
     const descriptors = layoutZoningAnnotations({ areas: [firstArea, secondArea], productBounds: [], imageBounds: { x: 0, y: 0, width: 1000, height: 500 } });
     expect(descriptors.length).toBeGreaterThan(0);
     for (const descriptor of descriptors) {
-      const presentation = getAnnotationPresentation(descriptor, 0.25);
+      const quarter = getAnnotationPresentation(descriptor, 0.25);
+      if (!quarter) expect(descriptor.minimumReadableScale).toBeGreaterThan(0.25);
+      const presentation = getAnnotationPresentation(descriptor, descriptor.minimumReadableScale);
+      expect(presentation).not.toBeNull();
+      if (!presentation) continue;
       expect(presentation.bounds.x).toBeGreaterThanOrEqual(0);
       expect(presentation.bounds.y).toBeGreaterThanOrEqual(0);
       expect(presentation.bounds.x + presentation.bounds.width).toBeLessThanOrEqual(1000);

@@ -115,4 +115,41 @@ describe('AreaPolygon zoning annotation', () => {
     expect(painted).toHaveTextContent(/Zone 1.*1/);
     expect(painted).toHaveTextContent(/Zone 2.*2/);
   });
+  it.each([1, 2, 8])('never paints %i production-default row(s) below their readable collision density', (rows) => {
+    const productionArea: Area = {
+      ...base,
+      width: 200,
+      height: 150,
+      vertices: base.vertices.map((vertex, index) => ({
+        ...vertex,
+        x: index === 1 || index === 2 ? 200 : 0,
+        y: index >= 2 ? 150 : 0,
+      })),
+      zoning_groups: [{
+        item_type: { id: 7, name: 'Lighting', abbreviation: 'LGT', color: '#f00', sort_order: 0 },
+        parameters: Array.from({ length: rows }, (_, index) => ({
+          id: index + 1, name: `Zone ${index + 1}`, sort_order: index, value: index + 1,
+        })),
+      }],
+    };
+    const annotation = layoutZoningAnnotations({
+      areas: [productionArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1200, height: 800 },
+    })[0];
+    const { container, rerender } = render(
+      <svg><AreaPolygon {...props} scale={0.25} area={productionArea} zoningAnnotation={annotation} /></svg>,
+    );
+    expect(container.querySelector('[data-testid="area-zoning-annotation"]')).toBeNull();
+
+    const readableScale = rows === 1 ? 0.5 : 0.75;
+    rerender(<svg><AreaPolygon {...props} scale={readableScale} area={productionArea} zoningAnnotation={annotation} /></svg>);
+    expect(container.querySelector('[data-testid="area-zoning-annotation"]')).toHaveAttribute('data-minimum-readable-scale', String(readableScale));
+    expect(container.querySelector('[data-testid="area-zoning-annotation"]')).toHaveAttribute('data-presentation-scale', String(readableScale));
+    expect(container.querySelector('[data-testid="area-zoning-annotation"]')).toHaveAttribute('data-omitted', String(rows === 8 ? 7 : 0));
+    const readable = container.querySelector('[data-testid="area-zoning-annotation"] text');
+    expect(readable).not.toBeNull();
+    expect(Number(readable!.getAttribute('font-size')) * readableScale).toBeCloseTo(10);
+    expect(Number(readable!.getAttribute('stroke-width')) * readableScale).toBeCloseTo(1.5);
+  });
 });

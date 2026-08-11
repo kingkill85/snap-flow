@@ -20,7 +20,7 @@ export interface ZoningAnnotationDescriptor {
   bounds: Readonly<AnnotationRect>;
   anchor: string;
   accessibleText: string;
-  canonicalScale?: number;
+  minimumReadableScale: number;
 }
 
 export interface AnnotationPresentation {
@@ -301,12 +301,15 @@ export function getPlacementCollisionBounds(
 export function getAnnotationPresentation(
   annotation: ZoningAnnotationDescriptor,
   displayScale = 1,
-): AnnotationPresentation {
+): AnnotationPresentation | null {
   const requestedScale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
-  const scale = Math.max(
-    requestedScale,
-    annotation.canonicalScale ?? ZONING_ANNOTATION_STYLE.canonicalMinScale,
-  );
+  const minimumReadableScale = annotation.minimumReadableScale;
+  // minimumReadableScale is the smallest consumer scale whose readable glyph,
+  // line, halo, and padding envelope was accepted by layout. Below it the
+  // same content cannot fit that collision rectangle at the shared visual
+  // size, so omit instead of shrinking or escaping the accepted geometry.
+  if (requestedScale + 1e-7 < minimumReadableScale) return null;
+  const scale = requestedScale;
   const desiredWidth = ZONING_ANNOTATION_STYLE.maxWidth / scale;
   const desiredHeight = (annotation.lines.length + (annotation.omitted > 0 ? 1 : 0)) *
     ZONING_ANNOTATION_STYLE.lineHeight / scale;
@@ -465,11 +468,11 @@ export function layoutZoningAnnotations({
     let descriptor: ZoningAnnotationDescriptor | null = null;
     // Keep the viewport-stable 25% envelope when it fits. For smaller Areas,
     // deterministically contract natural-coordinate width, spacing, and rows
-    // at the first larger canonical scale that remains inside every collision
-    // boundary. Renderers then share that scale through the descriptor.
-    for (const canonicalScale of ZONING_ANNOTATION_LAYOUT_SCALES) {
+    // at the first larger readable density that remains inside every collision
+    // boundary. Renderers use it only as a paint-or-omit threshold.
+    for (const minimumReadableScale of ZONING_ANNOTATION_LAYOUT_SCALES) {
       if (descriptor) break;
-      const scaled = (value: number) => value / canonicalScale;
+      const scaled = (value: number) => value / minimumReadableScale;
       const gap = scaled(8);
       const width = Math.min(
         scaled(ZONING_ANNOTATION_STYLE.maxWidth),
@@ -514,7 +517,7 @@ export function layoutZoningAnnotations({
           if (productBounds.some((product) => intersects(candidateBounds, product, collisionPadding))) continue;
           if (nameBounds.some((name) => intersects(candidateBounds, name, collisionPadding))) continue;
           if (placed.some((annotation) => intersects(candidateBounds, annotation, collisionPadding))) continue;
-          const lines = displayedLines(rows, visibleCount, width * canonicalScale);
+          const lines = displayedLines(rows, visibleCount, width * minimumReadableScale);
           if (!lines) continue;
           descriptor = Object.freeze({
             areaId: area.id,
@@ -526,7 +529,7 @@ export function layoutZoningAnnotations({
               ...rows.slice(0, visibleCount).map((row) => row.fullText),
               ...(omitted ? [`+${omitted} more`] : []),
             ].join('; '),
-            canonicalScale,
+            minimumReadableScale,
           });
           break;
         }

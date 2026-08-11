@@ -251,6 +251,7 @@ export function drawZoningAnnotation(
   ctx.save();
   try {
     const presentation = getAnnotationPresentation(annotation, 1);
+    if (!presentation) throw new Error('Zoning annotation is not readable at the export scale');
     ctx.font = `${ZONING_ANNOTATION_STYLE.fontWeight} ${presentation.fontSize}px ${ZONING_ANNOTATION_STYLE.fontFamily}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';

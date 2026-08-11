@@ -6,7 +6,7 @@ import type { SnapFlowWorld } from '../support/world.ts';
 
 type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: number; value: number };
 type Bounds = { x: number; y: number; width: number; height: number };
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; areaMutationCount: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[]; existingPathSvgRows: string[]; existingPathRasterRows: string[]; existingPathAreaBounds: Bounds; existingPathInteractiveBounds: Bounds; existingPathSvgStyle: { fill: string | null; stroke: string | null; strokeWidth: number; paintOrder: string | null }; existingPathRasterStyle: { fill: string; stroke: string; lineWidth: number } };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; areaMutationCount: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[]; existingPathSvgRows: string[]; existingPathRasterRows: string[]; existingPathAreaBounds: Bounds; existingPathInteractiveBounds: Bounds; existingPathSvgStyle: { fill: string | null; stroke: string | null; strokeWidth: number; fontSize: number; lineHeight: number; paintOrder: string | null }; existingPathRasterStyle: { fill: string; stroke: string; lineWidth: number; font: string }; readabilityAreaIds: number[]; readabilitySvgRows: string[]; readabilityRasterRows: string[] };
 
 const WIDE_GLYPH_NAME = 'W'.repeat(100);
 
@@ -357,7 +357,7 @@ Given('a normal Area API response for an existing project contains real stored A
   const itemType = (await typeResponse.json()).data;
   this.itemTypeIds = [itemType.id];
   this.parameterIds = [];
-  for (const [sort_order, name] of ['test', 'test2'].entries()) {
+  for (const [sort_order, name] of ['test', 'test2', 'test3', 'test4', 'test5', 'test6', 'test7', 'test8'].entries()) {
     const response = await this.page!.request.post(`${this.apiUrl}/api/item-types/${itemType.id}/zoning-parameters`, {
       headers: authHeaders(this), data: { name, sort_order },
     });
@@ -395,6 +395,28 @@ Given('a normal Area API response for an existing project contains real stored A
     },
   });
   expect(savedResponse.status()).toBe(200);
+  this.readabilityAreaIds = [this.areaId];
+  for (const [name, x, values] of [
+    ['Existing one-row Area', 400, [9, 0, 0, 0, 0, 0, 0, 0]],
+    ['Existing overflow Area', 700, [11, 12, 13, 14, 15, 16, 17, 18]],
+  ] as const) {
+    const response = await this.page!.request.post(`${this.apiUrl}/api/areas`, {
+      headers: authHeaders(this),
+      data: { floorplan_id: this.floorplanId, x, y: 100, width: 200, height: 150, name },
+    });
+    expect(response.status()).toBe(201);
+    const area = (await response.json()).data;
+    const saved = await this.page!.request.put(`${this.apiUrl}/api/areas/${area.id}`, {
+      headers: authHeaders(this),
+      data: {
+        revision: area.revision,
+        applicable_parameter_ids: this.parameterIds,
+        zoning_values: this.parameterIds.map((parameter_id, index) => ({ parameter_id, value: values[index] })),
+      },
+    });
+    expect(saved.status()).toBe(200);
+    this.readabilityAreaIds.push(area.id);
+  }
   const persistedResponse = await this.page!.request.get(`${this.apiUrl}/api/areas?floorplan_id=${this.floorplanId}`, { headers: authHeaders(this) });
   const persisted = (await persistedResponse.json()).data.find((candidate: { id: number }) => candidate.id === this.areaId);
   expect(persisted.vertices).toHaveLength(4);
@@ -402,41 +424,56 @@ Given('a normal Area API response for an existing project contains real stored A
     [100, 100], [300, 100], [300, 250], [100, 250],
   ]);
   this.existingPathAreaBounds = { x: 100, y: 100, width: 200, height: 150 };
-  expect(persisted.zoning_groups[0].parameters.map((parameter: { name: string; value: number }) => [parameter.name, parameter.value])).toEqual([
+  expect(persisted.zoning_groups[0].parameters.filter((parameter: { value: number }) => parameter.value > 0).map((parameter: { name: string; value: number }) => [parameter.name, parameter.value])).toEqual([
     ['test', 1], ['test2', 2],
   ]);
 });
 
 When('the configurator renders that Area and the user invokes the existing PNG export without replacing the data with a synthetic fixture', async function (this: ZoningWorld) {
+  await this.page!.setViewportSize({ width: 1440, height: 1000 });
   await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`, { waitUntil: 'domcontentloaded' });
   await this.page!.getByRole('tab', { name: 'Areas' }).click();
   const panel = this.page!.getByLabel('Areas');
-  await expect(panel.getByText('Existing Zigbee Area', { exact: true })).toBeVisible();
-  await panel.getByTitle('Edit area').click();
+  const primaryAreaRow = panel.getByText('Existing Zigbee Area', { exact: true }).locator('..');
+  await expect(primaryAreaRow).toBeVisible();
+  await primaryAreaRow.getByTitle('Edit area').click();
   await expect(this.page!.getByLabel('test', { exact: true })).toHaveValue('1');
   await expect(this.page!.getByLabel('test2', { exact: true })).toHaveValue('2');
   await this.page!.getByRole('button', { name: 'Cancel' }).click();
   await expect(this.page!.getByRole('dialog', { name: 'Edit Area' })).toBeHidden();
 
-  const annotation = this.page!.getByTestId('area-zoning-annotation');
+  const annotation = this.page!.locator(`[data-area-id="${this.areaId}"]`).getByTestId('area-zoning-annotation');
   await expect(annotation).toBeVisible();
+  this.readabilitySvgRows = await this.page!.getByTestId('area-zoning-annotation').locator('text').evaluateAll((rows) => rows.map((row) =>
+    [...row.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent ?? '').join('')
+  ));
   await this.page!.screenshot({ path: resolve(process.cwd(), 'e2e/results/issue-89-existing-project-interactive.png'), fullPage: true });
-  this.existingPathSvgRows = await paintedAnnotationRows(this);
+  this.existingPathSvgRows = await annotation.locator('text').evaluateAll((rows) => rows.map((row) =>
+    [...row.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent ?? '').join('')
+  ));
   const serializedInteractiveBounds = await annotation.getAttribute('data-bounds');
   if (!serializedInteractiveBounds) throw new Error('Existing-project interactive annotation bounds unavailable');
   const [interactiveX, interactiveY, interactiveWidth, interactiveHeight] = serializedInteractiveBounds.split(',').map(Number);
   this.existingPathInteractiveBounds = { x: interactiveX, y: interactiveY, width: interactiveWidth, height: interactiveHeight };
   const svgText = annotation.locator('text').first();
-  const paintedStrokeWidth = await svgText.evaluate((element) => {
+  const paintedStyle = await svgText.evaluate((element) => {
     const text = element as SVGTextElement;
     const transform = text.getScreenCTM();
     const scale = transform ? Math.hypot(transform.a, transform.b) : 1;
-    return Number(text.getAttribute('stroke-width')) * scale;
+    const rows = [...text.parentElement!.querySelectorAll('text')] as SVGTextElement[];
+    const lineHeight = rows.length > 1
+      ? Math.abs(Number(rows[1].getAttribute('y')) - Number(rows[0].getAttribute('y'))) * scale
+      : Number(text.getAttribute('font-size')) * scale * 1.4;
+    return {
+      strokeWidth: Number(text.getAttribute('stroke-width')) * scale,
+      fontSize: Number(text.getAttribute('font-size')) * scale,
+      lineHeight,
+    };
   });
   this.existingPathSvgStyle = {
     fill: await svgText.getAttribute('fill'),
     stroke: await svgText.getAttribute('stroke'),
-    strokeWidth: paintedStrokeWidth,
+    ...paintedStyle,
     paintOrder: await svgText.getAttribute('paint-order'),
   };
   const serializedBounds = await annotation.getAttribute('data-export-bounds');
@@ -450,13 +487,13 @@ When('the configurator renders that Area and the user invokes the existing PNG e
     prototype.__issue89ExistingPathWrapped = true;
     const originalStrokeText = prototype.strokeText;
     const originalFillText = prototype.fillText;
-    (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; fill: string; stroke: string; lineWidth: number }> }).issue89ExistingPathPaint = [];
+    (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; fill: string; stroke: string; lineWidth: number; font: string }> }).issue89ExistingPathPaint = [];
     prototype.strokeText = function (text, x, y, maxWidth) {
-      (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; fill: string; stroke: string; lineWidth: number }> }).issue89ExistingPathPaint.push({ kind: 'stroke', text, x, y, fill: String(this.fillStyle), stroke: String(this.strokeStyle), lineWidth: this.lineWidth });
+      (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; fill: string; stroke: string; lineWidth: number; font: string }> }).issue89ExistingPathPaint.push({ kind: 'stroke', text, x, y, fill: String(this.fillStyle), stroke: String(this.strokeStyle), lineWidth: this.lineWidth, font: this.font });
       return maxWidth === undefined ? originalStrokeText.call(this, text, x, y) : originalStrokeText.call(this, text, x, y, maxWidth);
     };
     prototype.fillText = function (text, x, y, maxWidth) {
-      (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; fill: string; stroke: string; lineWidth: number }> }).issue89ExistingPathPaint.push({ kind: 'fill', text, x, y, fill: String(this.fillStyle), stroke: String(this.strokeStyle), lineWidth: this.lineWidth });
+      (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; fill: string; stroke: string; lineWidth: number; font: string }> }).issue89ExistingPathPaint.push({ kind: 'fill', text, x, y, fill: String(this.fillStyle), stroke: String(this.strokeStyle), lineWidth: this.lineWidth, font: this.font });
       return maxWidth === undefined ? originalFillText.call(this, text, x, y) : originalFillText.call(this, text, x, y, maxWidth);
     };
   });
@@ -467,11 +504,14 @@ When('the configurator renders that Area and the user invokes the existing PNG e
   if (!path) throw new Error('Existing-project PNG download unavailable');
   this.downloadBytes = await readFile(path);
   await writeFile(resolve(process.cwd(), 'e2e/results/issue-89-existing-project-export.png'), this.downloadBytes);
-  const calls = await this.page!.evaluate(() => (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; fill: string; stroke: string; lineWidth: number }> }).issue89ExistingPathPaint);
+  const calls = await this.page!.evaluate(() => (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; fill: string; stroke: string; lineWidth: number; font: string }> }).issue89ExistingPathPaint);
   this.existingPathRasterRows = calls.filter((call) => call.kind === 'fill' && /:\s*[12]$/.test(call.text)).map((call) => call.text);
+  this.readabilityRasterRows = calls
+    .filter((call) => call.kind === 'fill' && (/^#/u.test(call.text) || /^\+\d+ more$/u.test(call.text)))
+    .map((call) => call.text);
   const rasterRow = calls.find((call) => call.kind === 'fill' && /:\s*[12]$/.test(call.text));
   if (!rasterRow) throw new Error('Existing-project PNG annotation style unavailable');
-  this.existingPathRasterStyle = { fill: rasterRow.fill, stroke: rasterRow.stroke, lineWidth: rasterRow.lineWidth };
+  this.existingPathRasterStyle = { fill: rasterRow.fill, stroke: rasterRow.stroke, lineWidth: rasterRow.lineWidth, font: rasterRow.font };
 });
 
 Then('the interactive floorplan contains directly painted SVG annotation rows for those exact positive values', async function (this: ZoningWorld) {
@@ -488,8 +528,12 @@ Then('the interactive floorplan contains directly painted SVG annotation rows fo
     fill: '#f8fafc',
     stroke: 'rgba(15, 23, 42, 0.88)',
     strokeWidth: expect.any(Number),
+    fontSize: expect.any(Number),
+    lineHeight: expect.any(Number),
     paintOrder: 'stroke fill',
   });
+  expect(this.existingPathSvgStyle.fontSize).toBeGreaterThanOrEqual(9.5);
+  expect(this.existingPathSvgStyle.lineHeight).toBeGreaterThanOrEqual(13);
   expect(this.existingPathSvgStyle.strokeWidth).toBeGreaterThan(0);
   expect(this.existingPathSvgStyle.strokeWidth).toBeLessThanOrEqual(2);
 });
@@ -521,13 +565,79 @@ Then('the downloaded PNG contains paint and pixel evidence for the same grouped 
     fill: '#f8fafc',
     stroke: 'rgba(15, 23, 42, 0.88)',
     lineWidth: 1.5,
+    font: '600 10px Arial, sans-serif',
   });
 });
 
 Then('neither renderer silently omits the annotation because of data or geometry adaptation', async function (this: ZoningWorld) {
   expect(this.existingPathRasterRows).toHaveLength(2);
   expect(this.existingPathRasterRows).toEqual(this.existingPathSvgRows);
+  await expectSupportedZoomReadability(this);
 });
+
+async function expectSupportedZoomReadability(world: ZoningWorld) {
+  expect(world.readabilitySvgRows).toEqual([
+    expect.stringMatching(/test\s*:\s*1$/u),
+    expect.stringMatching(/test2\s*:\s*2$/u),
+    expect.stringMatching(/:\s*9$/u),
+    expect.stringMatching(/:\s*11$/u),
+    '+7 more',
+  ]);
+  expect(world.readabilityRasterRows).toEqual(world.readabilitySvgRows);
+  const measureVisible = async (requireAll: boolean) => {
+    const evidence: Array<{ areaId: number; fontSize: number; lineHeight: number; halo: number }> = [];
+    for (const areaId of world.readabilityAreaIds) {
+      const annotation = world.page!.locator(`[data-area-id="${areaId}"]`).getByTestId('area-zoning-annotation');
+      if (await annotation.count() === 0) continue;
+      if (requireAll) await expect(annotation).toBeVisible();
+      const metrics = await annotation.locator('text').first().evaluate((element) => {
+        const text = element as SVGTextElement;
+        const transform = text.getScreenCTM();
+        const scale = transform ? Math.hypot(transform.a, transform.b) : 1;
+        const rows = [...text.parentElement!.querySelectorAll('text')] as SVGTextElement[];
+        return {
+          fontSize: Number(text.getAttribute('font-size')) * scale,
+          lineHeight: rows.length > 1
+            ? Math.abs(Number(rows[1].getAttribute('y')) - Number(rows[0].getAttribute('y'))) * scale
+            : Number(text.getAttribute('font-size')) * scale * 1.4,
+          halo: Number(text.getAttribute('stroke-width')) * scale,
+        };
+      });
+      if (requireAll) {
+        expect(metrics.fontSize).toBeGreaterThanOrEqual(9.5);
+        expect(metrics.lineHeight).toBeGreaterThanOrEqual(13);
+        expect(metrics.halo).toBeGreaterThanOrEqual(1.25);
+      }
+      evidence.push({ areaId, ...metrics });
+    }
+    return evidence;
+  };
+
+  const fitted = await measureVisible(true);
+  expect(fitted).toHaveLength(3);
+  await world.page!.screenshot({ path: resolve(process.cwd(), 'e2e/results/issue-89-readable-fitted.png'), fullPage: true });
+
+  await world.page!.getByTitle('Zoom out').click();
+  await world.page!.getByTitle('Zoom out').click();
+  await expect(world.page!.getByText('50%', { exact: true })).toBeVisible();
+  const fifty = await measureVisible(false);
+  await world.page!.screenshot({ path: resolve(process.cwd(), 'e2e/results/issue-89-readable-50.png'), fullPage: true });
+
+  await world.page!.getByTitle('Zoom out').click();
+  await expect(world.page!.getByText('25%', { exact: true })).toBeVisible();
+  const quarter = await measureVisible(false);
+  await world.page!.screenshot({ path: resolve(process.cwd(), 'e2e/results/issue-89-readable-25.png'), fullPage: true });
+  await writeFile(
+    resolve(process.cwd(), 'e2e/results/issue-89-readable-measurements.json'),
+    JSON.stringify({ fitted, fifty, quarter, png: world.existingPathRasterStyle }, null, 2),
+  );
+  expect(fifty).toEqual([]);
+  expect(quarter).toEqual([]);
+
+  await world.page!.getByTitle('Reset zoom (Ctrl+0)').click();
+  await expect(world.page!.getByText('100%', { exact: true })).toBeVisible();
+  expect(await measureVisible(true)).toHaveLength(3);
+}
 
 Given('an Area has more positive values than fit within the summary bounds and some names are long', async function (this: ZoningWorld) {
   await setupArea(this, 2, 4); await saveValues(this, Array(8).fill(2));
@@ -574,7 +684,13 @@ When('the floorplan renders at any supported zoom', async function (this: Zoning
 });
 Then('visible rows stay within the bounded summary', async function (this: ZoningWorld) {
   const separated = (left: Bounds, right: Bounds) => left.x + left.width <= right.x || left.x >= right.x + right.width || left.y + left.height <= right.y || left.y >= right.y + right.height;
+  expect(this.cssBounds.some(({ annotations }) => annotations.length > 1)).toBe(true);
+  expect(this.cssBounds.some(({ annotations }) => annotations.length === 0)).toBe(true);
   for (const { annotations, names, image, product, label } of this.cssBounds) {
+    if (annotations.length === 0) {
+      expect(label, 'only zoomed-out views may omit an unsafe readable presentation').toMatch(/^(25%|25% fitted|50%)$/);
+      continue;
+    }
     expect(annotations.length, `${label} annotations`).toBeGreaterThan(1);
     for (const annotation of annotations) {
       expect(annotation.width).toBeGreaterThan(0); expect(annotation.width).toBeLessThanOrEqual(230); expect(annotation.height).toBeLessThanOrEqual(150);
@@ -616,7 +732,7 @@ Then('its meaning remains available without relying on color', async function (t
 });
 
 Given('an Area contains positive zoning values and one or more product placements near its preferred annotation anchor', async function (this: ZoningWorld) {
-  await this.page!.setViewportSize({ width: 480, height: 700 });
+  await this.page!.setViewportSize({ width: 1440, height: 1000 });
   await setupArea(this, 1, 1); await saveValues(this, [3]);
   await createNearbyRotatedProduct(this);
 });
