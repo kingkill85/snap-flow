@@ -108,7 +108,7 @@ export function CompactNumberControl({
           disabled={disabled}
           aria-describedby={describedBy}
           aria-invalid={error ? true : undefined}
-          className="h-8 w-[4.5rem] min-w-[4.5rem] shrink-0 rounded-none border-x-0 px-2 text-center tabular-nums"
+          className="h-8 w-[76px] min-w-[76px] max-w-[76px] basis-[76px] shrink-0 rounded-none border-x-0 px-2 text-center tabular-nums"
           onChange={(event) => handleDraftChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;

@@ -80,9 +80,17 @@ async function expectUsableCompoundControls(world: ZoningWorld, inputs: Locator)
         type: (element as HTMLInputElement).type,
         inputMode: (element as HTMLInputElement).inputMode,
         textAlign: style.textAlign,
+        width: Number.parseFloat(style.width),
+        minWidth: Number.parseFloat(style.minWidth),
+        maxWidth: Number.parseFloat(style.maxWidth),
+        flexBasis: Number.parseFloat(style.flexBasis),
+        flexShrink: style.flexShrink,
       };
     });
-    expect(metrics).toEqual({ type: 'text', inputMode: 'numeric', textAlign: 'center' });
+    expect(metrics).toEqual({
+      type: 'text', inputMode: 'numeric', textAlign: 'center',
+      width: 76, minWidth: 76, maxWidth: 76, flexBasis: 76, flexShrink: '0',
+    });
     expect(valueBox!.width).toBeGreaterThanOrEqual(72);
     const parameter = await input.getAttribute('aria-label') ?? await input.evaluate((element) =>
       document.querySelector(`label[for="${element.id}"]`)?.textContent?.trim() ?? ''

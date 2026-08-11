@@ -24,6 +24,8 @@ describe('AreaEditModal zoning parameters', () => {
     const input = screen.getByLabelText('Fan zones');
     expect(input).toHaveAttribute('type', 'text'); expect(input).toHaveAttribute('inputmode', 'numeric');
     expect(input).not.toHaveAttribute('min'); expect(input).not.toHaveAttribute('max'); expect(input).not.toHaveAttribute('step');
+    expect(input).toHaveClass('w-[76px]'); expect(input).toHaveClass('min-w-[76px]');
+    expect(input).toHaveClass('basis-[76px]'); expect(input).toHaveClass('max-w-[76px]'); expect(input).toHaveClass('shrink-0');
     const decrement = screen.getByRole('button', { name: 'Decrease Fan zones' });
     const increment = screen.getByRole('button', { name: 'Increase Fan zones' });
     expect(decrement).toBeDisabled(); expect(increment).toBeEnabled();
