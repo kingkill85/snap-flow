@@ -92,7 +92,7 @@ export function CompactNumberControl({
           type="button"
           variant="outline"
           size="icon"
-          className="h-8 w-8 shrink-0 rounded-r-none"
+          className="h-[34px] min-h-[34px] w-[34px] min-w-[34px] shrink-0 rounded-r-none"
           aria-label={`Decrease ${label}`}
           disabled={disabled || current === null || current <= MINIMUM}
           onClick={() => step(-1)}
@@ -108,7 +108,7 @@ export function CompactNumberControl({
           disabled={disabled}
           aria-describedby={describedBy}
           aria-invalid={error ? true : undefined}
-          className="h-8 w-[76px] min-w-[76px] max-w-[76px] basis-[76px] shrink-0 rounded-none border-x-0 px-2 text-center tabular-nums"
+          className="h-[34px] min-h-[34px] w-[76px] min-w-[76px] max-w-[76px] basis-[76px] shrink-0 rounded-none border-x-0 px-2 text-center tabular-nums"
           onChange={(event) => handleDraftChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
@@ -120,7 +120,7 @@ export function CompactNumberControl({
           type="button"
           variant="outline"
           size="icon"
-          className="h-8 w-8 shrink-0 rounded-l-none"
+          className="h-[34px] min-h-[34px] w-[34px] min-w-[34px] shrink-0 rounded-l-none"
           aria-label={`Increase ${label}`}
           disabled={disabled || current === null || current >= MAXIMUM}
           onClick={() => step(1)}

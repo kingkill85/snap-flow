@@ -24,7 +24,12 @@ async function login(world: ZoningWorld) {
   await world.page!.goto(world.baseUrl);
   await world.page!.evaluate(({ accessToken, refreshToken }) => { localStorage.setItem('accessToken', accessToken); localStorage.setItem('refreshToken', refreshToken); }, auth);
 }
-async function setupArea(world: ZoningWorld, groups = 2, parametersPerGroup = 1) {
+async function setupArea(
+  world: ZoningWorld,
+  groups = 2,
+  parametersPerGroup = 1,
+  areaSize: Readonly<{ width: number; height: number }> = { width: 500, height: 300 },
+) {
   await login(world); world.itemTypeIds = []; world.parameterIds = [];
   for (let group = 0; group < groups; group++) {
     const typeResponse = await world.page!.request.post(`${world.apiUrl}/api/item-types`, { headers: authHeaders(world), data: { name: `Issue89 Type ${group} ${Date.now()}`, abbreviation: `I${group}X` } });
@@ -42,7 +47,7 @@ async function setupArea(world: ZoningWorld, groups = 2, parametersPerGroup = 1)
   const floorplanResponse = await world.page!.request.post(`${world.apiUrl}/api/floorplans`, { headers: authHeaders(world), multipart: { project_id: String(world.projectId), name: 'Issue 89 Plan', image: { name: 'plan.png', mimeType: 'image/png', buffer: image } } });
   const floorplanBody = await floorplanResponse.json(); if (!floorplanResponse.ok()) throw new Error(`floorplan ${floorplanResponse.status()}: ${JSON.stringify(floorplanBody)}`);
   world.floorplanId = floorplanBody.data.id;
-  const areaResponse = await world.page!.request.post(`${world.apiUrl}/api/areas`, { headers: authHeaders(world), data: { floorplan_id: world.floorplanId, x: 30, y: 30, width: 500, height: 300, name: 'Review Area' } });
+  const areaResponse = await world.page!.request.post(`${world.apiUrl}/api/areas`, { headers: authHeaders(world), data: { floorplan_id: world.floorplanId, x: 30, y: 30, width: areaSize.width, height: areaSize.height, name: 'Review Area' } });
   const area = (await areaResponse.json()).data; world.areaId = area.id; world.areaRevision = area.revision; world.originalName = area.name;
 }
 async function openAreaEditor(world: ZoningWorld) {
@@ -99,6 +104,17 @@ async function expectUsableCompoundControls(world: ZoningWorld, inputs: Locator)
     const increment = world.page!.getByRole('button', { name: `Increase ${parameter}` });
     for (const action of [decrement, increment]) {
       const box = await action.boundingBox();
+      const actionMetrics = await action.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          width: Number.parseFloat(style.width),
+          height: Number.parseFloat(style.height),
+          minWidth: Number.parseFloat(style.minWidth),
+          minHeight: Number.parseFloat(style.minHeight),
+          flexShrink: style.flexShrink,
+        };
+      });
+      expect(actionMetrics).toEqual({ width: 34, height: 34, minWidth: 34, minHeight: 34, flexShrink: '0' });
       expect(box!.width).toBeGreaterThanOrEqual(32);
       expect(box!.height).toBeGreaterThanOrEqual(32);
     }
@@ -783,7 +799,7 @@ Then('the first update remains unchanged', async function (this: ZoningWorld) {
 });
 
 Given('an authorized user selects a source version with multiple floorplans and copied Areas having positive zoning values', async function (this: ZoningWorld) {
-  await setupArea(this, 1, 1);
+  await setupArea(this, 1, 1, { width: 400, height: 250 });
   await saveValues(this, [2]);
   const image = await readFile(resolve(process.cwd(), 'frontend/public/snapflow_variation_c_true_transparent_set/snapflow_icon_1024_transparent.png'));
   const floorplanResponse = await this.page!.request.post(`${this.apiUrl}/api/floorplans`, { headers: authHeaders(this), multipart: { project_id: String(this.projectId), name: 'Issue 89 Second Plan', image: { name: 'second-plan.png', mimeType: 'image/png', buffer: image } } });
@@ -828,7 +844,13 @@ Then("each copied value retains the source row's positive integer value and stab
   expect(this.copiedZoning.map((entry) => entry.parameterId)).toEqual(this.sourceZoning.map((entry) => entry.parameterId));
   await this.page!.goto(`${this.baseUrl}/projects/${this.copiedProjectId}`, { waitUntil: 'domcontentloaded' });
   await expect(this.page!.getByTestId('area-zoning-annotation').first()).toBeVisible();
-  expect((await paintedAnnotationRows(this)).some((row) => /I0X.*Zones 0.*2/.test(row))).toBe(true);
+  const paintedRows = await paintedAnnotationRows(this);
+  const stableTypeDiscriminator = `#${this.itemTypeIds[0].toString(36)}`;
+  const visibleFloorplanValue = this.copiedZoning.find((entry) => entry.value === 2);
+  expect(visibleFloorplanValue).toBeDefined();
+  expect(paintedRows.some((row) =>
+    row.startsWith(stableTypeDiscriminator) && /Z.*:\s*2$/.test(row)
+  )).toBe(true);
 });
 
 When('the administrator creates a parameter with a valid name and order', async function (this: ZoningWorld) {

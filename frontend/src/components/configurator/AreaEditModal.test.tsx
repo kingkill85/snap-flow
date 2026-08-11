@@ -28,6 +28,11 @@ describe('AreaEditModal zoning parameters', () => {
     expect(input).toHaveClass('basis-[76px]'); expect(input).toHaveClass('max-w-[76px]'); expect(input).toHaveClass('shrink-0');
     const decrement = screen.getByRole('button', { name: 'Decrease Fan zones' });
     const increment = screen.getByRole('button', { name: 'Increase Fan zones' });
+    for (const action of [decrement, increment]) {
+      expect(action).toHaveClass('h-[34px]', 'w-[34px]', 'min-h-[34px]', 'min-w-[34px]');
+    }
+    expect(input).toHaveClass('h-[34px]');
+    expect(34 * 0.95).toBeGreaterThanOrEqual(32);
     expect(decrement).toBeDisabled(); expect(increment).toBeEnabled();
     fireEvent.click(increment); expect(input).toHaveValue('1');
     fireEvent.click(decrement); expect(input).toHaveValue('0');
