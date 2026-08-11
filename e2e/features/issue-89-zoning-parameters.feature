@@ -16,12 +16,12 @@ Feature: Generic Product Type zoning parameters
     And preserves the definition and all values
 
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#edit-one-product-type-compactly-on-desktop
-  Scenario: Compact native zoning editor
+  Scenario: Compact compound zoning editor
     Given an Area has definitions from one applicable Product Type and viewport width permits two columns
     When the user opens Edit Area
     Then Area properties and the compact zoning pane are visible side by side
-    And each parameter appears as one narrow number input beside its label under the Product Type heading
-    And no parameter card, tab, or custom increment/decrement control is rendered
+    And each parameter appears with an integrated decrement, direct-entry value field, increment, and persistent label under the Product Type heading
+    And no parameter card, tab, or duplicate browser-native spinner is rendered
 
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#edit-multiple-product-type-groups-on-desktop
   Scenario: Multiple Product Type groups on desktop
@@ -37,13 +37,28 @@ Feature: Generic Product Type zoning parameters
     Then the compact zoning pane stacks below the Area property controls without horizontal page overflow
     And the dialog body scrolls while its heading and bottom-right action controls remain reachable and usable
 
-  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#operate-a-native-number-input-accessibly
-  Scenario: Native keyboard stepper and persistence
-    Given focus is on a parameter control
-    When the user types an integer or uses the native number-input keyboard step operation
-    Then the displayed value changes within the allowed range
-    And decrement at zero cannot create a negative value
-    And no redundant custom plus or minus control is present
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#operate-the-compound-number-control-accessibly
+  Scenario: Compound number control keyboard and button operation
+    Given focus is on a parameter value field whose current value is within the allowed range
+    When the user types an integer, presses `ArrowUp` or `ArrowDown`, or activates the parameter-specific increment or decrement button
+    Then the displayed value changes by direct entry or step 1 without leaving the inclusive 0 through 9999 range
+    And the field retains its parameter label and bounds description while the buttons expose distinct parameter-specific accessible names
+    And keyboard focus can move through decrement, value, and increment with a visible focus indicator
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#reach-and-respect-the-integer-boundaries
+  Scenario: Compound number control respects integer boundaries
+    Given a parameter control displays 0 or 9999
+    When the user attempts to step beyond the corresponding boundary
+    Then the value remains clamped within the allowed range
+    And the boundary-facing decrement or increment button is disabled while the opposite action remains available
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#reject-an-invalid-manual-draft-without-mutation
+  Scenario: Invalid compound draft is non-mutating
+    Given a user is editing a parameter value
+    When the user enters a fractional, negative, non-digit, non-finite, or out-of-range draft and activates Update
+    Then an associated validation message identifies the allowed integer range
+    And the invalid draft remains available for correction
+    And no Area mutation request is sent and no value is partially persisted
 
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#cancel-an-edit
   Scenario: Cancel discards drafts
@@ -64,6 +79,14 @@ Feature: Generic Product Type zoning parameters
     When the user enters values manually, saves, and reopens the Area editor
     Then the saved values appear beside the same parameter labels in the same Product Type groups
     And zero and positive values retain their defined persistence semantics
+
+  # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#existing-project-values-reach-both-real-renderers
+  Scenario: Existing project geometry paints persisted zoning values
+    Given a normal Area API response for an existing project contains real stored Area geometry and persisted positive zoning values that are visible in Edit Area
+    When the configurator renders that Area and the user invokes the existing PNG export without replacing the data with a synthetic fixture
+    Then the interactive floorplan contains directly painted SVG annotation rows for those exact positive values
+    And the downloaded PNG contains paint and pixel evidence for the same grouped values through the same normalized Area and descriptor path
+    And neither renderer silently omits the annotation because of data or geometry adaptation
 
   # openspec-scenario: openspec/changes/issue-89-generic-zoning-parameters/specs/area-zoning-values/spec.md#long-and-numerous-values
   Scenario: Annotation overflow remains bounded and accessible

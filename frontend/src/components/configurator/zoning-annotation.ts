@@ -365,10 +365,11 @@ export function layoutZoningAnnotations({
     const rows = positiveRows(area);
     const bounds = areaBounds(area);
     if (!rows.length || !bounds) continue;
-    const width = Math.min(
-      scaled(ZONING_ANNOTATION_STYLE.maxWidth),
-      Math.max(scaled(56), bounds.width - scaled(ZONING_ANNOTATION_STYLE.padding * 2)),
-    );
+    // Reserve the full canonical presentation width independently of the
+    // Area's size. Small, ordinary stored Areas use adjacent candidates; if
+    // the descriptor inherited their width, valid parameter identity would
+    // be compacted away even when the surrounding floorplan has room.
+    const width = Math.min(scaled(ZONING_ANNOTATION_STYLE.maxWidth), imageBounds.width);
     const centerX = bounds.x + bounds.width / 2;
     const centerY = bounds.y + bounds.height / 2;
 
@@ -389,6 +390,15 @@ export function layoutZoningAnnotations({
         { name: 'top-right', x: bounds.x + bounds.width - width - gap, y: bounds.y + gap },
         { name: 'bottom-left', x: bounds.x + gap, y: bounds.y + bounds.height - height - gap },
         { name: 'bottom-right', x: bounds.x + bounds.width - width - gap, y: bounds.y + bounds.height - height - gap },
+        // Normal user-created Areas can be smaller than the canonical
+        // low-zoom text envelope. Keep the same natural-coordinate model,
+        // but continue through deterministic adjacent candidates instead of
+        // silently dropping persisted values when every inside candidate
+        // intersects the Area's own name label.
+        { name: 'below-area', x: centerX - width / 2, y: bounds.y + bounds.height + gap },
+        { name: 'above-area', x: centerX - width / 2, y: bounds.y - height - gap },
+        { name: 'right-of-area', x: bounds.x + bounds.width + gap, y: centerY - height / 2 },
+        { name: 'left-of-area', x: bounds.x - width - gap, y: centerY - height / 2 },
       ];
       for (const candidate of candidates) {
         const candidateBounds = {

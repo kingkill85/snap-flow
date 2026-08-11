@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { X, Save } from 'lucide-react';
 import type { Area, UpdateAreaDTO } from '@/services/area';
+import { CompactNumberControl } from './CompactNumberControl';
 
 export interface AreaEditModalProps {
   area: Area | null; // null = closed
@@ -27,6 +28,7 @@ export function AreaEditModal({ area, onSave, onClose, onReload }: AreaEditModal
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [values, setValues] = useState<Record<number, number>>({});
+  const [invalidParameters, setInvalidParameters] = useState<Record<number, boolean>>({});
   const [reloadRequired, setReloadRequired] = useState(false);
 
   useEffect(() => {
@@ -42,11 +44,16 @@ export function AreaEditModal({ area, onSave, onClose, onReload }: AreaEditModal
     }
     setError('');
     setReloadRequired(false);
+    setInvalidParameters({});
   }, [area]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!area) return;
+    if (Object.values(invalidParameters).some(Boolean)) {
+      setError('Correct invalid zoning values before updating.');
+      return;
+    }
     setError('');
     setIsLoading(true);
     try {
@@ -197,30 +204,18 @@ export function AreaEditModal({ area, onSave, onClose, onReload }: AreaEditModal
                     <div className="divide-y divide-border/60">
                       {group.parameters.map((parameter) => {
                         const value = values[parameter.id] ?? 0;
-                        return <div key={parameter.id} className="grid grid-cols-[minmax(0,1fr)_6.5rem] items-center gap-3 py-1.5">
-                          <Label htmlFor={`zoning-${parameter.id}`} className="truncate text-sm font-normal" title={parameter.name}>{parameter.name}</Label>
-                          <Input
-                            id={`zoning-${parameter.id}`}
-                            type="number"
-                            min={0}
-                            max={9999}
-                            step={1}
-                            inputMode="numeric"
-                            value={value}
-                            onChange={(event) => {
-                              const next = Number(event.target.value);
-                              setValues((current) => ({
-                                ...current,
-                                [parameter.id]: Number.isFinite(next)
-                                  ? Math.max(0, Math.min(9999, Math.trunc(next)))
-                                  : 0,
-                              }));
-                            }}
-                            aria-describedby={`zoning-help-${parameter.id}`}
-                            className="h-8 w-[6.5rem] min-w-[6.5rem] shrink-0 pl-3 pr-8 text-left tabular-nums"
-                          />
-                          <span id={`zoning-help-${parameter.id}`} className="sr-only">Integer from 0 to 9999. Use arrow keys or the native stepper to change the value.</span>
-                        </div>;
+                        return <CompactNumberControl
+                          key={`${area.id}-${area.revision}-${parameter.id}`}
+                          id={`zoning-${parameter.id}`}
+                          label={parameter.name}
+                          value={value}
+                          disabled={isLoading}
+                          onValueChange={(next) => setValues((current) => ({ ...current, [parameter.id]: next }))}
+                          onValidityChange={(valid) => setInvalidParameters((current) => ({
+                            ...current,
+                            [parameter.id]: !valid,
+                          }))}
+                        />;
                       })}
                     </div>
                   </div>
@@ -234,7 +229,7 @@ export function AreaEditModal({ area, onSave, onClose, onReload }: AreaEditModal
               <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading}>
+            <Button type="submit" disabled={isLoading || Object.values(invalidParameters).some(Boolean)}>
               {isLoading ? (
                 'Saving...'
               ) : (

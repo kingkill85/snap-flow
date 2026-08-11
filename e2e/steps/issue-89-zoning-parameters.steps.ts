@@ -1,12 +1,12 @@
 import { Given, Then, When } from '@cucumber/cucumber';
 import { expect, type Locator } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { SnapFlowWorld } from '../support/world.ts';
 
 type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: number; value: number };
 type Bounds = { x: number; y: number; width: number; height: number };
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[] };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; areaMutationCount: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[]; existingPathSvgRows: string[]; existingPathRasterRows: string[] };
 
 const WIDE_GLYPH_NAME = 'W'.repeat(100);
 
@@ -71,34 +71,35 @@ async function paintedAnnotationRows(world: ZoningWorld) {
   ));
 }
 
-async function expectUsableNativeInputSpacing(world: ZoningWorld, inputs: Locator) {
+async function expectUsableCompoundControls(world: ZoningWorld, inputs: Locator) {
   for (const input of await inputs.all()) {
-    const box = await input.boundingBox();
+    const valueBox = await input.boundingBox();
     const metrics = await input.evaluate((element) => {
       const style = getComputedStyle(element);
       return {
-        width: Number.parseFloat(style.width),
-        minWidth: Number.parseFloat(style.minWidth),
-        flexShrink: style.flexShrink,
-        paddingRight: Number.parseFloat(style.paddingRight),
-        paddingLeft: Number.parseFloat(style.paddingLeft),
+        type: (element as HTMLInputElement).type,
+        inputMode: (element as HTMLInputElement).inputMode,
         textAlign: style.textAlign,
       };
     });
-    expect(box!.width).toBeGreaterThanOrEqual(96);
-    expect(box!.width).toBeLessThan(110);
-    expect(metrics.width).toBeGreaterThanOrEqual(104);
-    expect(metrics.minWidth).toBeGreaterThanOrEqual(104);
-    expect(metrics.flexShrink).toBe('0');
-    expect(metrics.paddingRight).toBeGreaterThanOrEqual(32);
-    expect(metrics.paddingLeft).toBeGreaterThanOrEqual(12);
-    expect(metrics.textAlign).toBe('left');
+    expect(metrics).toEqual({ type: 'text', inputMode: 'numeric', textAlign: 'center' });
+    expect(valueBox!.width).toBeGreaterThanOrEqual(72);
+    const parameter = await input.getAttribute('aria-label') ?? await input.evaluate((element) =>
+      document.querySelector(`label[for="${element.id}"]`)?.textContent?.trim() ?? ''
+    );
+    const decrement = world.page!.getByRole('button', { name: `Decrease ${parameter}` });
+    const increment = world.page!.getByRole('button', { name: `Increase ${parameter}` });
+    for (const action of [decrement, increment]) {
+      const box = await action.boundingBox();
+      expect(box!.width).toBeGreaterThanOrEqual(32);
+      expect(box!.height).toBeGreaterThanOrEqual(32);
+    }
   }
 }
 
 async function submitVisibleZoningValues(world: ZoningWorld, first: number, second: number) {
-  await world.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill(String(first));
-  await world.page!.getByRole('spinbutton', { name: 'Zones 1', exact: true }).fill(String(second));
+  await world.page!.getByLabel('Zones 0', { exact: true }).fill(String(first));
+  await world.page!.getByLabel('Zones 1', { exact: true }).fill(String(second));
   const responsePromise = world.page!.waitForResponse((response) =>
     response.request().method() === 'PUT' && response.url().endsWith(`/api/areas/${world.areaId}`)
   );
@@ -166,35 +167,46 @@ Given('an Area has definitions from one applicable Product Type and viewport wid
 Given('an Area has applicable definitions and the viewport cannot fit two columns', async function (this: ZoningWorld) { await this.page!.setViewportSize({ width: 390, height: 700 }); await setupArea(this, 2, 4); });
 When('the user opens Edit Area', async function (this: ZoningWorld) { await openAreaEditor(this); });
 Then('Area properties and the compact zoning pane are visible side by side', async function (this: ZoningWorld) { const columns = this.page!.getByRole('dialog').locator('.md\\:grid-cols-2'); await expect(columns).toBeVisible(); expect(await columns.evaluate((element) => getComputedStyle(element).gridTemplateColumns)).not.toBe('none'); });
-Then('each parameter appears as one narrow number input beside its label under the Product Type heading', async function (this: ZoningWorld) {
-  const inputs = this.page!.getByRole('group', { name: /Issue89 Type 0/ }).getByRole('spinbutton');
+Then('each parameter appears with an integrated decrement, direct-entry value field, increment, and persistent label under the Product Type heading', async function (this: ZoningWorld) {
+  const inputs = this.page!.getByRole('group', { name: /Issue89 Type 0/ }).locator('input[inputmode="numeric"]');
   await expect(inputs).toHaveCount(2);
-  await expectUsableNativeInputSpacing(this, inputs);
+  await expectUsableCompoundControls(this, inputs);
+  await this.page!.screenshot({ path: resolve(process.cwd(), 'e2e/results/issue-89-compound-desktop.png'), fullPage: true });
 });
-Then(/^no parameter card, tab, or custom increment\/decrement control is rendered$/, async function (this: ZoningWorld) { await expect(this.page!.getByRole('tab')).toHaveCount(0); await expect(this.page!.getByRole('button', { name: /Increase|Decrease/ })).toHaveCount(0); });
+Then('no parameter card, tab, or duplicate browser-native spinner is rendered', async function (this: ZoningWorld) { await expect(this.page!.getByRole('tab')).toHaveCount(0); await expect(this.page!.locator('input[type="number"]')).toHaveCount(0); });
 Then('each Product Type appears as an ordered compact section in the zoning pane', async function (this: ZoningWorld) { const groups = this.page!.getByRole('group', { name: /Issue89 Type/ }); await expect(groups).toHaveCount(2); expect(await groups.nth(0).getAttribute('aria-labelledby')).toContain(String(this.itemTypeIds[0])); });
-Then('all headings and parameter rows remain discoverable without switching tabs', async function (this: ZoningWorld) { for (let group = 0; group < 2; group++) { await expect(this.page!.getByRole('heading', { name: new RegExp(`Issue89 Type ${group}`) })).toBeVisible(); await expect(this.page!.getByRole('spinbutton', { name: `Zones ${group}`, exact: true })).toBeVisible(); } await expect(this.page!.getByRole('tab')).toHaveCount(0); });
+Then('all headings and parameter rows remain discoverable without switching tabs', async function (this: ZoningWorld) { for (let group = 0; group < 2; group++) { await expect(this.page!.getByRole('heading', { name: new RegExp(`Issue89 Type ${group}`) })).toBeVisible(); await expect(this.page!.getByLabel(`Zones ${group}`, { exact: true })).toBeVisible(); } await expect(this.page!.getByRole('tab')).toHaveCount(0); });
 Then('the compact zoning pane stacks below the Area property controls without horizontal page overflow', async function (this: ZoningWorld) {
   const name = this.page!.getByLabel('Name');
   const zoning = this.page!.getByRole('heading', { name: 'Zoning Parameters' });
   expect((await name.boundingBox())!.y).toBeLessThan((await zoning.boundingBox())!.y);
   expect(await this.page!.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy();
-  const inputs = this.page!.getByRole('spinbutton');
+  const inputs = this.page!.locator('input[inputmode="numeric"]');
   await expect(inputs).toHaveCount(8);
-  await expectUsableNativeInputSpacing(this, inputs);
+  await expectUsableCompoundControls(this, inputs);
+  await inputs.first().scrollIntoViewIfNeeded();
+  await this.page!.screenshot({ path: resolve(process.cwd(), 'e2e/results/issue-89-compound-phone.png') });
 });
 Then('the dialog body scrolls while its heading and bottom-right action controls remain reachable and usable', async function (this: ZoningWorld) { const body = this.page!.getByRole('dialog').locator('.overflow-y-auto'); expect(await body.evaluate((element) => element.scrollHeight > element.clientHeight)).toBeTruthy(); await expect(this.page!.getByRole('heading', { name: 'Zoning Parameters' })).toBeVisible(); await expect(this.page!.getByRole('button', { name: 'Update' })).toBeVisible(); });
 
-Given('focus is on a parameter control', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).focus(); });
-When('the user enters a value with the native number input', async function (this: ZoningWorld) { await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill('4'); await this.page!.getByRole('button', { name: 'Update' }).click(); await openAreaEditor(this); });
-Then('the compact editor has no custom increment or decrement controls', async function (this: ZoningWorld) { await expect(this.page!.getByRole('button', { name: /Increase|Decrease/ })).toHaveCount(0); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveAttribute('step', '1'); });
-Then('the saved native value is shown after reopening', async function (this: ZoningWorld) { await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4'); });
-When('the user types an integer or uses the native number-input keyboard step operation', async function (this: ZoningWorld) { const input = this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }); await input.fill('4'); await input.press('ArrowUp'); await this.page!.getByRole('button', { name: 'Update' }).click(); await openAreaEditor(this); });
-Then('the displayed value changes within the allowed range', async function (this: ZoningWorld) { await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('5'); });
-Then('decrement at zero cannot create a negative value', async function (this: ZoningWorld) { const input = this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }); await input.fill('0'); await input.press('ArrowDown'); await expect(input).toHaveValue('0'); });
-Then('no redundant custom plus or minus control is present', async function (this: ZoningWorld) { await expect(this.page!.getByRole('button', { name: /Increase|Decrease/ })).toHaveCount(0); });
+Given('focus is on a parameter value field whose current value is within the allowed range', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); await this.page!.getByLabel('Zones 0', { exact: true }).focus(); });
+When('the user types an integer, presses `ArrowUp` or `ArrowDown`, or activates the parameter-specific increment or decrement button', async function (this: ZoningWorld) { const input = this.page!.getByLabel('Zones 0', { exact: true }); await input.fill('4'); await input.press('ArrowUp'); await input.press('ArrowDown'); await this.page!.getByRole('button', { name: 'Increase Zones 0' }).click(); await this.page!.getByRole('button', { name: 'Decrease Zones 0' }).click(); await this.page!.getByRole('button', { name: 'Increase Zones 0' }).click(); });
+Then('the displayed value changes by direct entry or step 1 without leaving the inclusive 0 through 9999 range', async function (this: ZoningWorld) { await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveValue('5'); });
+Then('the field retains its parameter label and bounds description while the buttons expose distinct parameter-specific accessible names', async function (this: ZoningWorld) { const input = this.page!.getByLabel('Zones 0', { exact: true }); await expect(input).toHaveAttribute('aria-describedby', /help/); await expect(this.page!.getByRole('button', { name: 'Decrease Zones 0' })).toBeVisible(); await expect(this.page!.getByRole('button', { name: 'Increase Zones 0' })).toBeVisible(); });
+Then('keyboard focus can move through decrement, value, and increment with a visible focus indicator', async function (this: ZoningWorld) { const input = this.page!.getByLabel('Zones 0', { exact: true }); const decrement = this.page!.getByRole('button', { name: 'Decrease Zones 0' }); await input.focus(); await this.page!.keyboard.press('Shift+Tab'); await expect(decrement).toBeFocused(); expect(await decrement.evaluate((element) => element.matches(':focus-visible'))).toBeTruthy(); await this.page!.keyboard.press('Tab'); await expect(input).toBeFocused(); await this.page!.keyboard.press('Tab'); await expect(this.page!.getByRole('button', { name: 'Increase Zones 0' })).toBeFocused(); });
 
-Given('the user changed Area properties or zoning values in the dialog', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); await this.page!.getByLabel('Name').fill('Draft Name'); await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill('8'); });
+Given('a parameter control displays 0 or 9999', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); });
+When('the user attempts to step beyond the corresponding boundary', async function (this: ZoningWorld) { const input = this.page!.getByLabel('Zones 0', { exact: true }); await input.fill('0'); await input.press('ArrowDown'); await expect(input).toHaveValue('0'); await expect(this.page!.getByRole('button', { name: 'Decrease Zones 0' })).toBeDisabled(); await input.fill('9999'); await input.press('ArrowUp'); });
+Then('the value remains clamped within the allowed range', async function (this: ZoningWorld) { await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveValue('9999'); });
+Then('the boundary-facing decrement or increment button is disabled while the opposite action remains available', async function (this: ZoningWorld) { await expect(this.page!.getByRole('button', { name: 'Increase Zones 0' })).toBeDisabled(); await expect(this.page!.getByRole('button', { name: 'Decrease Zones 0' })).toBeEnabled(); });
+
+Given('a user is editing a parameter value', async function (this: ZoningWorld) { await setupArea(this, 1, 1); this.areaMutationCount = 0; this.page!.on('request', (request) => { if (request.method() === 'PUT' && request.url().endsWith(`/api/areas/${this.areaId}`)) this.areaMutationCount++; }); await openAreaEditor(this); });
+When('the user enters a fractional, negative, non-digit, non-finite, or out-of-range draft and activates Update', async function (this: ZoningWorld) { const input = this.page!.getByLabel('Zones 0', { exact: true }); for (const draft of ['1.5', '-1', 'abc', 'NaN', 'Infinity', '10000']) { await input.fill(draft); await expect(input).toHaveValue(draft); const update = this.page!.getByRole('button', { name: 'Update' }); await expect(update).toBeDisabled(); await update.evaluate((button) => (button as HTMLButtonElement).click()); } });
+Then('an associated validation message identifies the allowed integer range', async function (this: ZoningWorld) { await expect(this.page!.getByRole('alert')).toContainText('whole number from 0 to 9999'); });
+Then('the invalid draft remains available for correction', async function (this: ZoningWorld) { await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveValue('10000'); });
+Then('no Area mutation request is sent and no value is partially persisted', async function (this: ZoningWorld) { expect(this.areaMutationCount).toBe(0); const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); expect((await response.json()).data.zoning_groups[0].parameters[0].value).toBe(0); });
+
+Given('the user changed Area properties or zoning values in the dialog', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); await this.page!.getByLabel('Name').fill('Draft Name'); await this.page!.getByLabel('Zones 0', { exact: true }).fill('8'); });
 When('the user activates Cancel, presses Escape, or dismisses the dialog', async function (this: ZoningWorld) { await this.page!.getByRole('button', { name: 'Cancel' }).click(); });
 Then('no draft changes are sent or retained', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); const area = (await response.json()).data; expect(area.name).toBe(this.originalName); expect(area.zoning_groups[0].parameters[0].value).toBe(0); });
 
@@ -257,8 +269,8 @@ Given('an Area editor contains one or more Product Type groups', async function 
 });
 When('the user enters values manually, saves, and reopens the Area editor', async function (this: ZoningWorld) {
   this.saveRevisions = [];
-  await this.page!.getByRole('spinbutton', { name: 'Extremely long parameter wording 0-1', exact: true }).fill('0');
-  await this.page!.getByRole('spinbutton', { name: 'Extremely long parameter wording 1-1', exact: true }).fill('0');
+  await this.page!.getByLabel('Extremely long parameter wording 0-1', { exact: true }).fill('0');
+  await this.page!.getByLabel('Extremely long parameter wording 1-1', { exact: true }).fill('0');
   this.saveRevisions.push(await submitVisibleZoningValues(this, 4, 2));
   for (const [first, second] of [[5, 3], [6, 1]]) {
     await reopenAreaEditor(this);
@@ -266,20 +278,20 @@ When('the user enters values manually, saves, and reopens the Area editor', asyn
   }
   await this.page!.reload({ waitUntil: 'domcontentloaded' });
   await openAreaEditor(this);
-  await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('6');
-  await expect(this.page!.getByRole('spinbutton', { name: 'Zones 1', exact: true })).toHaveValue('1');
+  await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveValue('6');
+  await expect(this.page!.getByLabel('Zones 1', { exact: true })).toHaveValue('1');
   this.saveRevisions.push(await submitVisibleZoningValues(this, 4, 2));
   expect(this.saveRevisions).toEqual([...this.saveRevisions].sort((left, right) => left - right));
   expect(new Set(this.saveRevisions).size).toBe(this.saveRevisions.length);
   await reopenAreaEditor(this);
 });
 Then('the saved values appear beside the same parameter labels in the same Product Type groups', async function (this: ZoningWorld) {
-  await expect(this.page!.getByRole('group', { name: /Issue89 Type 0/ }).getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4');
-  await expect(this.page!.getByRole('group', { name: /Issue89 Type 1/ }).getByRole('spinbutton', { name: 'Zones 1', exact: true })).toHaveValue('2');
+  await expect(this.page!.getByRole('group', { name: /Issue89 Type 0/ }).getByLabel('Zones 0', { exact: true })).toHaveValue('4');
+  await expect(this.page!.getByRole('group', { name: /Issue89 Type 1/ }).getByLabel('Zones 1', { exact: true })).toHaveValue('2');
 });
 Then('zero and positive values retain their defined persistence semantics', async function (this: ZoningWorld) {
-  await expect(this.page!.getByRole('spinbutton', { name: 'Extremely long parameter wording 0-1', exact: true })).toHaveValue('0');
-  await expect(this.page!.getByRole('spinbutton', { name: 'Extremely long parameter wording 1-1', exact: true })).toHaveValue('0');
+  await expect(this.page!.getByLabel('Extremely long parameter wording 0-1', { exact: true })).toHaveValue('0');
+  await expect(this.page!.getByLabel('Extremely long parameter wording 1-1', { exact: true })).toHaveValue('0');
   await this.page!.getByRole('button', { name: 'Cancel' }).click();
   const persistedResponse = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) });
   const persisted = (await persistedResponse.json()).data;
@@ -309,6 +321,143 @@ Then('zero and positive values retain their defined persistence semantics', asyn
   const rasterText = await this.page!.evaluate(() => (window as unknown as { issue89UserPathRasterText: string[] }).issue89UserPathRasterText);
   const rasterRows = rasterText.filter((text) => /:\s*(?:4|2)$/.test(text));
   expect(rasterRows).toEqual(paintedRows);
+});
+
+Given('a normal Area API response for an existing project contains real stored Area geometry and persisted positive zoning values that are visible in Edit Area', async function (this: ZoningWorld) {
+  await login(this);
+  const typeResponse = await this.page!.request.post(`${this.apiUrl}/api/item-types`, {
+    headers: authHeaders(this),
+    data: { name: `Zigbee ${Date.now()}`, abbreviation: 'ZIG' },
+  });
+  expect(typeResponse.status()).toBe(201);
+  const itemType = (await typeResponse.json()).data;
+  this.itemTypeIds = [itemType.id];
+  this.parameterIds = [];
+  for (const [sort_order, name] of ['test', 'test2'].entries()) {
+    const response = await this.page!.request.post(`${this.apiUrl}/api/item-types/${itemType.id}/zoning-parameters`, {
+      headers: authHeaders(this), data: { name, sort_order },
+    });
+    expect(response.status()).toBe(201);
+    this.parameterIds.push((await response.json()).data.id);
+  }
+  const projectResponse = await this.page!.request.post(`${this.apiUrl}/api/projects`, {
+    headers: authHeaders(this), data: { customer_name: `Existing geometry ${Date.now()}`, item_type_ids: this.itemTypeIds },
+  });
+  expect(projectResponse.status()).toBe(201);
+  this.projectId = (await projectResponse.json()).data.id;
+  const image = await readFile(resolve(process.cwd(), 'frontend/public/snapflow_variation_c_true_transparent_set/snapflow_icon_1024_transparent.png'));
+  const floorplanResponse = await this.page!.request.post(`${this.apiUrl}/api/floorplans`, {
+    headers: authHeaders(this),
+    multipart: { project_id: String(this.projectId), name: 'Existing stored plan', image: { name: 'existing-plan.png', mimeType: 'image/png', buffer: image } },
+  });
+  expect(floorplanResponse.status()).toBe(201);
+  this.floorplanId = (await floorplanResponse.json()).data.id;
+  const areaResponse = await this.page!.request.post(`${this.apiUrl}/api/areas`, {
+    headers: authHeaders(this),
+    data: { floorplan_id: this.floorplanId, x: 340, y: 220, width: 120, height: 90, name: 'Existing Zigbee Area' },
+  });
+  expect(areaResponse.status()).toBe(201);
+  const createdArea = (await areaResponse.json()).data;
+  this.areaId = createdArea.id;
+  const savedResponse = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}`, {
+    headers: authHeaders(this),
+    data: {
+      revision: createdArea.revision,
+      applicable_parameter_ids: this.parameterIds,
+      zoning_values: [
+        { parameter_id: this.parameterIds[0], value: 1 },
+        { parameter_id: this.parameterIds[1], value: 2 },
+      ],
+    },
+  });
+  expect(savedResponse.status()).toBe(200);
+  const persistedResponse = await this.page!.request.get(`${this.apiUrl}/api/areas?floorplan_id=${this.floorplanId}`, { headers: authHeaders(this) });
+  const persisted = (await persistedResponse.json()).data.find((candidate: { id: number }) => candidate.id === this.areaId);
+  expect(persisted.vertices).toHaveLength(4);
+  expect(persisted.vertices.map((vertex: { x: number; y: number }) => [vertex.x, vertex.y])).toEqual([
+    [340, 220], [460, 220], [460, 310], [340, 310],
+  ]);
+  expect(persisted.zoning_groups[0].parameters.map((parameter: { name: string; value: number }) => [parameter.name, parameter.value])).toEqual([
+    ['test', 1], ['test2', 2],
+  ]);
+});
+
+When('the configurator renders that Area and the user invokes the existing PNG export without replacing the data with a synthetic fixture', async function (this: ZoningWorld) {
+  await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`, { waitUntil: 'domcontentloaded' });
+  await this.page!.getByRole('tab', { name: 'Areas' }).click();
+  const panel = this.page!.getByLabel('Areas');
+  await expect(panel.getByText('Existing Zigbee Area', { exact: true })).toBeVisible();
+  await panel.getByTitle('Edit area').click();
+  await expect(this.page!.getByLabel('test', { exact: true })).toHaveValue('1');
+  await expect(this.page!.getByLabel('test2', { exact: true })).toHaveValue('2');
+  await this.page!.getByRole('button', { name: 'Cancel' }).click();
+  await expect(this.page!.getByRole('dialog', { name: 'Edit Area' })).toBeHidden();
+
+  const annotation = this.page!.getByTestId('area-zoning-annotation');
+  await expect(annotation).toBeVisible();
+  await this.page!.screenshot({ path: resolve(process.cwd(), 'e2e/results/issue-89-existing-project-interactive.png'), fullPage: true });
+  this.existingPathSvgRows = await paintedAnnotationRows(this);
+  const serializedBounds = await annotation.getAttribute('data-export-bounds');
+  if (!serializedBounds) throw new Error('Existing-project annotation bounds unavailable');
+  const [x, y, width, height] = serializedBounds.split(',').map(Number);
+  this.annotationBounds = { x, y, width, height };
+
+  await this.page!.evaluate(() => {
+    const prototype = CanvasRenderingContext2D.prototype as CanvasRenderingContext2D & { __issue89ExistingPathWrapped?: boolean };
+    if (prototype.__issue89ExistingPathWrapped) return;
+    prototype.__issue89ExistingPathWrapped = true;
+    const originalStrokeText = prototype.strokeText;
+    const originalFillText = prototype.fillText;
+    (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number }> }).issue89ExistingPathPaint = [];
+    prototype.strokeText = function (text, x, y, maxWidth) {
+      (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number }> }).issue89ExistingPathPaint.push({ kind: 'stroke', text, x, y });
+      return maxWidth === undefined ? originalStrokeText.call(this, text, x, y) : originalStrokeText.call(this, text, x, y, maxWidth);
+    };
+    prototype.fillText = function (text, x, y, maxWidth) {
+      (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number }> }).issue89ExistingPathPaint.push({ kind: 'fill', text, x, y });
+      return maxWidth === undefined ? originalFillText.call(this, text, x, y) : originalFillText.call(this, text, x, y, maxWidth);
+    };
+  });
+  const downloadPromise = this.page!.waitForEvent('download');
+  await this.page!.getByTitle('Export floorplan image').click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  if (!path) throw new Error('Existing-project PNG download unavailable');
+  this.downloadBytes = await readFile(path);
+  await writeFile(resolve(process.cwd(), 'e2e/results/issue-89-existing-project-export.png'), this.downloadBytes);
+  const calls = await this.page!.evaluate(() => (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string }> }).issue89ExistingPathPaint);
+  this.existingPathRasterRows = calls.filter((call) => call.kind === 'fill' && /:\s*[12]$/.test(call.text)).map((call) => call.text);
+});
+
+Then('the interactive floorplan contains directly painted SVG annotation rows for those exact positive values', async function (this: ZoningWorld) {
+  expect(this.existingPathSvgRows).toHaveLength(2);
+  expect(this.existingPathSvgRows.some((row) => /test\s*:\s*1$/.test(row))).toBe(true);
+  expect(this.existingPathSvgRows.some((row) => /test2\s*:\s*2$/.test(row))).toBe(true);
+});
+
+Then('the downloaded PNG contains paint and pixel evidence for the same grouped values through the same normalized Area and descriptor path', async function (this: ZoningWorld) {
+  expect(this.downloadBytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+  const pixels = await this.page!.evaluate(async ({ base64, bounds }) => {
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+    const canvas = document.createElement('canvas'); canvas.width = bitmap.width; canvas.height = bitmap.height;
+    const context = canvas.getContext('2d'); if (!context) throw new Error('Existing-project raster context unavailable');
+    context.drawImage(bitmap, 0, 0); bitmap.close();
+    const region = context.getImageData(Math.floor(bounds.x), Math.floor(bounds.y), Math.ceil(bounds.width), Math.ceil(bounds.height)).data;
+    let light = 0; let dark = 0;
+    for (let index = 0; index < region.length; index += 4) {
+      if (region[index] > 245 && region[index + 1] > 245 && region[index + 2] > 245 && region[index + 3] > 0) light++;
+      if (region[index] >= 10 && region[index] <= 35 && region[index + 1] >= 20 && region[index + 1] <= 45 && region[index + 2] >= 30 && region[index + 2] <= 60 && region[index + 3] > 0) dark++;
+    }
+    return { light, dark };
+  }, { base64: this.downloadBytes.toString('base64'), bounds: this.annotationBounds });
+  expect(pixels.light).toBeGreaterThan(0);
+  expect(pixels.dark).toBeGreaterThan(0);
+});
+
+Then('neither renderer silently omits the annotation because of data or geometry adaptation', async function (this: ZoningWorld) {
+  expect(this.existingPathRasterRows).toHaveLength(2);
+  expect(this.existingPathRasterRows).toEqual(this.existingPathSvgRows);
 });
 
 Given('an Area has more positive values than fit within the summary bounds and some names are long', async function (this: ZoningWorld) {
@@ -562,7 +711,7 @@ Then('the second update receives `409 Conflict`', async function (this: ZoningWo
 Then('the first update remains unchanged', async function (this: ZoningWorld) {
   await this.page!.getByRole('button', { name: 'Reload Area' }).click();
   await expect(this.page!.getByLabel('Name')).toHaveValue('Winning Area');
-  await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4');
+  await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveValue('4');
   await this.page!.getByRole('button', { name: 'Cancel' }).click();
 
   const areasPanel = this.page!.getByLabel('Areas');
@@ -570,14 +719,14 @@ Then('the first update remains unchanged', async function (this: ZoningWorld) {
   await expect(this.page!.getByTestId('area-zoning-annotation')).toContainText(/Zones 0.*4/);
   await areasPanel.getByTitle('Edit area').click();
   await expect(this.page!.getByLabel('Name')).toHaveValue('Winning Area');
-  await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4');
+  await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveValue('4');
   await this.page!.getByRole('button', { name: 'Cancel' }).click();
 
   await this.page!.getByRole('tab', { name: 'Products' }).click();
   await this.page!.locator(`[data-area-id="${this.areaId}"]`).click({ position: { x: 10, y: 10 } });
   await this.page!.locator('button[title="Edit area"]:visible').click();
   await expect(this.page!.getByLabel('Name')).toHaveValue('Winning Area');
-  await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('4');
+  await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveValue('4');
 });
 
 Given('an authorized user selects a source version with multiple floorplans and copied Areas having positive zoning values', async function (this: ZoningWorld) {
@@ -683,26 +832,26 @@ When('the request is processed', async function (this: ZoningWorld) { const resp
 Then('the system returns the same not-found response used for an inaccessible Area', async function (this: ZoningWorld) { expect(this.lastStatus).toBe(404); });
 Then('performs no read disclosure or mutation', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); expect(response.status()).toBe(404); });
 
-Given('an Area edit changes its name and includes several parameter values', async function (this: ZoningWorld) { await setupArea(this, 1, 2); await openAreaEditor(this); await this.page!.getByLabel('Name').fill('Retained Draft'); await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill('7'); });
+Given('an Area edit changes its name and includes several parameter values', async function (this: ZoningWorld) { await setupArea(this, 1, 2); await openAreaEditor(this); await this.page!.getByLabel('Name').fill('Retained Draft'); await this.page!.getByLabel('Zones 0', { exact: true }).fill('7'); });
 When('any submitted value or definition identity is invalid', async function (this: ZoningWorld) {
   const response = await this.page!.request.put(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this), data: { revision: this.areaRevision, applicable_parameter_ids: this.parameterIds, zoning_values: [{ parameter_id: this.parameterIds[0], value: 4 }, { parameter_id: this.parameterIds[1], value: 10000 }] } });
   this.lastStatus = response.status();
   expect(JSON.stringify(await response.json())).toMatch(/value|9999/i);
 });
-Then('the system rejects the request with field-level details', async function (this: ZoningWorld) { expect(this.lastStatus).toBe(400); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('7'); });
+Then('the system rejects the request with field-level details', async function (this: ZoningWorld) { expect(this.lastStatus).toBe(400); await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveValue('7'); });
 Then('neither the name nor any parameter value changes', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); const area = (await response.json()).data; expect(area.name).toBe('Review Area'); expect(area.zoning_groups[0].parameters.every((entry: { value: number }) => entry.value === 0)).toBeTruthy(); });
 
 Given('a deactivated definition retains Area values', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await saveValues(this, [6]); const response = await this.page!.request.patch(`${this.apiUrl}/api/item-types/${this.itemTypeIds[0]}/zoning-parameters/${this.parameterIds[0]}/deactivate`, { headers: authHeaders(this) }); expect(response.status()).toBe(200); });
 When('an administrator reactivates it', async function (this: ZoningWorld) { const response = await this.page!.request.patch(`${this.apiUrl}/api/item-types/${this.itemTypeIds[0]}/zoning-parameters/${this.parameterIds[0]}/activate`, { headers: authHeaders(this) }); expect(response.status()).toBe(200); });
-Then('it reappears for applicable projects in configured order', async function (this: ZoningWorld) { await openAreaEditor(this); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toBeVisible(); });
-Then('each Area exposes its retained value', async function (this: ZoningWorld) { await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('6'); });
+Then('it reappears for applicable projects in configured order', async function (this: ZoningWorld) { await openAreaEditor(this); await expect(this.page!.getByLabel('Zones 0', { exact: true })).toBeVisible(); });
+Then('each Area exposes its retained value', async function (this: ZoningWorld) { await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveValue('6'); });
 
 Given("a Product Type was removed from a project's selected Product Types without deleting its values", async function (this: ZoningWorld) { await setupArea(this, 1, 1); await saveValues(this, [8]); const response = await this.page!.request.put(`${this.apiUrl}/api/projects/${this.projectId}`, { headers: authHeaders(this), data: { item_type_ids: [] } }); expect(response.status()).toBe(200); });
 When('the active Product Type is selected again', async function (this: ZoningWorld) { const response = await this.page!.request.put(`${this.apiUrl}/api/projects/${this.projectId}`, { headers: authHeaders(this), data: { item_type_ids: this.itemTypeIds } }); expect(response.status()).toBe(200); });
-Then('its active definitions become applicable', async function (this: ZoningWorld) { await openAreaEditor(this); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toBeVisible(); });
-Then('the Area editor exposes retained values', async function (this: ZoningWorld) { await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveValue('8'); });
+Then('its active definitions become applicable', async function (this: ZoningWorld) { await openAreaEditor(this); await expect(this.page!.getByLabel('Zones 0', { exact: true })).toBeVisible(); });
+Then('the Area editor exposes retained values', async function (this: ZoningWorld) { await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveValue('8'); });
 
 Given('a user opened an Area editor', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await openAreaEditor(this); });
-When('an administrator changes the applicable definition set before the user saves', async function (this: ZoningWorld) { await this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true }).fill('3'); await this.page!.getByLabel('Name').fill('Must not persist'); await this.page!.request.patch(`${this.apiUrl}/api/item-types/${this.itemTypeIds[0]}/zoning-parameters/${this.parameterIds[0]}/deactivate`, { headers: authHeaders(this) }); await this.page!.getByRole('button', { name: 'Update' }).click(); });
+When('an administrator changes the applicable definition set before the user saves', async function (this: ZoningWorld) { await this.page!.getByLabel('Zones 0', { exact: true }).fill('3'); await this.page!.getByLabel('Name').fill('Must not persist'); await this.page!.request.patch(`${this.apiUrl}/api/item-types/${this.itemTypeIds[0]}/zoning-parameters/${this.parameterIds[0]}/deactivate`, { headers: authHeaders(this) }); await this.page!.getByRole('button', { name: 'Update' }).click(); });
 Then('the save receives `409 Conflict`', async function (this: ZoningWorld) { await expect(this.page!.getByRole('alert')).toContainText(/changed|reload/i); });
-Then('no Area property or value from that request is persisted', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); expect((await response.json()).data.name).toBe('Review Area'); await this.page!.getByRole('button', { name: 'Reload Area' }).click(); await expect(this.page!.getByRole('spinbutton', { name: 'Zones 0', exact: true })).toHaveCount(0); });
+Then('no Area property or value from that request is persisted', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); expect((await response.json()).data.name).toBe('Review Area'); await this.page!.getByRole('button', { name: 'Reload Area' }).click(); await expect(this.page!.getByLabel('Zones 0', { exact: true })).toHaveCount(0); });

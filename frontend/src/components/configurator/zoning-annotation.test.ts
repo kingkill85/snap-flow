@@ -75,6 +75,38 @@ describe('zoning annotation layout', () => {
     ]);
   });
 
+  it('lays out persisted values for a normal small stored Area without covering its name', () => {
+    const persistedArea = resizedArea(11, 340, 120, 90, 1);
+    persistedArea.y = 220;
+    persistedArea.name = 'Existing Zigbee Area';
+    persistedArea.vertices = [
+      { id: 110, placement_id: 11, vertex_index: 0, x: 340, y: 220 },
+      { id: 111, placement_id: 11, vertex_index: 1, x: 460, y: 220 },
+      { id: 112, placement_id: 11, vertex_index: 2, x: 460, y: 310 },
+      { id: 113, placement_id: 11, vertex_index: 3, x: 340, y: 310 },
+    ];
+    persistedArea.zoning_groups = [{
+      item_type: { id: 1, name: 'Zigbee', abbreviation: 'ZIG', color: '#f00', sort_order: 0 },
+      parameters: [
+        { id: 1, name: 'test', sort_order: 0, value: 1 },
+        { id: 2, name: 'test2', sort_order: 1, value: 2 },
+      ],
+    }];
+
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    });
+
+    expect(descriptor).toBeDefined();
+    expect(descriptor.lines.map((line) => line.displayText)).toEqual([
+      expect.stringMatching(/test\s*:\s*1$/),
+      expect.stringMatching(/test2\s*:\s*2$/),
+    ]);
+    expect(overlaps(descriptor.bounds, getAreaNameLabelGeometry(persistedArea, 0.25)!.bounds)).toBe(false);
+  });
+
   it.each([
     { label: 'identical abbreviations', abbreviations: ['X', 'X'], names: ['Shared Alpha', 'Shared Beta'] },
     { label: 'distinct alphabetic abbreviations colliding after truncation', abbreviations: ['ABCDEFGHIJ', 'ABCDEFGHIK'], names: [`${'W'.repeat(84)}A`, `${'W'.repeat(84)}B`] },

@@ -19,23 +19,57 @@ describe('AreaEditModal zoning parameters', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(1, expect.objectContaining({ revision: 4, applicable_parameter_ids: [8, 9], zoning_values: [{ parameter_id: 8, value: 2 }, { parameter_id: 9, value: 1 }] })));
   });
 
-  it('uses compact native inputs with no redundant controls and Cancel does not save drafts', () => {
+  it('uses compact application controls and Cancel does not save drafts', () => {
     const onSave = vi.fn(); const onClose = vi.fn(); render(<AreaEditModal area={area} onSave={onSave} onClose={onClose} />);
     const input = screen.getByLabelText('Fan zones');
-    expect(input).toHaveAttribute('type', 'number'); expect(input).toHaveAttribute('min', '0'); expect(input).toHaveAttribute('max', '9999'); expect(input).toHaveAttribute('step', '1');
-    expect(input).toHaveClass('w-[6.5rem]'); expect(input).toHaveClass('min-w-[6.5rem]'); expect(input).toHaveClass('shrink-0');
-    expect(input).toHaveClass('pr-8'); expect(input).toHaveClass('text-left');
-    expect(screen.queryByRole('button', { name: /Increase|Decrease/ })).toBeNull();
-    fireEvent.change(input, { target: { value: '-1' } }); expect(input).toHaveValue(0);
+    expect(input).toHaveAttribute('type', 'text'); expect(input).toHaveAttribute('inputmode', 'numeric');
+    expect(input).not.toHaveAttribute('min'); expect(input).not.toHaveAttribute('max'); expect(input).not.toHaveAttribute('step');
+    const decrement = screen.getByRole('button', { name: 'Decrease Fan zones' });
+    const increment = screen.getByRole('button', { name: 'Increase Fan zones' });
+    expect(decrement).toBeDisabled(); expect(increment).toBeEnabled();
+    fireEvent.click(increment); expect(input).toHaveValue('1');
+    fireEvent.click(decrement); expect(input).toHaveValue('0');
+    expect(input.getAttribute('aria-describedby')).toContain('zoning-9-help');
     fireEvent.change(screen.getByLabelText('Relay zones'), { target: { value: '3' } }); fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onSave).not.toHaveBeenCalled(); expect(onClose).toHaveBeenCalled();
   });
+
+  it('supports direct entry, Arrow keys, blank-as-zero, and disabled integer boundaries', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<AreaEditModal area={area} onSave={onSave} onClose={vi.fn()} />);
+    const input = screen.getByLabelText('Fan zones');
+    fireEvent.change(input, { target: { value: '41' } }); expect(input).toHaveValue('41');
+    fireEvent.keyDown(input, { key: 'ArrowUp' }); expect(input).toHaveValue('42');
+    fireEvent.keyDown(input, { key: 'ArrowDown' }); expect(input).toHaveValue('41');
+    fireEvent.change(input, { target: { value: '9999' } });
+    expect(screen.getByRole('button', { name: 'Increase Fan zones' })).toBeDisabled();
+    fireEvent.keyDown(input, { key: 'ArrowUp' }); expect(input).toHaveValue('9999');
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input).toHaveValue(''); expect(screen.getByRole('button', { name: 'Decrease Fan zones' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(1, expect.objectContaining({
+      zoning_values: [{ parameter_id: 8, value: 2 }, { parameter_id: 9, value: 0 }],
+    })));
+  });
+
+  it.each(['1.5', '-1', 'abc', 'NaN', 'Infinity', '10000'])(
+    'retains invalid draft %s and blocks the Area mutation',
+    async (draft) => {
+      const onSave = vi.fn(); render(<AreaEditModal area={area} onSave={onSave} onClose={vi.fn()} />);
+      const input = screen.getByLabelText('Fan zones');
+      fireEvent.change(input, { target: { value: draft } });
+      expect(input).toHaveValue(draft); expect(input).toHaveAttribute('aria-invalid', 'true');
+      expect(screen.getByText('Enter a whole number from 0 to 9999.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Update' })).toBeDisabled();
+      await waitFor(() => expect(onSave).not.toHaveBeenCalled());
+    },
+  );
 
   it('keeps drafts and offers an explicit reload after a 409 conflict', async () => {
     const onReload = vi.fn().mockResolvedValue(undefined); const conflict = { response: { status: 409, data: { error: 'Configuration changed; reload required' } } };
     render(<AreaEditModal area={area} onSave={vi.fn().mockRejectedValue(conflict)} onReload={onReload} onClose={vi.fn()} />);
     fireEvent.change(screen.getByLabelText('Relay zones'), { target: { value: '7' } }); fireEvent.click(screen.getByRole('button', { name: 'Update' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('reload required'); expect(screen.getByLabelText('Relay zones')).toHaveValue(7);
+    expect(await screen.findByRole('alert')).toHaveTextContent('reload required'); expect(screen.getByLabelText('Relay zones')).toHaveValue('7');
     fireEvent.click(screen.getByRole('button', { name: 'Reload Area' })); await waitFor(() => expect(onReload).toHaveBeenCalledWith(1));
   });
 
@@ -44,7 +78,7 @@ describe('AreaEditModal zoning parameters', () => {
     expect(screen.getByRole('group', { name: 'Lighting' }).compareDocumentPosition(screen.getByRole('group', { name: 'HVAC' }))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(document.querySelector('[class*="md:grid-cols-2"]')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Relay zones'), { target: { value: '9999' } });
-    expect(screen.getByLabelText('Relay zones')).toHaveValue(9999);
+    expect(screen.getByLabelText('Relay zones')).toHaveValue('9999');
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onSave).not.toHaveBeenCalled();
   });
@@ -54,6 +88,6 @@ describe('AreaEditModal zoning parameters', () => {
     fireEvent.change(screen.getByLabelText('Relay zones'), { target: { value: '8' } });
     fireEvent.click(screen.getByRole('button', { name: 'Update' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Values must be integers');
-    expect(screen.getByLabelText('Relay zones')).toHaveValue(8);
+    expect(screen.getByLabelText('Relay zones')).toHaveValue('8');
   });
 });
