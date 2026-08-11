@@ -6,7 +6,9 @@ import type { SnapFlowWorld } from '../support/world.ts';
 
 type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: number; value: number };
 type Bounds = { x: number; y: number; width: number; height: number };
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; areaMutationCount: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[]; existingPathSvgRows: string[]; existingPathRasterRows: string[]; existingPathAreaBounds: Bounds; existingPathInteractiveBounds: Bounds; existingPathAnchor: string; existingPathNameStyle: { fill: string | null; background: string | null; fontSize: number; fontWeight: string | null }; existingPathSvgStyle: { fill: string | null; background: string | null; backgroundCount: number; fontSize: number; fontWeight: string | null; lineHeight: number }; existingPathRasterStyle: { fill: string; background: string; backgroundCount: number; font: string }; readabilityAreaIds: number[]; readabilitySvgRows: string[]; readabilityRasterRows: string[] };
+type DirectTextPaint = { text: string; x: number; y: number; fill: string; font: string };
+type VisibleIdentityEvidence = { label: string; configuredNames: string[]; svgRows: string[]; repeatedSvgRows: string[]; rasterRows: string[]; svgPaints: DirectTextPaint[]; rasterPaints: DirectTextPaint[]; accessibleText: string; descriptor: { anchor: string; bounds: string; exportBounds: string; omitted: string } };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; areaMutationCount: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[]; visibleIdentityEvidence: VisibleIdentityEvidence[]; existingPathSvgRows: string[]; existingPathRasterRows: string[]; existingPathAreaBounds: Bounds; existingPathInteractiveBounds: Bounds; existingPathAnchor: string; existingPathNameStyle: { fill: string | null; background: string | null; fontSize: number; fontWeight: string | null }; existingPathSvgStyle: { fill: string | null; background: string | null; backgroundCount: number; fontSize: number; fontWeight: string | null; lineHeight: number }; existingPathRasterStyle: { fill: string; background: string; backgroundCount: number; font: string }; readabilityAreaIds: number[]; readabilitySvgRows: string[]; readabilityRasterRows: string[] };
 
 const WIDE_GLYPH_NAME = 'W'.repeat(100);
 
@@ -235,13 +237,12 @@ When('the user activates Cancel, presses Escape, or dismisses the dialog', async
 Then('no draft changes are sent or retained', async function (this: ZoningWorld) { const response = await this.page!.request.get(`${this.apiUrl}/api/areas/${this.areaId}`, { headers: authHeaders(this) }); const area = (await response.json()).data; expect(area.name).toBe(this.originalName); expect(area.zoning_groups[0].parameters[0].value).toBe(0); });
 
 Given('an Area has positive and zero values across two applicable Product Types', async function (this: ZoningWorld) {
-  await setupArea(this, 2, 2);
-  const commonPrefix = 'Shared Product Type '.repeat(3);
-  const collidingAbbreviations = ['ABCDEFGH1', 'ABCDEFGH2'];
+  await setupArea(this, 2, 2, { width: 300, height: 260 });
+  const names = ['照明設備甲', '照明設備乙'];
   for (const [index, itemTypeId] of this.itemTypeIds.entries()) {
     const renamedType = await this.page!.request.put(`${this.apiUrl}/api/item-types/${itemTypeId}`, {
       headers: authHeaders(this),
-      data: { name: `${commonPrefix}${index ? 'Beta' : 'Alpha'}`, abbreviation: collidingAbbreviations[index] },
+      data: { name: names[index], abbreviation: 'X' },
     });
     expect(renamedType.status()).toBe(200);
     const renamedParameter = await this.page!.request.put(`${this.apiUrl}/api/item-types/${itemTypeId}/zoning-parameters/${this.parameterIds[index * 2]}`, {
@@ -253,16 +254,35 @@ Given('an Area has positive and zero values across two applicable Product Types'
   await saveValues(this, [3, 0, 3, 0]);
 });
 When('the interactive floorplan or PNG export renders', async function (this: ZoningWorld) {
+  await this.page!.setViewportSize({ width: 1280, height: 900 });
   await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`);
-  await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible();
+  const annotation = this.page!.getByTestId('area-zoning-annotation');
+  await expect(annotation).toBeVisible();
+  const svgRows = (await paintedAnnotationRows(this)).filter((row) => /Z.*:\s*3$/.test(row));
   await this.page!.reload();
-  await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible();
+  await expect(annotation).toBeVisible();
+  const repeatedSvgRows = (await paintedAnnotationRows(this)).filter((row) => /Z.*:\s*3$/.test(row));
+  const svgPaints = await annotation.locator('text').evaluateAll((rows) => rows.map((row) => {
+    const style = getComputedStyle(row);
+    return {
+      text: [...row.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent ?? '').join(''),
+      x: Number(row.getAttribute('x')),
+      y: Number(row.getAttribute('y')),
+      fill: row.getAttribute('fill') ?? '',
+      font: `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`,
+    };
+  }).filter(({ text }) => /Z.*:\s*3$/.test(text)));
   await this.page!.evaluate(() => {
     const prototype = CanvasRenderingContext2D.prototype;
     const original = prototype.fillText;
-    (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows = [];
+    const evidence = window as unknown as { issue89DuplicateRasterRows: string[]; issue89VisibleRasterPaints: DirectTextPaint[] };
+    evidence.issue89DuplicateRasterRows = [];
+    evidence.issue89VisibleRasterPaints = [];
     prototype.fillText = function (text, x, y, maxWidth) {
-      if (/Z.*:\s*3$/.test(text)) (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows.push(text);
+      if (/Z.*:\s*3$/.test(text)) {
+        evidence.issue89DuplicateRasterRows.push(text);
+        evidence.issue89VisibleRasterPaints.push({ text, x, y, fill: String(this.fillStyle), font: this.font });
+      }
       return maxWidth === undefined ? original.call(this, text, x, y) : original.call(this, text, x, y, maxWidth);
     };
   });
@@ -270,17 +290,53 @@ When('the interactive floorplan or PNG export renders', async function (this: Zo
   await this.page!.getByTitle('Export floorplan image').click();
   const download = await downloadPromise;
   expect(await download.path()).toBeTruthy();
-  this.duplicateRasterRows = await this.page!.evaluate(() => (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows);
+  await download.saveAs(resolve(process.cwd(), 'e2e/results/issue-89-visible-identity-export.png'));
+  this.visibleIdentityEvidence = [{
+    label: 'duplicate-unicode-narrow',
+    configuredNames: ['照明設備甲', '照明設備乙'],
+    svgRows,
+    repeatedSvgRows,
+    rasterRows: await this.page!.evaluate(() => (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows),
+    svgPaints,
+    rasterPaints: await this.page!.evaluate(() => (window as unknown as { issue89VisibleRasterPaints: DirectTextPaint[] }).issue89VisibleRasterPaints),
+    accessibleText: await annotation.getAttribute('aria-label') ?? '',
+    descriptor: {
+      anchor: await annotation.getAttribute('data-anchor') ?? '',
+      bounds: await annotation.getAttribute('data-bounds') ?? '',
+      exportBounds: await annotation.getAttribute('data-export-bounds') ?? '',
+      omitted: await annotation.getAttribute('data-omitted') ?? '',
+    },
+  }];
+  this.duplicateRasterRows = this.visibleIdentityEvidence[0].rasterRows;
+  const firstText = annotation.locator('text').first();
+  const renderedEvidence = {
+    cases: this.visibleIdentityEvidence,
+    annotationBounds: await annotation.boundingBox(),
+    style: await firstText.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { fill: element.getAttribute('fill'), fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight };
+    }),
+  };
+  await writeFile(resolve(process.cwd(), 'e2e/results/issue-89-visible-identity-measurements.json'), JSON.stringify(renderedEvidence, null, 2));
+  await this.page!.screenshot({ path: resolve(process.cwd(), 'e2e/results/issue-89-visible-identity-interactive.png'), fullPage: true });
 });
 Then('each Product Type with a positive value has one labelled group', async function (this: ZoningWorld) {
-  const directRows = (await paintedAnnotationRows(this)).filter((row) => /Z.*:\s*3$/.test(row));
-  expect(directRows).toHaveLength(2);
-  expect(directRows.every((row) => !/^#/u.test(row))).toBe(true);
-  expect(this.duplicateRasterRows).toEqual(directRows);
-  await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveAccessibleName(/Shared Product Type .*Alpha.*Zones: 3.*Shared Product Type .*Beta.*Zones: 3/);
-  await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveAccessibleName(
-    new RegExp(`Product Type identifier ${this.itemTypeIds[0]}.*Product Type identifier ${this.itemTypeIds[1]}`),
-  );
+  expect(this.visibleIdentityEvidence.map((evidence) => evidence.label)).toEqual(['duplicate-unicode-narrow']);
+  for (const evidence of this.visibleIdentityEvidence) {
+    expect(evidence.svgRows).toHaveLength(2);
+    expect(new Set(evidence.svgRows).size).toBe(2);
+    expect(evidence.svgRows.every((row) => !row.includes('#') && /Z.*:\s*3$/.test(row))).toBe(true);
+    expect(evidence.repeatedSvgRows).toEqual(evidence.svgRows);
+    expect(evidence.rasterRows).toEqual(evidence.svgRows);
+    expect(new Set(evidence.rasterRows).size).toBe(2);
+    expect(evidence.svgPaints.map((paint) => paint.text)).toEqual(evidence.svgRows);
+    expect(evidence.rasterPaints.map((paint) => paint.text)).toEqual(evidence.rasterRows);
+    expect(evidence.svgPaints.every((paint) => paint.fill === '#ffffff' && paint.font.startsWith('600 '))).toBe(true);
+    expect(evidence.rasterPaints.every((paint) => paint.fill === '#ffffff' && /^600 12px Arial/u.test(paint.font))).toBe(true);
+    expect(evidence.descriptor).toMatchObject({ anchor: 'bottom-left', omitted: '0' });
+    for (const name of evidence.configuredNames) expect(evidence.accessibleText).toContain(name);
+    for (const id of this.itemTypeIds) expect(evidence.accessibleText).toContain(`Product Type identifier ${id}`);
+  }
 });
 Then('zero-valued parameters and empty Product Type groups are absent', async function (this: ZoningWorld) {
   expect((await paintedAnnotationRows(this)).some((row) => row.includes('Extremely long parameter wording'))).toBe(false);

@@ -340,8 +340,7 @@ describe('exportFloorplanImage', () => {
     expect(mockCtx.font).toBe('600 12px Arial, sans-serif');
   });
 
-  it('draws duplicate-abbreviation Product Type groups without generated numeric raster prefixes', async () => {
-    const sharedPrefix = 'Shared Product Type '.repeat(4);
+  it('draws indistinguishable configured Product Type labels with readable non-ID raster fallbacks', async () => {
     const duplicateGroups: Area = {
       ...mockArea,
       x: 100,
@@ -355,7 +354,7 @@ describe('exportFloorplanImage', () => {
         { id: 84, placement_id: 10, vertex_index: 3, x: 100, y: 500 },
       ],
       zoning_groups: [80, 81].map((id, index) => ({
-        item_type: { id, name: `${sharedPrefix}${index ? 'Beta' : 'Alpha'}`, abbreviation: 'X', color: '#f00', sort_order: index },
+        item_type: { id, name: 'Shared', abbreviation: 'X', color: '#f00', sort_order: index },
         parameters: [{ id, name: 'Zones', sort_order: 0, value: 4 }],
       })),
     };
@@ -365,7 +364,9 @@ describe('exportFloorplanImage', () => {
       .map(([text]) => String(text))
       .filter((text) => /:\s*4$/.test(text));
     expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
+    expect(new Set(directRows)).toHaveLength(2);
     expect(directRows.every((line) => !/^#/u.test(line))).toBe(true);
+    expect(directRows.every((line) => !/80|81/u.test(line))).toBe(true);
   });
 
   it('draws colliding abbreviations without generated numeric raster prefixes', async () => {
@@ -398,6 +399,7 @@ describe('exportFloorplanImage', () => {
       .map(([text]) => String(text))
       .filter((text) => /Z.*:\s*4$/.test(text));
     expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
+    expect(new Set(directRows)).toHaveLength(2);
     expect(directRows.every((line) => !/^#/u.test(line))).toBe(true);
   });
 

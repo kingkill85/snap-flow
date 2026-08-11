@@ -278,12 +278,13 @@ describe('zoning annotation layout', () => {
 
   it.each([
     { label: 'identical abbreviations', abbreviations: ['X', 'X'], names: ['Shared Alpha', 'Shared Beta'] },
+    { label: 'indistinguishable configured labels', abbreviations: ['X', 'X'], names: ['Shared', 'Shared'] },
     { label: 'distinct alphabetic abbreviations colliding after truncation', abbreviations: ['ABCDEFGHIJ', 'ABCDEFGHIK'], names: [`${'W'.repeat(84)}A`, `${'W'.repeat(84)}B`] },
     { label: 'distinct numeric suffixes colliding after truncation', abbreviations: ['ABCDEFGH1', 'ABCDEFGH2'], names: ['Common prefix Alpha', 'Common prefix Beta'] },
     { label: 'long common prefixes in a narrow budget', abbreviations: ['PREFIXAAA1', 'PREFIXAAA2'], names: ['Long common Product Type Alpha', 'Long common Product Type Beta'] },
     { label: 'Unicode and fallback glyph names', abbreviations: ['照明設備甲', '照明設備乙'], names: ['照明😀共有名甲', '照明😀共有名乙'] },
   ])('removes generated numeric prefixes while preserving accessible stable identity for $label', ({ abbreviations, names }) => {
-    for (const width of [420, 500]) {
+    for (const width of [300, 420, 500]) {
       const persistedArea = resizedArea(1, 0, width, 300, 2);
       persistedArea.zoning_groups = persistedArea.zoning_groups.map((group, index) => ({
         ...group,
@@ -305,12 +306,70 @@ describe('zoning annotation layout', () => {
       const painted = descriptor.lines.map((line) => line.displayText);
       expect(layoutZoningAnnotations(input)).toEqual([descriptor]);
       expect(painted).toHaveLength(2);
+      expect(new Set(painted)).toHaveLength(2);
       expect(painted.every((line) => !/^#/u.test(line))).toBe(true);
+      expect(painted.every((line) => !/80|81/u.test(line))).toBe(true);
       expect(descriptor.accessibleText).toContain(`${names[0]} — Zones: 4`);
       expect(descriptor.accessibleText).toContain(`${names[1]} — Zones: 4`);
       expect(descriptor.accessibleText).toContain('Product Type identifier 80');
       expect(descriptor.accessibleText).toContain('Product Type identifier 81');
     }
+  });
+
+  it('keeps every represented group visibly distinct when overflow compacts duplicate abbreviations', () => {
+    const persistedArea = resizedArea(1, 0, 500, 260, 3);
+    persistedArea.zoning_groups = persistedArea.zoning_groups.map((group, index) => ({
+      ...group,
+      item_type: {
+        ...group.item_type,
+        id: 80 + index,
+        name: `Shared Product Type ${['Alpha', 'Beta', 'Gamma'][index]}`,
+        abbreviation: 'X',
+      },
+      parameters: Array.from({ length: 3 }, (_, parameterIndex) => ({
+        id: index * 10 + parameterIndex + 1,
+        name: 'Zones',
+        sort_order: parameterIndex,
+        value: 4,
+      })),
+    }));
+
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    });
+    const firstRowsByGroup = descriptor.lines.slice(0, 3).map((line) => line.displayText);
+
+    expect(firstRowsByGroup).toHaveLength(3);
+    expect(new Set(firstRowsByGroup)).toHaveLength(3);
+    expect(firstRowsByGroup.every((line) => !/^#/u.test(line))).toBe(true);
+    expect(descriptor.omitted).toBeGreaterThan(0);
+  });
+
+  it('reserves generated alphabetic fallbacks against existing human labels', () => {
+    const persistedArea = resizedArea(1, 0, 500, 260, 3);
+    persistedArea.zoning_groups = [
+      { abbreviation: 'A', name: 'A' },
+      { abbreviation: 'A', name: 'A' },
+      { abbreviation: 'Z', name: 'A A (A)' },
+    ].map(({ abbreviation, name }, index) => ({
+      item_type: { id: 80 + index, name, abbreviation, color: '#f00', sort_order: index },
+      parameters: [{ id: index + 1, name: 'Zones', sort_order: 0, value: 4 }],
+    }));
+
+    const input = {
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    };
+    const [descriptor] = layoutZoningAnnotations(input);
+    const painted = descriptor.lines.map((line) => line.displayText);
+
+    expect(painted).toHaveLength(3);
+    expect(new Set(painted)).toHaveLength(3);
+    expect(painted.every((line) => !line.includes('#'))).toBe(true);
+    expect(layoutZoningAnnotations(input)).toEqual([descriptor]);
   });
 
   it('chooses another bounded candidate near products and never overlaps them', () => {

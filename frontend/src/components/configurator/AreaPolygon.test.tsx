@@ -52,13 +52,17 @@ describe('AreaPolygon zoning annotation', () => {
       .map((row) => [...row.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent).join(''));
     expect(paintedRows.some((row) => /T.*Very.*: ?1/.test(row))).toBe(true);
   });
-  it('omits generated numeric prefixes while exposing stable identity accessibly after abbreviation truncation', () => {
+  it.each([
+    { abbreviations: ['X', 'X'], names: ['Shared Product Type Alpha', 'Shared Product Type Beta'] },
+    { abbreviations: ['X', 'X'], names: ['Shared', 'Shared'] },
+    { abbreviations: ['ABCDEFGHIJ', 'ABCDEFGHIK'], names: [`${'W'.repeat(84)}Alpha`, `${'W'.repeat(84)}Beta`] },
+  ])('paints prefix-free distinct labels directly while exposing stable identity accessibly', ({ abbreviations, names }) => {
     const collidingArea: Area = {
       ...base,
-      zoning_groups: ['ABCDEFGHIJ', 'ABCDEFGHIK'].map((abbreviation, index) => ({
+      zoning_groups: abbreviations.map((abbreviation, index) => ({
         item_type: {
           id: 80 + index,
-          name: `${'W'.repeat(84)}${index ? 'Beta' : 'Alpha'}`,
+          name: names[index],
           abbreviation,
           color: '#f00',
           sort_order: index,
@@ -78,12 +82,14 @@ describe('AreaPolygon zoning annotation', () => {
         .map((node) => node.textContent ?? '')
         .join(''));
     expect(directlyPainted).toEqual(annotation.lines.map((line) => line.displayText));
+    expect(new Set(directlyPainted)).toHaveLength(2);
     expect(directlyPainted.every((row) => !/^#/u.test(row))).toBe(true);
+    expect(directlyPainted.every((row) => !/80|81/u.test(row))).toBe(true);
     const fullText = [...container.querySelectorAll('[data-testid="area-zoning-annotation"] title')]
       .map((title) => title.textContent ?? '')
       .join('; ');
-    expect(fullText).toContain(`${'W'.repeat(84)}Alpha — Zones: 4`);
-    expect(fullText).toContain(`${'W'.repeat(84)}Beta — Zones: 4`);
+    expect(fullText).toContain(`${names[0]} — Zones: 4`);
+    expect(fullText).toContain(`${names[1]} — Zones: 4`);
     expect(fullText).toContain('Product Type identifier 80');
     expect(fullText).toContain('Product Type identifier 81');
   });
