@@ -12,36 +12,48 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { X, Save } from 'lucide-react';
 import type { Area, UpdateAreaDTO } from '@/services/area';
+import { CompactNumberControl } from './CompactNumberControl';
 
 export interface AreaEditModalProps {
   area: Area | null; // null = closed
   onSave: (id: number, data: UpdateAreaDTO) => Promise<void>;
   onClose: () => void;
+  onReload?: (id: number) => Promise<void>;
 }
 
-export function AreaEditModal({ area, onSave, onClose }: AreaEditModalProps) {
+export function AreaEditModal({ area, onSave, onClose, onReload }: AreaEditModalProps) {
   const [name, setName] = useState('');
   const [color, setColor] = useState('#3b82f6');
   const [opacity, setOpacity] = useState(10); // 0–100 (%)
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [values, setValues] = useState<Record<number, number>>({});
+  const [invalidParameters, setInvalidParameters] = useState<Record<number, boolean>>({});
+  const [reloadRequired, setReloadRequired] = useState(false);
 
   useEffect(() => {
     if (area) {
       setName(area.name || '');
       setColor(area.color || '#3b82f6');
       setOpacity(Math.round(area.opacity * 100));
+      setValues(Object.fromEntries(area.zoning_groups.flatMap((group) => group.parameters.map((parameter) => [parameter.id, parameter.value]))));
     } else {
       setName('');
       setColor('#3b82f6');
       setOpacity(10);
     }
     setError('');
+    setReloadRequired(false);
+    setInvalidParameters({});
   }, [area]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!area) return;
+    if (Object.values(invalidParameters).some(Boolean)) {
+      setError('Correct invalid zoning values before updating.');
+      return;
+    }
     setError('');
     setIsLoading(true);
     try {
@@ -49,10 +61,18 @@ export function AreaEditModal({ area, onSave, onClose }: AreaEditModalProps) {
         name: name.trim() || undefined,
         color,
         opacity: opacity / 100,
+        ...(area.zoning_groups.length ? {
+          revision: area.revision,
+          applicable_parameter_ids: area.zoning_groups.flatMap((group) => group.parameters.map((parameter) => parameter.id)),
+          zoning_values: area.zoning_groups.flatMap((group) => group.parameters.map((parameter) => ({ parameter_id: parameter.id, value: values[parameter.id] ?? 0 }))),
+        } : {}),
       });
       onClose();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to save area';
+      const response = typeof err === 'object' && err !== null && 'response' in err ? (err as { response?: { status?: number; data?: { error?: string } } }).response : undefined;
+      const conflict = response?.status === 409;
+      setReloadRequired(conflict);
+      const message = response?.data?.error ?? (err instanceof Error ? err.message : 'Failed to save area');
       setError(message);
     } finally {
       setIsLoading(false);
@@ -61,7 +81,7 @@ export function AreaEditModal({ area, onSave, onClose }: AreaEditModalProps) {
 
   return (
     <Dialog open={area !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[400px]">
+      <DialogContent className={area?.zoning_groups.length ? 'sm:max-w-[850px] max-h-[90vh]' : 'sm:max-w-[400px]'}>
         <DialogHeader>
           <DialogTitle>Edit Area</DialogTitle>
           <DialogDescription>
@@ -71,11 +91,13 @@ export function AreaEditModal({ area, onSave, onClose }: AreaEditModalProps) {
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
           {error && (
-            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
-              {error}
+            <div role="alert" className="text-sm text-destructive bg-destructive/10 p-3 rounded">
+              <p>{error}</p>
+              {reloadRequired && onReload && <Button type="button" variant="outline" size="sm" className="mt-2" onClick={async () => { await onReload(area!.id); setReloadRequired(false); setError(''); }}>Reload Area</Button>}
             </div>
           )}
-          <div className="flex-1 overflow-y-auto px-1 space-y-5">
+          <div className={`flex-1 overflow-y-auto px-1 gap-8 ${area?.zoning_groups.length ? 'grid grid-cols-1 md:grid-cols-2' : ''}`}>
+            <div className="space-y-5">
             {/* Room Name */}
             <div className="space-y-2">
               <Label htmlFor="area-name">Name</Label>
@@ -165,14 +187,49 @@ export function AreaEditModal({ area, onSave, onClose }: AreaEditModalProps) {
                 />
               </div>
             </div>
+            </div>
+
+            {area?.zoning_groups.length ? (
+              <section aria-labelledby="zoning-heading" className="min-w-0 space-y-4">
+                <div>
+                  <h3 id="zoning-heading" className="text-base font-semibold">Zoning Parameters</h3>
+                  <p className="text-xs text-muted-foreground">Enter the required quantity for each configured parameter.</p>
+                </div>
+                {area.zoning_groups.map((group) => (
+                  <div key={group.item_type.id} role="group" aria-labelledby={`zoning-group-${group.item_type.id}`} className="space-y-1.5">
+                    <h4 id={`zoning-group-${group.item_type.id}`} className="flex items-center gap-2 text-sm font-medium">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: group.item_type.color }} aria-hidden="true" />
+                      {group.item_type.name}
+                    </h4>
+                    <div className="divide-y divide-border/60">
+                      {group.parameters.map((parameter) => {
+                        const value = values[parameter.id] ?? 0;
+                        return <CompactNumberControl
+                          key={`${area.id}-${area.revision}-${parameter.id}`}
+                          id={`zoning-${parameter.id}`}
+                          label={parameter.name}
+                          value={value}
+                          disabled={isLoading}
+                          onValueChange={(next) => setValues((current) => ({ ...current, [parameter.id]: next }))}
+                          onValidityChange={(valid) => setInvalidParameters((current) => ({
+                            ...current,
+                            [parameter.id]: !valid,
+                          }))}
+                        />;
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            ) : null}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 pt-4">
             <Button type="button" variant="outline" onClick={onClose}>
               <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading}>
+            <Button type="submit" disabled={isLoading || Object.values(invalidParameters).some(Boolean)}>
               {isLoading ? (
                 'Saving...'
               ) : (

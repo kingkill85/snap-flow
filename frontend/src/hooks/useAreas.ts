@@ -13,6 +13,7 @@ interface UseAreasReturn {
   fetchAreas: (floorplanId: number, signal?: AbortSignal) => Promise<void>;
   createArea: (data: CreateAreaDTO) => Promise<Area>;
   updateArea: (id: number, data: UpdateAreaDTO) => Promise<void>;
+  reloadArea: (id: number) => Promise<Area>;
   updateVertices: (id: number, vertices: { x: number; y: number }[]) => Promise<void>;
   deleteArea: (id: number) => Promise<void>;
   setSelectedAreaId: (id: number | null) => void;
@@ -48,6 +49,12 @@ export function useAreas({ activeFloorplanId }: UseAreasProps): UseAreasReturn {
     setAreas(prev => prev.map(a => a.id === id ? updated : a));
   }, []);
 
+  const reloadArea = useCallback(async (id: number): Promise<Area> => {
+    const reloaded = await areaService.getById(id);
+    setAreas(prev => prev.map(area => area.id === id ? reloaded : area));
+    return reloaded;
+  }, []);
+
   const updateVertices = useCallback(async (id: number, vertices: { x: number; y: number }[]): Promise<void> => {
     const updated = await areaService.updateVertices(id, vertices);
     setAreas(prev => prev.map(a => a.id === id ? updated : a));
@@ -80,6 +87,7 @@ export function useAreas({ activeFloorplanId }: UseAreasProps): UseAreasReturn {
     fetchAreas,
     createArea,
     updateArea,
+    reloadArea,
     updateVertices,
     deleteArea,
     setSelectedAreaId,

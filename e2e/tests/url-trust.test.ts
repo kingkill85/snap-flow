@@ -15,3 +15,12 @@ test('rejects inherited URL overrides including alternate loopback ports', () =>
     { E2E_BASE_URL: 'http://127.0.0.1:9999' },
   ]) assert.throws(() => resolveRuntimeUrls(environment), /override|fixed runtime/);
 });
+
+test('allows only a bounded numeric offset while retaining spawned loopback origins', () => {
+  assert.deepEqual(resolveRuntimeUrls({ E2E_PORT_OFFSET: '89' }), {
+    frontend: 'http://127.0.0.1:4262', backend: 'http://127.0.0.1:18089',
+  });
+  for (const value of ['-1', '10000', '1.5', 'abc']) {
+    assert.throws(() => resolveRuntimeUrls({ E2E_PORT_OFFSET: value }), /integer/);
+  }
+});

@@ -1,5 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import type { Area } from '@/services/area';
+import type { ZoningAnnotationDescriptor } from './zoning-annotation';
+import { getAnnotationPresentation, getAreaNameLabelGeometry, ZONING_ANNOTATION_STYLE } from './zoning-annotation';
 
 export interface AreaPolygonProps {
   area: Area;
@@ -12,6 +14,8 @@ export interface AreaPolygonProps {
   onVertexAdd: (id: number, afterIndex: number, x: number, y: number) => void;
   onVertexDelete: (id: number, vertexIndex: number) => void;
   onVerticesCommit: (id: number) => void;
+  zoningAnnotation?: ZoningAnnotationDescriptor;
+  showZoningAnnotation?: boolean;
 }
 
 interface DragState {
@@ -53,6 +57,8 @@ export function AreaPolygon({
   onVertexAdd,
   onVertexDelete,
   onVerticesCommit,
+  zoningAnnotation,
+  showZoningAnnotation = true,
 }: AreaPolygonProps) {
   const dragStateRef = useRef<DragState | null>(null);
   const prevSvgPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -70,7 +76,9 @@ export function AreaPolygon({
   const handleRadius = 6 / scale;  // Inner radius — with 2px stroke gives ~16px total visual diameter
   const handleStroke = 2 / scale;
   const edgeHitWidth = 12 / scale;
-  const fontSize = 12 / scale;
+  const nameGeometry = getAreaNameLabelGeometry(area, scale);
+  const annotationPresentation = zoningAnnotation ? getAnnotationPresentation(zoningAnnotation, scale) : null;
+  const exportPresentation = zoningAnnotation ? getAnnotationPresentation(zoningAnnotation, 1) : null;
 
 
   // -----------------------------------------------------------------------
@@ -399,69 +407,95 @@ export function AreaPolygon({
       />
 
       {/* Name label — on the longest edge, offset inward, with dark pill background */}
-      {(() => {
-        const label = area.name || 'Area';
-        const padX = 6 / scale;
-        const padY = 3 / scale;
-        const estWidth = label.length * fontSize * 0.6 + padX * 2;
-        const estHeight = fontSize + padY * 2;
-        const centroidX = sortedVertices.reduce((s, v) => s + v.x, 0) / (sortedVertices.length || 1);
-        const centroidY = sortedVertices.reduce((s, v) => s + v.y, 0) / (sortedVertices.length || 1);
-
-        // Find the longest edge
-        let bestLen = 0;
-        let bestMidX = centroidX;
-        let bestMidY = centroidY;
-        let bestInwardX = 0;
-        let bestInwardY = 0;
-
-        for (let i = 0; i < sortedVertices.length; i++) {
-          const a = sortedVertices[i];
-          const b = sortedVertices[(i + 1) % sortedVertices.length];
-          const len = Math.hypot(b.x - a.x, b.y - a.y);
-          if (len > bestLen) {
-            bestLen = len;
-            bestMidX = (a.x + b.x) / 2;
-            bestMidY = (a.y + b.y) / 2;
-            const nx = -(b.y - a.y);
-            const ny = b.x - a.x;
-            const nLen = Math.hypot(nx, ny) || 1;
-            const testX = bestMidX + nx / nLen;
-            const testY = bestMidY + ny / nLen;
-            const dotInward = (testX - bestMidX) * (centroidX - bestMidX) + (testY - bestMidY) * (centroidY - bestMidY);
-            const sign = dotInward >= 0 ? 1 : -1;
-            bestInwardX = sign * nx / nLen;
-            bestInwardY = sign * ny / nLen;
-          }
-        }
-
-        const insetDist = (estHeight / 2 + 4 / scale);
-        const lx = bestMidX + bestInwardX * insetDist;
-        const ly = bestMidY + bestInwardY * insetDist;
-
-        return (
+      {nameGeometry && (
           <g style={{ pointerEvents: 'none' }}>
+            <defs>
+              <clipPath id={`area-name-clip-${area.id}`}>
+                <path d={`M ${nameGeometry.clipBounds.x} ${nameGeometry.clipBounds.y} h ${nameGeometry.clipBounds.width} v ${nameGeometry.clipBounds.height} h -${nameGeometry.clipBounds.width} Z`} />
+              </clipPath>
+            </defs>
             <rect
-              x={lx - estWidth / 2}
-              y={ly - estHeight / 2}
-              width={estWidth}
-              height={estHeight}
-              rx={4 / scale}
-              fill="rgba(0,0,0,0.55)"
+              data-testid="area-name-label-bounds"
+              x={nameGeometry.bounds.x}
+              y={nameGeometry.bounds.y}
+              width={nameGeometry.bounds.width}
+              height={nameGeometry.bounds.height}
+              rx={nameGeometry.radius}
+              fill={nameGeometry.background}
             />
-            <text
-              x={lx}
-              y={ly + fontSize * 0.35}
-              fontSize={fontSize}
-              fill="white"
-              textAnchor="middle"
-              style={{ userSelect: 'none', fontWeight: 600 }}
+            <g
+              data-testid="area-name-text-clip"
+              clipPath={`url(#area-name-clip-${area.id})`}
             >
-              {label}
-            </text>
+              <text
+                data-testid="area-name-text"
+                x={nameGeometry.center.x}
+                y={nameGeometry.center.y + nameGeometry.fontSize * 0.35}
+                fontFamily={nameGeometry.fontFamily}
+                fontSize={nameGeometry.fontSize}
+                fontWeight={nameGeometry.fontWeight}
+                fill={nameGeometry.foreground}
+                textAnchor="middle"
+                style={{ userSelect: 'none' }}
+              >
+                <title>{nameGeometry.fullText}</title>
+                {nameGeometry.displayText}
+              </text>
+            </g>
           </g>
-        );
-      })()}
+      )}
+
+      {showZoningAnnotation && zoningAnnotation && annotationPresentation && exportPresentation ? (
+        <g
+          data-testid="area-zoning-annotation"
+          data-anchor={zoningAnnotation.anchor}
+          data-bounds={`${annotationPresentation.bounds.x},${annotationPresentation.bounds.y},${annotationPresentation.bounds.width},${annotationPresentation.bounds.height}`}
+          data-export-bounds={`${exportPresentation.bounds.x},${exportPresentation.bounds.y},${exportPresentation.bounds.width},${exportPresentation.bounds.height}`}
+          data-omitted={zoningAnnotation.omitted}
+          data-minimum-readable-scale={zoningAnnotation.minimumReadableScale}
+          data-presentation-scale={annotationPresentation.effectiveScale}
+          data-line-height={annotationPresentation.lineHeight}
+          aria-label={`Zoning annotation: ${zoningAnnotation.accessibleText}`}
+          style={{ pointerEvents: 'none' }}
+        >
+          <defs>
+            <clipPath id={`zoning-annotation-clip-${area.id}`}>
+              <path data-testid="area-zoning-clip-boundary" d={`M ${annotationPresentation.clipBounds.x} ${annotationPresentation.clipBounds.y} h ${annotationPresentation.clipBounds.width} v ${annotationPresentation.clipBounds.height} h -${annotationPresentation.clipBounds.width} Z`} />
+            </clipPath>
+          </defs>
+          <g clipPath={`url(#zoning-annotation-clip-${area.id})`} data-testid="area-zoning-text-clip">
+            {annotationPresentation.lines.map((presentedLine, index) => {
+              const sourceLine = zoningAnnotation.lines[index];
+              return (
+                <g key={`${index}-${presentedLine.text}`}>
+                  <rect
+                    data-testid="area-zoning-row-background"
+                    x={presentedLine.bounds.x}
+                    y={presentedLine.bounds.y}
+                    width={presentedLine.bounds.width}
+                    height={presentedLine.bounds.height}
+                    rx={presentedLine.radius}
+                    fill={ZONING_ANNOTATION_STYLE.background}
+                  />
+                  <text
+                    x={presentedLine.textX}
+                    y={presentedLine.centerY}
+                    fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
+                    fontSize={annotationPresentation.fontSize}
+                    fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
+                    fill={ZONING_ANNOTATION_STYLE.foreground}
+                    dominantBaseline="middle"
+                    style={{ userSelect: 'none' }}
+                  >
+                    {sourceLine && <title>{sourceLine.accessibleText ?? sourceLine.fullText}</title>}
+                    {presentedLine.text}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        </g>
+      ) : null}
 
       {/* Selection-only elements */}
       {isSelected && (

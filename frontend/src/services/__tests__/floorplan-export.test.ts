@@ -1,9 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { exportFloorplanImage } from '../floorplan-export';
+import { drawZoningAnnotation, exportFloorplanImage } from '../floorplan-export';
 import type { Floorplan } from '../floorplan';
 import type { Placement } from '../placement';
 import type { Item } from '../item';
+import type { Area } from '../area';
 import { itemService } from '../item';
+import { getAnnotationPresentation, getAreaNameLabelGeometry, layoutZoningAnnotations, ZONING_ANNOTATION_STYLE } from '@/components/configurator/zoning-annotation';
+
+const paintedVisibleKey = (value: string) => value
+  .normalize('NFKC')
+  .replace(/[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '')
+  .normalize('NFKC');
 
 // Mock the item service
 vi.mock('../item', () => ({
@@ -29,12 +36,18 @@ describe('exportFloorplanImage', () => {
       translate: vi.fn(),
       rotate: vi.fn(),
       beginPath: vi.fn(),
+      rect: vi.fn(),
+      clip: vi.fn(),
       moveTo: vi.fn(),
       lineTo: vi.fn(),
       quadraticCurveTo: vi.fn(),
       closePath: vi.fn(),
       stroke: vi.fn(),
       fill: vi.fn(),
+      fillText: vi.fn(),
+      strokeText: vi.fn(),
+      measureText: vi.fn((text: string) => ({ width: text.length * 8 })),
+      roundRect: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
     mockCanvas = {
@@ -130,6 +143,25 @@ describe('exportFloorplanImage', () => {
         created_at: '2024-01-01',
       },
     ],
+  };
+
+  const mockArea: Area = {
+    id: 10, floorplan_id: 1, x: 300, y: 200, width: 300, height: 220,
+    name: 'Living', color: '#3b82f6', opacity: 0.2, revision: 1,
+    device_count: 0, created_at: '', updated_at: '',
+    vertices: [
+      { id: 1, placement_id: 10, vertex_index: 0, x: 300, y: 200 },
+      { id: 2, placement_id: 10, vertex_index: 1, x: 600, y: 200 },
+      { id: 3, placement_id: 10, vertex_index: 2, x: 600, y: 420 },
+      { id: 4, placement_id: 10, vertex_index: 3, x: 300, y: 420 },
+    ],
+    zoning_groups: [{
+      item_type: { id: 1, name: 'Lighting', abbreviation: 'LGT', color: '#f00', sort_order: 1 },
+      parameters: [
+        { id: 1, name: 'Relay zones', sort_order: 1, value: 3 },
+        { id: 2, name: 'Zero zones', sort_order: 2, value: 0 },
+      ],
+    }],
   };
 
   it('should create canvas with floorplan dimensions', async () => {
@@ -260,6 +292,258 @@ describe('exportFloorplanImage', () => {
 
     expect(mockCtx.fillStyle).toBe('#ffffff');
     expect(mockCtx.fillRect).toHaveBeenCalledWith(0, 0, 1000, 800);
+  });
+
+  it('draws shared positive-only zoning annotations with the compact Area-name contrast treatment', async () => {
+    const descriptor = layoutZoningAnnotations({
+      areas: [mockArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1000, height: 800 },
+    })[0];
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea]);
+    expect(descriptor.lines[0].displayText).toMatch(/^LGT.*R.*:\s*3$/);
+    expect(mockCtx.fillText).toHaveBeenCalledWith(descriptor.lines[0].displayText, expect.any(Number), expect.any(Number));
+    expect(mockCtx.fillText).not.toHaveBeenCalledWith(expect.stringContaining('Zero zones'), expect.anything(), expect.anything());
+    expect(mockCtx.strokeText).not.toHaveBeenCalled();
+    expect(mockCtx.roundRect).toHaveBeenCalledWith(
+      expect.any(Number), expect.any(Number), expect.any(Number), expect.any(Number), ZONING_ANNOTATION_STYLE.radius,
+    );
+  });
+
+  it.each([1, 2, 8])('draws %i production-default 200x150 Area row(s) through the shared inside descriptor', async (rows) => {
+    const productionArea: Area = {
+      ...mockArea,
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 150,
+      vertices: [
+        { id: 81, placement_id: 10, vertex_index: 0, x: 100, y: 100 },
+        { id: 82, placement_id: 10, vertex_index: 1, x: 300, y: 100 },
+        { id: 83, placement_id: 10, vertex_index: 2, x: 300, y: 250 },
+        { id: 84, placement_id: 10, vertex_index: 3, x: 100, y: 250 },
+      ],
+      zoning_groups: [{
+        ...mockArea.zoning_groups[0],
+        parameters: Array.from({ length: rows }, (_, index) => ({
+          id: index + 1, name: `Zone ${index + 1}`, sort_order: index, value: index + 1,
+        })),
+      }],
+    };
+    const descriptor = layoutZoningAnnotations({
+      areas: [productionArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1000, height: 800 },
+    })[0];
+
+    expect(descriptor).toBeDefined();
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [productionArea]);
+    for (const line of descriptor.lines) {
+      expect(mockCtx.fillText).toHaveBeenCalledWith(line.displayText, expect.any(Number), expect.any(Number));
+    }
+    if (rows === 8) expect(mockCtx.fillText).toHaveBeenCalledWith('+6 more', expect.any(Number), expect.any(Number));
+    expect(mockCtx.font).toBe('600 12px Arial, sans-serif');
+  });
+
+  it('draws indistinguishable configured Product Type labels with readable non-ID raster fallbacks', async () => {
+    const duplicateGroups: Area = {
+      ...mockArea,
+      x: 100,
+      y: 100,
+      width: 360,
+      height: 400,
+      vertices: [
+        { id: 81, placement_id: 10, vertex_index: 0, x: 100, y: 100 },
+        { id: 82, placement_id: 10, vertex_index: 1, x: 460, y: 100 },
+        { id: 83, placement_id: 10, vertex_index: 2, x: 460, y: 500 },
+        { id: 84, placement_id: 10, vertex_index: 3, x: 100, y: 500 },
+      ],
+      zoning_groups: [80, 81].map((id, index) => ({
+        item_type: { id, name: 'Shared', abbreviation: 'X', color: '#f00', sort_order: index },
+        parameters: [{ id, name: 'Zones', sort_order: 0, value: 4 }],
+      })),
+    };
+    const descriptor = layoutZoningAnnotations({ areas: [duplicateGroups], productBounds: [], imageBounds: { x: 0, y: 0, width: 1000, height: 800 } })[0];
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [duplicateGroups], undefined, undefined, [descriptor]);
+    const directRows = vi.mocked(mockCtx.fillText).mock.calls
+      .map(([text]) => String(text))
+      .filter((text) => /:\s*4$/.test(text));
+    expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
+    expect(new Set(directRows.map(paintedVisibleKey))).toHaveLength(2);
+    expect(directRows.every((line) => !/^#/u.test(line))).toBe(true);
+    expect(directRows.every((line) => !/80|81/u.test(line))).toBe(true);
+  });
+
+  it('draws colliding abbreviations without generated numeric raster prefixes', async () => {
+    const collidingGroups: Area = {
+      ...mockArea,
+      x: 100,
+      y: 100,
+      width: 360,
+      height: 400,
+      vertices: [
+        { id: 81, placement_id: 10, vertex_index: 0, x: 100, y: 100 },
+        { id: 82, placement_id: 10, vertex_index: 1, x: 460, y: 100 },
+        { id: 83, placement_id: 10, vertex_index: 2, x: 460, y: 500 },
+        { id: 84, placement_id: 10, vertex_index: 3, x: 100, y: 500 },
+      ],
+      zoning_groups: ['ABCDEFGH1', 'ABCDEFGH2'].map((abbreviation, index) => ({
+        item_type: {
+          id: 80 + index,
+          name: `${'W'.repeat(84)}${index ? 'Beta' : 'Alpha'}`,
+          abbreviation,
+          color: '#f00',
+          sort_order: index,
+        },
+        parameters: [{ id: 80 + index, name: 'Zones', sort_order: 0, value: 4 }],
+      })),
+    };
+    const descriptor = layoutZoningAnnotations({ areas: [collidingGroups], productBounds: [], imageBounds: { x: 0, y: 0, width: 1000, height: 800 } })[0];
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [collidingGroups], undefined, undefined, [descriptor]);
+    const directRows = vi.mocked(mockCtx.fillText).mock.calls
+      .map(([text]) => String(text))
+      .filter((text) => /Z.*:\s*4$/.test(text));
+    expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
+    expect(new Set(directRows.map(paintedVisibleKey))).toHaveLength(2);
+    expect(directRows.every((line) => !/^#/u.test(line))).toBe(true);
+  });
+
+  it.each([
+    {
+      label: 'field delimiters',
+      names: ['Long configured Product Type Alpha', 'Long configured Product Type Beta'],
+      abbreviations: ['A', 'A · B'],
+      parameters: ['B · C', 'C'],
+    },
+    {
+      label: 'default-ignorable Unicode',
+      names: ['Shared\u200B', 'Shared\u200C'],
+      abbreviations: ['X', 'X'],
+      parameters: ['Zones', 'Zones'],
+    },
+  ])('keeps $label injective in direct PNG canvas paint', async ({ names, abbreviations, parameters }) => {
+    const collidingGroups: Area = {
+      ...mockArea,
+      x: 100,
+      y: 100,
+      width: 600,
+      height: 400,
+      vertices: [
+        { id: 81, placement_id: 10, vertex_index: 0, x: 100, y: 100 },
+        { id: 82, placement_id: 10, vertex_index: 1, x: 700, y: 100 },
+        { id: 83, placement_id: 10, vertex_index: 2, x: 700, y: 500 },
+        { id: 84, placement_id: 10, vertex_index: 3, x: 100, y: 500 },
+      ],
+      zoning_groups: names.map((name, index) => ({
+        item_type: { id: 80 + index, name, abbreviation: abbreviations[index], color: '#f00', sort_order: index },
+        parameters: [{ id: 80 + index, name: parameters[index], sort_order: 0, value: 4 }],
+      })),
+    };
+    const descriptor = layoutZoningAnnotations({
+      areas: [collidingGroups],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1000, height: 800 },
+    })[0];
+
+    await exportFloorplanImage(
+      mockFloorplan,
+      [],
+      [],
+      {},
+      undefined,
+      [collidingGroups],
+      undefined,
+      undefined,
+      [descriptor],
+    );
+    const directRows = vi.mocked(mockCtx.fillText).mock.calls
+      .map(([text]) => String(text))
+      .filter((text) => /:\s*4$/.test(text));
+
+    expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
+    expect(new Set(directRows.map(paintedVisibleKey))).toHaveLength(2);
+    expect(directRows.every((line) => !line.includes('#'))).toBe(true);
+  });
+
+  it('clips Area-name canvas paint to the exact shared descriptor bounds', async () => {
+    const fullName = 'W'.repeat(20);
+    const nameOnly = { ...mockArea, name: fullName, zoning_groups: [] };
+    const descriptor = getAreaNameLabelGeometry(nameOnly, 1) as ReturnType<typeof getAreaNameLabelGeometry> & {
+      displayText?: string;
+      clipBounds?: { x: number; y: number; width: number; height: number };
+    };
+    expect(descriptor).not.toBeNull();
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [nameOnly]);
+    expect(mockCtx.rect).toHaveBeenCalledWith(
+      descriptor!.clipBounds!.x,
+      descriptor!.clipBounds!.y,
+      descriptor!.clipBounds!.width,
+      descriptor!.clipBounds!.height,
+    );
+    const nameCall = vi.mocked(mockCtx.fillText).mock.calls.find(([text]) => text === descriptor!.displayText);
+    expect(nameCall).toBeDefined();
+    expect(descriptor!.displayText).toContain('…');
+    expect(vi.mocked(mockCtx.clip).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(mockCtx.fillText).mock.invocationCallOrder[0],
+    );
+  });
+
+  it('draws the exact canonical interactive descriptor without recomputing anchor or omission', async () => {
+    const descriptor = layoutZoningAnnotations({ areas: [mockArea], productBounds: [], imageBounds: { x: 0, y: 0, width: 1000, height: 800 } })[0];
+    const presentation = getAnnotationPresentation(descriptor, 1)!;
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea], undefined, undefined, [descriptor]);
+    expect(descriptor.anchor).toBeTruthy();
+    expect(mockCtx.fillText).toHaveBeenCalledWith(
+      descriptor.lines[0].displayText,
+      presentation.lines[0].textX,
+      presentation.lines[0].centerY,
+    );
+    expect(mockCtx.rect).toHaveBeenCalledWith(
+      presentation.clipBounds.x,
+      presentation.clipBounds.y,
+      presentation.clipBounds.width,
+      presentation.clipBounds.height,
+    );
+    expect(mockCtx.clip).toHaveBeenCalled();
+    expect(mockCtx.fillText).toHaveBeenCalledTimes(descriptor.lines.length + (descriptor.omitted > 0 ? 1 : 0) + 1); // Area name plus annotation rows.
+  });
+
+  it('clips max-length wide-glyph raster text to the shared accepted descriptor', () => {
+    const descriptor = Object.freeze({
+      areaId: 89,
+      lines: Object.freeze([{ fullText: 'W'.repeat(100), displayText: `${'W'.repeat(22)}…` }]),
+      omitted: 0,
+      bounds: Object.freeze({ x: 0, y: 112, width: 600, height: 56 }),
+      anchor: 'below-name',
+      accessibleText: 'W'.repeat(100),
+      minimumReadableScale: 0.25,
+    });
+    const presentation = getAnnotationPresentation(descriptor, 1)!;
+    drawZoningAnnotation(mockCtx, descriptor);
+    expect(mockCtx.rect).toHaveBeenCalledWith(
+      presentation.clipBounds.x,
+      presentation.clipBounds.y,
+      presentation.clipBounds.width,
+      presentation.clipBounds.height,
+    );
+    expect(vi.mocked(mockCtx.clip).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(mockCtx.fillText).mock.invocationCallOrder[0],
+    );
+    expect(mockCtx.fillText).toHaveBeenCalledWith(descriptor.lines[0].displayText, expect.any(Number), expect.any(Number));
+  });
+
+  it('omits hidden Area annotations', async () => {
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea], new Set([mockArea.id]));
+    expect(mockCtx.strokeText).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before encoding or download when annotation drawing fails', async () => {
+    vi.mocked(mockCtx.fillText).mockImplementation((text) => {
+      if (String(text).includes(':')) throw new Error('annotation draw failed');
+    });
+    await expect(exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea])).rejects.toThrow('annotation draw failed');
+    expect(mockCanvas.toDataURL).not.toHaveBeenCalled();
+    expect(document.createElement).not.toHaveBeenCalledWith('a');
   });
 
   it('should continue drawing other placements when one fails', async () => {

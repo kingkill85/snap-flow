@@ -6,6 +6,9 @@ from pathlib import Path
 
 
 SCENARIO = re.compile(r"^#### Scenario:\s*(.+?)\s*$", re.MULTILINE)
+MATRIX_SHA = re.compile(r"^Approved source SHA:\s*`([0-9a-f]{40})`\s*$", re.MULTILINE)
+MATRIX_COUNT = re.compile(r"^Approved scenario count:\s*\*\*(\d+)\*\*\s*$", re.MULTILINE)
+EVIDENCE_LAYERS = {"backend", "frontend", "cucumber", "reviewed assertion"}
 
 
 def slugify(value: str) -> str:
@@ -170,11 +173,76 @@ def validate_feature_references(specs: dict[str, str], mappings: dict[str, list[
             "mapped": len(mapped)}
 
 
+def validate_evidence_matrix(specs: dict[str, str], features: dict[str, str],
+                             matrix: str, approved_sha: str) -> dict:
+    """Validate complete scenario evidence without requiring all scenarios in Cucumber."""
+    structured = validate_structured_mapping(specs, features)
+    approved_by_reference = {
+        f"{path}#{slugify(title)}": title
+        for path, content in specs.items()
+        for title in SCENARIO.findall(content)
+    }
+    approved_titles = set(approved_by_reference.values())
+
+    sha_match = MATRIX_SHA.search(matrix)
+    if not sha_match or sha_match.group(1) != approved_sha:
+        raise ValueError("evidence matrix approved SHA does not match")
+    count_match = MATRIX_COUNT.search(matrix)
+    if not count_match or int(count_match.group(1)) != len(approved_titles):
+        raise ValueError("evidence matrix approved scenario count does not match")
+
+    rows: dict[str, set[str]] = {}
+    for line in matrix.splitlines():
+        if not line.startswith("|"):
+            continue
+        columns = [column.strip() for column in line.strip().strip("|").split("|")]
+        if columns in (
+            ["Approved scenario", "Evidence layer", "Exact evidence"],
+            ["---", "---", "---"],
+        ):
+            continue
+        if len(columns) != 3:
+            raise ValueError("evidence matrix rows must contain exactly three columns")
+        title, layer_text, evidence = columns
+        if title in rows:
+            raise ValueError(f"duplicate evidence matrix scenario: {title}")
+        layers = {layer.strip() for layer in layer_text.split("+")}
+        if not layers or not layers.issubset(EVIDENCE_LAYERS):
+            raise ValueError(f"unsupported evidence layer for scenario: {title}")
+        if not evidence:
+            raise ValueError(f"empty evidence for scenario: {title}")
+        rows[title] = layers
+
+    unknown = set(rows) - approved_titles
+    if unknown:
+        raise ValueError(f"unknown evidence matrix scenarios: {sorted(unknown)}")
+    missing = approved_titles - set(rows)
+    if missing:
+        raise ValueError(f"missing evidence matrix scenarios: {sorted(missing)}")
+
+    concrete = _feature_scenarios(features)
+    cucumber_titles = {approved_by_reference[reference] for reference in concrete}
+    declared_cucumber = {
+        title for title, layers in rows.items() if "cucumber" in layers
+    }
+    if cucumber_titles != declared_cucumber:
+        raise ValueError("matrix Cucumber evidence does not match feature mappings")
+
+    return {
+        "status": "passed",
+        "required": len(approved_titles),
+        "mapped": len(rows),
+        "cucumber": structured["mapped"],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--features", required=True)
     parser.add_argument("--change")
     parser.add_argument("--require-all-active", action="store_true")
+    parser.add_argument("--matrix")
+    parser.add_argument("--approved-sha")
     args = parser.parse_args()
     root = Path.cwd()
     change_pattern = args.change if args.change else "issue-*"
@@ -184,8 +252,18 @@ def main() -> int:
         raise ValueError(f"no OpenSpec delta specs found for {args.change}")
     features = {str(path.resolve().relative_to(root)): path.read_text()
                 for path in Path(args.features).glob("**/*.feature")}
-    result = validate_structured_mapping(specs, features, args.require_all_active)
-    print(f"OpenSpec scenario traceability: {result['mapped']}/{result['required']} mapped")
+    if args.matrix:
+        if not args.approved_sha:
+            raise ValueError("--approved-sha is required with --matrix")
+        result = validate_evidence_matrix(
+            specs, features, Path(args.matrix).read_text(), args.approved_sha)
+        print(
+            f"OpenSpec scenario traceability: {result['mapped']}/{result['required']} mapped "
+            f"({result['cucumber']} representative Cucumber scenarios)"
+        )
+    else:
+        result = validate_structured_mapping(specs, features, args.require_all_active)
+        print(f"OpenSpec scenario traceability: {result['mapped']}/{result['required']} mapped")
     return 0
 
 

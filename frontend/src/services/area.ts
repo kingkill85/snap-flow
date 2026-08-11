@@ -18,10 +18,17 @@ export interface Area {
   name: string;
   color: string;
   opacity: number;
+  revision: number;
+  zoning_groups: AreaZoningGroup[];
   vertices: AreaVertex[];
   device_count: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface AreaZoningGroup {
+  item_type: { id: number; name: string; abbreviation: string; color: string; sort_order: number };
+  parameters: Array<{ id: number; name: string; sort_order: number; value: number }>;
 }
 
 export interface CreateAreaDTO {
@@ -39,6 +46,9 @@ export interface UpdateAreaDTO {
   name?: string;
   color?: string;
   opacity?: number;
+  revision?: number;
+  applicable_parameter_ids?: number[];
+  zoning_values?: Array<{ parameter_id: number; value: number }>;
 }
 
 export const areaService = {

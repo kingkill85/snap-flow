@@ -176,7 +176,7 @@ const ProjectDashboard = () => {
   });
 
   // Areas hook
-  const { areas, fetchAreas, createArea, updateArea, updateVertices, deleteArea, selectedAreaId, setSelectedAreaId } = useAreas({ activeFloorplanId: activeFloorplan?.id ?? null });
+  const { areas, fetchAreas, createArea, updateArea, reloadArea, updateVertices, deleteArea, selectedAreaId, setSelectedAreaId } = useAreas({ activeFloorplanId: activeFloorplan?.id ?? null });
 
   // Area edit modal state
   const [editingArea, setEditingArea] = useState<Area | null>(null);
@@ -871,6 +871,7 @@ const ProjectDashboard = () => {
       <AreaEditModal
         area={editingArea}
         onSave={async (id, data) => { await updateArea(id, data); }}
+        onReload={async (id) => { setEditingArea(await reloadArea(id)); }}
         onClose={() => setEditingArea(null)}
       />
 

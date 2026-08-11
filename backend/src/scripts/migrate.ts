@@ -1,4 +1,4 @@
-import { getDb } from '../config/database.ts';
+import { getDb } from "../config/database.ts";
 
 /**
  * Migration runner
@@ -24,7 +24,9 @@ export function setupMigrations(): Promise<void> {
 }
 
 export function getAppliedMigrations(): Promise<string[]> {
-  const result = getDb().query<[string]>(`SELECT name FROM migrations ORDER BY id`);
+  const result = getDb().query<[string]>(
+    `SELECT name FROM migrations ORDER BY id`,
+  );
   return Promise.resolve(result.map((row: [string]) => row[0]));
 }
 
@@ -35,24 +37,26 @@ export function applyMigration(name: string, sql: string): Promise<void> {
     // Some migrations drop tables that are referenced by other tables via FKs.
     // SQLite ignores PRAGMA foreign_keys inside a transaction, so we must
     // disable FKs OUTSIDE the transaction, then re-enable after commit.
-    const needsFkOff = name === '033_project_versioning' || name === '036_move_status_to_project_groups.sql' || name === '037_move_invoice_settings_to_groups.sql';
+    const needsFkOff = name === "033_project_versioning" ||
+      name === "036_move_status_to_project_groups.sql" ||
+      name === "037_move_invoice_settings_to_groups.sql";
     if (needsFkOff) {
-      db.query('PRAGMA foreign_keys = OFF');
+      db.query("PRAGMA foreign_keys = OFF");
     }
 
     // Wrap in transaction so migration is all-or-nothing
-    db.query('BEGIN TRANSACTION');
+    db.query("BEGIN TRANSACTION");
     try {
       db.execute(sql);
       db.query(`INSERT INTO migrations (name) VALUES (?)`, [name]);
-      db.query('COMMIT');
+      db.query("COMMIT");
     } catch (error) {
-      db.query('ROLLBACK');
+      db.query("ROLLBACK");
       throw error;
     }
 
     if (needsFkOff) {
-      db.query('PRAGMA foreign_keys = ON');
+      db.query("PRAGMA foreign_keys = ON");
     }
 
     console.log(`✅ Applied migration: ${name}`);
@@ -63,15 +67,15 @@ export function applyMigration(name: string, sql: string): Promise<void> {
   }
 }
 
-export async function runMigrations(): Promise<void> {
+export async function runMigrations(throughMigration?: string): Promise<void> {
   await setupMigrations();
-  
+
   const appliedMigrations = await getAppliedMigrations();
-  
+
   // Migration definitions
   const migrations: { name: string; sql: string }[] = [
     {
-      name: '001_create_users_table',
+      name: "001_create_users_table",
       sql: `
         CREATE TABLE users (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,20 +85,20 @@ export async function runMigrations(): Promise<void> {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX idx_users_email ON users(email);
-      `
+      `,
     },
     {
-      name: '002_create_categories_table',
+      name: "002_create_categories_table",
       sql: `
         CREATE TABLE categories (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
           sort_order INTEGER DEFAULT 0
         );
-      `
+      `,
     },
     {
-      name: '003_create_items_table',
+      name: "003_create_items_table",
       sql: `
         CREATE TABLE items (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,10 +112,10 @@ export async function runMigrations(): Promise<void> {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX idx_items_category ON items(category_id);
-      `
+      `,
     },
     {
-      name: '004_create_customers_table',
+      name: "004_create_customers_table",
       sql: `
         CREATE TABLE customers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -123,10 +127,10 @@ export async function runMigrations(): Promise<void> {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX idx_customers_name ON customers(name);
-      `
+      `,
     },
     {
-      name: '005_create_projects_table',
+      name: "005_create_projects_table",
       sql: `
         CREATE TABLE projects (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,10 +140,10 @@ export async function runMigrations(): Promise<void> {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX idx_projects_customer ON projects(customer_id);
-      `
+      `,
     },
     {
-      name: '006_create_floorplans_table',
+      name: "006_create_floorplans_table",
       sql: `
         CREATE TABLE floorplans (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,10 +153,10 @@ export async function runMigrations(): Promise<void> {
           sort_order INTEGER DEFAULT 0
         );
         CREATE INDEX idx_floorplans_project ON floorplans(project_id);
-      `
+      `,
     },
     {
-      name: '007_create_placements_table',
+      name: "007_create_placements_table",
       sql: `
         CREATE TABLE placements (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,16 +170,16 @@ export async function runMigrations(): Promise<void> {
         );
         CREATE INDEX idx_placements_floorplan ON placements(floorplan_id);
         CREATE INDEX idx_placements_item ON placements(item_id);
-      `
+      `,
     },
     {
-      name: '008_add_full_name_to_users',
+      name: "008_add_full_name_to_users",
       sql: `
         ALTER TABLE users ADD COLUMN full_name TEXT;
-      `
+      `,
     },
     {
-      name: '009_create_item_variants_table',
+      name: "009_create_item_variants_table",
       sql: `
         CREATE TABLE item_variants (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -188,10 +192,10 @@ export async function runMigrations(): Promise<void> {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX idx_item_variants_item ON item_variants(item_id);
-      `
+      `,
     },
     {
-      name: '010_create_item_addons_table',
+      name: "010_create_item_addons_table",
       sql: `
         CREATE TABLE item_addons (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -204,25 +208,25 @@ export async function runMigrations(): Promise<void> {
         );
         CREATE INDEX idx_item_addons_parent ON item_addons(parent_item_id);
         CREATE INDEX idx_item_addons_addon ON item_addons(addon_item_id);
-      `
+      `,
     },
     {
-      name: '011_add_base_model_number_to_items',
+      name: "011_add_base_model_number_to_items",
       sql: `
         ALTER TABLE items ADD COLUMN base_model_number TEXT;
         CREATE INDEX idx_items_base_model ON items(base_model_number);
-      `
+      `,
     },
     {
-      name: '012_update_placements_for_variants',
+      name: "012_update_placements_for_variants",
       sql: `
         ALTER TABLE placements ADD COLUMN item_variant_id INTEGER REFERENCES item_variants(id);
         ALTER TABLE placements ADD COLUMN selected_addons TEXT;
         CREATE INDEX idx_placements_variant ON placements(item_variant_id);
-      `
+      `,
     },
     {
-      name: '013_make_items_columns_nullable',
+      name: "013_make_items_columns_nullable",
       sql: `
         -- SQLite doesn't support ALTER COLUMN, so we need to recreate the table
         CREATE TABLE items_new (
@@ -248,10 +252,10 @@ export async function runMigrations(): Promise<void> {
         
         CREATE INDEX idx_items_category ON items(category_id);
         CREATE INDEX idx_items_base_model ON items(base_model_number);
-      `
+      `,
     },
     {
-      name: '014_create_variant_addons_table',
+      name: "014_create_variant_addons_table",
       sql: `
         -- Add-ons are now per variant, not per item
         CREATE TABLE variant_addons (
@@ -265,10 +269,10 @@ export async function runMigrations(): Promise<void> {
         
         CREATE INDEX idx_variant_addons_variant ON variant_addons(variant_id);
         CREATE INDEX idx_variant_addons_addon ON variant_addons(addon_variant_id);
-      `
+      `,
     },
     {
-      name: '015_create_refresh_tokens_table',
+      name: "015_create_refresh_tokens_table",
       sql: `
         CREATE TABLE refresh_tokens (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -282,10 +286,10 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
         CREATE INDEX idx_refresh_tokens_hash ON refresh_tokens(token_hash);
         CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens(expires_at);
-      `
+      `,
     },
     {
-      name: '016_add_is_active_to_catalog',
+      name: "016_add_is_active_to_catalog",
       sql: `
         ALTER TABLE categories ADD COLUMN is_active BOOLEAN DEFAULT true;
         ALTER TABLE items ADD COLUMN is_active BOOLEAN DEFAULT true;
@@ -294,20 +298,20 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_categories_is_active ON categories(is_active);
         CREATE INDEX idx_items_is_active ON items(is_active);
         CREATE INDEX idx_item_variants_is_active ON item_variants(is_active);
-      `
+      `,
     },
     {
-      name: '017_drop_item_addons_table',
+      name: "017_drop_item_addons_table",
       sql: `
         -- Drop indexes first
         DROP INDEX IF EXISTS idx_item_addons_parent;
         DROP INDEX IF EXISTS idx_item_addons_addon;
         -- Drop the table
         DROP TABLE IF EXISTS item_addons;
-      `
+      `,
     },
     {
-      name: '018_remove_customers_table',
+      name: "018_remove_customers_table",
       sql: `
         -- Add customer fields to projects table
         ALTER TABLE projects ADD COLUMN customer_name TEXT NOT NULL DEFAULT 'Unknown Customer';
@@ -360,17 +364,17 @@ export async function runMigrations(): Promise<void> {
         -- Drop customers table
         DROP INDEX IF EXISTS idx_customers_name;
         DROP TABLE IF EXISTS customers;
-      `
+      `,
     },
     {
-      name: '019_add_unique_project_name_customer',
+      name: "019_add_unique_project_name_customer",
       sql: `
         -- Create unique index for project name + customer_name combination
         CREATE UNIQUE INDEX idx_projects_unique_name_customer ON projects(name, customer_name);
-      `
+      `,
     },
     {
-      name: '020_create_floorplan_bom_entries',
+      name: "020_create_floorplan_bom_entries",
       sql: `
         -- BOM entries table for per-floorplan bill of materials
         CREATE TABLE floorplan_bom_entries (
@@ -393,19 +397,19 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_bom_variant ON floorplan_bom_entries(variant_id);
         CREATE UNIQUE INDEX idx_bom_main_unique ON floorplan_bom_entries(floorplan_id, variant_id) 
           WHERE parent_bom_entry_id IS NULL;
-      `
+      `,
     },
     {
-      name: '021_update_placements_for_bom',
+      name: "021_update_placements_for_bom",
       sql: `
         -- Add bom_entry_id to placements
         ALTER TABLE placements ADD COLUMN bom_entry_id INTEGER REFERENCES floorplan_bom_entries(id);
         CREATE INDEX idx_placements_bom ON placements(bom_entry_id);
-      `
+      `,
     },
     // NOTE: Migration 022 was removed during development. The gap is intentional.
     {
-      name: '023_rename_bom_add_project',
+      name: "023_rename_bom_add_project",
       sql: `
         -- Rename floorplan_bom_entries to project_bom and add project_id + style_name
         
@@ -488,21 +492,21 @@ export async function runMigrations(): Promise<void> {
         
         -- Step 6: Drop old table
         DROP TABLE floorplan_bom_entries;
-      `
+      `,
     },
     {
-      name: '024_rename_bom_snapshot_columns',
+      name: "024_rename_bom_snapshot_columns",
       sql: `
         -- Rename snapshot columns to remove '_snapshot' suffix
         ALTER TABLE project_bom RENAME COLUMN name_snapshot TO item_name;
         ALTER TABLE project_bom RENAME COLUMN model_number_snapshot TO model_number;
         ALTER TABLE project_bom RENAME COLUMN price_snapshot TO unit_price;
-      `
+      `,
     },
     // NOTE: Two migrations share the 025 prefix. Both run correctly because
     // the migration runner tracks by full name string, not by number.
     {
-      name: '025_allow_multiple_bom_entries_per_variant',
+      name: "025_allow_multiple_bom_entries_per_variant",
       sql: `
         -- Allow multiple BOM entries per variant
         -- This enables different placements of the same variant to have different addon configurations
@@ -513,10 +517,10 @@ export async function runMigrations(): Promise<void> {
         -- Create a non-unique index for performance instead
         CREATE INDEX idx_project_bom_floorplan_variant ON project_bom(floorplan_id, variant_id) 
           WHERE parent_bom_id IS NULL;
-      `
+      `,
     },
     {
-      name: '025_remove_all_cascade_constraints',
+      name: "025_remove_all_cascade_constraints",
       sql: `
         -- Remove remaining ON DELETE CASCADE constraints
         -- Application will handle deletions manually
@@ -574,10 +578,10 @@ export async function runMigrations(): Promise<void> {
         ALTER TABLE placements_new RENAME TO placements;
         
         CREATE INDEX idx_placements_bom ON placements(bom_id);
-      `
+      `,
     },
     {
-      name: '026_allow_null_item_id_in_project_bom',
+      name: "026_allow_null_item_id_in_project_bom",
       sql: `
         -- Allow item_id to be NULL in project_bom to preserve BOM history when items are deleted
         
@@ -612,10 +616,10 @@ export async function runMigrations(): Promise<void> {
           WHERE parent_bom_id IS NULL;
           
         PRAGMA foreign_keys = ON;
-      `
+      `,
     },
     {
-      name: '027_add_placement_rotation',
+      name: "027_add_placement_rotation",
       sql: `
         -- Add rotation column to placements table
         -- Allows placements to be rotated on the canvas (0-360 degrees)
@@ -642,10 +646,10 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_placements_bom ON placements(bom_id);
         
         PRAGMA foreign_keys = ON;
-      `
+      `,
     },
     {
-      name: '028_add_invoice_settings_to_projects',
+      name: "028_add_invoice_settings_to_projects",
       sql: `
         -- Add invoice configuration columns to projects table
         ALTER TABLE projects ADD COLUMN discount_percentage REAL DEFAULT 0;
@@ -654,10 +658,10 @@ export async function runMigrations(): Promise<void> {
         ALTER TABLE projects ADD COLUMN services_usd REAL DEFAULT 0;
         ALTER TABLE projects ADD COLUMN local_currency_code TEXT DEFAULT 'PKR';
         ALTER TABLE projects ADD COLUMN exchange_rate REAL DEFAULT 0;
-      `
+      `,
     },
     {
-      name: '029_add_app_settings',
+      name: "029_add_app_settings",
       sql: `
         -- Create app_settings table for global configuration
         -- Used to store settings that should be shared across all users
@@ -672,10 +676,10 @@ export async function runMigrations(): Promise<void> {
         -- and used by all clients to bust image caches
         INSERT OR REPLACE INTO app_settings (key, value)
         VALUES ('last_sync_timestamp', '0');
-      `
+      `,
     },
     {
-      name: '030_create_areas',
+      name: "030_create_areas",
       sql: `
         -- Recreate placements table with new columns
         PRAGMA foreign_keys = OFF;
@@ -732,10 +736,10 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_area_vertices_placement ON area_vertices(placement_id);
 
         PRAGMA foreign_keys = ON;
-      `
+      `,
     },
     {
-      name: '031_multi_tenancy',
+      name: "031_multi_tenancy",
       sql: `
         -- 1. Create tenants table
         CREATE TABLE tenants (
@@ -781,10 +785,10 @@ export async function runMigrations(): Promise<void> {
         -- 5. Recreate unique index to include tenant_id
         DROP INDEX IF EXISTS idx_projects_unique_name_customer;
         CREATE UNIQUE INDEX idx_projects_unique_name_customer ON projects(name, customer_name, tenant_id);
-      `
+      `,
     },
     {
-      name: '032_add_item_types',
+      name: "032_add_item_types",
       sql: `
         -- Create item_types table
         CREATE TABLE IF NOT EXISTS item_types (
@@ -820,10 +824,10 @@ export async function runMigrations(): Promise<void> {
         -- Link all existing projects to the Zigbee type
         INSERT INTO project_item_types (project_id, item_type_id)
         SELECT id, 1 FROM projects;
-      `
+      `,
     },
     {
-      name: '033_project_versioning',
+      name: "033_project_versioning",
       sql: `
         -- Step 1: Create project_groups table with temporary source_project_id for backfill linking
         CREATE TABLE IF NOT EXISTS project_groups (
@@ -935,19 +939,19 @@ export async function runMigrations(): Promise<void> {
 
         -- Step 7: Recreate indexes
         CREATE INDEX idx_projects_group ON projects(project_group_id);
-        CREATE INDEX idx_projects_tenant ON projects(tenant_id);`
+        CREATE INDEX idx_projects_tenant ON projects(tenant_id);`,
     },
     {
-      name: '034_add_project_version_unique_constraint.sql',
+      name: "034_add_project_version_unique_constraint.sql",
       sql: `
         -- Migration 034: Add UNIQUE constraint on (project_group_id, version_name)
         -- Prevents duplicate version names within the same project group
         CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_group_version
         ON projects(project_group_id, version_name);
-      `
+      `,
     },
     {
-      name: '035_remove_project_group_name.sql',
+      name: "035_remove_project_group_name.sql",
       sql: `
         -- Migration 035: Remove unused 'name' column from project_groups
         -- SQLite doesn't support DROP COLUMN, so we recreate the table
@@ -971,10 +975,10 @@ export async function runMigrations(): Promise<void> {
 
         DROP TABLE project_groups;
         ALTER TABLE project_groups_new RENAME TO project_groups;
-      `
+      `,
     },
     {
-      name: '036_move_status_to_project_groups.sql',
+      name: "036_move_status_to_project_groups.sql",
       sql: `
         -- Migration 036: Move status from projects (per-version) to project_groups (per-group)
 
@@ -1023,10 +1027,10 @@ export async function runMigrations(): Promise<void> {
         -- Step 4: Recreate indexes
         CREATE INDEX idx_projects_group ON projects(project_group_id);
         CREATE INDEX idx_projects_tenant ON projects(tenant_id);
-      `
+      `,
     },
     {
-      name: '037_move_invoice_settings_to_groups.sql',
+      name: "037_move_invoice_settings_to_groups.sql",
       sql: `
         -- Migration 037: Move invoice settings from projects (per-version) to project_groups (per-group)
 
@@ -1068,10 +1072,10 @@ export async function runMigrations(): Promise<void> {
         CREATE INDEX idx_projects_tenant ON projects(tenant_id);
 
         PRAGMA foreign_keys = ON;
-      `
+      `,
     },
     {
-      name: '038_oauth_clients',
+      name: "038_oauth_clients",
       sql: `
         -- Migration 038: OAuth 2.1 tables for remote MCP server
         -- Adds two tables: oauth_clients (registered MCP clients) and oauth_auth_codes (short-lived auth codes)
@@ -1099,25 +1103,61 @@ export async function runMigrations(): Promise<void> {
 
         CREATE INDEX IF NOT EXISTS idx_oauth_codes_expires ON oauth_auth_codes(expires_at);
         CREATE INDEX IF NOT EXISTS idx_oauth_codes_client  ON oauth_auth_codes(client_id);
-      `
-    }
+      `,
+    },
+    {
+      name: "039_generic_zoning_parameters",
+      sql: `
+        ALTER TABLE area_properties ADD COLUMN revision INTEGER NOT NULL DEFAULT 0 CHECK(revision >= 0);
+
+        CREATE TABLE item_type_zoning_parameters (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_type_id INTEGER NOT NULL REFERENCES item_types(id) ON DELETE CASCADE,
+          name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 100),
+          name_key TEXT NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0 CHECK(sort_order >= 0),
+          is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE area_zoning_values (
+          area_placement_id INTEGER NOT NULL REFERENCES placements(id) ON DELETE CASCADE,
+          parameter_id INTEGER NOT NULL REFERENCES item_type_zoning_parameters(id) ON DELETE RESTRICT,
+          value INTEGER NOT NULL CHECK(value BETWEEN 1 AND 9999),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY(area_placement_id, parameter_id)
+        );
+
+        CREATE INDEX idx_zoning_parameters_item_type_active_order
+          ON item_type_zoning_parameters(item_type_id, is_active, sort_order, id);
+        CREATE UNIQUE INDEX idx_zoning_parameters_active_name
+          ON item_type_zoning_parameters(item_type_id, name_key) WHERE is_active = 1;
+        CREATE INDEX idx_area_zoning_values_area_parameter
+          ON area_zoning_values(area_placement_id, parameter_id);
+      `,
+    },
   ];
 
-  console.log('🔄 Running migrations...');
-  
+  console.log("🔄 Running migrations...");
+
   for (const migration of migrations) {
     if (!appliedMigrations.includes(migration.name)) {
       await applyMigration(migration.name, migration.sql);
     } else {
-      console.log(`⏭️  Skipping migration: ${migration.name} (already applied)`);
+      console.log(
+        `⏭️  Skipping migration: ${migration.name} (already applied)`,
+      );
     }
+    if (migration.name === throughMigration) break;
   }
-  
-  console.log('✅ Migrations complete');
+
+  console.log("✅ Migrations complete");
 }
 
 // Run migrations if this file is executed directly
 if (import.meta.main) {
   await runMigrations();
-  console.log('Done!');
+  console.log("Done!");
 }

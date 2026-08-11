@@ -3,14 +3,14 @@
  */
 
 // === Roles ===
-export type UserRole = 'admin' | 'tenant_admin' | 'user';
+export type UserRole = "admin" | "tenant_admin" | "user";
 
 // === Tenants ===
 export interface Tenant {
   id: number;
   name: string;
   is_distributor: number; // SQLite boolean: 0 or 1
-  is_active: number;      // SQLite boolean: 0 or 1
+  is_active: number; // SQLite boolean: 0 or 1
   created_at: string;
 }
 
@@ -224,7 +224,7 @@ export interface CreateProjectDTO {
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
-  version_name?: string;     // NEW: defaults to 'v1'
+  version_name?: string; // NEW: defaults to 'v1'
   tenant_id: number;
   item_type_ids?: number[];
 }
@@ -266,10 +266,10 @@ export interface UpdateFloorplanDTO {
 // Placement
 export interface Placement {
   id: number;
-  bom_id: number | null;  // NULL for area placements
+  bom_id: number | null; // NULL for area placements
   floorplan_id: number;
-  type: 'item' | 'area';
-  area_id: number | null;  // For items: containing area. For areas: NULL
+  type: "item" | "area";
+  area_id: number | null; // For items: containing area. For areas: NULL
   x: number;
   y: number;
   width: number;
@@ -293,7 +293,7 @@ export interface CreatePlacementDTO {
   y: number;
   width: number;
   height: number;
-  rotation?: number;  // Optional, defaults to 0
+  rotation?: number; // Optional, defaults to 0
 }
 
 // Project BOM (Bill of Materials)
@@ -307,7 +307,7 @@ export interface ProjectBom {
   area_id: number | null;
   item_name: string;
   item_type_name: string | null;
-  style_name: string | null;  // Snapshot of variant.style_name
+  style_name: string | null; // Snapshot of variant.style_name
   model_number: string | null;
   unit_price: number;
   picture_path: string | null;
@@ -370,6 +370,22 @@ export interface UpdateAreaDTO {
   name?: string | undefined;
   color?: string | undefined;
   opacity?: number | undefined;
+  revision?: number | undefined;
+  applicable_parameter_ids?: number[] | undefined;
+  zoning_values?: Array<{ parameter_id: number; value: number }> | undefined;
+}
+
+export interface AreaZoningGroup {
+  item_type: {
+    id: number;
+    name: string;
+    abbreviation: string;
+    color: string;
+    sort_order: number;
+  };
+  parameters: Array<
+    { id: number; name: string; sort_order: number; value: number }
+  >;
 }
 
 // Area Vertex
@@ -392,6 +408,8 @@ export interface Area {
   name: string;
   color: string;
   opacity: number;
+  revision: number;
+  zoning_groups: AreaZoningGroup[];
   vertices: AreaVertex[];
   device_count: number;
   created_at: string;
