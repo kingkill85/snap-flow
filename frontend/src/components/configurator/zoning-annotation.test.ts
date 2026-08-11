@@ -188,6 +188,34 @@ describe('zoning annotation layout', () => {
     expect(descriptor.minimumReadableScale).toBe(0.75);
   });
 
+  it('prefers a safe complete compact layout across scales before an overflow fallback', () => {
+    const productionArea = resizedArea(90, 0, 200, 150, 1);
+    productionArea.name = 'Existing Zigbee Area';
+    productionArea.zoning_groups = [{
+      item_type: { id: 1, name: 'Zigbee', abbreviation: 'ZIG', color: '#f00', sort_order: 0 },
+      parameters: [
+        { id: 1, name: 'test', sort_order: 0, value: 1 },
+        { id: 2, name: 'test2', sort_order: 1, value: 2 },
+      ],
+    }];
+    const product = { x: 0, y: 40, width: 40, height: 40 };
+
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [productionArea],
+      productBounds: [product],
+      imageBounds: { x: 0, y: 0, width: 1200, height: 800 },
+    });
+
+    expect(descriptor.lines.map((line) => line.displayText)).toEqual([
+      expect.stringMatching(/test\s*:\s*1$/u),
+      expect.stringMatching(/test2\s*:\s*2$/u),
+    ]);
+    expect(descriptor.omitted).toBe(0);
+    expect(descriptor.minimumReadableScale).toBe(1);
+    expect(descriptor.anchor).toBe('bottom-left');
+    expect(overlaps(descriptor.bounds, product)).toBe(false);
+  });
+
   it('uses deterministic size boundaries instead of one literal small-Area exception', () => {
     const layout = (width: number, height: number, rows: number) => layoutZoningAnnotations({
       areas: [ordinaryArea(width, height, rows)],

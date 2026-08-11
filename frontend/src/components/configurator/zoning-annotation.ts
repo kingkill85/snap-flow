@@ -688,27 +688,19 @@ export function layoutZoningAnnotations({
       new Set(rows.map((row) => row.productTypeId)).size,
       ZONING_ANNOTATION_STYLE.maxRows,
     );
-    // Replacing the last of one or two values with +1 more saves no row.
-    // Prefer a readable scale that paints the complete compact set first.
-    const completeCompactScales = rows.length <= 2
-      ? ZONING_ANNOTATION_LAYOUT_SCALES.filter((scale) => {
-        const gap = 8 / scale;
-        const maximumWidth = Math.min(
-          ZONING_ANNOTATION_STYLE.maxWidth / scale,
-          Math.max(0, availableRegion.width - gap * 2),
-        );
-        return maximumWidth > 0 && displayedLines(rows, rows.length, maximumWidth * scale) !== null;
-      })
-      : [];
-    const layoutScales = [
-      ...completeCompactScales,
-      ...ZONING_ANNOTATION_LAYOUT_SCALES.filter((scale) => !completeCompactScales.includes(scale)),
+    // Replacing the last of one or two values with +1 more saves no row. Search
+    // every readable scale/candidate for the complete compact set before the
+    // existing group-preserving and ordinary reduction passes.
+    const searchPasses = [
+      ...(rows.length <= 2 ? [{ preserveEveryGroup: true, completeCompactSet: true }] : []),
+      { preserveEveryGroup: true, completeCompactSet: false },
+      { preserveEveryGroup: false, completeCompactSet: false },
     ];
     // A narrower density must not hide a later Product Type when a slightly
     // denser readable presentation can identify every positive group. Only
     // after all such candidates fail may ordinary +N overflow omit a group.
-    for (const preserveEveryGroup of [true, false]) {
-      for (const minimumReadableScale of layoutScales) {
+    for (const { preserveEveryGroup, completeCompactSet } of searchPasses) {
+      for (const minimumReadableScale of ZONING_ANNOTATION_LAYOUT_SCALES) {
         if (descriptor) break;
         // The annotation is omitted below minimumReadableScale. At and above
         // that threshold the Area-name pill is largest in natural coordinates
@@ -727,6 +719,7 @@ export function layoutZoningAnnotations({
           visibleCount >= 1 && !descriptor;
           visibleCount--
         ) {
+          if (completeCompactSet && visibleCount !== rows.length) continue;
           if (
             preserveEveryGroup &&
             new Set(rows.slice(0, visibleCount).map((row) => row.productTypeId)).size < requiredProductTypeCount
