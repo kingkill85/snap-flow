@@ -11,6 +11,8 @@ export interface AnnotationRect {
 export interface AnnotationLine {
   fullText: string;
   displayText: string;
+  accessibleText?: string;
+  productTypeId?: number;
 }
 
 export interface ZoningAnnotationDescriptor {
@@ -29,9 +31,15 @@ export interface AnnotationPresentation {
   effectiveScale: number;
   fontSize: number;
   lineHeight: number;
-  outlineWidth: number;
+  lines: readonly AnnotationLinePresentation[];
+}
+
+export interface AnnotationLinePresentation {
+  text: string;
+  bounds: Readonly<AnnotationRect>;
   textX: number;
-  firstBaselineY: number;
+  centerY: number;
+  radius: number;
 }
 
 export interface AreaNameLabelGeometry {
@@ -48,35 +56,36 @@ export interface AreaNameLabelGeometry {
   background: string;
 }
 
-export const ZONING_ANNOTATION_STYLE = Object.freeze({
+const FLOORPLAN_LABEL_STYLE = Object.freeze({
   fontFamily: 'Arial, sans-serif',
-  fontSize: 10,
   fontWeight: 600,
-  lineHeight: 14,
-  maxWidth: 150,
-  maxRows: 6,
-  padding: 4,
-  collisionPadding: 5,
-  foreground: '#f8fafc',
-  outline: 'rgba(15, 23, 42, 0.88)',
-  outlineWidth: 1.5,
-  canonicalMinScale: 0.25,
+  foreground: '#ffffff',
+  background: 'rgba(0,0,0,0.55)',
+  radius: 4,
 });
 
-const ZONING_ANNOTATION_LAYOUT_SCALES = Object.freeze([0.25, 0.5, 0.75, 1]);
-
 export const AREA_NAME_LABEL_STYLE = Object.freeze({
-  fontFamily: ZONING_ANNOTATION_STYLE.fontFamily,
+  ...FLOORPLAN_LABEL_STYLE,
   fontSize: 12,
-  fontWeight: 600,
   maxWidth: 160,
   paddingX: 6,
   paddingY: 3,
   edgeGap: 4,
-  radius: 4,
-  foreground: '#ffffff',
-  background: 'rgba(0,0,0,0.55)',
 });
+
+export const ZONING_ANNOTATION_STYLE = Object.freeze({
+  ...FLOORPLAN_LABEL_STYLE,
+  fontSize: AREA_NAME_LABEL_STYLE.fontSize,
+  lineHeight: 19,
+  maxWidth: 150,
+  maxRows: 6,
+  paddingX: AREA_NAME_LABEL_STYLE.paddingX,
+  paddingY: AREA_NAME_LABEL_STYLE.paddingY,
+  collisionPadding: 8,
+  canonicalMinScale: 0.25,
+});
+
+const ZONING_ANNOTATION_LAYOUT_SCALES = Object.freeze([0.25, 0.5, 0.75, 1]);
 
 interface LayoutInput {
   areas: readonly Area[];
@@ -86,7 +95,8 @@ interface LayoutInput {
 
 interface PositiveAnnotationRow {
   fullText: string;
-  productTypeDiscriminator: string;
+  accessibleText: string;
+  productTypeId: number;
   productTypeLabel: string;
   parameterName: string;
   value: number;
@@ -311,27 +321,46 @@ export function getAnnotationPresentation(
   if (requestedScale + 1e-7 < minimumReadableScale) return null;
   const scale = requestedScale;
   const desiredWidth = ZONING_ANNOTATION_STYLE.maxWidth / scale;
-  const desiredHeight = (annotation.lines.length + (annotation.omitted > 0 ? 1 : 0)) *
-    ZONING_ANNOTATION_STYLE.lineHeight / scale;
+  const renderedRows = annotation.lines.length + (annotation.omitted > 0 ? 1 : 0);
+  const desiredHeight = annotationBlockHeight(renderedRows, scale);
   const width = Math.min(annotation.bounds.width, desiredWidth);
   const height = Math.min(annotation.bounds.height, desiredHeight);
   const bounds = Object.freeze({
-      x: annotation.bounds.x + (annotation.bounds.width - width) / 2,
-      y: annotation.bounds.y + (annotation.bounds.height - height) / 2,
+      x: annotation.bounds.x,
+      y: annotation.bounds.y + annotation.bounds.height - height,
       width,
       height,
   });
-  const outlineWidth = ZONING_ANNOTATION_STYLE.outlineWidth / scale;
+  const allText = [
+    ...annotation.lines.map((line) => line.displayText),
+    ...(annotation.omitted > 0 ? [`+${annotation.omitted} more`] : []),
+  ];
+  const fontSize = ZONING_ANNOTATION_STYLE.fontSize / scale;
+  const paddingX = ZONING_ANNOTATION_STYLE.paddingX / scale;
+  const paddingY = ZONING_ANNOTATION_STYLE.paddingY / scale;
+  const lineHeight = ZONING_ANNOTATION_STYLE.lineHeight / scale;
+  const lines = allText.map((text, index): AnnotationLinePresentation => {
+    const lineBounds = Object.freeze({
+      x: bounds.x,
+      y: bounds.y + index * lineHeight,
+      width: Math.min(bounds.width, conservativeTextWidth(text, fontSize) + paddingX * 2),
+      height: fontSize + paddingY * 2,
+    });
+    return Object.freeze({
+      text,
+      bounds: lineBounds,
+      textX: lineBounds.x + paddingX,
+      centerY: lineBounds.y + lineBounds.height / 2,
+      radius: ZONING_ANNOTATION_STYLE.radius / scale,
+    });
+  });
   return Object.freeze({
     bounds,
     clipBounds: bounds,
     effectiveScale: scale,
-    fontSize: ZONING_ANNOTATION_STYLE.fontSize / scale,
-    lineHeight: ZONING_ANNOTATION_STYLE.lineHeight / scale,
-    outlineWidth,
-    textX: bounds.x + (ZONING_ANNOTATION_STYLE.padding + ZONING_ANNOTATION_STYLE.outlineWidth) / scale,
-    firstBaselineY: bounds.y +
-      (ZONING_ANNOTATION_STYLE.lineHeight - 2 - ZONING_ANNOTATION_STYLE.outlineWidth) / scale,
+    fontSize,
+    lineHeight,
+    lines: Object.freeze(lines),
   });
 }
 
@@ -344,11 +373,9 @@ const positiveRows = (area: Area) => {
     .filter((group) => group.parameters.length > 0);
   const queues = groups.map((group) => group.parameters.map((parameter): PositiveAnnotationRow => ({
     fullText: `${group.item_type.name} — ${parameter.name}: ${parameter.value}`,
-    // The stable ID-derived token is painted in full before any ellipsized
-    // Product Type text. Distinct groups therefore cannot converge during
-    // the final width transformation used by either SVG or canvas.
-    productTypeDiscriminator: `#${group.item_type.id.toString(36)}`,
-    productTypeLabel: group.item_type.abbreviation,
+    accessibleText: `${group.item_type.name} — ${parameter.name}: ${parameter.value} (Product Type identifier ${group.item_type.id})`,
+    productTypeId: group.item_type.id,
+    productTypeLabel: group.item_type.abbreviation || group.item_type.name,
     parameterName: parameter.name,
     value: parameter.value,
   })));
@@ -364,6 +391,12 @@ const positiveRows = (area: Area) => {
 
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
+
+const annotationBlockHeight = (rowCount: number, scale: number) =>
+  rowCount > 0
+    ? ((rowCount - 1) * ZONING_ANNOTATION_STYLE.lineHeight +
+      ZONING_ANNOTATION_STYLE.fontSize + ZONING_ANNOTATION_STYLE.paddingY * 2) / scale
+    : 0;
 
 const conservativeGlyphRatio = (glyph: string) => {
   if (/\s/u.test(glyph)) return 0.35;
@@ -399,48 +432,66 @@ function ellipsizeToWidth(value: string, width: number, fontSize: number = ZONIN
 
 function displayedLines(rows: readonly PositiveAnnotationRow[], visibleCount: number, width: number) {
   const availableWidth = width -
-    (ZONING_ANNOTATION_STYLE.padding + ZONING_ANNOTATION_STYLE.outlineWidth) * 2;
+    ZONING_ANNOTATION_STYLE.paddingX * 2;
   const lines: AnnotationLine[] = [];
 
   for (const row of rows.slice(0, visibleCount)) {
-    const identityPrefix = `${row.productTypeDiscriminator} `;
-    const identifiedFullText = `${identityPrefix}${row.fullText}`;
-    if (conservativeTextWidth(identifiedFullText) <= availableWidth) {
-      lines.push({ fullText: row.fullText, displayText: identifiedFullText });
+    if (conservativeTextWidth(row.fullText) <= availableWidth) {
+      lines.push({
+        fullText: row.fullText,
+        accessibleText: row.accessibleText,
+        productTypeId: row.productTypeId,
+        displayText: row.fullText,
+      });
       continue;
     }
 
-    const readable = `${identityPrefix}${row.productTypeLabel} · ${row.parameterName}: ${row.value}`;
+    const readable = `${row.productTypeLabel} · ${row.parameterName}: ${row.value}`;
     if (conservativeTextWidth(readable) <= availableWidth) {
-      lines.push({ fullText: row.fullText, displayText: readable });
+      lines.push({
+        fullText: row.fullText,
+        accessibleText: row.accessibleText,
+        productTypeId: row.productTypeId,
+        displayText: readable,
+      });
       continue;
     }
 
     const separator = '·';
     const suffix = `:${row.value}`;
-    const compactFixedWidth = conservativeTextWidth(row.productTypeDiscriminator + separator + suffix);
+    const compactFixedWidth = conservativeTextWidth(separator + suffix);
+    const productTypeGlyphs = Array.from(row.productTypeLabel);
+    const minimumProductType = productTypeGlyphs.length > 2
+      ? `${productTypeGlyphs.slice(0, 2).join('')}…`
+      : productTypeGlyphs.join('');
+    const minimumProductTypeWidth = conservativeTextWidth(minimumProductType);
     const parameterGlyphs = Array.from(row.parameterName);
     const minimumParameter = parameterGlyphs.length > 1
       ? `${parameterGlyphs[0]}…`
       : (parameterGlyphs[0] ?? '');
     const minimumParameterWidth = conservativeTextWidth(minimumParameter);
     const productTypeBudget = Math.min(
-      28,
-      Math.max(0, availableWidth - compactFixedWidth - conservativeTextWidth(' ') - minimumParameterWidth),
+      44,
+      Math.max(minimumProductTypeWidth, availableWidth - compactFixedWidth - conservativeTextWidth(' ') - minimumParameterWidth),
     );
     const productType = ellipsizeToWidth(row.productTypeLabel, productTypeBudget);
-    const productTypeIdentifier = productType
-      ? `${row.productTypeDiscriminator} ${productType}`
-      : row.productTypeDiscriminator;
     const parameterBudget = availableWidth -
-      conservativeTextWidth(productTypeIdentifier + separator + suffix);
+      conservativeTextWidth(productType + separator + suffix);
     const parameter = ellipsizeToWidth(row.parameterName, parameterBudget);
-    const displayText = `${productTypeIdentifier}${separator}${parameter}${suffix}`;
+    const displayText = `${productType}${separator}${parameter}${suffix}`;
+    const visibleParameterGlyphs = Array.from(parameter).filter((glyph) => glyph !== '…');
+    const minimumVisibleParameterGlyphs = Math.min(4, Array.from(row.parameterName).length);
 
     // If even the compact Product Type + parameter + value form cannot fit,
     // omit the annotation instead of painting a misleading partial value.
-    if (!parameter || conservativeTextWidth(displayText) > availableWidth) return null;
-    lines.push({ fullText: row.fullText, displayText });
+    if (!productType || !parameter || visibleParameterGlyphs.length < minimumVisibleParameterGlyphs ||
+      conservativeTextWidth(displayText) > availableWidth) return null;
+    lines.push({
+      fullText: row.fullText,
+      accessibleText: row.accessibleText,
+      productTypeId: row.productTypeId,
+      displayText,
+    });
   }
 
   return lines;
@@ -452,9 +503,6 @@ export function layoutZoningAnnotations({
   imageBounds,
 }: LayoutInput): readonly ZoningAnnotationDescriptor[] {
   const orderedAreas = [...areas].sort((a, b) => a.id - b.id);
-  const nameBounds = orderedAreas.map(getCanonicalAreaNameLabelBounds).filter(
-    (bounds): bounds is AnnotationRect => bounds !== null,
-  );
   const placed: AnnotationRect[] = [];
   const descriptors: ZoningAnnotationDescriptor[] = [];
 
@@ -472,21 +520,38 @@ export function layoutZoningAnnotations({
     // boundary. Renderers use it only as a paint-or-omit threshold.
     for (const minimumReadableScale of ZONING_ANNOTATION_LAYOUT_SCALES) {
       if (descriptor) break;
+      // The annotation is omitted below minimumReadableScale. At and above
+      // that threshold the Area-name pill is largest in natural coordinates
+      // at this scale, so this is the exact shared obstacle envelope for every
+      // view in which the annotation can actually paint.
+      const readableNameBounds = orderedAreas
+        .map((candidateArea) => getAreaNameLabelGeometry(candidateArea, minimumReadableScale)?.bounds ?? null)
+        .filter((nameBounds): nameBounds is AnnotationRect => nameBounds !== null);
       const scaled = (value: number) => value / minimumReadableScale;
       const gap = scaled(8);
-      const width = Math.min(
+      const maximumWidth = Math.min(
         scaled(ZONING_ANNOTATION_STYLE.maxWidth),
         Math.max(0, availableRegion.width - gap * 2),
       );
-      if (width <= 0) continue;
+      if (maximumWidth <= 0) continue;
       for (
         let visibleCount = Math.min(rows.length, ZONING_ANNOTATION_STYLE.maxRows);
         visibleCount >= 1 && !descriptor;
         visibleCount--
       ) {
+        const lines = displayedLines(rows, visibleCount, maximumWidth * minimumReadableScale);
+        if (!lines) continue;
         const omitted = rows.length - visibleCount;
         const renderedRows = visibleCount + (omitted > 0 ? 1 : 0);
-        const height = renderedRows * scaled(ZONING_ANNOTATION_STYLE.lineHeight);
+        const displayedText = [
+          ...lines.map((line) => line.displayText),
+          ...(omitted > 0 ? [`+${omitted} more`] : []),
+        ];
+        const contentWidth = Math.max(...displayedText.map((text) =>
+          conservativeTextWidth(text) + ZONING_ANNOTATION_STYLE.paddingX * 2
+        ));
+        const width = Math.min(maximumWidth, scaled(contentWidth));
+        const height = annotationBlockHeight(renderedRows, minimumReadableScale);
         const centerX = availableRegion.x + availableRegion.width / 2;
         const centerY = availableRegion.y + availableRegion.height / 2;
         const leftX = availableRegion.x + gap;
@@ -494,11 +559,11 @@ export function layoutZoningAnnotations({
         const bottomY = availableRegion.y + availableRegion.height - height - gap;
         const lowerY = availableRegion.y + availableRegion.height * 0.72 - height / 2;
         const candidates = [
-          { name: 'bottom-center', x: centerX - width / 2, y: bottomY },
           { name: 'bottom-left', x: leftX, y: bottomY },
+          { name: 'bottom-center', x: centerX - width / 2, y: bottomY },
           { name: 'bottom-right', x: rightX, y: bottomY },
-          { name: 'lower-center', x: centerX - width / 2, y: lowerY },
           { name: 'lower-left', x: leftX, y: lowerY },
+          { name: 'lower-center', x: centerX - width / 2, y: lowerY },
           { name: 'lower-right', x: rightX, y: lowerY },
           { name: 'center', x: centerX - width / 2, y: centerY - height / 2 },
           { name: 'top-center', x: centerX - width / 2, y: availableRegion.y + gap },
@@ -515,10 +580,8 @@ export function layoutZoningAnnotations({
           if (!containsRect(imageBounds, candidateBounds) || !areaContainsRect(area, candidateBounds)) continue;
           const collisionPadding = scaled(ZONING_ANNOTATION_STYLE.collisionPadding);
           if (productBounds.some((product) => intersects(candidateBounds, product, collisionPadding))) continue;
-          if (nameBounds.some((name) => intersects(candidateBounds, name, collisionPadding))) continue;
+          if (readableNameBounds.some((name) => intersects(candidateBounds, name, collisionPadding))) continue;
           if (placed.some((annotation) => intersects(candidateBounds, annotation, collisionPadding))) continue;
-          const lines = displayedLines(rows, visibleCount, width * minimumReadableScale);
-          if (!lines) continue;
           descriptor = Object.freeze({
             areaId: area.id,
             lines: Object.freeze(lines),
@@ -526,7 +589,7 @@ export function layoutZoningAnnotations({
             bounds: Object.freeze(candidateBounds),
             anchor: candidate.name,
             accessibleText: [
-              ...rows.slice(0, visibleCount).map((row) => row.fullText),
+              ...rows.slice(0, visibleCount).map((row) => row.accessibleText),
               ...(omitted ? [`+${omitted} more`] : []),
             ].join('; '),
             minimumReadableScale,

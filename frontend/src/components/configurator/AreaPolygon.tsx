@@ -454,6 +454,7 @@ export function AreaPolygon({
           data-omitted={zoningAnnotation.omitted}
           data-minimum-readable-scale={zoningAnnotation.minimumReadableScale}
           data-presentation-scale={annotationPresentation.effectiveScale}
+          data-line-height={annotationPresentation.lineHeight}
           aria-label={`Zoning annotation: ${zoningAnnotation.accessibleText}`}
           style={{ pointerEvents: 'none' }}
         >
@@ -463,41 +464,35 @@ export function AreaPolygon({
             </clipPath>
           </defs>
           <g clipPath={`url(#zoning-annotation-clip-${area.id})`} data-testid="area-zoning-text-clip">
-            {zoningAnnotation.lines.map((line, index) => (
-              <text
-                key={`${index}-${line.fullText}`}
-                x={annotationPresentation.textX}
-                y={annotationPresentation.firstBaselineY + index * annotationPresentation.lineHeight}
-                fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
-                fontSize={annotationPresentation.fontSize}
-                fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
-                fill={ZONING_ANNOTATION_STYLE.foreground}
-                stroke={ZONING_ANNOTATION_STYLE.outline}
-                strokeWidth={annotationPresentation.outlineWidth}
-                strokeLinejoin="round"
-                paintOrder="stroke fill"
-                style={{ userSelect: 'none' }}
-              >
-                <title>{line.fullText}</title>
-                {line.displayText}
-              </text>
-            ))}
-            {zoningAnnotation.omitted > 0 && (
-              <text
-                x={annotationPresentation.textX}
-                y={annotationPresentation.firstBaselineY + zoningAnnotation.lines.length * annotationPresentation.lineHeight}
-                fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
-                fontSize={annotationPresentation.fontSize}
-                fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
-                fill={ZONING_ANNOTATION_STYLE.foreground}
-                stroke={ZONING_ANNOTATION_STYLE.outline}
-                strokeWidth={annotationPresentation.outlineWidth}
-                strokeLinejoin="round"
-                paintOrder="stroke fill"
-              >
-                +{zoningAnnotation.omitted} more
-              </text>
-            )}
+            {annotationPresentation.lines.map((presentedLine, index) => {
+              const sourceLine = zoningAnnotation.lines[index];
+              return (
+                <g key={`${index}-${presentedLine.text}`}>
+                  <rect
+                    data-testid="area-zoning-row-background"
+                    x={presentedLine.bounds.x}
+                    y={presentedLine.bounds.y}
+                    width={presentedLine.bounds.width}
+                    height={presentedLine.bounds.height}
+                    rx={presentedLine.radius}
+                    fill={ZONING_ANNOTATION_STYLE.background}
+                  />
+                  <text
+                    x={presentedLine.textX}
+                    y={presentedLine.centerY}
+                    fontFamily={ZONING_ANNOTATION_STYLE.fontFamily}
+                    fontSize={annotationPresentation.fontSize}
+                    fontWeight={ZONING_ANNOTATION_STYLE.fontWeight}
+                    fill={ZONING_ANNOTATION_STYLE.foreground}
+                    dominantBaseline="middle"
+                    style={{ userSelect: 'none' }}
+                  >
+                    {sourceLine && <title>{sourceLine.accessibleText ?? sourceLine.fullText}</title>}
+                    {presentedLine.text}
+                  </text>
+                </g>
+              );
+            })}
           </g>
         </g>
       ) : null}

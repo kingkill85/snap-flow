@@ -6,7 +6,7 @@ import type { SnapFlowWorld } from '../support/world.ts';
 
 type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: number; value: number };
 type Bounds = { x: number; y: number; width: number; height: number };
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; areaMutationCount: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[]; existingPathSvgRows: string[]; existingPathRasterRows: string[]; existingPathAreaBounds: Bounds; existingPathInteractiveBounds: Bounds; existingPathSvgStyle: { fill: string | null; stroke: string | null; strokeWidth: number; fontSize: number; lineHeight: number; paintOrder: string | null }; existingPathRasterStyle: { fill: string; stroke: string; lineWidth: number; font: string }; readabilityAreaIds: number[]; readabilitySvgRows: string[]; readabilityRasterRows: string[] };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; areaMutationCount: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[]; existingPathSvgRows: string[]; existingPathRasterRows: string[]; existingPathAreaBounds: Bounds; existingPathInteractiveBounds: Bounds; existingPathAnchor: string; existingPathNameStyle: { fill: string | null; background: string | null; fontSize: number; fontWeight: string | null }; existingPathSvgStyle: { fill: string | null; background: string | null; backgroundCount: number; fontSize: number; fontWeight: string | null; lineHeight: number }; existingPathRasterStyle: { fill: string; background: string; backgroundCount: number; font: string }; readabilityAreaIds: number[]; readabilitySvgRows: string[]; readabilityRasterRows: string[] };
 
 const WIDE_GLYPH_NAME = 'W'.repeat(100);
 
@@ -275,12 +275,12 @@ When('the interactive floorplan or PNG export renders', async function (this: Zo
 Then('each Product Type with a positive value has one labelled group', async function (this: ZoningWorld) {
   const directRows = (await paintedAnnotationRows(this)).filter((row) => /Z.*:\s*3$/.test(row));
   expect(directRows).toHaveLength(2);
-  expect(new Set(directRows).size).toBe(2);
-  expect(directRows.some((row) => row.startsWith(`#${this.itemTypeIds[0].toString(36)} `))).toBe(true);
-  expect(directRows.some((row) => row.startsWith(`#${this.itemTypeIds[1].toString(36)} `))).toBe(true);
+  expect(directRows.every((row) => !/^#/u.test(row))).toBe(true);
   expect(this.duplicateRasterRows).toEqual(directRows);
-  expect(new Set(this.duplicateRasterRows).size).toBe(2);
   await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveAccessibleName(/Shared Product Type .*Alpha.*Zones: 3.*Shared Product Type .*Beta.*Zones: 3/);
+  await expect(this.page!.getByTestId('area-zoning-annotation')).toHaveAccessibleName(
+    new RegExp(`Product Type identifier ${this.itemTypeIds[0]}.*Product Type identifier ${this.itemTypeIds[1]}`),
+  );
 });
 Then('zero-valued parameters and empty Product Type groups are absent', async function (this: ZoningWorld) {
   expect((await paintedAnnotationRows(this)).some((row) => row.includes('Extremely long parameter wording'))).toBe(false);
@@ -323,8 +323,9 @@ Then('zero and positive values retain their defined persistence semantics', asyn
   const annotation = this.page!.getByTestId('area-zoning-annotation');
   const paintedRows = await paintedAnnotationRows(this);
   expect(paintedRows).toHaveLength(2);
-  expect(paintedRows[0]).toMatch(new RegExp(`^#${this.itemTypeIds[0].toString(36)} I0X.*Z.*:\\s*4$`));
-  expect(paintedRows[1]).toMatch(new RegExp(`^#${this.itemTypeIds[1].toString(36)} I1X.*Z.*:\\s*2$`));
+  expect(paintedRows[0]).toMatch(/^I0X.*Z.*:\s*4$/u);
+  expect(paintedRows[1]).toMatch(/^I1X.*Z.*:\s*2$/u);
+  expect(paintedRows.every((row) => !/^#/u.test(row))).toBe(true);
   expect(paintedRows.some((row) => row.includes('wording'))).toBe(false);
   await expect(annotation).toHaveAccessibleName(/Issue89 Type 0.*Zones 0: 4.*Issue89 Type 1.*Zones 1: 2/);
   await this.page!.evaluate(() => {
@@ -455,26 +456,40 @@ When('the configurator renders that Area and the user invokes the existing PNG e
   if (!serializedInteractiveBounds) throw new Error('Existing-project interactive annotation bounds unavailable');
   const [interactiveX, interactiveY, interactiveWidth, interactiveHeight] = serializedInteractiveBounds.split(',').map(Number);
   this.existingPathInteractiveBounds = { x: interactiveX, y: interactiveY, width: interactiveWidth, height: interactiveHeight };
+  this.existingPathAnchor = await annotation.getAttribute('data-anchor') ?? '';
+  const areaRoot = this.page!.locator(`[data-area-id="${this.areaId}"]`);
+  const nameText = areaRoot.getByTestId('area-name-text');
+  const nameBackground = areaRoot.getByTestId('area-name-label-bounds');
+  this.existingPathNameStyle = {
+    fill: await nameText.getAttribute('fill'),
+    background: await nameBackground.getAttribute('fill'),
+    fontSize: await nameText.evaluate((element) => {
+      const text = element as SVGTextElement;
+      const transform = text.getScreenCTM();
+      return Number(text.getAttribute('font-size')) * (transform ? Math.hypot(transform.a, transform.b) : 1);
+    }),
+    fontWeight: await nameText.getAttribute('font-weight'),
+  };
   const svgText = annotation.locator('text').first();
   const paintedStyle = await svgText.evaluate((element) => {
     const text = element as SVGTextElement;
     const transform = text.getScreenCTM();
     const scale = transform ? Math.hypot(transform.a, transform.b) : 1;
-    const rows = [...text.parentElement!.querySelectorAll('text')] as SVGTextElement[];
-    const lineHeight = rows.length > 1
-      ? Math.abs(Number(rows[1].getAttribute('y')) - Number(rows[0].getAttribute('y'))) * scale
-      : Number(text.getAttribute('font-size')) * scale * 1.4;
+    const annotation = text.closest('[data-testid="area-zoning-annotation"]')!;
+    const lineHeight = Number(annotation.getAttribute('data-line-height')) * scale;
     return {
-      strokeWidth: Number(text.getAttribute('stroke-width')) * scale,
       fontSize: Number(text.getAttribute('font-size')) * scale,
       lineHeight,
     };
   });
+  const svgBackgrounds = annotation.locator('[data-testid="area-zoning-row-background"]');
+  const svgBackgroundCount = await svgBackgrounds.count();
   this.existingPathSvgStyle = {
     fill: await svgText.getAttribute('fill'),
-    stroke: await svgText.getAttribute('stroke'),
+    background: svgBackgroundCount ? await svgBackgrounds.first().getAttribute('fill') : null,
+    backgroundCount: svgBackgroundCount,
     ...paintedStyle,
-    paintOrder: await svgText.getAttribute('paint-order'),
+    fontWeight: await svgText.getAttribute('font-weight'),
   };
   const serializedBounds = await annotation.getAttribute('data-export-bounds');
   if (!serializedBounds) throw new Error('Existing-project annotation bounds unavailable');
@@ -485,16 +500,16 @@ When('the configurator renders that Area and the user invokes the existing PNG e
     const prototype = CanvasRenderingContext2D.prototype as CanvasRenderingContext2D & { __issue89ExistingPathWrapped?: boolean };
     if (prototype.__issue89ExistingPathWrapped) return;
     prototype.__issue89ExistingPathWrapped = true;
-    const originalStrokeText = prototype.strokeText;
     const originalFillText = prototype.fillText;
-    (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; fill: string; stroke: string; lineWidth: number; font: string }> }).issue89ExistingPathPaint = [];
-    prototype.strokeText = function (text, x, y, maxWidth) {
-      (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; fill: string; stroke: string; lineWidth: number; font: string }> }).issue89ExistingPathPaint.push({ kind: 'stroke', text, x, y, fill: String(this.fillStyle), stroke: String(this.strokeStyle), lineWidth: this.lineWidth, font: this.font });
-      return maxWidth === undefined ? originalStrokeText.call(this, text, x, y) : originalStrokeText.call(this, text, x, y, maxWidth);
-    };
+    const originalRoundRect = prototype.roundRect;
+    (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; width: number; height: number; fill: string; font: string }> }).issue89ExistingPathPaint = [];
     prototype.fillText = function (text, x, y, maxWidth) {
-      (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; fill: string; stroke: string; lineWidth: number; font: string }> }).issue89ExistingPathPaint.push({ kind: 'fill', text, x, y, fill: String(this.fillStyle), stroke: String(this.strokeStyle), lineWidth: this.lineWidth, font: this.font });
+      (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; width: number; height: number; fill: string; font: string }> }).issue89ExistingPathPaint.push({ kind: 'fill', text, x, y, width: 0, height: 0, fill: String(this.fillStyle), font: this.font });
       return maxWidth === undefined ? originalFillText.call(this, text, x, y) : originalFillText.call(this, text, x, y, maxWidth);
+    };
+    prototype.roundRect = function (x, y, width, height, radii) {
+      (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; width: number; height: number; fill: string; font: string }> }).issue89ExistingPathPaint.push({ kind: 'roundRect', text: '', x, y, width, height, fill: String(this.fillStyle), font: this.font });
+      return originalRoundRect.call(this, x, y, width, height, radii);
     };
   });
   const downloadPromise = this.page!.waitForEvent('download');
@@ -504,38 +519,46 @@ When('the configurator renders that Area and the user invokes the existing PNG e
   if (!path) throw new Error('Existing-project PNG download unavailable');
   this.downloadBytes = await readFile(path);
   await writeFile(resolve(process.cwd(), 'e2e/results/issue-89-existing-project-export.png'), this.downloadBytes);
-  const calls = await this.page!.evaluate(() => (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; fill: string; stroke: string; lineWidth: number; font: string }> }).issue89ExistingPathPaint);
+  const calls = await this.page!.evaluate(() => (window as unknown as { issue89ExistingPathPaint: Array<{ kind: string; text: string; x: number; y: number; width: number; height: number; fill: string; font: string }> }).issue89ExistingPathPaint);
   this.existingPathRasterRows = calls.filter((call) => call.kind === 'fill' && /:\s*[12]$/.test(call.text)).map((call) => call.text);
   this.readabilityRasterRows = calls
-    .filter((call) => call.kind === 'fill' && (/^#/u.test(call.text) || /^\+\d+ more$/u.test(call.text)))
+    .filter((call) => call.kind === 'fill' && (/:[ ]*\d+$/u.test(call.text) || /^\+\d+ more$/u.test(call.text)))
     .map((call) => call.text);
   const rasterRow = calls.find((call) => call.kind === 'fill' && /:\s*[12]$/.test(call.text));
   if (!rasterRow) throw new Error('Existing-project PNG annotation style unavailable');
-  this.existingPathRasterStyle = { fill: rasterRow.fill, stroke: rasterRow.stroke, lineWidth: rasterRow.lineWidth, font: rasterRow.font };
+  const rasterBackgrounds = calls.filter((call) => call.kind === 'roundRect' &&
+    call.x >= this.annotationBounds.x && call.y >= this.annotationBounds.y &&
+    call.x + call.width <= this.annotationBounds.x + this.annotationBounds.width &&
+    call.y + call.height <= this.annotationBounds.y + this.annotationBounds.height);
+  this.existingPathRasterStyle = {
+    fill: rasterRow.fill,
+    background: rasterBackgrounds[0]?.fill ?? '',
+    backgroundCount: rasterBackgrounds.length,
+    font: rasterRow.font,
+  };
 });
 
 Then('the interactive floorplan contains directly painted SVG annotation rows for those exact positive values', async function (this: ZoningWorld) {
   expect(this.existingPathSvgRows).toHaveLength(2);
+  expect(this.existingPathSvgRows.every((row) => !/^#/u.test(row))).toBe(true);
   expect(this.existingPathSvgRows.some((row) => /test\s*:\s*1$/.test(row))).toBe(true);
   expect(this.existingPathSvgRows.some((row) => /test2\s*:\s*2$/.test(row))).toBe(true);
   const area = this.existingPathAreaBounds;
   const annotation = this.existingPathInteractiveBounds;
+  expect(this.existingPathAnchor).toBe('bottom-left');
   expect(annotation.x).toBeGreaterThanOrEqual(area.x);
   expect(annotation.y).toBeGreaterThanOrEqual(area.y + area.height * 0.6);
   expect(annotation.x + annotation.width).toBeLessThanOrEqual(area.x + area.width);
   expect(annotation.y + annotation.height).toBeLessThanOrEqual(area.y + area.height);
   expect(this.existingPathSvgStyle).toEqual({
-    fill: '#f8fafc',
-    stroke: 'rgba(15, 23, 42, 0.88)',
-    strokeWidth: expect.any(Number),
-    fontSize: expect.any(Number),
+    fill: this.existingPathNameStyle.fill,
+    background: this.existingPathNameStyle.background,
+    backgroundCount: 2,
+    fontSize: this.existingPathNameStyle.fontSize,
+    fontWeight: this.existingPathNameStyle.fontWeight,
     lineHeight: expect.any(Number),
-    paintOrder: 'stroke fill',
   });
-  expect(this.existingPathSvgStyle.fontSize).toBeGreaterThanOrEqual(9.5);
-  expect(this.existingPathSvgStyle.lineHeight).toBeGreaterThanOrEqual(13);
-  expect(this.existingPathSvgStyle.strokeWidth).toBeGreaterThan(0);
-  expect(this.existingPathSvgStyle.strokeWidth).toBeLessThanOrEqual(2);
+  expect(this.existingPathSvgStyle.lineHeight).toBeGreaterThanOrEqual(18);
 });
 
 Then('the downloaded PNG contains paint and pixel evidence for the same grouped values through the same normalized Area and descriptor path', async function (this: ZoningWorld) {
@@ -562,10 +585,10 @@ Then('the downloaded PNG contains paint and pixel evidence for the same grouped 
   expect(this.annotationBounds.x + this.annotationBounds.width).toBeLessThanOrEqual(area.x + area.width);
   expect(this.annotationBounds.y + this.annotationBounds.height).toBeLessThanOrEqual(area.y + area.height);
   expect(this.existingPathRasterStyle).toEqual({
-    fill: '#f8fafc',
-    stroke: 'rgba(15, 23, 42, 0.88)',
-    lineWidth: 1.5,
-    font: '600 10px Arial, sans-serif',
+    fill: '#ffffff',
+    background: 'rgba(0, 0, 0, 0.55)',
+    backgroundCount: 2,
+    font: '600 12px Arial, sans-serif',
   });
 });
 
@@ -576,16 +599,15 @@ Then('neither renderer silently omits the annotation because of data or geometry
 });
 
 async function expectSupportedZoomReadability(world: ZoningWorld) {
-  expect(world.readabilitySvgRows).toEqual([
-    expect.stringMatching(/test\s*:\s*1$/u),
-    expect.stringMatching(/test2\s*:\s*2$/u),
-    expect.stringMatching(/:\s*9$/u),
-    expect.stringMatching(/:\s*11$/u),
-    '+7 more',
-  ]);
+  expect(world.readabilitySvgRows.some((row) => /test\s*:\s*1$/u.test(row))).toBe(true);
+  expect(world.readabilitySvgRows.some((row) => /test2\s*:\s*2$/u.test(row))).toBe(true);
+  expect(world.readabilitySvgRows.some((row) => /:\s*9$/u.test(row))).toBe(true);
+  expect(world.readabilitySvgRows.some((row) => /:\s*11$/u.test(row))).toBe(true);
+  expect(world.readabilitySvgRows.some((row) => /^\+\d+ more$/u.test(row))).toBe(true);
+  expect(world.readabilitySvgRows.every((row) => !/^#/u.test(row))).toBe(true);
   expect(world.readabilityRasterRows).toEqual(world.readabilitySvgRows);
   const measureVisible = async (requireAll: boolean) => {
-    const evidence: Array<{ areaId: number; fontSize: number; lineHeight: number; halo: number }> = [];
+    const evidence: Array<{ areaId: number; fontSize: number; lineHeight: number; contrastHeight: number }> = [];
     for (const areaId of world.readabilityAreaIds) {
       const annotation = world.page!.locator(`[data-area-id="${areaId}"]`).getByTestId('area-zoning-annotation');
       if (await annotation.count() === 0) continue;
@@ -594,19 +616,18 @@ async function expectSupportedZoomReadability(world: ZoningWorld) {
         const text = element as SVGTextElement;
         const transform = text.getScreenCTM();
         const scale = transform ? Math.hypot(transform.a, transform.b) : 1;
-        const rows = [...text.parentElement!.querySelectorAll('text')] as SVGTextElement[];
+        const annotation = text.closest('[data-testid="area-zoning-annotation"]')!;
+        const background = text.parentElement!.querySelector('rect') as SVGRectElement | null;
         return {
           fontSize: Number(text.getAttribute('font-size')) * scale,
-          lineHeight: rows.length > 1
-            ? Math.abs(Number(rows[1].getAttribute('y')) - Number(rows[0].getAttribute('y'))) * scale
-            : Number(text.getAttribute('font-size')) * scale * 1.4,
-          halo: Number(text.getAttribute('stroke-width')) * scale,
+          lineHeight: Number(annotation.getAttribute('data-line-height')) * scale,
+          contrastHeight: background ? Number(background.getAttribute('height')) * scale : 0,
         };
       });
       if (requireAll) {
-        expect(metrics.fontSize).toBeGreaterThanOrEqual(9.5);
-        expect(metrics.lineHeight).toBeGreaterThanOrEqual(13);
-        expect(metrics.halo).toBeGreaterThanOrEqual(1.25);
+        expect(metrics.fontSize).toBeGreaterThanOrEqual(11.5);
+        expect(metrics.lineHeight).toBeGreaterThanOrEqual(18.5);
+        expect(metrics.contrastHeight).toBeGreaterThanOrEqual(17.5);
       }
       evidence.push({ areaId, ...metrics });
     }
@@ -629,7 +650,21 @@ async function expectSupportedZoomReadability(world: ZoningWorld) {
   await world.page!.screenshot({ path: resolve(process.cwd(), 'e2e/results/issue-89-readable-25.png'), fullPage: true });
   await writeFile(
     resolve(process.cwd(), 'e2e/results/issue-89-readable-measurements.json'),
-    JSON.stringify({ fitted, fifty, quarter, png: world.existingPathRasterStyle }, null, 2),
+    JSON.stringify({
+      existingProject: {
+        areaBounds: world.existingPathAreaBounds,
+        interactiveBounds: world.existingPathInteractiveBounds,
+        exportBounds: world.annotationBounds,
+        anchor: world.existingPathAnchor,
+        rows: world.existingPathSvgRows,
+        areaNameStyle: world.existingPathNameStyle,
+        svgStyle: world.existingPathSvgStyle,
+        pngStyle: world.existingPathRasterStyle,
+      },
+      fitted,
+      fifty,
+      quarter,
+    }, null, 2),
   );
   expect(fifty).toEqual([]);
   expect(quarter).toEqual([]);
@@ -723,7 +758,26 @@ Then('a `+N more` row reports the omitted positive values', async function (this
 
 Given('positive zoning annotations cross light, dark, detailed, and mixed regions of a floorplan', async function (this: ZoningWorld) { await setupArea(this, 2, 2); await saveValues(this, [2, 0, 4, 0]); });
 When('the interactive floorplan renders at a supported zoom', async function (this: ZoningWorld) { await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); });
-Then('every visible annotation uses the defined dual-contrast text treatment without a large opaque backing panel', async function (this: ZoningWorld) { const annotation = this.page!.getByTestId('area-zoning-annotation'); await expect(annotation.locator('rect')).toHaveCount(0); for (const text of await annotation.locator('text').all()) { await expect(text).toHaveAttribute('fill', '#f8fafc'); await expect(text).toHaveAttribute('stroke', 'rgba(15, 23, 42, 0.88)'); } });
+Then('every visible annotation uses the defined dual-contrast text treatment without a large opaque backing panel', async function (this: ZoningWorld) {
+  const annotation = this.page!.getByTestId('area-zoning-annotation');
+  const texts = annotation.locator('text');
+  const backgrounds = annotation.getByTestId('area-zoning-row-background');
+  await expect(backgrounds).toHaveCount(await texts.count());
+  const areaName = this.page!.getByTestId('area-name-text').first();
+  const areaNameBackground = this.page!.getByTestId('area-name-label-bounds').first();
+  for (const text of await texts.all()) {
+    await expect(text).toHaveAttribute('fill', await areaName.getAttribute('fill') ?? '#ffffff');
+    await expect(text).toHaveAttribute('font-family', await areaName.getAttribute('font-family') ?? 'Arial, sans-serif');
+    await expect(text).toHaveAttribute('font-weight', await areaName.getAttribute('font-weight') ?? '600');
+    await expect(text).not.toHaveAttribute('stroke');
+  }
+  const nameBox = await areaNameBackground.boundingBox();
+  for (const background of await backgrounds.all()) {
+    await expect(background).toHaveAttribute('fill', await areaNameBackground.getAttribute('fill') ?? 'rgba(0,0,0,0.55)');
+    const box = await background.boundingBox();
+    expect(box!.height).toBeCloseTo(nameBox!.height, 0);
+  }
+});
 Then('its meaning remains available without relying on color', async function (this: ZoningWorld) {
   const paintedRows = await paintedAnnotationRows(this);
   expect(paintedRows.some((row) => /I0X.*Zones 0.*2/.test(row))).toBe(true);
@@ -742,8 +796,9 @@ Then('it deterministically selects the first safe candidate that intersects neit
     const annotationLocator = this.page!.getByTestId('area-zoning-annotation');
     const placementLocator = this.page!.locator(`[data-placement-id="${this.productId}"]`);
     const text = annotationLocator.locator('text').first();
-    await expect(text).toHaveAttribute('fill', '#f8fafc');
-    await expect(text).toHaveAttribute('stroke', 'rgba(15, 23, 42, 0.88)');
+    await expect(text).toHaveAttribute('fill', '#ffffff');
+    await expect(text).not.toHaveAttribute('stroke');
+    await expect(annotationLocator.getByTestId('area-zoning-row-background').first()).toHaveAttribute('fill', 'rgba(0,0,0,0.55)');
     const decoration = placementLocator.locator('[data-placement-decoration]');
     await expect(decoration).toHaveAttribute('data-decoration-state', selected ? 'selected' : 'default');
     const styles = await placementLocator.evaluate((placement) => {
@@ -768,7 +823,7 @@ Then('it deterministically selects the first safe candidate that intersects neit
     expect(annotation!.x + annotation!.width <= product!.x || annotation!.x >= product!.x + product!.width || annotation!.y + annotation!.height <= product!.y || annotation!.y >= product!.y + product!.height).toBeTruthy();
   };
 
-  await expect(this.page!.getByTestId('area-zoning-annotation').locator('rect')).toHaveCount(0);
+  expect(await this.page!.getByTestId('area-zoning-annotation').getByTestId('area-zoning-row-background').count()).toBeGreaterThan(0);
   await assertPaintEnvelope(false);
   await this.page!.locator(`[data-placement-id="${this.productId}"]`).click();
   await assertPaintEnvelope(true);
@@ -807,19 +862,13 @@ When('the user invokes the existing PNG floorplan export with the same Area, pla
     const prototype = CanvasRenderingContext2D.prototype as CanvasRenderingContext2D & { __issue89Wrapped?: boolean };
     if (prototype.__issue89Wrapped) return;
     prototype.__issue89Wrapped = true;
-    const originalStrokeText = prototype.strokeText;
     const originalFillText = prototype.fillText;
     const originalRect = prototype.rect;
+    const originalRoundRect = prototype.roundRect;
     const originalClip = prototype.clip as (...args: unknown[]) => void;
     (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText = [];
-    prototype.strokeText = function (text, x, y, maxWidth) {
-      (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'stroke', text, x, y, strokeStyle: this.strokeStyle, lineWidth: this.lineWidth });
-      return maxWidth === undefined
-        ? originalStrokeText.call(this, text, x, y)
-        : originalStrokeText.call(this, text, x, y, maxWidth);
-    };
     prototype.fillText = function (text, x, y, maxWidth) {
-      (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'fill', text, x, y, fillStyle: this.fillStyle });
+      (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'fill', text, x, y, fillStyle: this.fillStyle, font: this.font });
       return maxWidth === undefined
         ? originalFillText.call(this, text, x, y)
         : originalFillText.call(this, text, x, y, maxWidth);
@@ -827,6 +876,10 @@ When('the user invokes the existing PNG floorplan export with the same Area, pla
     prototype.rect = function (x, y, width, height) {
       (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'clip-rect', x, y, width, height });
       return originalRect.call(this, x, y, width, height);
+    };
+    prototype.roundRect = function (x, y, width, height, radii) {
+      (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'row-background', x, y, width, height, fillStyle: this.fillStyle });
+      return originalRoundRect.call(this, x, y, width, height, radii);
     };
     (prototype as unknown as { clip: (...args: unknown[]) => void }).clip = function (...args: unknown[]) {
       (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText.push({ kind: 'clip' });
@@ -842,16 +895,19 @@ When('the user invokes the existing PNG floorplan export with the same Area, pla
 Then('the PNG contains the same grouped annotation text, ordering, omission count, normalized anchors, and contrast treatment', async function (this: ZoningWorld) {
   expect(this.downloadBytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
   const calls = await this.page!.evaluate(() => (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText);
-  const stroke = calls.find((call) => call.kind === 'stroke' && /W.*:3$/.test(String(call.text)));
   const fill = calls.find((call) => call.kind === 'fill' && /W.*:3$/.test(String(call.text)));
-  expect(stroke?.strokeStyle).toBe('rgba(15, 23, 42, 0.88)'); expect(stroke?.lineWidth).toBe(1.5); expect(fill?.fillStyle).toBe('#f8fafc');
-  const rasterX = Number(stroke?.x); const rasterY = Number(stroke?.y);
+  const background = calls.find((call) => call.kind === 'row-background' &&
+    Number(call.x) >= this.annotationBounds.x && Number(call.y) >= this.annotationBounds.y);
+  expect(fill?.fillStyle).toBe('#ffffff');
+  expect(fill?.font).toBe('600 12px Arial, sans-serif');
+  expect(background?.fillStyle).toBe('rgba(0, 0, 0, 0.55)');
+  const rasterX = Number(fill?.x); const rasterY = Number(fill?.y);
   expect(this.annotationAnchor).not.toBe(''); expect(this.annotationOmitted).toBeGreaterThanOrEqual(0);
   expect(this.annotationAccessibleText).toContain(this.wideGlyphName);
-  expect(rasterX).toBeCloseTo(this.annotationBounds.x + 5.5); expect(rasterY).toBeCloseTo(this.annotationBounds.y + 10.5);
+  expect(rasterX).toBeCloseTo(this.annotationBounds.x + 6); expect(rasterY).toBeCloseTo(this.annotationBounds.y + 9);
   const clipRect = calls.find((call) => call.kind === 'clip-rect' && Number(call.x) === this.annotationBounds.x);
   expect(clipRect).toMatchObject({ ...this.annotationBounds, kind: 'clip-rect' });
-  expect(calls.findIndex((call) => call === clipRect)).toBeLessThan(calls.findIndex((call) => call === stroke));
+  expect(calls.findIndex((call) => call === clipRect)).toBeLessThan(calls.findIndex((call) => call === fill));
   const overflowCalls = calls.filter((call) => /^\+\d+ more$/.test(String(call.text)) && call.kind === 'fill');
   expect(overflowCalls).toHaveLength(this.annotationOmitted > 0 ? 1 : 0);
   const separated = this.annotationBounds.x + this.annotationBounds.width <= this.productBounds.x || this.annotationBounds.x >= this.productBounds.x + this.productBounds.width || this.annotationBounds.y + this.annotationBounds.height <= this.productBounds.y || this.annotationBounds.y >= this.productBounds.y + this.productBounds.height;
@@ -876,7 +932,7 @@ Then('the PNG contains the same grouped annotation text, ordering, omission coun
 });
 Then('hidden Areas and zero or empty groups remain absent', async function (this: ZoningWorld) { const calls = await this.page!.evaluate(() => (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText); expect(calls.some((call) => String(call.text).includes('Extremely long parameter wording 0-1'))).toBe(false); });
 
-Given('the shared annotation model cannot be laid out or drawn completely', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await saveValues(this, [2]); await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); await this.page!.evaluate(() => { CanvasRenderingContext2D.prototype.strokeText = () => { throw new Error('Issue 89 forced annotation failure'); }; }); });
+Given('the shared annotation model cannot be laid out or drawn completely', async function (this: ZoningWorld) { await setupArea(this, 1, 1); await saveValues(this, [2]); await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`); await expect(this.page!.getByTestId('area-zoning-annotation')).toBeVisible(); await this.page!.evaluate(() => { const original = CanvasRenderingContext2D.prototype.fillText; CanvasRenderingContext2D.prototype.fillText = function (text, x, y, maxWidth) { if (text.includes(':')) throw new Error('Issue 89 forced annotation failure'); return maxWidth === undefined ? original.call(this, text, x, y) : original.call(this, text, x, y, maxWidth); }; }); });
 When('PNG export is attempted', async function (this: ZoningWorld) { this.exportDownloaded = false; this.page!.once('download', () => { this.exportDownloaded = true; }); await this.page!.getByTitle('Export floorplan image').click(); });
 Then('the existing export operation reports failure and triggers no download', async function (this: ZoningWorld) { await expect(this.page!.getByRole('alert')).toContainText(/export failed.*forced annotation failure/i); await this.page!.waitForTimeout(300); expect(this.exportDownloaded).toBe(false); });
 Then('it does not silently export an image missing zoning annotations', function (this: ZoningWorld) { expect(this.exportDownloaded).toBe(false); });
@@ -961,12 +1017,13 @@ Then("each copied value retains the source row's positive integer value and stab
   await this.page!.goto(`${this.baseUrl}/projects/${this.copiedProjectId}`, { waitUntil: 'domcontentloaded' });
   await expect(this.page!.getByTestId('area-zoning-annotation').first()).toBeVisible();
   const paintedRows = await paintedAnnotationRows(this);
-  const stableTypeDiscriminator = `#${this.itemTypeIds[0].toString(36)}`;
   const visibleFloorplanValue = this.copiedZoning.find((entry) => entry.value === 2);
   expect(visibleFloorplanValue).toBeDefined();
-  expect(paintedRows.some((row) =>
-    row.startsWith(stableTypeDiscriminator) && /Z.*:\s*2$/.test(row)
-  )).toBe(true);
+  expect(paintedRows.some((row) => /Z.*:\s*2$/.test(row))).toBe(true);
+  expect(paintedRows.every((row) => !/^#/u.test(row))).toBe(true);
+  await expect(this.page!.getByTestId('area-zoning-annotation').first()).toHaveAccessibleName(
+    new RegExp(`Product Type identifier ${this.itemTypeIds[0]}`),
+  );
 });
 
 When('the administrator creates a parameter with a valid name and order', async function (this: ZoningWorld) {

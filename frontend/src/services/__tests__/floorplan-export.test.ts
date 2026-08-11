@@ -289,22 +289,20 @@ describe('exportFloorplanImage', () => {
     expect(mockCtx.fillRect).toHaveBeenCalledWith(0, 0, 1000, 800);
   });
 
-  it('draws shared positive-only zoning annotations with dual contrast and no panel', async () => {
+  it('draws shared positive-only zoning annotations with the compact Area-name contrast treatment', async () => {
     const descriptor = layoutZoningAnnotations({
       areas: [mockArea],
       productBounds: [],
       imageBounds: { x: 0, y: 0, width: 1000, height: 800 },
     })[0];
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea]);
-    expect(descriptor.lines[0].displayText).toMatch(/^#1.*R.*:\s*3$/);
-    expect(mockCtx.strokeText).toHaveBeenCalledWith(descriptor.lines[0].displayText, expect.any(Number), expect.any(Number));
+    expect(descriptor.lines[0].displayText).toMatch(/^LGT.*R.*:\s*3$/);
     expect(mockCtx.fillText).toHaveBeenCalledWith(descriptor.lines[0].displayText, expect.any(Number), expect.any(Number));
     expect(mockCtx.fillText).not.toHaveBeenCalledWith(expect.stringContaining('Zero zones'), expect.anything(), expect.anything());
-    expect(mockCtx.strokeStyle).toBe(ZONING_ANNOTATION_STYLE.outline);
-    expect(mockCtx.lineWidth).toBe(ZONING_ANNOTATION_STYLE.outlineWidth);
-    expect(mockCtx.fillStyle).toBe('#f8fafc');
-    expect(mockCtx.strokeStyle).toBe('rgba(15, 23, 42, 0.88)');
-    expect(mockCtx.lineWidth).toBe(1.5);
+    expect(mockCtx.strokeText).not.toHaveBeenCalled();
+    expect(mockCtx.roundRect).toHaveBeenCalledWith(
+      expect.any(Number), expect.any(Number), expect.any(Number), expect.any(Number), ZONING_ANNOTATION_STYLE.radius,
+    );
   });
 
   it.each([1, 2, 8])('draws %i production-default 200x150 Area row(s) through the shared inside descriptor', async (rows) => {
@@ -336,15 +334,13 @@ describe('exportFloorplanImage', () => {
     expect(descriptor).toBeDefined();
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [productionArea]);
     for (const line of descriptor.lines) {
-      expect(mockCtx.strokeText).toHaveBeenCalledWith(line.displayText, expect.any(Number), expect.any(Number));
       expect(mockCtx.fillText).toHaveBeenCalledWith(line.displayText, expect.any(Number), expect.any(Number));
     }
-    if (rows === 8) expect(mockCtx.fillText).toHaveBeenCalledWith('+7 more', expect.any(Number), expect.any(Number));
-    expect(mockCtx.font).toBe('600 10px Arial, sans-serif');
-    expect(mockCtx.lineWidth).toBe(1.5);
+    if (rows === 8) expect(mockCtx.fillText).toHaveBeenCalledWith('+6 more', expect.any(Number), expect.any(Number));
+    expect(mockCtx.font).toBe('600 12px Arial, sans-serif');
   });
 
-  it('draws duplicate-abbreviation Product Type groups with distinct visible raster labels', async () => {
+  it('draws duplicate-abbreviation Product Type groups without generated numeric raster prefixes', async () => {
     const sharedPrefix = 'Shared Product Type '.repeat(4);
     const duplicateGroups: Area = {
       ...mockArea,
@@ -369,12 +365,10 @@ describe('exportFloorplanImage', () => {
       .map(([text]) => String(text))
       .filter((text) => /:\s*4$/.test(text));
     expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
-    expect(new Set(directRows).size).toBe(2);
-    expect(directRows.some((line) => line.startsWith('#28 '))).toBe(true);
-    expect(directRows.some((line) => line.startsWith('#29 '))).toBe(true);
+    expect(directRows.every((line) => !/^#/u.test(line))).toBe(true);
   });
 
-  it('draws distinct stable raster identifiers after colliding abbreviation truncation', async () => {
+  it('draws colliding abbreviations without generated numeric raster prefixes', async () => {
     const collidingGroups: Area = {
       ...mockArea,
       x: 100,
@@ -404,11 +398,7 @@ describe('exportFloorplanImage', () => {
       .map(([text]) => String(text))
       .filter((text) => /Z.*:\s*4$/.test(text));
     expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
-    expect(directRows).toEqual([
-      expect.stringMatching(/^#28(?: .+)?·?Z.*:\s*4$/u),
-      expect.stringMatching(/^#29(?: .+)?·?Z.*:\s*4$/u),
-    ]);
-    expect(new Set(directRows).size).toBe(2);
+    expect(directRows.every((line) => !/^#/u.test(line))).toBe(true);
   });
 
   it('clips Area-name canvas paint to the exact shared descriptor bounds', async () => {
@@ -439,7 +429,11 @@ describe('exportFloorplanImage', () => {
     const presentation = getAnnotationPresentation(descriptor, 1)!;
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea], undefined, undefined, [descriptor]);
     expect(descriptor.anchor).toBeTruthy();
-    expect(mockCtx.strokeText).toHaveBeenCalledWith(descriptor.lines[0].displayText, presentation.textX, presentation.firstBaselineY);
+    expect(mockCtx.fillText).toHaveBeenCalledWith(
+      descriptor.lines[0].displayText,
+      presentation.lines[0].textX,
+      presentation.lines[0].centerY,
+    );
     expect(mockCtx.rect).toHaveBeenCalledWith(
       presentation.clipBounds.x,
       presentation.clipBounds.y,
@@ -469,9 +463,9 @@ describe('exportFloorplanImage', () => {
       presentation.clipBounds.height,
     );
     expect(vi.mocked(mockCtx.clip).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(mockCtx.strokeText).mock.invocationCallOrder[0],
+      vi.mocked(mockCtx.fillText).mock.invocationCallOrder[0],
     );
-    expect(mockCtx.strokeText).toHaveBeenCalledWith(descriptor.lines[0].displayText, expect.any(Number), expect.any(Number));
+    expect(mockCtx.fillText).toHaveBeenCalledWith(descriptor.lines[0].displayText, expect.any(Number), expect.any(Number));
   });
 
   it('omits hidden Area annotations', async () => {
@@ -480,7 +474,9 @@ describe('exportFloorplanImage', () => {
   });
 
   it('fails closed before encoding or download when annotation drawing fails', async () => {
-    vi.mocked(mockCtx.strokeText).mockImplementation(() => { throw new Error('annotation draw failed'); });
+    vi.mocked(mockCtx.fillText).mockImplementation((text) => {
+      if (String(text).includes(':')) throw new Error('annotation draw failed');
+    });
     await expect(exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea])).rejects.toThrow('annotation draw failed');
     expect(mockCanvas.toDataURL).not.toHaveBeenCalled();
     expect(document.createElement).not.toHaveBeenCalledWith('a');

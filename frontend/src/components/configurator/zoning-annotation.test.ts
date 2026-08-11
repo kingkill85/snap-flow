@@ -5,6 +5,7 @@ import {
   getAreaNameLabelGeometry,
   getPlacementCollisionBounds,
   layoutZoningAnnotations,
+  AREA_NAME_LABEL_STYLE,
   ZONING_ANNOTATION_STYLE,
   type AnnotationRect,
 } from './zoning-annotation';
@@ -61,7 +62,7 @@ const ordinaryArea = (width: number, height: number, rows: number): Area => {
 };
 
 describe('zoning annotation layout', () => {
-  it('is deterministic, positive-only, group ordered, bounded and dual contrast', () => {
+  it('is deterministic, positive-only, group ordered, bounded and uses the Area-name visual language', () => {
     const input = { areas: [resizedArea(2, 650), resizedArea(1)], productBounds: [], imageBounds: { x: 0, y: 0, width: 1400, height: 600 } };
     const first = layoutZoningAnnotations(input);
     expect(layoutZoningAnnotations(input)).toEqual(first);
@@ -70,11 +71,13 @@ describe('zoning annotation layout', () => {
     expect(first[0].lines[0].fullText).toContain('Lighting');
     expect(first[0].lines[1].fullText).toContain('HVAC');
     expect(first[0].omitted).toBeGreaterThan(0);
-    expect(ZONING_ANNOTATION_STYLE.foreground).not.toBe(ZONING_ANNOTATION_STYLE.outline);
     expect(ZONING_ANNOTATION_STYLE).toMatchObject({
-      foreground: '#f8fafc',
-      outline: 'rgba(15, 23, 42, 0.88)',
-      outlineWidth: 1.5,
+      fontFamily: AREA_NAME_LABEL_STYLE.fontFamily,
+      fontSize: AREA_NAME_LABEL_STYLE.fontSize,
+      fontWeight: AREA_NAME_LABEL_STYLE.fontWeight,
+      foreground: AREA_NAME_LABEL_STYLE.foreground,
+      background: AREA_NAME_LABEL_STYLE.background,
+      radius: AREA_NAME_LABEL_STYLE.radius,
     });
   });
 
@@ -103,7 +106,7 @@ describe('zoning annotation layout', () => {
     });
 
     expect(descriptor).toBeDefined();
-    expect(descriptor.anchor).toMatch(/^bottom-/);
+    expect(descriptor.anchor).toBe('bottom-left');
     expect(descriptor.bounds.x).toBeGreaterThanOrEqual(160);
     expect(descriptor.bounds.y).toBeGreaterThanOrEqual(160);
     expect(descriptor.bounds.x + descriptor.bounds.width).toBeLessThanOrEqual(860);
@@ -121,14 +124,16 @@ describe('zoning annotation layout', () => {
     });
 
     expect(descriptor).toBeDefined();
-    expect(descriptor.anchor).toMatch(/^bottom-/);
+    expect(descriptor.anchor).toBe('bottom-left');
     expect(descriptor.bounds.x).toBeGreaterThanOrEqual(100);
-    expect(descriptor.bounds.y).toBeGreaterThanOrEqual(100 + 150 * 0.6);
+    const fitted = getAnnotationPresentation(descriptor, 0.859375);
+    expect(fitted).not.toBeNull();
+    expect(100 + 150 - (fitted!.bounds.y + fitted!.bounds.height)).toBeLessThanOrEqual(20);
     expect(descriptor.bounds.x + descriptor.bounds.width).toBeLessThanOrEqual(300);
     expect(descriptor.bounds.y + descriptor.bounds.height).toBeLessThanOrEqual(250);
-    expect(descriptor.lines).toHaveLength(rows === 8 ? 1 : rows);
-    expect(descriptor.omitted).toBe(rows === 8 ? 7 : 0);
-    expect(descriptor.minimumReadableScale).toBe(rows === 1 ? 0.5 : 0.75);
+    expect(descriptor.lines).toHaveLength(rows === 8 ? 2 : rows);
+    expect(descriptor.omitted).toBe(rows === 8 ? 6 : 0);
+    expect(descriptor.minimumReadableScale).toBe(0.75);
     for (const displayScale of [0.18, 0.25, 0.5, 0.859375, 1, 1.5]) {
       const presentation = getAnnotationPresentation(descriptor, displayScale);
       if (displayScale < descriptor.minimumReadableScale) {
@@ -139,7 +144,8 @@ describe('zoning annotation layout', () => {
       if (!presentation) continue;
       expect(presentation.fontSize * displayScale).toBeCloseTo(ZONING_ANNOTATION_STYLE.fontSize);
       expect(presentation.lineHeight * displayScale).toBeCloseTo(ZONING_ANNOTATION_STYLE.lineHeight);
-      expect(presentation.outlineWidth * displayScale).toBeCloseTo(ZONING_ANNOTATION_STYLE.outlineWidth);
+      expect(presentation.lines.every((line) => line.bounds.x === presentation.bounds.x)).toBe(true);
+      expect(presentation.lines.every((line) => line.bounds.width <= presentation.bounds.width)).toBe(true);
       expect(presentation.bounds.x).toBeGreaterThanOrEqual(descriptor.bounds.x);
       expect(presentation.bounds.y).toBeGreaterThanOrEqual(descriptor.bounds.y);
       expect(presentation.bounds.x + presentation.bounds.width).toBeLessThanOrEqual(
@@ -159,16 +165,12 @@ describe('zoning annotation layout', () => {
       imageBounds: { x: 0, y: 0, width: 1200, height: 800 },
     });
 
-    expect(layout(120, 90, 1)).toEqual([]);
-    expect(layout(120, 90, 2)).toEqual([]);
-    expect(layout(150, 110, 1)).toEqual([]);
-    expect(layout(150, 115, 1)).toHaveLength(1);
-    expect(getAnnotationPresentation(layout(150, 115, 1)[0], 0.859375)).toBeNull();
-    expect(getAnnotationPresentation(layout(150, 115, 1)[0], 1)).not.toBeNull();
-    expect(layout(170, 125, 2)).toEqual([]);
+    expect(layout(80, 60, 1)).toEqual([]);
+    expect(layout(80, 60, 2)).toEqual([]);
+    expect(layout(120, 90, 1)).toHaveLength(1);
+    expect(layout(120, 90, 2)).toHaveLength(1);
+    expect(layout(150, 110, 1)).toHaveLength(1);
     expect(layout(180, 130, 2)).toHaveLength(1);
-    expect(getAnnotationPresentation(layout(180, 130, 2)[0], 0.859375)).toBeNull();
-    expect(getAnnotationPresentation(layout(180, 130, 2)[0], 1)).not.toBeNull();
     expect(layout(180, 130, 2)).toEqual(layout(180, 130, 2));
   });
 
@@ -192,7 +194,10 @@ describe('zoning annotation layout', () => {
 
     expect(descriptor).toBeDefined();
     expect(descriptor.anchor).toMatch(/^(bottom|lower)-/);
-    expect(descriptor.bounds.y + descriptor.bounds.height).toBeLessThanOrEqual(250);
+    expect(descriptor.bounds.y + descriptor.bounds.height).toBeLessThanOrEqual(280);
+    if (descriptor.bounds.y + descriptor.bounds.height > 250) {
+      expect(descriptor.bounds.x + descriptor.bounds.width <= 290 || descriptor.bounds.x >= 320).toBe(true);
+    }
   });
 
   it('keeps the Product Type, parameter identity, and exact value in painted text', () => {
@@ -217,17 +222,18 @@ describe('zoning annotation layout', () => {
       expect.stringMatching(/I0X.*Zones 0.*4/),
       expect.stringMatching(/I1X.*Zones 1.*2/),
     ]);
+    expect(descriptor.lines.every((line) => !/^#\p{N}+/u.test(line.displayText))).toBe(true);
   });
 
   it('safely omits a constrained stored Area instead of placing its annotation outside', () => {
-    const persistedArea = resizedArea(11, 340, 120, 90, 1);
+    const persistedArea = resizedArea(11, 340, 80, 60, 1);
     persistedArea.y = 220;
     persistedArea.name = 'Existing Zigbee Area';
     persistedArea.vertices = [
       { id: 110, placement_id: 11, vertex_index: 0, x: 340, y: 220 },
-      { id: 111, placement_id: 11, vertex_index: 1, x: 460, y: 220 },
-      { id: 112, placement_id: 11, vertex_index: 2, x: 460, y: 310 },
-      { id: 113, placement_id: 11, vertex_index: 3, x: 340, y: 310 },
+      { id: 111, placement_id: 11, vertex_index: 1, x: 420, y: 220 },
+      { id: 112, placement_id: 11, vertex_index: 2, x: 420, y: 280 },
+      { id: 113, placement_id: 11, vertex_index: 3, x: 340, y: 280 },
     ];
     persistedArea.zoning_groups = [{
       item_type: { id: 1, name: 'Zigbee', abbreviation: 'ZIG', color: '#f00', sort_order: 0 },
@@ -276,7 +282,7 @@ describe('zoning annotation layout', () => {
     { label: 'distinct numeric suffixes colliding after truncation', abbreviations: ['ABCDEFGH1', 'ABCDEFGH2'], names: ['Common prefix Alpha', 'Common prefix Beta'] },
     { label: 'long common prefixes in a narrow budget', abbreviations: ['PREFIXAAA1', 'PREFIXAAA2'], names: ['Long common Product Type Alpha', 'Long common Product Type Beta'] },
     { label: 'Unicode and fallback glyph names', abbreviations: ['照明設備甲', '照明設備乙'], names: ['照明😀共有名甲', '照明😀共有名乙'] },
-  ])('keeps final directly painted group identifiers injective for $label', ({ abbreviations, names }) => {
+  ])('removes generated numeric prefixes while preserving accessible stable identity for $label', ({ abbreviations, names }) => {
     for (const width of [420, 500]) {
       const persistedArea = resizedArea(1, 0, width, 300, 2);
       persistedArea.zoning_groups = persistedArea.zoning_groups.map((group, index) => ({
@@ -299,13 +305,11 @@ describe('zoning annotation layout', () => {
       const painted = descriptor.lines.map((line) => line.displayText);
       expect(layoutZoningAnnotations(input)).toEqual([descriptor]);
       expect(painted).toHaveLength(2);
-      expect(new Set(painted).size).toBe(2);
-      expect(painted).toEqual([
-        expect.stringMatching(/^#28(?: .+)?·?Z.*:\s*4$/u),
-        expect.stringMatching(/^#29(?: .+)?·?Z.*:\s*4$/u),
-      ]);
+      expect(painted.every((line) => !/^#/u.test(line))).toBe(true);
       expect(descriptor.accessibleText).toContain(`${names[0]} — Zones: 4`);
       expect(descriptor.accessibleText).toContain(`${names[1]} — Zones: 4`);
+      expect(descriptor.accessibleText).toContain('Product Type identifier 80');
+      expect(descriptor.accessibleText).toContain('Product Type identifier 81');
     }
   });
 
@@ -395,8 +399,10 @@ describe('zoning annotation layout', () => {
     expect(quarter).not.toBeNull();
     if (!quarter) return;
     expect(quarter.effectiveScale).toBe(0.25);
-    expect(quarter.firstBaselineY + (descriptor.lines.length + (descriptor.omitted > 0 ? 1 : 0) - 1) * quarter.lineHeight + (2 + ZONING_ANNOTATION_STYLE.outlineWidth) / quarter.effectiveScale)
-      .toBeLessThanOrEqual(quarter.bounds.y + quarter.bounds.height);
+    expect(quarter.lines.every((line) =>
+      line.bounds.y >= quarter.bounds.y &&
+      line.bounds.y + line.bounds.height <= quarter.bounds.y + quarter.bounds.height
+    )).toBe(true);
   });
 
   it('contains max-length wide glyphs inside the canonical horizontal paint envelope', () => {
@@ -411,15 +417,17 @@ describe('zoning annotation layout', () => {
       areas: [wideArea], productBounds: [product], imageBounds: { x: 0, y: 0, width: 700, height: 500 },
     })[0];
     const quarter = getAnnotationPresentation(descriptor, 0.25);
+    const readable = getAnnotationPresentation(descriptor, descriptor.minimumReadableScale);
     const fitted = getAnnotationPresentation(descriptor, 0.18);
     expect(fitted).toBeNull();
-    expect(quarter).not.toBeNull();
-    if (!quarter) return;
+    expect(quarter).toBeNull();
+    expect(readable).not.toBeNull();
+    if (!readable) return;
     expect(descriptor.lines[0].fullText).toContain('W'.repeat(100));
-    expect(descriptor.lines[0].displayText).toMatch(/^#1 W+…·W+…:9999$/);
-    expect(quarter.clipBounds).toEqual(quarter.bounds);
-    expect(quarter.clipBounds.x + quarter.clipBounds.width).toBeLessThan(product.x);
-    expect(quarter.clipBounds.x + quarter.clipBounds.width).toBeLessThanOrEqual(700);
+    expect(descriptor.lines[0].displayText).toMatch(/^WWW·W+…:9999$/);
+    expect(readable.clipBounds).toEqual(readable.bounds);
+    expect(readable.clipBounds.x + readable.clipBounds.width).toBeLessThan(product.x);
+    expect(readable.clipBounds.x + readable.clipBounds.width).toBeLessThanOrEqual(700);
   });
 
   it('keeps every readable no-product line envelope inside the image and prior annotations', () => {

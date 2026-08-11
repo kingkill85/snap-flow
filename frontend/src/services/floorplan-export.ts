@@ -254,11 +254,7 @@ export function drawZoningAnnotation(
     if (!presentation) throw new Error('Zoning annotation is not readable at the export scale');
     ctx.font = `${ZONING_ANNOTATION_STYLE.fontWeight} ${presentation.fontSize}px ${ZONING_ANNOTATION_STYLE.fontFamily}`;
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = presentation.outlineWidth;
-    ctx.strokeStyle = ZONING_ANNOTATION_STYLE.outline;
-    ctx.fillStyle = ZONING_ANNOTATION_STYLE.foreground;
+    ctx.textBaseline = 'middle';
     ctx.beginPath();
     ctx.rect(
       presentation.clipBounds.x,
@@ -267,15 +263,13 @@ export function drawZoningAnnotation(
       presentation.clipBounds.height,
     );
     ctx.clip();
-    const drawLine = (text: string, index: number) => {
-      const x = presentation.textX;
-      const y = presentation.firstBaselineY + index * presentation.lineHeight;
-      ctx.strokeText(text, x, y);
-      ctx.fillText(text, x, y);
-    };
-    annotation.lines.forEach((line, index) => drawLine(line.displayText, index));
-    if (annotation.omitted > 0) {
-      drawLine(`+${annotation.omitted} more`, annotation.lines.length);
+    for (const line of presentation.lines) {
+      ctx.fillStyle = ZONING_ANNOTATION_STYLE.background;
+      ctx.beginPath();
+      ctx.roundRect(line.bounds.x, line.bounds.y, line.bounds.width, line.bounds.height, line.radius);
+      ctx.fill();
+      ctx.fillStyle = ZONING_ANNOTATION_STYLE.foreground;
+      ctx.fillText(line.text, line.textX, line.centerY);
     }
   } finally {
     ctx.restore();
