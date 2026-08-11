@@ -56,9 +56,9 @@ export const ZONING_ANNOTATION_STYLE = Object.freeze({
   maxRows: 6,
   padding: 4,
   collisionPadding: 5,
-  foreground: '#ffffff',
-  outline: '#111827',
-  outlineWidth: 3,
+  foreground: '#f8fafc',
+  outline: 'rgba(15, 23, 42, 0.88)',
+  outlineWidth: 1.5,
   canonicalMinScale: 0.25,
 });
 
@@ -103,6 +103,96 @@ const areaBounds = (area: Area): AnnotationRect | null => {
   const y = Math.min(...ys);
   return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
 };
+
+const containsRect = (outer: AnnotationRect, inner: AnnotationRect) =>
+  inner.x >= outer.x && inner.y >= outer.y &&
+  inner.x + inner.width <= outer.x + outer.width &&
+  inner.y + inner.height <= outer.y + outer.height;
+
+const intersectionRect = (left: AnnotationRect, right: AnnotationRect): AnnotationRect | null => {
+  const x = Math.max(left.x, right.x);
+  const y = Math.max(left.y, right.y);
+  const rightEdge = Math.min(left.x + left.width, right.x + right.width);
+  const bottomEdge = Math.min(left.y + left.height, right.y + right.height);
+  return rightEdge > x && bottomEdge > y
+    ? { x, y, width: rightEdge - x, height: bottomEdge - y }
+    : null;
+};
+
+const pointOnSegment = (
+  point: Readonly<{ x: number; y: number }>,
+  start: Readonly<{ x: number; y: number }>,
+  end: Readonly<{ x: number; y: number }>,
+) => {
+  const cross = (point.y - start.y) * (end.x - start.x) - (point.x - start.x) * (end.y - start.y);
+  if (Math.abs(cross) > 1e-7) return false;
+  return point.x >= Math.min(start.x, end.x) - 1e-7 && point.x <= Math.max(start.x, end.x) + 1e-7 &&
+    point.y >= Math.min(start.y, end.y) - 1e-7 && point.y <= Math.max(start.y, end.y) + 1e-7;
+};
+
+const pointInPolygon = (
+  point: Readonly<{ x: number; y: number }>,
+  vertices: readonly Readonly<{ x: number; y: number }>[],
+) => {
+  let inside = false;
+  for (let index = 0, previous = vertices.length - 1; index < vertices.length; previous = index++) {
+    const currentVertex = vertices[index];
+    const previousVertex = vertices[previous];
+    if (pointOnSegment(point, previousVertex, currentVertex)) return true;
+    if (
+      (currentVertex.y > point.y) !== (previousVertex.y > point.y) &&
+      point.x < (previousVertex.x - currentVertex.x) * (point.y - currentVertex.y) /
+        (previousVertex.y - currentVertex.y) + currentVertex.x
+    ) inside = !inside;
+  }
+  return inside;
+};
+
+const orientation = (
+  first: Readonly<{ x: number; y: number }>,
+  second: Readonly<{ x: number; y: number }>,
+  third: Readonly<{ x: number; y: number }>,
+) => (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (third.x - first.x);
+
+const properlyIntersects = (
+  firstStart: Readonly<{ x: number; y: number }>,
+  firstEnd: Readonly<{ x: number; y: number }>,
+  secondStart: Readonly<{ x: number; y: number }>,
+  secondEnd: Readonly<{ x: number; y: number }>,
+) => {
+  const firstSide = orientation(firstStart, firstEnd, secondStart);
+  const secondSide = orientation(firstStart, firstEnd, secondEnd);
+  const thirdSide = orientation(secondStart, secondEnd, firstStart);
+  const fourthSide = orientation(secondStart, secondEnd, firstEnd);
+  return firstSide * secondSide < -1e-7 && thirdSide * fourthSide < -1e-7;
+};
+
+function areaContainsRect(area: Area, rectangle: AnnotationRect) {
+  const vertices = [...area.vertices]
+    .sort((left, right) => left.vertex_index - right.vertex_index)
+    .map(({ x, y }) => ({ x, y }));
+  if (vertices.length < 3) return false;
+  const corners = [
+    { x: rectangle.x, y: rectangle.y },
+    { x: rectangle.x + rectangle.width, y: rectangle.y },
+    { x: rectangle.x + rectangle.width, y: rectangle.y + rectangle.height },
+    { x: rectangle.x, y: rectangle.y + rectangle.height },
+  ];
+  if (!corners.every((corner) => pointInPolygon(corner, vertices))) return false;
+  const rectangleEdges = corners.map((corner, index) => [corner, corners[(index + 1) % corners.length]] as const);
+  for (let index = 0; index < vertices.length; index++) {
+    const start = vertices[index];
+    const end = vertices[(index + 1) % vertices.length];
+    if (rectangleEdges.some(([rectStart, rectEnd]) => properlyIntersects(rectStart, rectEnd, start, end))) {
+      return false;
+    }
+    if (
+      start.x > rectangle.x && start.x < rectangle.x + rectangle.width &&
+      start.y > rectangle.y && start.y < rectangle.y + rectangle.height
+    ) return false;
+  }
+  return true;
+}
 
 function labelAnchor(area: Area) {
   const bounds = areaBounds(area);
@@ -365,13 +455,14 @@ export function layoutZoningAnnotations({
     const rows = positiveRows(area);
     const bounds = areaBounds(area);
     if (!rows.length || !bounds) continue;
-    // Reserve the full canonical presentation width independently of the
-    // Area's size. Small, ordinary stored Areas use adjacent candidates; if
-    // the descriptor inherited their width, valid parameter identity would
-    // be compacted away even when the surrounding floorplan has room.
-    const width = Math.min(scaled(ZONING_ANNOTATION_STYLE.maxWidth), imageBounds.width);
-    const centerX = bounds.x + bounds.width / 2;
-    const centerY = bounds.y + bounds.height / 2;
+    const availableRegion = intersectionRect(bounds, imageBounds);
+    if (!availableRegion) continue;
+    const gap = scaled(8);
+    const width = Math.min(
+      scaled(ZONING_ANNOTATION_STYLE.maxWidth),
+      Math.max(0, availableRegion.width - gap * 2),
+    );
+    if (width <= 0) continue;
 
     let descriptor: ZoningAnnotationDescriptor | null = null;
     for (
@@ -382,31 +473,32 @@ export function layoutZoningAnnotations({
       const omitted = rows.length - visibleCount;
       const renderedRows = visibleCount + (omitted > 0 ? 1 : 0);
       const height = renderedRows * scaled(ZONING_ANNOTATION_STYLE.lineHeight);
-      const gap = scaled(8);
+      const centerX = availableRegion.x + availableRegion.width / 2;
+      const centerY = availableRegion.y + availableRegion.height / 2;
+      const leftX = availableRegion.x + gap;
+      const rightX = availableRegion.x + availableRegion.width - width - gap;
+      const bottomY = availableRegion.y + availableRegion.height - height - gap;
+      const lowerY = availableRegion.y + availableRegion.height * 0.72 - height / 2;
       const candidates = [
-        { name: 'below-name', x: centerX - width / 2, y: bounds.y + bounds.height * 0.28 },
+        { name: 'bottom-center', x: centerX - width / 2, y: bottomY },
+        { name: 'bottom-left', x: leftX, y: bottomY },
+        { name: 'bottom-right', x: rightX, y: bottomY },
+        { name: 'lower-center', x: centerX - width / 2, y: lowerY },
+        { name: 'lower-left', x: leftX, y: lowerY },
+        { name: 'lower-right', x: rightX, y: lowerY },
         { name: 'center', x: centerX - width / 2, y: centerY - height / 2 },
-        { name: 'top-left', x: bounds.x + gap, y: bounds.y + gap },
-        { name: 'top-right', x: bounds.x + bounds.width - width - gap, y: bounds.y + gap },
-        { name: 'bottom-left', x: bounds.x + gap, y: bounds.y + bounds.height - height - gap },
-        { name: 'bottom-right', x: bounds.x + bounds.width - width - gap, y: bounds.y + bounds.height - height - gap },
-        // Normal user-created Areas can be smaller than the canonical
-        // low-zoom text envelope. Keep the same natural-coordinate model,
-        // but continue through deterministic adjacent candidates instead of
-        // silently dropping persisted values when every inside candidate
-        // intersects the Area's own name label.
-        { name: 'below-area', x: centerX - width / 2, y: bounds.y + bounds.height + gap },
-        { name: 'above-area', x: centerX - width / 2, y: bounds.y - height - gap },
-        { name: 'right-of-area', x: bounds.x + bounds.width + gap, y: centerY - height / 2 },
-        { name: 'left-of-area', x: bounds.x - width - gap, y: centerY - height / 2 },
+        { name: 'top-center', x: centerX - width / 2, y: availableRegion.y + gap },
+        { name: 'top-left', x: leftX, y: availableRegion.y + gap },
+        { name: 'top-right', x: rightX, y: availableRegion.y + gap },
       ];
       for (const candidate of candidates) {
         const candidateBounds = {
-          x: clamp(candidate.x, imageBounds.x, imageBounds.x + imageBounds.width - width),
-          y: clamp(candidate.y, imageBounds.y, imageBounds.y + imageBounds.height - height),
+          x: candidate.x,
+          y: candidate.y,
           width,
           height,
         };
+        if (!containsRect(imageBounds, candidateBounds) || !areaContainsRect(area, candidateBounds)) continue;
         const collisionPadding = scaled(ZONING_ANNOTATION_STYLE.collisionPadding);
         if (productBounds.some((product) => intersects(candidateBounds, product, collisionPadding))) continue;
         if (nameBounds.some((name) => intersects(candidateBounds, name, collisionPadding))) continue;

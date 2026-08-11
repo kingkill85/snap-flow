@@ -290,12 +290,21 @@ describe('exportFloorplanImage', () => {
   });
 
   it('draws shared positive-only zoning annotations with dual contrast and no panel', async () => {
+    const descriptor = layoutZoningAnnotations({
+      areas: [mockArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1000, height: 800 },
+    })[0];
     await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [mockArea]);
-    expect(mockCtx.strokeText).toHaveBeenCalledWith('#1 LGT · Relay zones: 3', expect.any(Number), expect.any(Number));
-    expect(mockCtx.fillText).toHaveBeenCalledWith('#1 LGT · Relay zones: 3', expect.any(Number), expect.any(Number));
+    expect(descriptor.lines[0].displayText).toMatch(/^#1.*R.*:\s*3$/);
+    expect(mockCtx.strokeText).toHaveBeenCalledWith(descriptor.lines[0].displayText, expect.any(Number), expect.any(Number));
+    expect(mockCtx.fillText).toHaveBeenCalledWith(descriptor.lines[0].displayText, expect.any(Number), expect.any(Number));
     expect(mockCtx.fillText).not.toHaveBeenCalledWith(expect.stringContaining('Zero zones'), expect.anything(), expect.anything());
     expect(mockCtx.strokeStyle).toBe(ZONING_ANNOTATION_STYLE.outline);
     expect(mockCtx.lineWidth).toBe(ZONING_ANNOTATION_STYLE.outlineWidth);
+    expect(mockCtx.fillStyle).toBe('#f8fafc');
+    expect(mockCtx.strokeStyle).toBe('rgba(15, 23, 42, 0.88)');
+    expect(mockCtx.lineWidth).toBe(1.5);
   });
 
   it('draws duplicate-abbreviation Product Type groups with distinct visible raster labels', async () => {

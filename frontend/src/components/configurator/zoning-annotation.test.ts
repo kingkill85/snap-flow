@@ -49,6 +49,45 @@ describe('zoning annotation layout', () => {
     expect(first[0].lines[1].fullText).toContain('HVAC');
     expect(first[0].omitted).toBeGreaterThan(0);
     expect(ZONING_ANNOTATION_STYLE.foreground).not.toBe(ZONING_ANNOTATION_STYLE.outline);
+    expect(ZONING_ANNOTATION_STYLE).toMatchObject({
+      foreground: '#f8fafc',
+      outline: 'rgba(15, 23, 42, 0.88)',
+      outlineWidth: 1.5,
+    });
+  });
+
+  it('prefers a contained lower-interior annotation for ordinary stored geometry', () => {
+    const persistedArea = resizedArea(11, 160, 700, 500, 1);
+    persistedArea.y = 160;
+    persistedArea.name = 'Existing Zigbee Area';
+    persistedArea.vertices = [
+      { id: 110, placement_id: 11, vertex_index: 0, x: 160, y: 160 },
+      { id: 111, placement_id: 11, vertex_index: 1, x: 860, y: 160 },
+      { id: 112, placement_id: 11, vertex_index: 2, x: 860, y: 660 },
+      { id: 113, placement_id: 11, vertex_index: 3, x: 160, y: 660 },
+    ];
+    persistedArea.zoning_groups = [{
+      item_type: { id: 1, name: 'Zigbee', abbreviation: 'ZIG', color: '#f00', sort_order: 0 },
+      parameters: [
+        { id: 1, name: 'test', sort_order: 0, value: 1 },
+        { id: 2, name: 'test2', sort_order: 1, value: 2 },
+      ],
+    }];
+
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    });
+
+    expect(descriptor).toBeDefined();
+    expect(descriptor.anchor).toMatch(/^bottom-/);
+    expect(descriptor.bounds.x).toBeGreaterThanOrEqual(160);
+    expect(descriptor.bounds.y).toBeGreaterThanOrEqual(160);
+    expect(descriptor.bounds.x + descriptor.bounds.width).toBeLessThanOrEqual(860);
+    expect(descriptor.bounds.y + descriptor.bounds.height).toBeLessThanOrEqual(660);
+    expect(descriptor.bounds.y).toBeGreaterThanOrEqual(160 + 500 * 0.6);
+    expect(overlaps(descriptor.bounds, getAreaNameLabelGeometry(persistedArea, 0.25)!.bounds)).toBe(false);
   });
 
   it('keeps the Product Type, parameter identity, and exact value in painted text', () => {
@@ -75,7 +114,7 @@ describe('zoning annotation layout', () => {
     ]);
   });
 
-  it('lays out persisted values for a normal small stored Area without covering its name', () => {
+  it('safely omits a constrained stored Area instead of placing its annotation outside', () => {
     const persistedArea = resizedArea(11, 340, 120, 90, 1);
     persistedArea.y = 220;
     persistedArea.name = 'Existing Zigbee Area';
@@ -93,18 +132,37 @@ describe('zoning annotation layout', () => {
       ],
     }];
 
-    const [descriptor] = layoutZoningAnnotations({
+    const descriptors = layoutZoningAnnotations({
       areas: [persistedArea],
       productBounds: [],
       imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
     });
 
+    expect(descriptors).toEqual([]);
+  });
+
+  it('rejects lower candidates that escape a concave Area before trying a safe interior anchor', () => {
+    const concaveArea = resizedArea(12, 0, 1000, 600, 1);
+    concaveArea.vertices = [
+      { id: 120, placement_id: 12, vertex_index: 0, x: 0, y: 0 },
+      { id: 121, placement_id: 12, vertex_index: 1, x: 1000, y: 0 },
+      { id: 122, placement_id: 12, vertex_index: 2, x: 1000, y: 600 },
+      { id: 123, placement_id: 12, vertex_index: 3, x: 650, y: 600 },
+      { id: 124, placement_id: 12, vertex_index: 4, x: 650, y: 400 },
+      { id: 125, placement_id: 12, vertex_index: 5, x: 350, y: 400 },
+      { id: 126, placement_id: 12, vertex_index: 6, x: 350, y: 600 },
+      { id: 127, placement_id: 12, vertex_index: 7, x: 0, y: 600 },
+    ];
+
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [concaveArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1000, height: 700 },
+    });
+
     expect(descriptor).toBeDefined();
-    expect(descriptor.lines.map((line) => line.displayText)).toEqual([
-      expect.stringMatching(/test\s*:\s*1$/),
-      expect.stringMatching(/test2\s*:\s*2$/),
-    ]);
-    expect(overlaps(descriptor.bounds, getAreaNameLabelGeometry(persistedArea, 0.25)!.bounds)).toBe(false);
+    expect(descriptor.anchor).not.toMatch(/^bottom-/);
+    expect(descriptor.bounds.y + descriptor.bounds.height).toBeLessThanOrEqual(400);
   });
 
   it.each([

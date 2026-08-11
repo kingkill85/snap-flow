@@ -42,6 +42,8 @@ describe('AreaPolygon zoning annotation', () => {
     const text = container.querySelector('[data-testid="area-zoning-annotation"] text')!;
     expect(text).toHaveAttribute('fill', ZONING_ANNOTATION_STYLE.foreground);
     expect(text).toHaveAttribute('stroke', ZONING_ANNOTATION_STYLE.outline);
+    expect(text).toHaveAttribute('stroke-width', String(ZONING_ANNOTATION_STYLE.outlineWidth / props.scale));
+    expect(text).toHaveAttribute('paint-order', 'stroke fill');
     const paintedRows = [...container.querySelectorAll('[data-testid="area-zoning-annotation"] text')]
       .map((row) => [...row.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent).join(''));
     expect(paintedRows.some((row) => /T.*Very.*: ?1/.test(row))).toBe(true);
