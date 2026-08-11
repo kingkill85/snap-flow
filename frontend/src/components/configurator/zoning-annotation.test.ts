@@ -163,6 +163,31 @@ describe('zoning annotation layout', () => {
     }
   });
 
+  it('preserves both short persisted rows before accepting a lower-density overflow fallback', () => {
+    const productionArea = ordinaryArea(200, 150, 2);
+    productionArea.name = 'Existing Zigbee Area';
+    productionArea.zoning_groups = [{
+      item_type: { id: 1, name: 'Zigbee', abbreviation: 'ZIG', color: '#f00', sort_order: 0 },
+      parameters: [
+        { id: 1, name: 'test', sort_order: 0, value: 1 },
+        { id: 2, name: 'test2', sort_order: 1, value: 2 },
+      ],
+    }];
+
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [productionArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1200, height: 800 },
+    });
+
+    expect(descriptor.lines.map((line) => line.displayText)).toEqual([
+      expect.stringMatching(/test\s*:\s*1$/u),
+      expect.stringMatching(/test2\s*:\s*2$/u),
+    ]);
+    expect(descriptor.omitted).toBe(0);
+    expect(descriptor.minimumReadableScale).toBe(0.75);
+  });
+
   it('uses deterministic size boundaries instead of one literal small-Area exception', () => {
     const layout = (width: number, height: number, rows: number) => layoutZoningAnnotations({
       areas: [ordinaryArea(width, height, rows)],

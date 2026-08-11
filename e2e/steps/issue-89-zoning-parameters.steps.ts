@@ -8,7 +8,7 @@ type ZoningValueEvidence = { areaId: number; areaName: string; parameterId: numb
 type Bounds = { x: number; y: number; width: number; height: number };
 type DirectTextPaint = { text: string; x: number; y: number; fill: string; font: string };
 type VisibleIdentityEvidence = { label: string; configuredNames: string[]; svgRows: string[]; repeatedSvgRows: string[]; rasterRows: string[]; svgPaints: DirectTextPaint[]; rasterPaints: DirectTextPaint[]; accessibleText: string; descriptor: { anchor: string; bounds: string; exportBounds: string; omitted: string } };
-type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; areaMutationCount: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[]; visibleIdentityEvidence: VisibleIdentityEvidence[]; existingPathSvgRows: string[]; existingPathRasterRows: string[]; existingPathAreaBounds: Bounds; existingPathInteractiveBounds: Bounds; existingPathAnchor: string; existingPathNameStyle: { fill: string | null; background: string | null; fontSize: number; fontWeight: string | null }; existingPathSvgStyle: { fill: string | null; background: string | null; backgroundCount: number; fontSize: number; fontWeight: string | null; lineHeight: number }; existingPathRasterStyle: { fill: string; background: string; backgroundCount: number; font: string }; readabilityAreaIds: number[]; readabilitySvgRows: string[]; readabilityRasterRows: string[] };
+type ZoningWorld = SnapFlowWorld & { token: string; itemTypeId: number; parameterId: number; itemTypeIds: number[]; parameterIds: number[]; projectId: number; projectGroupId: number; floorplanId: number; areaId: number; areaRevision: number; originalName: string; customerName: string; copiedProjectId: number; sourceZoning: ZoningValueEvidence[]; copiedZoning: ZoningValueEvidence[]; lastStatus: number; areaMutationCount: number; cssBounds: Array<{ annotations: Bounds[]; names: Bounds[]; image: Bounds; product: Bounds; label: string }>; productId: number; productBounds: Bounds; downloadBytes: Buffer; exportDownloaded: boolean; annotationBounds: Bounds; annotationAnchor: string; annotationOmitted: number; annotationAccessibleText: string; pngInteractiveRows: string[]; wideGlyphName: string; saveRevisions: number[]; duplicateRasterRows: string[]; visibleIdentityEvidence: VisibleIdentityEvidence[]; existingPathSvgRows: string[]; existingPathRasterRows: string[]; existingPathAreaBounds: Bounds; existingPathInteractiveBounds: Bounds; existingPathAnchor: string; existingPathNameStyle: { fill: string | null; background: string | null; fontSize: number; fontWeight: string | null }; existingPathSvgStyle: { fill: string | null; background: string | null; backgroundCount: number; fontSize: number; fontWeight: string | null; lineHeight: number }; existingPathRasterStyle: { fill: string; background: string; backgroundCount: number; font: string }; readabilityAreaIds: number[]; readabilitySvgRows: string[]; readabilityRasterRows: string[] };
 
 const WIDE_GLYPH_NAME = 'W'.repeat(100);
 
@@ -955,6 +955,9 @@ Given('the interactive floorplan shows positive zoning annotations for visible A
 });
 When('the user invokes the existing PNG floorplan export with the same Area, placement, and visibility state', async function (this: ZoningWorld) {
   const annotation = this.page!.getByTestId('area-zoning-annotation');
+  this.pngInteractiveRows = await paintedAnnotationRows(this);
+  expect(this.pngInteractiveRows).toHaveLength(1);
+  expect(this.pngInteractiveRows.every((row) => !/^#/u.test(row))).toBe(true);
   const serializedBounds = await annotation.getAttribute('data-export-bounds');
   if (!serializedBounds) throw new Error('Interactive annotation bounds unavailable');
   const [x, y, width, height] = serializedBounds.split(',').map(Number);
@@ -999,7 +1002,10 @@ When('the user invokes the existing PNG floorplan export with the same Area, pla
 Then('the PNG contains the same grouped annotation text, ordering, omission count, normalized anchors, and contrast treatment', async function (this: ZoningWorld) {
   expect(this.downloadBytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
   const calls = await this.page!.evaluate(() => (window as unknown as { issue89RasterText: Array<Record<string, unknown>> }).issue89RasterText);
-  const fill = calls.find((call) => call.kind === 'fill' && /W.*:3$/.test(String(call.text)));
+  const rasterRows = calls
+    .filter((call) => call.kind === 'fill' && this.pngInteractiveRows.includes(String(call.text)));
+  expect(rasterRows.map((call) => String(call.text))).toEqual(this.pngInteractiveRows);
+  const fill = rasterRows[0];
   const background = calls.find((call) => call.kind === 'row-background' &&
     Number(call.x) >= this.annotationBounds.x && Number(call.y) >= this.annotationBounds.y);
   expect(fill?.fillStyle).toBe('#ffffff');
