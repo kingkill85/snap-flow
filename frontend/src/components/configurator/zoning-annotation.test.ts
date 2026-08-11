@@ -14,6 +14,11 @@ const overlaps = (left: AnnotationRect, right: AnnotationRect) =>
   left.x < right.x + right.width && left.x + left.width > right.x &&
   left.y < right.y + right.height && left.y + left.height > right.y;
 
+const paintedVisibleKey = (value: string) => value
+  .normalize('NFKC')
+  .replace(/[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '')
+  .normalize('NFKC');
+
 const area = (id: number, x = 0, groups = 2): Area => ({
   id, floorplan_id: 1, x, y: 0, width: 220, height: 150, name: `Area ${id}`,
   color: '#fff', opacity: 0.2, revision: 1, device_count: 0, created_at: '', updated_at: '',
@@ -345,6 +350,168 @@ describe('zoning annotation layout', () => {
     expect(new Set(firstRowsByGroup)).toHaveLength(3);
     expect(firstRowsByGroup.every((line) => !/^#/u.test(line))).toBe(true);
     expect(descriptor.omitted).toBeGreaterThan(0);
+  });
+
+  it.each([300, 420, 500, 600])(
+    'keeps field-boundary collisions injective after final compaction at width %i',
+    (width) => {
+      const persistedArea = resizedArea(1, 0, width, 300, 2);
+      persistedArea.zoning_groups = [
+        { name: 'Long configured Product Type Alpha', abbreviation: 'A', parameter: 'B · C' },
+        { name: 'Long configured Product Type Beta', abbreviation: 'A · B', parameter: 'C' },
+      ].map(({ name, abbreviation, parameter }, index) => ({
+        item_type: { id: 80 + index, name, abbreviation, color: '#f00', sort_order: index },
+        parameters: [{ id: index + 1, name: parameter, sort_order: 0, value: 4 }],
+      }));
+
+      const input = {
+        areas: [persistedArea],
+        productBounds: [],
+        imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+      };
+      const [descriptor] = layoutZoningAnnotations(input);
+      const painted = descriptor.lines.map((line) => line.displayText);
+
+      expect(painted).toHaveLength(2);
+      expect(new Set(painted.map(paintedVisibleKey))).toHaveLength(2);
+      expect(painted.every((line) => !line.includes('#'))).toBe(true);
+      expect(layoutZoningAnnotations(input)).toEqual([descriptor]);
+    },
+  );
+
+  it.each([
+    { label: 'zero-width differences', names: ['Shared\u200B', 'Shared\u200C'], abbreviations: ['X', 'X'] },
+    { label: 'bidi controls', names: ['Shared\u202A', 'Shared\u202B'], abbreviations: ['X', 'X'] },
+    { label: 'variation-only differences', names: ['Shared ✈\uFE0E', 'Shared ✈\uFE0F'], abbreviations: ['X', 'X'] },
+    { label: 'NFC and NFD equivalents', names: ['Café', 'Cafe\u0301'], abbreviations: ['X', 'X'] },
+    { label: 'standalone combining marks', names: ['\u0301', '\u0300'], abbreviations: ['X', 'X'] },
+  ])('does not treat $label as final painted uniqueness', ({ names, abbreviations }) => {
+    const persistedArea = resizedArea(1, 0, 420, 300, 2);
+    persistedArea.zoning_groups = names.map((name, index) => ({
+      item_type: { id: 80 + index, name, abbreviation: abbreviations[index], color: '#f00', sort_order: index },
+      parameters: [{ id: index + 1, name: 'Zones', sort_order: 0, value: 4 }],
+    }));
+
+    const input = {
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    };
+    const [descriptor] = layoutZoningAnnotations(input);
+    const painted = descriptor.lines.map((line) => line.displayText);
+
+    expect(painted).toHaveLength(2);
+    expect(new Set(painted.map(paintedVisibleKey))).toHaveLength(2);
+    expect(painted.every((line) => !line.includes('#'))).toBe(true);
+    expect(descriptor.accessibleText).toContain(names[0]);
+    expect(descriptor.accessibleText).toContain(names[1]);
+  });
+
+  it.each([
+    {
+      label: 'backslash and middle-dot boundaries',
+      abbreviations: ['A\\B', 'A'],
+      parameters: ['C', '\\B · C'],
+    },
+    {
+      label: 'colon boundaries',
+      abbreviations: ['A:B', 'A'],
+      parameters: ['C', 'B:C'],
+    },
+    {
+      label: 'literal separator text on both fields',
+      abbreviations: ['A · B', 'A'],
+      parameters: ['C', 'B · C'],
+    },
+  ])('uses an unambiguous readable field grammar for $label', ({ abbreviations, parameters }) => {
+    const persistedArea = resizedArea(1, 0, 500, 300, 2);
+    persistedArea.zoning_groups = abbreviations.map((abbreviation, index) => ({
+      item_type: {
+        id: 80 + index,
+        name: `Configured Product Type ${index ? 'Beta' : 'Alpha'}`,
+        abbreviation,
+        color: '#f00',
+        sort_order: index,
+      },
+      parameters: [{ id: index + 1, name: parameters[index], sort_order: 0, value: 4 }],
+    }));
+    const input = {
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    };
+    const [descriptor] = layoutZoningAnnotations(input);
+    const painted = descriptor.lines.map((line) => line.displayText);
+
+    expect(painted).toHaveLength(2);
+    expect(new Set(painted.map(paintedVisibleKey))).toHaveLength(2);
+    expect(painted.some((line) => line.includes('\\'))).toBe(true);
+    expect(painted.every((line) => !line.includes('#'))).toBe(true);
+    expect(layoutZoningAnnotations(input)).toEqual([descriptor]);
+  });
+
+  it.each([
+    { label: 'visible combining marks', names: ['Shared a\u0301', 'Shared a\u0300'] },
+    { label: 'emoji modifiers', names: ['Shared 👍🏻', 'Shared 👍🏿'] },
+    { label: 'regional flags', names: ['Shared 🇨🇦', 'Shared 🇯🇵'] },
+    { label: 'emoji ZWJ sequences', names: ['Shared 👩🏽‍💻', 'Shared 👨🏽‍💻'] },
+  ])('retains visibly meaningful grapheme-cluster distinctions for $label', ({ names }) => {
+    const persistedArea = resizedArea(1, 0, 420, 300, 2);
+    persistedArea.zoning_groups = names.map((name, index) => ({
+      item_type: { id: 80 + index, name, abbreviation: 'X', color: '#f00', sort_order: index },
+      parameters: [{ id: index + 1, name: 'Zones', sort_order: 0, value: 4 }],
+    }));
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    });
+    const painted = descriptor.lines.map((line) => line.displayText);
+
+    expect(new Set(painted.map(paintedVisibleKey))).toHaveLength(2);
+    expect(painted.every((line) => !line.includes('#'))).toBe(true);
+    expect(descriptor.accessibleText).toContain(names[0]);
+    expect(descriptor.accessibleText).toContain(names[1]);
+  });
+
+  it('adds no alphabetic fallback when ordinary final rows are already visibly distinct', () => {
+    const persistedArea = resizedArea(1, 0, 500, 300, 2);
+    persistedArea.zoning_groups = ['LGT', 'HVAC'].map((abbreviation, index) => ({
+      item_type: { id: 80 + index, name: abbreviation, abbreviation, color: '#f00', sort_order: index },
+      parameters: [{ id: index + 1, name: 'Zones', sort_order: 0, value: 4 }],
+    }));
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    });
+
+    expect(descriptor.lines.map((line) => line.displayText)).toEqual([
+      expect.stringMatching(/^LGT/),
+      expect.stringMatching(/^HVAC/),
+    ]);
+    expect(descriptor.lines.every((line) => !/ \([A-Z]+\)/u.test(line.displayText))).toBe(true);
+  });
+
+  it('suffixes every represented saturated group and counts omitted colliders deterministically', () => {
+    const persistedArea = resizedArea(1, 0, 600, 400, 8);
+    persistedArea.zoning_groups = Array.from({ length: 8 }, (_, index) => ({
+      item_type: { id: 80 + index, name: 'Shared', abbreviation: 'X', color: '#f00', sort_order: index },
+      parameters: [{ id: index + 1, name: 'Zones', sort_order: 0, value: 4 }],
+    }));
+    const input = {
+      areas: [persistedArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1024, height: 1024 },
+    };
+    const [descriptor] = layoutZoningAnnotations(input);
+    const painted = descriptor.lines.map((line) => line.displayText);
+
+    expect(painted).toHaveLength(6);
+    expect(painted.map((line) => line.match(/ \(([A-Z]+)\)/u)?.[1])).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
+    expect(new Set(painted.map(paintedVisibleKey))).toHaveLength(6);
+    expect(descriptor.omitted).toBe(2);
+    expect(layoutZoningAnnotations(input)).toEqual([descriptor]);
   });
 
   it('reserves generated alphabetic fallbacks against existing human labels', () => {

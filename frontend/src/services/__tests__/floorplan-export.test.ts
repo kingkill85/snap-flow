@@ -7,6 +7,11 @@ import type { Area } from '../area';
 import { itemService } from '../item';
 import { getAnnotationPresentation, getAreaNameLabelGeometry, layoutZoningAnnotations, ZONING_ANNOTATION_STYLE } from '@/components/configurator/zoning-annotation';
 
+const paintedVisibleKey = (value: string) => value
+  .normalize('NFKC')
+  .replace(/[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '')
+  .normalize('NFKC');
+
 // Mock the item service
 vi.mock('../item', () => ({
   itemService: {
@@ -364,7 +369,7 @@ describe('exportFloorplanImage', () => {
       .map(([text]) => String(text))
       .filter((text) => /:\s*4$/.test(text));
     expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
-    expect(new Set(directRows)).toHaveLength(2);
+    expect(new Set(directRows.map(paintedVisibleKey))).toHaveLength(2);
     expect(directRows.every((line) => !/^#/u.test(line))).toBe(true);
     expect(directRows.every((line) => !/80|81/u.test(line))).toBe(true);
   });
@@ -399,8 +404,65 @@ describe('exportFloorplanImage', () => {
       .map(([text]) => String(text))
       .filter((text) => /Z.*:\s*4$/.test(text));
     expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
-    expect(new Set(directRows)).toHaveLength(2);
+    expect(new Set(directRows.map(paintedVisibleKey))).toHaveLength(2);
     expect(directRows.every((line) => !/^#/u.test(line))).toBe(true);
+  });
+
+  it.each([
+    {
+      label: 'field delimiters',
+      names: ['Long configured Product Type Alpha', 'Long configured Product Type Beta'],
+      abbreviations: ['A', 'A · B'],
+      parameters: ['B · C', 'C'],
+    },
+    {
+      label: 'default-ignorable Unicode',
+      names: ['Shared\u200B', 'Shared\u200C'],
+      abbreviations: ['X', 'X'],
+      parameters: ['Zones', 'Zones'],
+    },
+  ])('keeps $label injective in direct PNG canvas paint', async ({ names, abbreviations, parameters }) => {
+    const collidingGroups: Area = {
+      ...mockArea,
+      x: 100,
+      y: 100,
+      width: 600,
+      height: 400,
+      vertices: [
+        { id: 81, placement_id: 10, vertex_index: 0, x: 100, y: 100 },
+        { id: 82, placement_id: 10, vertex_index: 1, x: 700, y: 100 },
+        { id: 83, placement_id: 10, vertex_index: 2, x: 700, y: 500 },
+        { id: 84, placement_id: 10, vertex_index: 3, x: 100, y: 500 },
+      ],
+      zoning_groups: names.map((name, index) => ({
+        item_type: { id: 80 + index, name, abbreviation: abbreviations[index], color: '#f00', sort_order: index },
+        parameters: [{ id: 80 + index, name: parameters[index], sort_order: 0, value: 4 }],
+      })),
+    };
+    const descriptor = layoutZoningAnnotations({
+      areas: [collidingGroups],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1000, height: 800 },
+    })[0];
+
+    await exportFloorplanImage(
+      mockFloorplan,
+      [],
+      [],
+      {},
+      undefined,
+      [collidingGroups],
+      undefined,
+      undefined,
+      [descriptor],
+    );
+    const directRows = vi.mocked(mockCtx.fillText).mock.calls
+      .map(([text]) => String(text))
+      .filter((text) => /:\s*4$/.test(text));
+
+    expect(directRows).toEqual(descriptor.lines.map((line) => line.displayText));
+    expect(new Set(directRows.map(paintedVisibleKey))).toHaveLength(2);
+    expect(directRows.every((line) => !line.includes('#'))).toBe(true);
   });
 
   it('clips Area-name canvas paint to the exact shared descriptor bounds', async () => {

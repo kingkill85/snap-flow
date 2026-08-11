@@ -5,6 +5,10 @@ import type { Area } from '@/services/area';
 import { AREA_NAME_LABEL_STYLE, layoutZoningAnnotations } from './zoning-annotation';
 
 const props = { isSelected: false, scale: 2, onSelect: vi.fn(), onMove: vi.fn(), onVertexMove: vi.fn(), onVerticesReplace: vi.fn(), onVertexAdd: vi.fn(), onVertexDelete: vi.fn(), onVerticesCommit: vi.fn() };
+const paintedVisibleKey = (value: string) => value
+  .normalize('NFKC')
+  .replace(/[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '')
+  .normalize('NFKC');
 const base: Area = { id: 1, floorplan_id: 1, x: 0, y: 0, width: 600, height: 400, name: 'Room', color: '#0000ff', opacity: .2, revision: 1, device_count: 0, created_at: '', updated_at: '', vertices: [
   { id: 1, placement_id: 1, vertex_index: 0, x: 0, y: 0 }, { id: 2, placement_id: 1, vertex_index: 1, x: 600, y: 0 }, { id: 3, placement_id: 1, vertex_index: 2, x: 600, y: 400 }, { id: 4, placement_id: 1, vertex_index: 3, x: 0, y: 400 },
 ], zoning_groups: [] };
@@ -50,7 +54,10 @@ describe('AreaPolygon zoning annotation', () => {
     }
     const paintedRows = [...container.querySelectorAll('[data-testid="area-zoning-annotation"] text')]
       .map((row) => [...row.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent).join(''));
-    expect(paintedRows.some((row) => /T.*Very.*: ?1/.test(row))).toBe(true);
+    const lightingRow = annotation.lines.find((line) => line.productTypeId === 1 && line.fullText.endsWith(': 1'));
+    expect(lightingRow).toBeDefined();
+    expect(lightingRow!.displayText).toMatch(/LGT.*Ver.*:\s?1/);
+    expect(paintedRows).toContain(lightingRow!.displayText);
   });
   it.each([
     { abbreviations: ['X', 'X'], names: ['Shared Product Type Alpha', 'Shared Product Type Beta'] },
@@ -82,7 +89,7 @@ describe('AreaPolygon zoning annotation', () => {
         .map((node) => node.textContent ?? '')
         .join(''));
     expect(directlyPainted).toEqual(annotation.lines.map((line) => line.displayText));
-    expect(new Set(directlyPainted)).toHaveLength(2);
+    expect(new Set(directlyPainted.map(paintedVisibleKey))).toHaveLength(2);
     expect(directlyPainted.every((row) => !/^#/u.test(row))).toBe(true);
     expect(directlyPainted.every((row) => !/80|81/u.test(row))).toBe(true);
     const fullText = [...container.querySelectorAll('[data-testid="area-zoning-annotation"] title')]
@@ -92,6 +99,45 @@ describe('AreaPolygon zoning annotation', () => {
     expect(fullText).toContain(`${names[1]} — Zones: 4`);
     expect(fullText).toContain('Product Type identifier 80');
     expect(fullText).toContain('Product Type identifier 81');
+  });
+  it.each([
+    {
+      label: 'field delimiters',
+      names: ['Long configured Product Type Alpha', 'Long configured Product Type Beta'],
+      abbreviations: ['A', 'A · B'],
+      parameters: ['B · C', 'C'],
+    },
+    {
+      label: 'default-ignorable Unicode',
+      names: ['Shared\u200B', 'Shared\u200C'],
+      abbreviations: ['X', 'X'],
+      parameters: ['Zones', 'Zones'],
+    },
+  ])('keeps $label injective in direct SVG paint', ({ names, abbreviations, parameters }) => {
+    const collidingArea: Area = {
+      ...base,
+      zoning_groups: names.map((name, index) => ({
+        item_type: { id: 80 + index, name, abbreviation: abbreviations[index], color: '#f00', sort_order: index },
+        parameters: [{ id: 80 + index, name: parameters[index], sort_order: 0, value: 4 }],
+      })),
+    };
+    const annotation = layoutZoningAnnotations({
+      areas: [collidingArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1000, height: 800 },
+    })[0];
+    const { container } = render(
+      <svg><AreaPolygon {...props} area={collidingArea} zoningAnnotation={annotation} /></svg>,
+    );
+    const directlyPainted = [...container.querySelectorAll('[data-testid="area-zoning-annotation"] text')]
+      .map((row) => [...row.childNodes]
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent ?? '')
+        .join(''));
+
+    expect(directlyPainted).toEqual(annotation.lines.map((line) => line.displayText));
+    expect(new Set(directlyPainted.map(paintedVisibleKey))).toHaveLength(2);
+    expect(directlyPainted.every((row) => !row.includes('#'))).toBe(true);
   });
   it('directly paints the shared descriptor inside production-default Area geometry', () => {
     const productionArea: Area = {

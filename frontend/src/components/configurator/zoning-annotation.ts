@@ -1,4 +1,4 @@
-import type { Area, AreaZoningGroup } from '@/services/area';
+import type { Area } from '@/services/area';
 import type { Placement } from '@/services/placement';
 
 export interface AnnotationRect {
@@ -96,11 +96,18 @@ interface LayoutInput {
 interface PositiveAnnotationRow {
   fullText: string;
   accessibleText: string;
-  useFullText: boolean;
   productTypeId: number;
-  productTypeLabel: string;
+  productTypeNameVisible: string;
+  productTypeNameKey: string;
+  productTypeAbbreviationVisible: string;
+  productTypeAbbreviationKey: string;
   parameterName: string;
+  parameterTokens: readonly string[];
   value: number;
+}
+
+interface ProductTypeDisplayLabel {
+  tokens: readonly string[];
 }
 
 const PRODUCT_TYPE_LABEL_MAX_WIDTH = 58;
@@ -323,7 +330,11 @@ export function getAnnotationPresentation(
   // size, so omit instead of shrinking or escaping the accepted geometry.
   if (requestedScale + 1e-7 < minimumReadableScale) return null;
   const scale = requestedScale;
-  const desiredWidth = ZONING_ANNOTATION_STYLE.maxWidth / scale;
+  const stableCssWidth = Math.min(
+    ZONING_ANNOTATION_STYLE.maxWidth,
+    annotation.bounds.width * minimumReadableScale,
+  );
+  const desiredWidth = stableCssWidth / scale;
   const renderedRows = annotation.lines.length + (annotation.omitted > 0 ? 1 : 0);
   const desiredHeight = annotationBlockHeight(renderedRows, scale);
   const width = Math.min(annotation.bounds.width, desiredWidth);
@@ -376,69 +387,124 @@ const annotationBlockHeight = (rowCount: number, scale: number) =>
       ZONING_ANNOTATION_STYLE.fontSize + ZONING_ANNOTATION_STYLE.paddingY * 2) / scale
     : 0;
 
-const conservativeGlyphRatio = (glyph: string) => {
-  if (/\s/u.test(glyph)) return 0.35;
+const GRAPHEME_SEGMENTER = new Intl.Segmenter('und', { granularity: 'grapheme' });
+const FIELD_ESCAPE = '\\';
+
+const graphemes = (value: string) => [...GRAPHEME_SEGMENTER.segment(value)].map(({ segment }) => segment);
+
+const isEmojiCluster = (value: string) => /\p{Extended_Pictographic}/u.test(value);
+
+function sanitizeGraphemeForPaint(value: string) {
+  const normalized = value.normalize('NFKC').replace(/\p{Cc}/gu, '');
+  const withoutFormatting = isEmojiCluster(normalized)
+    ? normalized.replace(/\p{Cf}/gu, (character) => character === '\u200D' ? character : '')
+    : normalized.replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '');
+  const visibleBase = withoutFormatting
+    .replace(/\p{Default_Ignorable_Code_Point}/gu, '')
+    .replace(/\p{M}/gu, '');
+  return visibleBase ? withoutFormatting : '';
+}
+
+function sanitizeVisibleText(value: string) {
+  return graphemes(value.normalize('NFKC'))
+    .map(sanitizeGraphemeForPaint)
+    .join('')
+    .trim()
+    .replace(/\s+/gu, ' ');
+}
+
+// The final SVG/canvas comparison domain: formatting controls,
+// default-ignorables, variation-only differences, and canonical-equivalent
+// forms never establish a visible identity.
+const generatedVisibleTextKey = (value: string) => value
+  .normalize('NFKC')
+  .replace(/[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '')
+  .normalize('NFKC');
+
+const conservativeGlyphRatio = (grapheme: string) => {
+  if (/^\s+$/u.test(grapheme)) return 0.35;
+  if (isEmojiCluster(grapheme) || /\p{Regional_Indicator}/u.test(grapheme)) return 1;
+  const glyph = grapheme
+    .replace(/[\p{M}\p{Default_Ignorable_Code_Point}]/gu, '')
+    .charAt(0);
+  if (!glyph) return 0;
   if (/[MW]/u.test(glyph)) return 1;
   if (/[mw]/u.test(glyph)) return 0.9;
   if (/[A-Z]/u.test(glyph)) return 0.76;
   if (/[0-9]/u.test(glyph)) return 0.64;
-  if (/[.,:;!'|ilI\-·/]/u.test(glyph)) return 0.42;
+  if (/[.,:;!'|ilI\-·/()]/u.test(glyph)) return 0.42;
   if ((glyph.codePointAt(0) ?? 128) <= 127) return 0.66;
   return 1;
 };
 
-const conservativeTextWidth = (value: string, fontSize: number = ZONING_ANNOTATION_STYLE.fontSize) => Array.from(value).reduce(
-  (width, glyph) => width + conservativeGlyphRatio(glyph) * fontSize,
-  0,
-);
+const conservativeTextWidth = (value: string, fontSize: number = ZONING_ANNOTATION_STYLE.fontSize) =>
+  Array.from(value).reduce((width, glyph) => width + conservativeGlyphRatio(glyph) * fontSize, 0);
+
+function cumulativeTokenWidths(
+  tokens: readonly string[],
+  fontSize: number = ZONING_ANNOTATION_STYLE.fontSize,
+) {
+  const widths = [0];
+  for (const token of tokens) widths.push(widths[widths.length - 1] + conservativeTextWidth(token, fontSize));
+  return widths;
+}
+
+function compactTokensToWidth(
+  tokens: readonly string[],
+  width: number,
+  minimumVisibleTokens = 0,
+  mode: 'middle' | 'end' = 'middle',
+) {
+  const complete = tokens.join('');
+  const prefixWidths = cumulativeTokenWidths(tokens);
+  if (prefixWidths[prefixWidths.length - 1] <= width) return complete;
+  const ellipsis = '…';
+  const ellipsisWidth = conservativeTextWidth(ellipsis);
+  if (ellipsisWidth > width) return '';
+  for (let retained = tokens.length - 1; retained >= Math.max(1, minimumVisibleTokens); retained--) {
+    const leftCount = mode === 'end' ? retained : Math.ceil(retained / 2);
+    const rightCount = mode === 'end' ? 0 : retained - leftCount;
+    const candidateWidth = prefixWidths[leftCount] + ellipsisWidth +
+      (rightCount ? prefixWidths[tokens.length] - prefixWidths[tokens.length - rightCount] : 0);
+    if (candidateWidth > width) continue;
+    const candidate = `${tokens.slice(0, leftCount).join('')}${ellipsis}${
+      rightCount ? tokens.slice(tokens.length - rightCount).join('') : ''
+    }`;
+    return candidate;
+  }
+  return minimumVisibleTokens === 0 ? ellipsis : '';
+}
 
 function ellipsizeToWidth(value: string, width: number, fontSize: number = ZONING_ANNOTATION_STYLE.fontSize) {
-  if (conservativeTextWidth(value, fontSize) <= width) return value;
+  const normalized = sanitizeVisibleText(value);
+  const tokens = graphemes(normalized);
+  if (fontSize === ZONING_ANNOTATION_STYLE.fontSize) return compactTokensToWidth(tokens, width, 0, 'end');
+  if (conservativeTextWidth(normalized, fontSize) <= width) return normalized;
   const ellipsis = '…';
   const ellipsisWidth = conservativeTextWidth(ellipsis, fontSize);
-  if (width < ellipsisWidth) return '';
-  let result = '';
-  let used = 0;
-  for (const glyph of Array.from(value)) {
-    const glyphWidth = conservativeTextWidth(glyph, fontSize);
-    if (used + glyphWidth + ellipsisWidth > width) break;
-    result += glyph;
-    used += glyphWidth;
+  if (ellipsisWidth > width) return '';
+  const prefixWidths = cumulativeTokenWidths(tokens, fontSize);
+  for (let retained = tokens.length - 1; retained >= 1; retained--) {
+    const leftCount = retained;
+    const rightCount = 0;
+    const candidateWidth = prefixWidths[leftCount] + ellipsisWidth +
+      (rightCount ? prefixWidths[tokens.length] - prefixWidths[tokens.length - rightCount] : 0);
+    if (candidateWidth > width) continue;
+    const candidate = `${tokens.slice(0, leftCount).join('')}${ellipsis}${
+      rightCount ? tokens.slice(tokens.length - rightCount).join('') : ''
+    }`;
+    return candidate;
   }
-  return result ? `${result}${ellipsis}` : ellipsis;
+  return ellipsis;
 }
 
-const normalizedVisibleLabel = (value: string) => value.normalize('NFKC').trim().replace(/\s+/gu, ' ');
-
-function uniqueWord(source: string, peers: readonly string[], width: number) {
-  const peerWords = peers.map((peer) => new Set(peer.match(/[\p{L}\p{N}]+/gu) ?? []));
-  const words = source.match(/[\p{L}\p{N}]+/gu) ?? [];
-  return [...words].reverse().find((word) =>
-    conservativeTextWidth(word) <= width && peerWords.every((candidateWords) => !candidateWords.has(word))
+function escapedFieldTokens(value: string, fallback: string) {
+  const visible = sanitizeVisibleText(value) || fallback;
+  return graphemes(visible).map((grapheme) =>
+    grapheme === FIELD_ESCAPE || grapheme === '·' || grapheme === ':'
+      ? `${FIELD_ESCAPE}${grapheme}`
+      : grapheme
   );
-}
-
-function uniqueFragment(source: string, peers: readonly string[], width: number) {
-  const glyphs = Array.from(source);
-  for (let length = 1; length <= glyphs.length; length++) {
-    for (let start = glyphs.length - length; start >= 0; start--) {
-      const fragment = glyphs.slice(start, start + length).join('');
-      if (conservativeTextWidth(fragment) > width || peers.some((peer) => peer.includes(fragment))) continue;
-      const prefix = glyphs.slice(0, Math.min(2, start)).join('');
-      const contextual = prefix ? `${prefix}…${fragment}` : `${fragment}${start + length < glyphs.length ? '…' : ''}`;
-      return conservativeTextWidth(contextual) <= width ? contextual : fragment;
-    }
-  }
-  return null;
-}
-
-function compactDistinctLabel(sourceValue: string, peerValues: readonly string[], width: number) {
-  const source = normalizedVisibleLabel(sourceValue);
-  const peers = peerValues.map(normalizedVisibleLabel);
-  if (conservativeTextWidth(source) <= width && peers.every((peer) => peer !== source)) return source;
-  const word = uniqueWord(source, peers, width);
-  if (word) return word;
-  return uniqueFragment(source, peers, width) ?? ellipsizeToWidth(source, width);
 }
 
 function alphabeticOrdinal(index: number) {
@@ -452,86 +518,6 @@ function alphabeticOrdinal(index: number) {
   return result;
 }
 
-function collidingLabelIndexes(labels: readonly string[]) {
-  const indexesByLabel = new Map<string, number[]>();
-  labels.forEach((label, index) => indexesByLabel.set(label, [...(indexesByLabel.get(label) ?? []), index]));
-  return [...indexesByLabel.entries()].filter(([, indexes]) => indexes.length > 1);
-}
-
-function distinctProductTypeLabels(groups: readonly AreaZoningGroup[]) {
-  const names = groups.map((group) => normalizedVisibleLabel(group.item_type.name));
-  const abbreviations = groups.map((group) =>
-    normalizedVisibleLabel(group.item_type.abbreviation || group.item_type.name)
-  );
-  const labels = groups.map((_, index) => {
-    const matchingAbbreviationIndexes = abbreviations
-      .map((abbreviation, candidateIndex) => abbreviation === abbreviations[index] ? candidateIndex : -1)
-      .filter((candidateIndex) => candidateIndex >= 0);
-    const peerNameIndexes = matchingAbbreviationIndexes.filter((candidateIndex) => candidateIndex !== index);
-    const nameIsDistinct = groups.every((_, candidateIndex) => candidateIndex === index || names[candidateIndex] !== names[index]);
-
-    if (matchingAbbreviationIndexes.length === 1) {
-      if (nameIsDistinct && conservativeTextWidth(names[index]) <= PRODUCT_TYPE_LABEL_MAX_WIDTH) return names[index];
-      return compactDistinctLabel(
-        abbreviations[index],
-        abbreviations.filter((_, candidateIndex) => candidateIndex !== index),
-        PRODUCT_TYPE_LABEL_MAX_WIDTH,
-      );
-    }
-
-    if (peerNameIndexes.every((candidateIndex) => names[candidateIndex] !== names[index])) {
-      return compactDistinctLabel(
-        names[index],
-        peerNameIndexes.map((candidateIndex) => names[candidateIndex]),
-        PRODUCT_TYPE_LABEL_MAX_WIDTH,
-      );
-    }
-
-    return ellipsizeToWidth(abbreviations[index], PRODUCT_TYPE_LABEL_MAX_WIDTH);
-  });
-
-  // A label derived from one source can still match a human label derived by
-  // another path. Give every collision a second, globally compared human
-  // source before using the exact-label fallback.
-  const configuredLabels = groups.map((_, index) => `${abbreviations[index]} ${names[index]}`);
-  for (const [, collidingIndexes] of collidingLabelIndexes(labels)) {
-    for (const groupIndex of collidingIndexes) {
-      labels[groupIndex] = compactDistinctLabel(
-        configuredLabels[groupIndex],
-        configuredLabels.filter((_, candidateIndex) => candidateIndex !== groupIndex),
-        PRODUCT_TYPE_LABEL_MAX_WIDTH,
-      );
-    }
-  }
-
-  const remainingCollisions = collidingLabelIndexes(labels).sort(([left], [right]) =>
-    left < right ? -1 : left > right ? 1 : 0
-  );
-  const reserved = new Set(labels.filter((label) =>
-    !remainingCollisions.some(([collidingLabel]) => collidingLabel === label)
-  ));
-  for (const [, collidingIndexes] of remainingCollisions) {
-    const stableIndexes = [...collidingIndexes].sort((left, right) =>
-      groups[left].item_type.id - groups[right].item_type.id
-    );
-    let ordinalIndex = 0;
-    for (const groupIndex of stableIndexes) {
-      let candidate = '';
-      do {
-        const suffix = ` (${alphabeticOrdinal(ordinalIndex++)})`;
-        const baseWidth = PRODUCT_TYPE_LABEL_MAX_WIDTH - conservativeTextWidth(suffix);
-        if (baseWidth <= 0) throw new Error('Too many Product Type labels to distinguish visibly');
-        candidate = `${ellipsizeToWidth(labels[groupIndex], baseWidth)}${suffix}`;
-      } while (reserved.has(candidate));
-      labels[groupIndex] = candidate;
-      reserved.add(candidate);
-    }
-  }
-
-  if (new Set(labels).size !== labels.length) throw new Error('Product Type labels are not visibly distinct');
-  return labels;
-}
-
 const positiveRows = (area: Area) => {
   const groups = area.zoning_groups
     .map((group) => ({
@@ -539,21 +525,24 @@ const positiveRows = (area: Area) => {
       parameters: group.parameters.filter((parameter) => parameter.value > 0),
     }))
     .filter((group) => group.parameters.length > 0);
-  const productTypeLabels = distinctProductTypeLabels(groups);
-  const normalizedNames = groups.map((group) => normalizedVisibleLabel(group.item_type.name));
-  const canUseFullName = normalizedNames.map((name, groupIndex) => groups.every((_, candidateIndex) =>
-    candidateIndex === groupIndex ||
-    (name !== normalizedNames[candidateIndex] && name !== productTypeLabels[candidateIndex])
-  ));
-  const queues = groups.map((group, groupIndex) => group.parameters.map((parameter): PositiveAnnotationRow => ({
-    fullText: `${group.item_type.name} — ${parameter.name}: ${parameter.value}`,
-    accessibleText: `${group.item_type.name} — ${parameter.name}: ${parameter.value} (Product Type identifier ${group.item_type.id})`,
-    useFullText: canUseFullName[groupIndex],
-    productTypeId: group.item_type.id,
-    productTypeLabel: productTypeLabels[groupIndex],
-    parameterName: parameter.name,
-    value: parameter.value,
-  })));
+  const queues = groups.map((group) => group.parameters.map((parameter): PositiveAnnotationRow => {
+    const productTypeName = group.item_type.name;
+    const productTypeAbbreviation = group.item_type.abbreviation || productTypeName;
+    const productTypeNameVisible = sanitizeVisibleText(productTypeName);
+    const productTypeAbbreviationVisible = sanitizeVisibleText(productTypeAbbreviation);
+    return {
+      fullText: `${productTypeName} — ${parameter.name}: ${parameter.value}`,
+      accessibleText: `${productTypeName} — ${parameter.name}: ${parameter.value} (Product Type identifier ${group.item_type.id})`,
+      productTypeId: group.item_type.id,
+      productTypeNameVisible,
+      productTypeNameKey: generatedVisibleTextKey(productTypeNameVisible),
+      productTypeAbbreviationVisible,
+      productTypeAbbreviationKey: generatedVisibleTextKey(productTypeAbbreviationVisible),
+      parameterName: parameter.name,
+      parameterTokens: escapedFieldTokens(parameter.name, 'Parameter'),
+      value: parameter.value,
+    };
+  }));
   const rows: PositiveAnnotationRow[] = [];
   while (queues.some((queue) => queue.length > 0)) {
     for (const queue of queues) {
@@ -564,56 +553,108 @@ const positiveRows = (area: Area) => {
   return rows;
 };
 
-function displayedLines(rows: readonly PositiveAnnotationRow[], visibleCount: number, width: number) {
-  const availableWidth = width -
-    ZONING_ANNOTATION_STYLE.paddingX * 2;
-  const lines: AnnotationLine[] = [];
+function humanProductTypeLabels(rows: readonly PositiveAnnotationRow[]) {
+  const byId = new Map<number, PositiveAnnotationRow>();
+  for (const row of rows) if (!byId.has(row.productTypeId)) byId.set(row.productTypeId, row);
+  const types = [...byId.values()];
+  const abbreviationKeys = types.map((row) => row.productTypeAbbreviationKey);
+  const nameKeys = types.map((row) => row.productTypeNameKey);
+  return new Map(types.map((row, index) => {
+    const abbreviation = row.productTypeAbbreviationVisible;
+    const name = row.productTypeNameVisible;
+    const abbreviationIsUnique = abbreviationKeys[index] &&
+      abbreviationKeys.every((key, candidate) => candidate === index || key !== abbreviationKeys[index]);
+    const nameIsUnique = nameKeys[index] &&
+      nameKeys.every((key, candidate) => candidate === index || key !== nameKeys[index]);
+    const text = abbreviationIsUnique ? abbreviation : nameIsUnique ? name : abbreviation || name || 'Product Type';
+    return [row.productTypeId, { tokens: escapedFieldTokens(text, 'Product Type') } satisfies ProductTypeDisplayLabel];
+  }));
+}
 
-  for (const row of rows.slice(0, visibleCount)) {
-    if (row.useFullText && conservativeTextWidth(row.fullText) <= availableWidth) {
-      lines.push({
-        fullText: row.fullText,
-        accessibleText: row.accessibleText,
-        productTypeId: row.productTypeId,
-        displayText: row.fullText,
-      });
-      continue;
-    }
+function formatAnnotationRow(
+  row: PositiveAnnotationRow,
+  productTypeLabel: ProductTypeDisplayLabel,
+  alphabeticSuffix: string,
+  availableWidth: number,
+): AnnotationLine | null {
+  const parameterTokens = row.parameterTokens;
+  const minimumParameterTokens = Math.min(4, parameterTokens.length);
+  const labelTokens = productTypeLabel.tokens;
+  for (const { separator, valueSuffix } of [
+    { separator: ' · ', valueSuffix: `: ${row.value}` },
+    { separator: '·', valueSuffix: `:${row.value}` },
+  ]) {
+    const minimumParameterWidth = parameterTokens.slice(0, minimumParameterTokens)
+      .reduce((width, token) => width + conservativeTextWidth(token), 0);
+    const fixedWidth = conservativeTextWidth(separator + valueSuffix + alphabeticSuffix);
+    const labelBudget = Math.min(
+      PRODUCT_TYPE_LABEL_MAX_WIDTH,
+      availableWidth - fixedWidth - minimumParameterWidth,
+    );
+    if (labelBudget <= 0) continue;
 
-    const readable = `${row.productTypeLabel} · ${row.parameterName}: ${row.value}`;
-    if (conservativeTextWidth(readable) <= availableWidth) {
-      lines.push({
-        fullText: row.fullText,
-        accessibleText: row.accessibleText,
-        productTypeId: row.productTypeId,
-        displayText: readable,
-      });
-      continue;
-    }
-
-    const separator = '·';
-    const suffix = `:${row.value}`;
-    const productType = row.productTypeLabel;
+    const label = compactTokensToWidth(labelTokens, labelBudget, 1);
+    if (!label) continue;
+    const displayedLabel = `${label}${alphabeticSuffix}`;
     const parameterBudget = availableWidth -
-      conservativeTextWidth(productType + separator + suffix);
-    const parameter = ellipsizeToWidth(row.parameterName, parameterBudget);
-    const displayText = `${productType}${separator}${parameter}${suffix}`;
-    const visibleParameterGlyphs = Array.from(parameter).filter((glyph) => glyph !== '…');
-    const minimumVisibleParameterGlyphs = Math.min(4, Array.from(row.parameterName).length);
-
-    // If even the compact Product Type + parameter + value form cannot fit,
-    // omit the annotation instead of painting a misleading partial value.
-    if (!productType || !parameter || visibleParameterGlyphs.length < minimumVisibleParameterGlyphs ||
-      conservativeTextWidth(displayText) > availableWidth) return null;
-    lines.push({
+      conservativeTextWidth(displayedLabel + separator + valueSuffix);
+    const parameter = compactTokensToWidth(parameterTokens, parameterBudget, minimumParameterTokens, 'end');
+    if (!parameter) continue;
+    const displayText = `${displayedLabel}${separator}${parameter}${valueSuffix}`;
+    if (conservativeTextWidth(displayText) > availableWidth) continue;
+    return {
       fullText: row.fullText,
       accessibleText: row.accessibleText,
       productTypeId: row.productTypeId,
       displayText,
-    });
+    };
+  }
+  return null;
+}
+
+function collidingProductTypeIds(lines: readonly AnnotationLine[]) {
+  const typesByVisibleRow = new Map<string, Set<number>>();
+  for (const line of lines) {
+    if (line.productTypeId === undefined) continue;
+    const key = generatedVisibleTextKey(line.displayText);
+    const types = typesByVisibleRow.get(key) ?? new Set<number>();
+    types.add(line.productTypeId);
+    typesByVisibleRow.set(key, types);
+  }
+  return new Set(
+    [...typesByVisibleRow.values()]
+      .filter((types) => types.size > 1)
+      .flatMap((types) => [...types]),
+  );
+}
+
+function displayedLines(rows: readonly PositiveAnnotationRow[], visibleCount: number, width: number) {
+  const representedRows = rows.slice(0, visibleCount);
+  const availableWidth = width - ZONING_ANNOTATION_STYLE.paddingX * 2;
+  const labels = humanProductTypeLabels(representedRows);
+  const suffixTypes = new Set<number>();
+  const representedTypeIds = [...new Set(representedRows.map((row) => row.productTypeId))].sort((a, b) => a - b);
+
+  for (let attempt = 0; attempt <= representedTypeIds.length; attempt++) {
+    const suffixIndexes = new Map([...suffixTypes]
+      .sort((a, b) => a - b)
+      .map((id, index) => [id, ` (${alphabeticOrdinal(index)})`]));
+    const lines = representedRows.map((row) => formatAnnotationRow(
+      row,
+      labels.get(row.productTypeId) ?? { tokens: graphemes('Product Type') },
+      suffixIndexes.get(row.productTypeId) ?? '',
+      availableWidth,
+    ));
+    if (lines.some((line) => line === null)) return null;
+    const completeLines = lines as AnnotationLine[];
+    const collisions = collidingProductTypeIds(completeLines);
+    if (!collisions.size) return completeLines;
+    const previousSize = suffixTypes.size;
+    for (const id of collisions) suffixTypes.add(id);
+    if (suffixTypes.size === previousSize) return null;
   }
 
-  return lines;
+  return null;
 }
 
 export function layoutZoningAnnotations({
@@ -622,6 +663,12 @@ export function layoutZoningAnnotations({
   imageBounds,
 }: LayoutInput): readonly ZoningAnnotationDescriptor[] {
   const orderedAreas = [...areas].sort((a, b) => a.id - b.id);
+  const readableNameBoundsByScale = new Map(ZONING_ANNOTATION_LAYOUT_SCALES.map((scale) => [
+    scale,
+    orderedAreas
+      .map((area) => getAreaNameLabelGeometry(area, scale)?.bounds ?? null)
+      .filter((bounds): bounds is AnnotationRect => bounds !== null),
+  ]));
   const placed: AnnotationRect[] = [];
   const descriptors: ZoningAnnotationDescriptor[] = [];
 
@@ -637,89 +684,102 @@ export function layoutZoningAnnotations({
     // deterministically contract natural-coordinate width, spacing, and rows
     // at the first larger readable density that remains inside every collision
     // boundary. Renderers use it only as a paint-or-omit threshold.
-    for (const minimumReadableScale of ZONING_ANNOTATION_LAYOUT_SCALES) {
-      if (descriptor) break;
-      // The annotation is omitted below minimumReadableScale. At and above
-      // that threshold the Area-name pill is largest in natural coordinates
-      // at this scale, so this is the exact shared obstacle envelope for every
-      // view in which the annotation can actually paint.
-      const readableNameBounds = orderedAreas
-        .map((candidateArea) => getAreaNameLabelGeometry(candidateArea, minimumReadableScale)?.bounds ?? null)
-        .filter((nameBounds): nameBounds is AnnotationRect => nameBounds !== null);
-      const scaled = (value: number) => value / minimumReadableScale;
-      const gap = scaled(8);
-      const maximumWidth = Math.min(
-        scaled(ZONING_ANNOTATION_STYLE.maxWidth),
-        Math.max(0, availableRegion.width - gap * 2),
-      );
-      if (maximumWidth <= 0) continue;
-      for (
-        let visibleCount = Math.min(rows.length, ZONING_ANNOTATION_STYLE.maxRows);
-        visibleCount >= 1 && !descriptor;
-        visibleCount--
-      ) {
-        const lines = displayedLines(rows, visibleCount, maximumWidth * minimumReadableScale);
-        if (!lines) continue;
-        const omitted = rows.length - visibleCount;
-        const renderedRows = visibleCount + (omitted > 0 ? 1 : 0);
-        const displayedText = [
-          ...lines.map((line) => line.displayText),
-          ...(omitted > 0 ? [`+${omitted} more`] : []),
-        ];
-        const contentWidth = Math.max(...displayedText.map((text) =>
-          conservativeTextWidth(text) + ZONING_ANNOTATION_STYLE.paddingX * 2
-        ));
-        const width = Math.min(maximumWidth, scaled(contentWidth));
-        const height = annotationBlockHeight(renderedRows, minimumReadableScale);
-        const centerX = availableRegion.x + availableRegion.width / 2;
-        const centerY = availableRegion.y + availableRegion.height / 2;
-        const leftX = availableRegion.x + gap;
-        const rightX = availableRegion.x + availableRegion.width - width - gap;
-        const bottomY = availableRegion.y + availableRegion.height - height - gap;
-        const lowerY = availableRegion.y + availableRegion.height * 0.72 - height / 2;
-        const candidates = [
-          { name: 'bottom-left', x: leftX, y: bottomY },
-          { name: 'bottom-center', x: centerX - width / 2, y: bottomY },
-          { name: 'bottom-right', x: rightX, y: bottomY },
-          { name: 'lower-left', x: leftX, y: lowerY },
-          { name: 'lower-center', x: centerX - width / 2, y: lowerY },
-          { name: 'lower-right', x: rightX, y: lowerY },
-          { name: 'center', x: centerX - width / 2, y: centerY - height / 2 },
-          { name: 'top-center', x: centerX - width / 2, y: availableRegion.y + gap },
-          { name: 'top-left', x: leftX, y: availableRegion.y + gap },
-          { name: 'top-right', x: rightX, y: availableRegion.y + gap },
-        ];
-        for (const candidate of candidates) {
-          const candidateBounds = {
-            x: candidate.x,
-            y: candidate.y,
-            width,
-            height,
-          };
-          if (!containsRect(imageBounds, candidateBounds) || !areaContainsRect(area, candidateBounds)) continue;
-          const collisionPadding = scaled(ZONING_ANNOTATION_STYLE.collisionPadding);
-          if (productBounds.some((product) => intersects(candidateBounds, product, collisionPadding))) continue;
-          if (readableNameBounds.some((name) => intersects(candidateBounds, name, collisionPadding))) continue;
-          if (placed.some((annotation) => intersects(candidateBounds, annotation, collisionPadding))) continue;
-          descriptor = Object.freeze({
-            areaId: area.id,
-            lines: Object.freeze(lines),
-            omitted,
-            bounds: Object.freeze(candidateBounds),
-            anchor: candidate.name,
-            accessibleText: [
-              ...rows.slice(0, visibleCount).map((row) => row.accessibleText),
-              ...(omitted ? [`+${omitted} more`] : []),
-            ].join('; '),
-            minimumReadableScale,
-          });
-          break;
+    const requiredProductTypeCount = Math.min(
+      new Set(rows.map((row) => row.productTypeId)).size,
+      ZONING_ANNOTATION_STYLE.maxRows,
+    );
+    // A narrower density must not hide a later Product Type when a slightly
+    // denser readable presentation can identify every positive group. Only
+    // after all such candidates fail may ordinary +N overflow omit a group.
+    for (const preserveEveryGroup of [true, false]) {
+      for (const minimumReadableScale of ZONING_ANNOTATION_LAYOUT_SCALES) {
+        if (descriptor) break;
+        // The annotation is omitted below minimumReadableScale. At and above
+        // that threshold the Area-name pill is largest in natural coordinates
+        // at this scale, so this is the exact shared obstacle envelope for every
+        // view in which the annotation can actually paint.
+        const readableNameBounds = readableNameBoundsByScale.get(minimumReadableScale) ?? [];
+        const scaled = (value: number) => value / minimumReadableScale;
+        const gap = scaled(8);
+        const maximumWidth = Math.min(
+          scaled(ZONING_ANNOTATION_STYLE.maxWidth),
+          Math.max(0, availableRegion.width - gap * 2),
+        );
+        if (maximumWidth <= 0) continue;
+        for (
+          let visibleCount = Math.min(rows.length, ZONING_ANNOTATION_STYLE.maxRows);
+          visibleCount >= 1 && !descriptor;
+          visibleCount--
+        ) {
+          if (
+            preserveEveryGroup &&
+            new Set(rows.slice(0, visibleCount).map((row) => row.productTypeId)).size < requiredProductTypeCount
+          ) continue;
+          const lines = displayedLines(rows, visibleCount, maximumWidth * minimumReadableScale);
+          if (!lines) continue;
+          const omitted = rows.length - visibleCount;
+          const renderedRows = visibleCount + (omitted > 0 ? 1 : 0);
+          const displayedText = [
+            ...lines.map((line) => line.displayText),
+            ...(omitted > 0 ? [`+${omitted} more`] : []),
+          ];
+          const contentWidth = Math.max(...displayedText.map((text) =>
+            conservativeTextWidth(text) + ZONING_ANNOTATION_STYLE.paddingX * 2
+          ));
+          const width = Math.min(maximumWidth, scaled(contentWidth));
+          const height = annotationBlockHeight(renderedRows, minimumReadableScale);
+          const centerX = availableRegion.x + availableRegion.width / 2;
+          const centerY = availableRegion.y + availableRegion.height / 2;
+          const leftX = availableRegion.x + gap;
+          const rightX = availableRegion.x + availableRegion.width - width - gap;
+          const bottomY = availableRegion.y + availableRegion.height - height - gap;
+          const lowerY = availableRegion.y + availableRegion.height * 0.72 - height / 2;
+          const candidates = [
+            { name: 'bottom-left', x: leftX, y: bottomY },
+            { name: 'bottom-center', x: centerX - width / 2, y: bottomY },
+            { name: 'bottom-right', x: rightX, y: bottomY },
+            { name: 'lower-left', x: leftX, y: lowerY },
+            { name: 'lower-center', x: centerX - width / 2, y: lowerY },
+            { name: 'lower-right', x: rightX, y: lowerY },
+            { name: 'center', x: centerX - width / 2, y: centerY - height / 2 },
+            { name: 'top-center', x: centerX - width / 2, y: availableRegion.y + gap },
+            { name: 'top-left', x: leftX, y: availableRegion.y + gap },
+            { name: 'top-right', x: rightX, y: availableRegion.y + gap },
+          ];
+          for (const candidate of candidates) {
+            const candidateBounds = {
+              x: candidate.x,
+              y: candidate.y,
+              width,
+              height,
+            };
+            if (!containsRect(imageBounds, candidateBounds) || !areaContainsRect(area, candidateBounds)) continue;
+            const collisionPadding = scaled(ZONING_ANNOTATION_STYLE.collisionPadding);
+            if (productBounds.some((product) => intersects(candidateBounds, product, collisionPadding))) continue;
+            if (readableNameBounds.some((name) => intersects(candidateBounds, name, collisionPadding))) continue;
+            if (placed.some((annotation) => intersects(candidateBounds, annotation, collisionPadding))) continue;
+            descriptor = Object.freeze({
+              areaId: area.id,
+              lines: Object.freeze(lines),
+              omitted,
+              bounds: Object.freeze(candidateBounds),
+              anchor: candidate.name,
+              accessibleText: [
+                ...rows.slice(0, visibleCount).map((row) => row.accessibleText),
+                ...(omitted ? [`+${omitted} more`] : []),
+              ].join('; '),
+              minimumReadableScale,
+            });
+            break;
+          }
         }
       }
+      if (descriptor) break;
     }
-    if (descriptor) {
-      descriptors.push(descriptor);
-      placed.push(descriptor.bounds);
+    const acceptedDescriptor = descriptor as ZoningAnnotationDescriptor | null;
+    if (acceptedDescriptor) {
+      descriptors.push(acceptedDescriptor);
+      placed.push(acceptedDescriptor.bounds);
     }
   }
   return Object.freeze(descriptors);

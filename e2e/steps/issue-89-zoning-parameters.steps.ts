@@ -238,16 +238,18 @@ Then('no draft changes are sent or retained', async function (this: ZoningWorld)
 
 Given('an Area has positive and zero values across two applicable Product Types', async function (this: ZoningWorld) {
   await setupArea(this, 2, 2, { width: 300, height: 260 });
-  const names = ['照明設備甲', '照明設備乙'];
+  const names = ['Long configured Product Type Alpha', 'Long configured Product Type Beta'];
+  const abbreviations = ['A', 'A · B'];
+  const parameterNames = ['B · C', 'C'];
   for (const [index, itemTypeId] of this.itemTypeIds.entries()) {
     const renamedType = await this.page!.request.put(`${this.apiUrl}/api/item-types/${itemTypeId}`, {
       headers: authHeaders(this),
-      data: { name: names[index], abbreviation: 'X' },
+      data: { name: names[index], abbreviation: abbreviations[index] },
     });
     expect(renamedType.status()).toBe(200);
     const renamedParameter = await this.page!.request.put(`${this.apiUrl}/api/item-types/${itemTypeId}/zoning-parameters/${this.parameterIds[index * 2]}`, {
       headers: authHeaders(this),
-      data: { name: 'Zones' },
+      data: { name: parameterNames[index] },
     });
     expect(renamedParameter.status()).toBe(200);
   }
@@ -256,58 +258,94 @@ Given('an Area has positive and zero values across two applicable Product Types'
 When('the interactive floorplan or PNG export renders', async function (this: ZoningWorld) {
   await this.page!.setViewportSize({ width: 1280, height: 900 });
   await this.page!.goto(`${this.baseUrl}/projects/${this.projectId}`);
-  const annotation = this.page!.getByTestId('area-zoning-annotation');
-  await expect(annotation).toBeVisible();
-  const svgRows = (await paintedAnnotationRows(this)).filter((row) => /Z.*:\s*3$/.test(row));
+  this.visibleIdentityEvidence = [];
+  const capture = async (label: string, configuredNames: string[]) => {
+    const annotation = this.page!.getByTestId('area-zoning-annotation');
+    await expect(annotation).toBeVisible();
+    const svgRows = (await paintedAnnotationRows(this)).filter((row) => /:\s*3$/.test(row));
+    await this.page!.reload();
+    await expect(annotation).toBeVisible();
+    const repeatedSvgRows = (await paintedAnnotationRows(this)).filter((row) => /:\s*3$/.test(row));
+    const svgPaints = await annotation.locator('text').evaluateAll((rows) => rows.map((row) => {
+      const style = getComputedStyle(row);
+      return {
+        text: [...row.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent ?? '').join(''),
+        x: Number(row.getAttribute('x')),
+        y: Number(row.getAttribute('y')),
+        fill: row.getAttribute('fill') ?? '',
+        font: `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`,
+      };
+    }).filter(({ text }) => /:\s*3$/.test(text)));
+    await this.page!.evaluate(() => {
+      const prototype = CanvasRenderingContext2D.prototype as typeof CanvasRenderingContext2D.prototype & {
+        __issue89VisibleIdentityWrapped?: boolean;
+        __issue89VisibleIdentityOriginal?: CanvasRenderingContext2D['fillText'];
+      };
+      const evidence = window as unknown as { issue89DuplicateRasterRows: string[]; issue89VisibleRasterPaints: DirectTextPaint[] };
+      evidence.issue89DuplicateRasterRows = [];
+      evidence.issue89VisibleRasterPaints = [];
+      if (prototype.__issue89VisibleIdentityWrapped) return;
+      prototype.__issue89VisibleIdentityWrapped = true;
+      prototype.__issue89VisibleIdentityOriginal = prototype.fillText;
+      prototype.fillText = function (text, x, y, maxWidth) {
+        if (/:\s*3$/.test(text)) {
+          evidence.issue89DuplicateRasterRows.push(text);
+          evidence.issue89VisibleRasterPaints.push({ text, x, y, fill: String(this.fillStyle), font: this.font });
+        }
+        const original = prototype.__issue89VisibleIdentityOriginal!;
+        return maxWidth === undefined ? original.call(this, text, x, y) : original.call(this, text, x, y, maxWidth);
+      };
+    });
+    const downloadPromise = this.page!.waitForEvent('download');
+    await this.page!.getByTitle('Export floorplan image').click();
+    const download = await downloadPromise;
+    expect(await download.path()).toBeTruthy();
+    await download.saveAs(resolve(process.cwd(), `e2e/results/issue-89-visible-identity-${label}-export.png`));
+    this.visibleIdentityEvidence.push({
+      label,
+      configuredNames,
+      svgRows,
+      repeatedSvgRows,
+      rasterRows: await this.page!.evaluate(() => (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows),
+      svgPaints,
+      rasterPaints: await this.page!.evaluate(() => (window as unknown as { issue89VisibleRasterPaints: DirectTextPaint[] }).issue89VisibleRasterPaints),
+      accessibleText: await annotation.getAttribute('aria-label') ?? '',
+      descriptor: {
+        anchor: await annotation.getAttribute('data-anchor') ?? '',
+        bounds: await annotation.getAttribute('data-bounds') ?? '',
+        exportBounds: await annotation.getAttribute('data-export-bounds') ?? '',
+        omitted: await annotation.getAttribute('data-omitted') ?? '',
+      },
+    });
+    await this.page!.screenshot({
+      path: resolve(process.cwd(), `e2e/results/issue-89-visible-identity-${label}-interactive.png`),
+      fullPage: true,
+    });
+  };
+
+  await capture(
+    'field-boundary-collision',
+    ['Long configured Product Type Alpha', 'Long configured Product Type Beta'],
+  );
+
+  const invisibleNames = ['Shared\u200B', 'Shared\u200C'];
+  for (const [index, itemTypeId] of this.itemTypeIds.entries()) {
+    const renamedType = await this.page!.request.put(`${this.apiUrl}/api/item-types/${itemTypeId}`, {
+      headers: authHeaders(this),
+      data: { name: invisibleNames[index], abbreviation: 'X' },
+    });
+    expect(renamedType.status()).toBe(200);
+    const renamedParameter = await this.page!.request.put(
+      `${this.apiUrl}/api/item-types/${itemTypeId}/zoning-parameters/${this.parameterIds[index * 2]}`,
+      { headers: authHeaders(this), data: { name: 'Zones' } },
+    );
+    expect(renamedParameter.status()).toBe(200);
+  }
   await this.page!.reload();
-  await expect(annotation).toBeVisible();
-  const repeatedSvgRows = (await paintedAnnotationRows(this)).filter((row) => /Z.*:\s*3$/.test(row));
-  const svgPaints = await annotation.locator('text').evaluateAll((rows) => rows.map((row) => {
-    const style = getComputedStyle(row);
-    return {
-      text: [...row.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.textContent ?? '').join(''),
-      x: Number(row.getAttribute('x')),
-      y: Number(row.getAttribute('y')),
-      fill: row.getAttribute('fill') ?? '',
-      font: `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`,
-    };
-  }).filter(({ text }) => /Z.*:\s*3$/.test(text)));
-  await this.page!.evaluate(() => {
-    const prototype = CanvasRenderingContext2D.prototype;
-    const original = prototype.fillText;
-    const evidence = window as unknown as { issue89DuplicateRasterRows: string[]; issue89VisibleRasterPaints: DirectTextPaint[] };
-    evidence.issue89DuplicateRasterRows = [];
-    evidence.issue89VisibleRasterPaints = [];
-    prototype.fillText = function (text, x, y, maxWidth) {
-      if (/Z.*:\s*3$/.test(text)) {
-        evidence.issue89DuplicateRasterRows.push(text);
-        evidence.issue89VisibleRasterPaints.push({ text, x, y, fill: String(this.fillStyle), font: this.font });
-      }
-      return maxWidth === undefined ? original.call(this, text, x, y) : original.call(this, text, x, y, maxWidth);
-    };
-  });
-  const downloadPromise = this.page!.waitForEvent('download');
-  await this.page!.getByTitle('Export floorplan image').click();
-  const download = await downloadPromise;
-  expect(await download.path()).toBeTruthy();
-  await download.saveAs(resolve(process.cwd(), 'e2e/results/issue-89-visible-identity-export.png'));
-  this.visibleIdentityEvidence = [{
-    label: 'duplicate-unicode-narrow',
-    configuredNames: ['照明設備甲', '照明設備乙'],
-    svgRows,
-    repeatedSvgRows,
-    rasterRows: await this.page!.evaluate(() => (window as unknown as { issue89DuplicateRasterRows: string[] }).issue89DuplicateRasterRows),
-    svgPaints,
-    rasterPaints: await this.page!.evaluate(() => (window as unknown as { issue89VisibleRasterPaints: DirectTextPaint[] }).issue89VisibleRasterPaints),
-    accessibleText: await annotation.getAttribute('aria-label') ?? '',
-    descriptor: {
-      anchor: await annotation.getAttribute('data-anchor') ?? '',
-      bounds: await annotation.getAttribute('data-bounds') ?? '',
-      exportBounds: await annotation.getAttribute('data-export-bounds') ?? '',
-      omitted: await annotation.getAttribute('data-omitted') ?? '',
-    },
-  }];
-  this.duplicateRasterRows = this.visibleIdentityEvidence[0].rasterRows;
+  await capture('invisible-unicode', invisibleNames);
+
+  this.duplicateRasterRows = this.visibleIdentityEvidence.flatMap((evidence) => evidence.rasterRows);
+  const annotation = this.page!.getByTestId('area-zoning-annotation');
   const firstText = annotation.locator('text').first();
   const renderedEvidence = {
     cases: this.visibleIdentityEvidence,
@@ -321,14 +359,21 @@ When('the interactive floorplan or PNG export renders', async function (this: Zo
   await this.page!.screenshot({ path: resolve(process.cwd(), 'e2e/results/issue-89-visible-identity-interactive.png'), fullPage: true });
 });
 Then('each Product Type with a positive value has one labelled group', async function (this: ZoningWorld) {
-  expect(this.visibleIdentityEvidence.map((evidence) => evidence.label)).toEqual(['duplicate-unicode-narrow']);
+  expect(this.visibleIdentityEvidence.map((evidence) => evidence.label)).toEqual([
+    'field-boundary-collision',
+    'invisible-unicode',
+  ]);
   for (const evidence of this.visibleIdentityEvidence) {
     expect(evidence.svgRows).toHaveLength(2);
-    expect(new Set(evidence.svgRows).size).toBe(2);
-    expect(evidence.svgRows.every((row) => !row.includes('#') && /Z.*:\s*3$/.test(row))).toBe(true);
+    const paintedVisibleKey = (value: string) => value
+      .normalize('NFKC')
+      .replace(/[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '')
+      .normalize('NFKC');
+    expect(new Set(evidence.svgRows.map(paintedVisibleKey)).size).toBe(2);
+    expect(evidence.svgRows.every((row) => !row.includes('#') && /:\s*3$/.test(row))).toBe(true);
     expect(evidence.repeatedSvgRows).toEqual(evidence.svgRows);
     expect(evidence.rasterRows).toEqual(evidence.svgRows);
-    expect(new Set(evidence.rasterRows).size).toBe(2);
+    expect(new Set(evidence.rasterRows.map(paintedVisibleKey)).size).toBe(2);
     expect(evidence.svgPaints.map((paint) => paint.text)).toEqual(evidence.svgRows);
     expect(evidence.rasterPaints.map((paint) => paint.text)).toEqual(evidence.rasterRows);
     expect(evidence.svgPaints.every((paint) => paint.fill === '#ffffff' && paint.font.startsWith('600 '))).toBe(true);
@@ -337,6 +382,9 @@ Then('each Product Type with a positive value has one labelled group', async fun
     for (const name of evidence.configuredNames) expect(evidence.accessibleText).toContain(name);
     for (const id of this.itemTypeIds) expect(evidence.accessibleText).toContain(`Product Type identifier ${id}`);
   }
+  expect(this.visibleIdentityEvidence[0].svgRows.some((row) => row.includes('\\·'))).toBe(true);
+  expect(this.visibleIdentityEvidence[0].svgRows.every((row) => !/ \([A-Z]+\)/u.test(row))).toBe(true);
+  expect(this.visibleIdentityEvidence[1].svgRows.map((row) => row.match(/ \(([A-Z]+)\)/u)?.[1])).toEqual(['A', 'B']);
 });
 Then('zero-valued parameters and empty Product Type groups are absent', async function (this: ZoningWorld) {
   expect((await paintedAnnotationRows(this)).some((row) => row.includes('Extremely long parameter wording'))).toBe(false);
