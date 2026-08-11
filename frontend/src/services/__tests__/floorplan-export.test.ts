@@ -307,6 +307,39 @@ describe('exportFloorplanImage', () => {
     expect(mockCtx.lineWidth).toBe(1.5);
   });
 
+  it('draws production-default 200x150 Area rows through the shared inside descriptor', async () => {
+    const productionArea: Area = {
+      ...mockArea,
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 150,
+      vertices: [
+        { id: 81, placement_id: 10, vertex_index: 0, x: 100, y: 100 },
+        { id: 82, placement_id: 10, vertex_index: 1, x: 300, y: 100 },
+        { id: 83, placement_id: 10, vertex_index: 2, x: 300, y: 250 },
+        { id: 84, placement_id: 10, vertex_index: 3, x: 100, y: 250 },
+      ],
+      zoning_groups: [{
+        ...mockArea.zoning_groups[0],
+        parameters: [
+          { id: 1, name: 'Zone 1', sort_order: 0, value: 1 },
+          { id: 2, name: 'Zone 2', sort_order: 1, value: 2 },
+        ],
+      }],
+    };
+    const descriptor = layoutZoningAnnotations({
+      areas: [productionArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1000, height: 800 },
+    })[0];
+
+    expect(descriptor).toBeDefined();
+    await exportFloorplanImage(mockFloorplan, [], [], {}, undefined, [productionArea]);
+    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringMatching(/Z.*:\s*1$/), expect.any(Number), expect.any(Number));
+    expect(mockCtx.fillText).toHaveBeenCalledWith(expect.stringMatching(/Z.*:\s*2$/), expect.any(Number), expect.any(Number));
+  });
+
   it('draws duplicate-abbreviation Product Type groups with distinct visible raster labels', async () => {
     const sharedPrefix = 'Shared Product Type '.repeat(4);
     const duplicateGroups: Area = {

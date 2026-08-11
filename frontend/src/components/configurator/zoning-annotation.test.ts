@@ -38,6 +38,28 @@ const resizedArea = (id: number, x = 0, width = 600, height = 400, groups = 2): 
   ],
 });
 
+const ordinaryArea = (width: number, height: number, rows: number): Area => {
+  const result = resizedArea(89, 100, width, height, 1);
+  result.y = 100;
+  result.name = 'Production Area';
+  result.vertices = [
+    { id: 890, placement_id: 89, vertex_index: 0, x: 100, y: 100 },
+    { id: 891, placement_id: 89, vertex_index: 1, x: 100 + width, y: 100 },
+    { id: 892, placement_id: 89, vertex_index: 2, x: 100 + width, y: 100 + height },
+    { id: 893, placement_id: 89, vertex_index: 3, x: 100, y: 100 + height },
+  ];
+  result.zoning_groups = [{
+    item_type: { id: 7, name: 'Lighting', abbreviation: 'LGT', color: '#f00', sort_order: 0 },
+    parameters: Array.from({ length: rows }, (_, index) => ({
+      id: index + 1,
+      name: `Zone ${index + 1}`,
+      sort_order: index,
+      value: index + 1,
+    })),
+  }];
+  return result;
+};
+
 describe('zoning annotation layout', () => {
   it('is deterministic, positive-only, group ordered, bounded and dual contrast', () => {
     const input = { areas: [resizedArea(2, 650), resizedArea(1)], productBounds: [], imageBounds: { x: 0, y: 0, width: 1400, height: 600 } };
@@ -88,6 +110,76 @@ describe('zoning annotation layout', () => {
     expect(descriptor.bounds.y + descriptor.bounds.height).toBeLessThanOrEqual(660);
     expect(descriptor.bounds.y).toBeGreaterThanOrEqual(160 + 500 * 0.6);
     expect(overlaps(descriptor.bounds, getAreaNameLabelGeometry(persistedArea, 0.25)!.bounds)).toBe(false);
+  });
+
+  it.each([1, 2])('contracts a production-default 200x150 Area for %i positive row(s)', (rows) => {
+    const productionArea = ordinaryArea(200, 150, rows);
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [productionArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1200, height: 800 },
+    });
+
+    expect(descriptor).toBeDefined();
+    expect(descriptor.anchor).toMatch(/^bottom-/);
+    expect(descriptor.bounds.x).toBeGreaterThanOrEqual(100);
+    expect(descriptor.bounds.y).toBeGreaterThanOrEqual(100 + 150 * 0.6);
+    expect(descriptor.bounds.x + descriptor.bounds.width).toBeLessThanOrEqual(300);
+    expect(descriptor.bounds.y + descriptor.bounds.height).toBeLessThanOrEqual(250);
+    expect(descriptor.lines).toHaveLength(rows);
+    expect(descriptor.omitted).toBe(0);
+    expect(descriptor.canonicalScale).toBe(rows === 1 ? 0.5 : 0.75);
+    for (const displayScale of [0.25, 0.5, 1]) {
+      const presentation = getAnnotationPresentation(descriptor, displayScale);
+      expect(presentation.bounds.x).toBeGreaterThanOrEqual(descriptor.bounds.x);
+      expect(presentation.bounds.y).toBeGreaterThanOrEqual(descriptor.bounds.y);
+      expect(presentation.bounds.x + presentation.bounds.width).toBeLessThanOrEqual(
+        descriptor.bounds.x + descriptor.bounds.width,
+      );
+      expect(presentation.bounds.y + presentation.bounds.height).toBeLessThanOrEqual(
+        descriptor.bounds.y + descriptor.bounds.height,
+      );
+      expect(overlaps(presentation.bounds, getAreaNameLabelGeometry(productionArea, displayScale)!.bounds)).toBe(false);
+    }
+  });
+
+  it('uses deterministic size boundaries instead of one literal small-Area exception', () => {
+    const layout = (width: number, height: number, rows: number) => layoutZoningAnnotations({
+      areas: [ordinaryArea(width, height, rows)],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1200, height: 800 },
+    });
+
+    expect(layout(120, 90, 1)).toEqual([]);
+    expect(layout(120, 90, 2)).toEqual([]);
+    expect(layout(150, 110, 1)).toEqual([]);
+    expect(layout(150, 115, 1)).toHaveLength(1);
+    expect(layout(170, 125, 2)).toEqual([]);
+    expect(layout(180, 130, 2)).toHaveLength(1);
+    expect(layout(180, 130, 2)).toEqual(layout(180, 130, 2));
+  });
+
+  it('finds a contained lower-interior candidate in an ordinary concave Area', () => {
+    const concaveArea = ordinaryArea(260, 180, 2);
+    concaveArea.vertices = [
+      { id: 890, placement_id: 89, vertex_index: 0, x: 100, y: 100 },
+      { id: 891, placement_id: 89, vertex_index: 1, x: 360, y: 100 },
+      { id: 892, placement_id: 89, vertex_index: 2, x: 360, y: 280 },
+      { id: 893, placement_id: 89, vertex_index: 3, x: 320, y: 280 },
+      { id: 894, placement_id: 89, vertex_index: 4, x: 320, y: 250 },
+      { id: 895, placement_id: 89, vertex_index: 5, x: 290, y: 250 },
+      { id: 896, placement_id: 89, vertex_index: 6, x: 290, y: 280 },
+      { id: 897, placement_id: 89, vertex_index: 7, x: 100, y: 280 },
+    ];
+    const [descriptor] = layoutZoningAnnotations({
+      areas: [concaveArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1200, height: 800 },
+    });
+
+    expect(descriptor).toBeDefined();
+    expect(descriptor.anchor).toMatch(/^(bottom|lower)-/);
+    expect(descriptor.bounds.y + descriptor.bounds.height).toBeLessThanOrEqual(250);
   });
 
   it('keeps the Product Type, parameter identity, and exact value in painted text', () => {

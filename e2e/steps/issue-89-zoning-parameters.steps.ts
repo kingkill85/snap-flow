@@ -378,7 +378,7 @@ Given('a normal Area API response for an existing project contains real stored A
   this.floorplanId = (await floorplanResponse.json()).data.id;
   const areaResponse = await this.page!.request.post(`${this.apiUrl}/api/areas`, {
     headers: authHeaders(this),
-    data: { floorplan_id: this.floorplanId, x: 160, y: 160, width: 700, height: 500, name: 'Existing Zigbee Area' },
+    data: { floorplan_id: this.floorplanId, x: 100, y: 100, width: 200, height: 150, name: 'Existing Zigbee Area' },
   });
   expect(areaResponse.status()).toBe(201);
   const createdArea = (await areaResponse.json()).data;
@@ -399,9 +399,9 @@ Given('a normal Area API response for an existing project contains real stored A
   const persisted = (await persistedResponse.json()).data.find((candidate: { id: number }) => candidate.id === this.areaId);
   expect(persisted.vertices).toHaveLength(4);
   expect(persisted.vertices.map((vertex: { x: number; y: number }) => [vertex.x, vertex.y])).toEqual([
-    [160, 160], [860, 160], [860, 660], [160, 660],
+    [100, 100], [300, 100], [300, 250], [100, 250],
   ]);
-  this.existingPathAreaBounds = { x: 160, y: 160, width: 700, height: 500 };
+  this.existingPathAreaBounds = { x: 100, y: 100, width: 200, height: 150 };
   expect(persisted.zoning_groups[0].parameters.map((parameter: { name: string; value: number }) => [parameter.name, parameter.value])).toEqual([
     ['test', 1], ['test2', 2],
   ]);

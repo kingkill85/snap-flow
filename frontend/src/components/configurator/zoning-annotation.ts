@@ -20,6 +20,7 @@ export interface ZoningAnnotationDescriptor {
   bounds: Readonly<AnnotationRect>;
   anchor: string;
   accessibleText: string;
+  canonicalScale?: number;
 }
 
 export interface AnnotationPresentation {
@@ -61,6 +62,8 @@ export const ZONING_ANNOTATION_STYLE = Object.freeze({
   outlineWidth: 1.5,
   canonicalMinScale: 0.25,
 });
+
+const ZONING_ANNOTATION_LAYOUT_SCALES = Object.freeze([0.25, 0.5, 0.75, 1]);
 
 export const AREA_NAME_LABEL_STYLE = Object.freeze({
   fontFamily: ZONING_ANNOTATION_STYLE.fontFamily,
@@ -278,7 +281,7 @@ const unionRects = (rectangles: readonly AnnotationRect[]): AnnotationRect => {
 };
 
 export function getCanonicalAreaNameLabelBounds(area: Area): AnnotationRect | null {
-  const geometries = [ZONING_ANNOTATION_STYLE.canonicalMinScale, 0.5, 1, 1.5, 3]
+  const geometries = [...ZONING_ANNOTATION_LAYOUT_SCALES, 1.5, 3]
     .map((scale) => getAreaNameLabelGeometry(area, scale))
     .filter((geometry): geometry is AreaNameLabelGeometry => geometry !== null);
   return geometries.length ? unionRects(geometries.map((geometry) => geometry.bounds)) : null;
@@ -300,7 +303,10 @@ export function getAnnotationPresentation(
   displayScale = 1,
 ): AnnotationPresentation {
   const requestedScale = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 1;
-  const scale = Math.max(requestedScale, ZONING_ANNOTATION_STYLE.canonicalMinScale);
+  const scale = Math.max(
+    requestedScale,
+    annotation.canonicalScale ?? ZONING_ANNOTATION_STYLE.canonicalMinScale,
+  );
   const desiredWidth = ZONING_ANNOTATION_STYLE.maxWidth / scale;
   const desiredHeight = (annotation.lines.length + (annotation.omitted > 0 ? 1 : 0)) *
     ZONING_ANNOTATION_STYLE.lineHeight / scale;
@@ -442,8 +448,6 @@ export function layoutZoningAnnotations({
   productBounds,
   imageBounds,
 }: LayoutInput): readonly ZoningAnnotationDescriptor[] {
-  const canonicalScale = ZONING_ANNOTATION_STYLE.canonicalMinScale;
-  const scaled = (value: number) => value / canonicalScale;
   const orderedAreas = [...areas].sort((a, b) => a.id - b.id);
   const nameBounds = orderedAreas.map(getCanonicalAreaNameLabelBounds).filter(
     (bounds): bounds is AnnotationRect => bounds !== null,
@@ -457,66 +461,75 @@ export function layoutZoningAnnotations({
     if (!rows.length || !bounds) continue;
     const availableRegion = intersectionRect(bounds, imageBounds);
     if (!availableRegion) continue;
-    const gap = scaled(8);
-    const width = Math.min(
-      scaled(ZONING_ANNOTATION_STYLE.maxWidth),
-      Math.max(0, availableRegion.width - gap * 2),
-    );
-    if (width <= 0) continue;
 
     let descriptor: ZoningAnnotationDescriptor | null = null;
-    for (
-      let visibleCount = Math.min(rows.length, ZONING_ANNOTATION_STYLE.maxRows);
-      visibleCount >= 1 && !descriptor;
-      visibleCount--
-    ) {
-      const omitted = rows.length - visibleCount;
-      const renderedRows = visibleCount + (omitted > 0 ? 1 : 0);
-      const height = renderedRows * scaled(ZONING_ANNOTATION_STYLE.lineHeight);
-      const centerX = availableRegion.x + availableRegion.width / 2;
-      const centerY = availableRegion.y + availableRegion.height / 2;
-      const leftX = availableRegion.x + gap;
-      const rightX = availableRegion.x + availableRegion.width - width - gap;
-      const bottomY = availableRegion.y + availableRegion.height - height - gap;
-      const lowerY = availableRegion.y + availableRegion.height * 0.72 - height / 2;
-      const candidates = [
-        { name: 'bottom-center', x: centerX - width / 2, y: bottomY },
-        { name: 'bottom-left', x: leftX, y: bottomY },
-        { name: 'bottom-right', x: rightX, y: bottomY },
-        { name: 'lower-center', x: centerX - width / 2, y: lowerY },
-        { name: 'lower-left', x: leftX, y: lowerY },
-        { name: 'lower-right', x: rightX, y: lowerY },
-        { name: 'center', x: centerX - width / 2, y: centerY - height / 2 },
-        { name: 'top-center', x: centerX - width / 2, y: availableRegion.y + gap },
-        { name: 'top-left', x: leftX, y: availableRegion.y + gap },
-        { name: 'top-right', x: rightX, y: availableRegion.y + gap },
-      ];
-      for (const candidate of candidates) {
-        const candidateBounds = {
-          x: candidate.x,
-          y: candidate.y,
-          width,
-          height,
-        };
-        if (!containsRect(imageBounds, candidateBounds) || !areaContainsRect(area, candidateBounds)) continue;
-        const collisionPadding = scaled(ZONING_ANNOTATION_STYLE.collisionPadding);
-        if (productBounds.some((product) => intersects(candidateBounds, product, collisionPadding))) continue;
-        if (nameBounds.some((name) => intersects(candidateBounds, name, collisionPadding))) continue;
-        if (placed.some((annotation) => intersects(candidateBounds, annotation, collisionPadding))) continue;
-        const lines = displayedLines(rows, visibleCount, width * canonicalScale);
-        if (!lines) continue;
-        descriptor = Object.freeze({
-          areaId: area.id,
-          lines: Object.freeze(lines),
-          omitted,
-          bounds: Object.freeze(candidateBounds),
-          anchor: candidate.name,
-          accessibleText: [
-            ...rows.slice(0, visibleCount).map((row) => row.fullText),
-            ...(omitted ? [`+${omitted} more`] : []),
-          ].join('; '),
-        });
-        break;
+    // Keep the viewport-stable 25% envelope when it fits. For smaller Areas,
+    // deterministically contract natural-coordinate width, spacing, and rows
+    // at the first larger canonical scale that remains inside every collision
+    // boundary. Renderers then share that scale through the descriptor.
+    for (const canonicalScale of ZONING_ANNOTATION_LAYOUT_SCALES) {
+      if (descriptor) break;
+      const scaled = (value: number) => value / canonicalScale;
+      const gap = scaled(8);
+      const width = Math.min(
+        scaled(ZONING_ANNOTATION_STYLE.maxWidth),
+        Math.max(0, availableRegion.width - gap * 2),
+      );
+      if (width <= 0) continue;
+      for (
+        let visibleCount = Math.min(rows.length, ZONING_ANNOTATION_STYLE.maxRows);
+        visibleCount >= 1 && !descriptor;
+        visibleCount--
+      ) {
+        const omitted = rows.length - visibleCount;
+        const renderedRows = visibleCount + (omitted > 0 ? 1 : 0);
+        const height = renderedRows * scaled(ZONING_ANNOTATION_STYLE.lineHeight);
+        const centerX = availableRegion.x + availableRegion.width / 2;
+        const centerY = availableRegion.y + availableRegion.height / 2;
+        const leftX = availableRegion.x + gap;
+        const rightX = availableRegion.x + availableRegion.width - width - gap;
+        const bottomY = availableRegion.y + availableRegion.height - height - gap;
+        const lowerY = availableRegion.y + availableRegion.height * 0.72 - height / 2;
+        const candidates = [
+          { name: 'bottom-center', x: centerX - width / 2, y: bottomY },
+          { name: 'bottom-left', x: leftX, y: bottomY },
+          { name: 'bottom-right', x: rightX, y: bottomY },
+          { name: 'lower-center', x: centerX - width / 2, y: lowerY },
+          { name: 'lower-left', x: leftX, y: lowerY },
+          { name: 'lower-right', x: rightX, y: lowerY },
+          { name: 'center', x: centerX - width / 2, y: centerY - height / 2 },
+          { name: 'top-center', x: centerX - width / 2, y: availableRegion.y + gap },
+          { name: 'top-left', x: leftX, y: availableRegion.y + gap },
+          { name: 'top-right', x: rightX, y: availableRegion.y + gap },
+        ];
+        for (const candidate of candidates) {
+          const candidateBounds = {
+            x: candidate.x,
+            y: candidate.y,
+            width,
+            height,
+          };
+          if (!containsRect(imageBounds, candidateBounds) || !areaContainsRect(area, candidateBounds)) continue;
+          const collisionPadding = scaled(ZONING_ANNOTATION_STYLE.collisionPadding);
+          if (productBounds.some((product) => intersects(candidateBounds, product, collisionPadding))) continue;
+          if (nameBounds.some((name) => intersects(candidateBounds, name, collisionPadding))) continue;
+          if (placed.some((annotation) => intersects(candidateBounds, annotation, collisionPadding))) continue;
+          const lines = displayedLines(rows, visibleCount, width * canonicalScale);
+          if (!lines) continue;
+          descriptor = Object.freeze({
+            areaId: area.id,
+            lines: Object.freeze(lines),
+            omitted,
+            bounds: Object.freeze(candidateBounds),
+            anchor: candidate.name,
+            accessibleText: [
+              ...rows.slice(0, visibleCount).map((row) => row.fullText),
+              ...(omitted ? [`+${omitted} more`] : []),
+            ].join('; '),
+            canonicalScale,
+          });
+          break;
+        }
       }
     }
     if (descriptor) {

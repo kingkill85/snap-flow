@@ -85,4 +85,34 @@ describe('AreaPolygon zoning annotation', () => {
     expect(fullText).toContain(`${'W'.repeat(84)}Alpha — Zones: 4`);
     expect(fullText).toContain(`${'W'.repeat(84)}Beta — Zones: 4`);
   });
+  it('directly paints the shared descriptor inside production-default Area geometry', () => {
+    const productionArea: Area = {
+      ...base,
+      width: 200,
+      height: 150,
+      vertices: base.vertices.map((vertex, index) => ({
+        ...vertex,
+        x: index === 1 || index === 2 ? 200 : 0,
+        y: index >= 2 ? 150 : 0,
+      })),
+      zoning_groups: [{
+        item_type: { id: 7, name: 'Lighting', abbreviation: 'LGT', color: '#f00', sort_order: 0 },
+        parameters: [
+          { id: 1, name: 'Zone 1', sort_order: 0, value: 1 },
+          { id: 2, name: 'Zone 2', sort_order: 1, value: 2 },
+        ],
+      }],
+    };
+    const annotation = layoutZoningAnnotations({
+      areas: [productionArea],
+      productBounds: [],
+      imageBounds: { x: 0, y: 0, width: 1200, height: 800 },
+    })[0];
+    const { container } = render(<svg><AreaPolygon {...props} scale={1} area={productionArea} zoningAnnotation={annotation} /></svg>);
+    const painted = container.querySelector('[data-testid="area-zoning-annotation"]');
+    expect(painted).not.toBeNull();
+    expect(painted).toHaveAttribute('data-anchor', expect.stringMatching(/^bottom-/));
+    expect(painted).toHaveTextContent(/Zone 1.*1/);
+    expect(painted).toHaveTextContent(/Zone 2.*2/);
+  });
 });
