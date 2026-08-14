@@ -1,0 +1,18 @@
+name: Forgejo Runner Canary
+on:
+  push:
+    branches: [ci/forgejo-runner-canary]
+jobs:
+  isolated-runner:
+    runs-on: snapflow-ci
+    timeout-minutes: 15
+    steps:
+      - name: Runtime and isolated DinD smoke test
+        run: |
+          set -eu
+          echo runner-canary=ok
+          node --version
+          docker --version
+          docker info --format 'server={{.ServerVersion}} driver={{.Driver}}'
+          test ! -S /var/run/docker.sock
+          docker run --rm docker.io/library/alpine@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1 /bin/sh -c 'echo dind-canary=ok'
